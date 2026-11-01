@@ -4,39 +4,59 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>안요환 Yohan Ahn</title>
+<meta name="description" content="안요환 — 공군사관학교 항공우주정책학과. 입법정책, 정치관계법, 헌법.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@300;500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@300;400;500;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: sticky name column on the left, one reading column of sections on the right. */
+/* Layout: a navy masthead ruled like legal paper (photo, name, epigraph), a sticky section bar,
+   then one 1040px column: statement, two paired blocks, the article list grouped by year, and dated rows. */
 :root {
-  --paper: #F2F4F7;
-  --ink: #15202E;
-  --muted: #5A6677;
-  --rule: #D4DAE2;
-  --navy: #22406A;
+  --bg: #F5F6F8;
+  --surface: #FFFFFF;
+  --ink: #122034;
+  --ink-2: #2A394F;
+  --muted: #5D6979;
+  --faint: #8B95A3;
+  --rule: #E1E5EB;
+  --rule-strong: #C8D0DA;
+  --navy: #0E2440;
+  --navy-line: #13304F;
+  --on-navy: #F2F5F9;
+  --on-navy-2: #B6C3D4;
+  --on-navy-3: #7B90AA;
+  --accent: #2C5A8C;
+  --accent-soft: #E6EDF6;
+  --mark: #DCE6F2;
 
   --f-display: "Hahmlet", "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", serif;
   --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --gutter-l: max(20px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(20px, env(safe-area-inset-right, 0px));
+  --nav-h: 52px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0D131B; --ink: #E3E8EE; --muted: #96A2B2; --rule: #263142; --navy: #A3BEE0;
+    --bg: #0B1118; --surface: #111A25; --ink: #E6EBF1; --ink-2: #C9D2DD; --muted: #98A4B3; --faint: #6C7887;
+    --rule: #1E2834; --rule-strong: #2C3846; --navy: #0E1A2A; --navy-line: #13223A; --on-navy: #EAF0F6;
+    --on-navy-2: #A9B8CB; --on-navy-3: #6F8299; --accent: #8FB4E0; --accent-soft: #15243A; --mark: #1C3150;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0D131B; --ink: #E3E8EE; --muted: #96A2B2; --rule: #263142; --navy: #A3BEE0;
+  --bg: #0B1118; --surface: #111A25; --ink: #E6EBF1; --ink-2: #C9D2DD; --muted: #98A4B3; --faint: #6C7887;
+  --rule: #1E2834; --rule-strong: #2C3846; --navy: #0E1A2A; --navy-line: #13223A; --on-navy: #EAF0F6;
+  --on-navy-2: #A9B8CB; --on-navy-3: #6F8299; --accent: #8FB4E0; --accent-soft: #15243A; --mark: #1C3150;
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
 body {
-  background: var(--paper);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--f-body);
   font-size: 1rem;
@@ -44,513 +64,445 @@ body {
   word-break: keep-all;
   overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
-a { color: var(--muted); text-decoration: none; }
-a:hover { color: var(--ink); }
-a:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
-h1, h2, h3 { margin: 0; font-weight: 500; text-wrap: balance; }
-p { margin: 0; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3 { font-weight: 500; text-wrap: balance; }
 ul, ol { margin: 0; padding: 0; list-style: none; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+.when { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 0.8125rem; letter-spacing: 0.01em; color: var(--muted); }
 
-.wrap {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 56px 72px;
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 80px;
+/* ---------- Masthead ---------- */
+.mast {
+  background-color: var(--navy);
+  background-image: linear-gradient(to bottom, var(--navy-line) 1px, transparent 1px);
+  background-size: 100% 30px;
+  color: var(--on-navy);
+}
+.mast-in { max-width: 1040px; margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 24px 60px; }
+.mast-top { display: flex; justify-content: flex-end; margin-bottom: 44px; }
+.lang { display: flex; align-items: center; gap: 10px; font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.04em; color: var(--on-navy-3); }
+.lang button {
+  font: inherit; letter-spacing: inherit; color: var(--on-navy-3); background: none; border: 0; padding: 4px 2px; cursor: pointer;
+  border-bottom: 1px solid transparent; transition: color .15s;
+}
+.lang button:hover { color: var(--on-navy); }
+.lang button[aria-pressed="true"] { color: var(--on-navy); border-bottom-color: var(--on-navy-2); }
+
+.hero { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 340px); gap: 36px; align-items: end; }
+.frame { background: var(--on-navy); padding: 5px; box-shadow: 0 1px 0 var(--navy-line), 0 12px 32px -12px #00000080; }
+.photo {
+  display: block; width: 120px; height: 160px; max-width: 100%; object-fit: cover;
+  pointer-events: none; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none;
+}
+.who { min-width: 0; padding-bottom: 4px; }
+.name { font-family: var(--f-display); font-weight: 700; font-size: clamp(2.5rem, 5.6vw, 3.75rem); line-height: 1.05; letter-spacing: 0.01em; }
+#view-en .name { letter-spacing: -0.015em; }
+.role { margin-top: 12px; font-size: 1.0625rem; color: var(--on-navy-2); }
+.fields { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
+.fields li { font-size: 0.8125rem; line-height: 1; padding: 7px 12px; border: 1px solid var(--on-navy-3); border-radius: 999px; color: var(--on-navy); }
+
+.epi { margin: 0; padding: 0 0 6px 20px; border-left: 1px solid var(--on-navy-3); }
+.epi p { font-family: var(--f-display); font-weight: 300; font-size: 0.9375rem; line-height: 1.65; color: var(--on-navy-2); }
+.epi cite { display: block; margin-top: 10px; font-style: normal; font-size: 0.75rem; line-height: 1.5; color: var(--on-navy-3); }
+.epi cite i { font-style: italic; }
+
+/* ---------- Section bar ---------- */
+.nav {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(10px); backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+.nav-in {
+  max-width: 1040px; margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r);
+  display: flex; gap: 26px; overflow-x: auto; scrollbar-width: none; height: var(--nav-h);
+}
+.nav-in::-webkit-scrollbar { display: none; }
+.nav a {
+  display: flex; align-items: center; white-space: nowrap; font-size: 0.875rem; color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s;
+}
+.nav a:hover { color: var(--ink); }
+.nav a.on { color: var(--ink); border-bottom-color: var(--ink); font-weight: 500; }
+
+/* ---------- Main ---------- */
+.main { max-width: 1040px; margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 0 24px; }
+section { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--nav-h) + 16px); }
+
+.intro { padding-block: 76px 72px; max-width: 760px; }
+.stmt { font-family: var(--f-display); font-weight: 300; font-size: clamp(1.25rem, 2.3vw, 1.5625rem); line-height: 1.75; color: var(--ink-2); }
+.stmt + .stmt { margin-top: 18px; }
+.stmt strong {
+  font-weight: 500; color: var(--ink);
+  background-image: linear-gradient(transparent 64%, var(--mark) 64%, var(--mark) 92%, transparent 92%);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 
-.id { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 48px); display: flex; flex-direction: column; gap: 32px; }
-.photo { display: block; width: 112px; height: auto; aspect-ratio: 3 / 4; object-fit: cover; margin-bottom: 20px; pointer-events: none; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
-.name { font-family: var(--f-display); font-weight: 700; font-size: clamp(3rem, 5.5vw, 4rem); line-height: 1; letter-spacing: -0.02em; }
-.name-en { margin-top: 10px; font-family: var(--f-mono); font-size: 0.8125rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
-.toc { display: flex; flex-direction: column; gap: 2px; font-size: 0.875rem; padding-top: 20px; border-top: 1px solid var(--ink); }
-.toc a { padding-block: 3px; }
-
-main { min-width: 0; max-width: 740px; }
-section { padding-block: 40px; border-top: 1px solid var(--rule); scroll-margin-top: 24px; }
-section:first-child { padding-top: 0; border-top: 0; }
-h2 { font-family: var(--f-display); font-size: 1.5rem; margin-bottom: 20px; }
-
-.kirchmann { font-family: var(--f-display); font-weight: 300; font-size: 0.875rem; line-height: 1.6; color: var(--muted); border-left: 2px solid var(--rule); padding-left: 14px; margin-bottom: 28px; }
-.kirchmann em { font-style: normal; color: var(--ink); }
-.statement { font-family: var(--f-display); font-weight: 300; font-size: 1.375rem; line-height: 1.75; }
-.statement + .statement { margin-top: 16px; }
-.statement strong { font-weight: 500; }
-
-.list { display: flex; flex-direction: column; }
-.list > li { padding-block: 12px; border-top: 1px solid var(--rule); }
-.list > li:first-child { border-top: 0; padding-top: 0; }
-
-.plain li { font-family: var(--f-display); font-size: 1.0625rem; }
-
-.row { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 20px; }
-.when { font-family: var(--f-mono); font-variant-numeric: tabular-nums; font-size: 0.8125rem; color: var(--muted); padding-top: 3px; }
-
-.item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.item .t { font-family: var(--f-display); font-weight: 500; font-size: 1.0625rem; line-height: 1.5; }
-.item .t .st { display: block; font-weight: 300; font-size: 1rem; color: var(--muted); }
-.item .src { font-size: 0.875rem; }
-.item .note { font-size: 0.8125rem; color: var(--muted); }
-
-@media (max-width: 920px) {
-  .wrap { grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 32px 56px; }
-  .id { position: static; }
-  .toc { flex-direction: row; flex-wrap: wrap; gap: 4px 16px; }
-  main { max-width: none; }
+.sec { padding-block: 52px 56px; border-top: 1px solid var(--rule); min-width: 0; }
+.h {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 26px;
+  font-family: var(--f-display); font-weight: 500; font-size: 1.3125rem; letter-spacing: -0.005em;
 }
-@media (max-width: 560px) {
-  .statement { font-size: 1.125rem; }
-  .row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.h::before { content: ""; width: 6px; height: 6px; background: var(--accent); transform: rotate(45deg); flex: none; }
+
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 72px; }
+
+.ttl { font-family: var(--f-display); font-weight: 500; font-size: 1.0625rem; line-height: 1.55; color: var(--ink); }
+.dept { font-size: 0.875rem; color: var(--muted); line-height: 1.55; }
+
+/* Teaching */
+.chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.chips li {
+  font-family: var(--f-display); font-size: 1rem; line-height: 1.3; padding: 10px 16px;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 6px;
 }
 
-.lang-switch { display: flex; gap: 14px; font-family: var(--f-mono); font-size: 0.8125rem; }
-.lang-switch button { font: inherit; color: var(--muted); background: none; border: 0; padding: 2px 0; cursor: pointer; border-bottom: 1px solid transparent; }
-.lang-switch button:hover { color: var(--ink); }
-.lang-switch button[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
-.lang-switch button:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
+/* Education */
+.edu li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding-block: 13px; border-bottom: 1px solid var(--rule); }
+.edu li:first-child { padding-top: 0; }
+.edu .school { font-weight: 500; min-width: 0; }
+.edu .deg { font-size: 0.875rem; color: var(--muted); white-space: nowrap; }
+
+/* Appointments */
+.aff { position: relative; display: flex; flex-direction: column; gap: 22px; padding-left: 22px; }
+.aff::before { content: ""; position: absolute; left: 3px; top: 8px; bottom: 8px; width: 1px; background: var(--rule-strong); }
+.aff li { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.aff li::before {
+  content: ""; position: absolute; left: -22px; top: 6px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--bg); border: 1px solid var(--faint);
+}
+.aff li:first-child::before { background: var(--accent); border-color: var(--accent); }
+.aff .org { font-weight: 600; margin-top: 2px; }
+
+/* Theses */
+.thesis { display: flex; flex-direction: column; gap: 20px; }
+.thesis li { display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+.meta-top { display: flex; align-items: center; gap: 10px; }
+.kind { font-size: 0.75rem; font-weight: 600; line-height: 1; padding: 5px 8px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+
+/* Articles */
+.yg { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 28px; border-top: 1px solid var(--rule-strong); }
+.yg:first-of-type { border-top: 0; }
+.yg + .yg { margin-top: 4px; }
+.yr span {
+  display: block; position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--nav-h) + 20px);
+  padding-top: 22px; font-family: var(--f-display); font-weight: 700; font-size: 1.625rem; line-height: 1; color: var(--rule-strong);
+  font-variant-numeric: tabular-nums;
+}
+.yg:hover .yr span { color: var(--faint); }
+.yr span { transition: color .2s; }
+.pubs { min-width: 0; }
+.pub { padding: 20px 22px; margin-inline: -22px; border-radius: 8px; transition: background-color .15s; position: relative; }
+.pub + .pub::before { content: ""; position: absolute; top: 0; left: 22px; right: 22px; height: 1px; background: var(--rule); }
+.pub:hover { background: var(--surface); }
+.pub:hover::before, .pub:hover + .pub::before { opacity: 0; }
+.pub .sub { display: block; margin-top: 2px; font-weight: 300; font-size: 0.9375rem; color: var(--muted); }
+.by { margin-top: 6px; font-size: 0.8125rem; color: var(--muted); }
+.meta { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 0.8125rem; color: var(--muted); }
+.meta .jr { color: var(--ink-2); font-weight: 500; }
+.meta .dot { color: var(--faint); }
+.meta .when { font-size: 0.75rem; }
+.fund {
+  display: inline-block; margin-top: 10px; font-size: 0.75rem; line-height: 1; padding: 5px 9px; border-radius: 999px;
+  color: var(--accent); background: var(--accent-soft);
+}
+
+/* Dated rows */
+.rows li { display: grid; grid-template-columns: 124px minmax(0, 1fr); gap: 24px; padding-block: 18px; border-bottom: 1px solid var(--rule); }
+.rows li:first-child { padding-top: 0; }
+.rows li > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rows .when { padding-top: 3px; }
+.when-col { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rtag { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em; line-height: 1; padding: 4px 7px; border: 1px solid var(--rule-strong); border-radius: 4px; color: var(--muted); }
+
+/* Footer */
+.foot { border-top: 1px solid var(--rule); }
+.foot-in { max-width: 1040px; margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 28px 40px; font-family: var(--f-mono); font-size: 0.75rem; color: var(--faint); }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 960px) {
+  .hero { grid-template-columns: auto minmax(0, 1fr); }
+  .epi { grid-column: 1 / -1; margin-top: 8px; max-width: 560px; }
+}
+@media (max-width: 760px) {
+  .pair { grid-template-columns: minmax(0, 1fr); }
+  .intro { padding-block: 52px 48px; }
+  .sec { padding-block: 40px 44px; }
+  .yg { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .yr span { position: static; padding-top: 22px; padding-bottom: 4px; font-size: 1.375rem; color: var(--faint); }
+  .rows li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .when-col { flex-direction: row; align-items: center; }
+}
+@media (max-width: 520px) {
+  .mast-in { padding-block: 16px 40px; }
+  .mast-top { margin-bottom: 28px; }
+  .hero { gap: 20px; }
+  .photo { width: 84px; height: 112px; }
+  .frame { padding: 4px; }
+  .role { font-size: 0.9375rem; margin-top: 8px; }
+  .fields { margin-top: 14px; gap: 6px; }
+  .fields li { font-size: 0.75rem; padding: 6px 10px; }
+  .nav-in { gap: 20px; }
+  .pub { padding: 18px 16px; margin-inline: -16px; }
+  .pub + .pub::before { left: 16px; right: 16px; }
+}
+
 body { margin: 0; }
 [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-
-
-<div class="wrap" id="view-ko" lang="ko">
-  <aside>
-    <div class="id">
-      <div class="lang-switch" role="group" aria-label="언어">
-        <button type="button" data-lang="ko" aria-pressed="true">한국어</button>
-        <button type="button" data-lang="en" aria-pressed="false">English</button>
-      </div>
-      <div>
-        <img class="photo" src="data:image/jpeg;base64,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" alt="안요환" width="112" height="149" draggable="false">
-        <h1 class="name">안요환</h1>
-      </div>
-      <nav class="toc" aria-label="목차">
-        <a href="#teaching">강의과목</a>
-        <a href="#fields">연구분야</a>
-        <a href="#education">학력</a>
-        <a href="#affiliation">소속</a>
-        <a href="#theses">학위논문</a>
-        <a href="#papers">연구논문</a>
-        <a href="#projects">연구과제/보고서</a>
-        <a href="#talks">학술대회 발표/토론</a>
-        <a href="#awards">수상</a>
-      </nav>
-    </div>
-  </aside>
-
-  <main>
-    <section aria-label="소개">
-      <p class="kirchmann" lang="de">
-        <em>“Drei berichtigende Worte des Gesetzgebers und ganze Bibliotheken werden zu Makulatur.”</em><br>
-        <span lang="ko">J. H. von Kirchmann, 「학문으로서 법학의 무가치성」(1847)</span>
-      </p>
-      <p class="statement">율리우스 폰 키르히만은 입법권자가 세 마디만 고치면 법학서적은 모두 휴지조각이 된다며 법학의 학문적 가치를 비판하였다.</p>
-      <p class="statement">그러나 법학이 학문으로서 존재하기에, <strong>나의 연구는 입법권자로 하여금 문제의 세 마디를 바로잡도록 할 것이다.</strong></p>
-    </section>
-
-    <section id="teaching">
-      <h2>강의과목</h2>
-      <ul class="list plain">
-        <li>법학개론</li>
-        <li>융합캡스톤</li>
-        <li>행정법</li>
-        <li>항공우주법</li>
-        <li>헌법과 민주시민</li>
-      </ul>
-    </section>
-
-    <section id="fields">
-      <h2>연구분야</h2>
-      <ul class="list plain">
-        <li>입법정책</li>
-        <li>정치관계법</li>
-        <li>헌법</li>
-      </ul>
-    </section>
-
-    <section id="education">
-      <h2>학력</h2>
-      <ul class="list plain">
-        <li>연세대학교 정치학사</li>
-        <li>University of Queensland 정치학석사</li>
-        <li>서강대학교 법학석사</li>
-        <li>서강대학교 법학박사</li>
-      </ul>
-    </section>
-
-    <section id="affiliation">
-      <h2>소속</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2023. 1. ~ 2026. 12.</span><div class="item"><span class="t">공군사관학교 항공우주정책학과</span></div></li>
-        <li class="row"><span class="when">2022. 4. ~ 2022. 7.</span><div class="item"><span class="t">중앙선거관리위원회 제도연구부</span></div></li>
-        <li class="row"><span class="when">2020. 1. ~ 2021. 2.</span><div class="item"><span class="t">국회입법조사처 기획법무담당관실</span></div></li>
-      </ol>
-    </section>
-
-    <section id="theses">
-      <h2>학위논문</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2022. 8.</span><div class="item">
-          <h3 class="t">헌법상 영장주의와 선거관리위원회의 선거범죄 조사에 관한 연구</h3>
-          <p class="src">석사학위논문, 서강대학교</p>
-        </div></li>
-        <li class="row"><span class="when">2026. 8.</span><div class="item">
-          <h3 class="t">선거관리위원회의 독립성과 정치적 중립성에 관한 연구</h3>
-          <p class="src">박사학위논문, 서강대학교</p>
-        </div></li>
-      </ol>
-    </section>
-
-    <section id="papers">
-      <h2>연구논문</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2021. 4.</span><div class="item">
-          <h3 class="t">우리나라 중대재해처벌 관련 법제의 개선방안 연구<span class="st">- 「중대재해처벌법」을 중심으로 -</span></h3>
-          <p class="src">입법과정책 제13권 제1호, 63-88</p>
-        </div></li>
-        <li class="row"><span class="when">2021. 8.</span><div class="item">
-          <h3 class="t">불법원인급여에 대한 반환 금지 규정의 개선방안 연구<span class="st">- 대법원 1993. 12. 10. 선고 93다12947 판결을 기초로 -</span></h3>
-          <p class="src">입법과정책 제13권 제2호, 35-58</p>
-        </div></li>
-        <li class="row"><span class="when">2022. 8.</span><div class="item">
-          <h3 class="t">선거관리위원회 조사권에 관한 일고찰</h3>
-          <p class="src">입법과정책 제14권 제2호, 31-59</p>
-        </div></li>
-        <li class="row"><span class="when">2022. 8.</span><div class="item">
-          <h3 class="t">헌법상 영장주의에 관한 일고찰<span class="st">- 적용범위의 현실화를 위한 개헌안을 중심으로 -</span></h3>
-          <p class="src">입법학연구 제19권 제2호, 159-184</p>
-        </div></li>
-        <li class="row"><span class="when">2023. 12.</span><div class="item">
-          <h3 class="t">제5기 헌법재판소 결정에 대한 성향분석<span class="st">- 집회·결사의 자유를 중심으로 -</span></h3>
-          <p class="src">군사과학논집 제74집 통권, 107-124</p>
-        </div></li>
-        <li class="row"><span class="when">2024. 3.</span><div class="item">
-          <h3 class="t">부동산 담보신탁에서 완전한 소유권의 이전 필요성에 관한 검토<span class="st">- 대법원 2022. 5. 12. 선고 2017다278187 판결을 중심으로 -</span></h3>
-          <p class="src">Ewha Law Review 제13권호, 71-88</p>
-        </div></li>
-        <li class="row"><span class="when">2024. 4.</span><div class="item">
-          <h3 class="t">군형법상 상관모욕죄의 입법적 및 해석적 오류</h3>
-          <p class="src">법조 통권 제764호, 122-147</p>
-        </div></li>
-        <li class="row"><span class="when">2024. 12.</span><div class="item">
-          <h3 class="t">선거 관련 법제에 관한 헌법학적 연구<span class="st">- 선거범죄로 인한 당선무효를 중심으로 -</span></h3>
-          <p class="src">법제 통권 제707호, 115-142</p>
-          <p class="note">&lt;서강대학교 연구비 지원&gt;</p>
-        </div></li>
-        <li class="row"><span class="when">2024. 12.</span><div class="item">
-          <h3 class="t">우리나라의 적극행정 법제에 관한 연구<span class="st">- 제도의 모호성과 모순성 및 무가치성 문제를 중심으로 -</span></h3>
-          <p class="src">이유진·안요환, 법조 통권 제768호, 139-159</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 7.</span><div class="item">
-          <h3 class="t">위헌법률심판에서 재판의 전제성과 예외로서 심판의 필요성</h3>
-          <p class="src">명지법학 제24권 제1호, 19-37</p>
-          <p class="note">&lt;자유기업원 연구비 지원&gt;</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 9.</span><div class="item">
-          <h3 class="t">선거범죄 조사 관련 우리나라 헌법재판소의 해석과 일본 사례</h3>
-          <p class="src">법제 통권 제710호, 259-280</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 10.</span><div class="item">
-          <h3 class="t">민간투자법의 입법론적 개선 필요성에 관한 연구<span class="st">- 대법원 해석에 따른 감독명령의 사문화(死文化) -</span></h3>
-          <p class="src">안요환·정도준, 법조 통권 제773호, 272-293</p>
-          <p class="note">&lt;자유기업원 연구비 지원&gt;</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 11.</span><div class="item">
-          <h3 class="t">우리 헌법상 선거제도와 선거관리 일반론</h3>
-          <p class="src">선거연구 제23호, 61-88</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 12.</span><div class="item">
-          <h3 class="t">사이버안보 업무에 관한 헌법학적 연구<span class="st">- 국가정보기관 직무로서의 문제를 중심으로 -</span></h3>
-          <p class="src">안요환·최은석, 법과정책 제31집 제3호, 181-208</p>
-          <p class="note">&lt;국고 연구비 지원&gt;</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 12.</span><div class="item">
-          <h3 class="t">공범과 신분에 관한 규정의 개선방안 연구</h3>
-          <p class="src">군사과학논집 제76집 통권, 37-54</p>
-        </div></li>
-        <li class="row"><span class="when">2025. 12.</span><div class="item">
-          <h3 class="t">헌법적 관점에서 본 우주법상 전유화 금지 원칙과 우주사고 책임</h3>
-          <p class="src">안요환·조원용, 법과정책연구 제25집 제4호, 39-65</p>
-        </div></li>
-        <li class="row"><span class="when">2026. 4.</span><div class="item">
-          <h3 class="t">근우주 영역의 규범적 공백에 관한 일고찰</h3>
-          <p class="src">조정흠·이의섭·박세혁·최지웅·안요환, 항공우주정책·법학회지 제41권 제1호, 129-149</p>
-        </div></li>
-        <li class="row"><span class="when">2026. 5.</span><div class="item">
-          <h3 class="t">선거관리 주체의 독립성과 권한 통제에 관한 비교연구: 미국 및 캐나다 법제 사례를 중심으로</h3>
-          <p class="src">선거연구 통권 제24호, 65-85</p>
-        </div></li>
-      </ol>
-    </section>
-
-    <section id="projects">
-      <h2>연구과제/보고서</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2021</span><div class="item"><span class="t">외국의 재선거와 보궐선거</span><span class="src">중앙선거관리위원회</span></div></li>
-        <li class="row"><span class="when">2024</span><div class="item"><span class="t">우리나라 공직선거법의 개선방안에 관한 헌법학적 연구</span><span class="src">서강대학교</span></div></li>
-        <li class="row"><span class="when">2025</span><div class="item"><span class="t">사이버안보 업무에 관한 헌법학적 연구</span><span class="src">공군사관학교</span></div></li>
-        <li class="row"><span class="when">2026</span><div class="item"><span class="t">북한 공무원·행정관료제도에 관한 법적 연구</span><span class="src">공군사관학교</span></div></li>
-      </ol>
-    </section>
-
-    <section id="talks">
-      <h2>학술대회 발표/토론</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2023. 6. 16.</span><div class="item">
-          <span class="t">중대재해처벌법의 적용에서 항공분야의 특수성과 관련 법적 쟁점</span>
-          <span class="src">한국항공우주정책·법학회 제70회 학술대회 (토론)</span>
-        </div></li>
-        <li class="row"><span class="when">2024. 8. 30.</span><div class="item">
-          <span class="t">선거범죄로 인한 당선무효의 존립방안</span>
-          <span class="src">제6회 한국헌법학자대회, 한국헌법학회·한국법제연구원 (발표)</span>
-        </div></li>
-        <li class="row"><span class="when">2025. 4. 19.</span><div class="item">
-          <span class="t">위헌법률심판의 적법요건 판단에 관한 일고찰</span>
-          <span class="src">한국헌법판례연구학회 제149회 월례발표회 (발표)</span>
-        </div></li>
-        <li class="row"><span class="when">2025. 8. 28.</span><div class="item">
-          <span class="t">우주법제의 헌법적 쟁점</span>
-          <span class="src">제7회 한국헌법학자대회, 한국헌법학회·한국법제연구원·대한민국시도지사협의회·제주도특별자치도·중앙선거관리위원회·국회입법조사처·서울시립대학교 법학연구소 (발표)</span>
-        </div></li>
-      </ol>
-    </section>
-
-    <section id="awards">
-      <h2>수상</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2024</span><div class="item">
-          <span class="t">Ewha Law Review 최우수 논문상</span>
-          <span class="src">이화여자대학교 법학전문대학원</span>
-        </div></li>
-      </ol>
-    </section>
-  </main>
+<div class="view" id="view-ko" lang="ko">
+<header class="mast"><div class="mast-in">
+<div class="mast-top"><div class="lang" role="group" aria-label="언어"><button type="button" data-lang="ko" aria-pressed="true">한국어</button><span aria-hidden="true">/</span><button type="button" data-lang="en" aria-pressed="false">English</button></div></div>
+<div class="hero">
+<div class="frame"><img class="photo" src="data:image/jpeg;base64,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" alt="안요환" width="120" height="160" draggable="false"></div>
+<div class="who"><h1 class="name">안요환</h1><p class="role">공군사관학교 항공우주정책학과</p>
+<ul class="fields"><li>입법정책</li><li>정치관계법</li><li>헌법</li></ul></div>
+<blockquote class="epi" lang="de"><p>“Drei berichtigende Worte des Gesetzgebers und ganze Bibliotheken werden zu Makulatur.”</p><cite lang="ko">J. H. von Kirchmann, 「학문으로서 법학의 무가치성」(1847)</cite></blockquote>
+</div></div></header>
+<nav class="nav" aria-label="목차"><div class="nav-in"><a href="#intro">소개</a><a href="#teaching">강의과목</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#theses">학위논문</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></div></nav>
+<main class="main">
+<section class="intro" id="intro" aria-label="소개"><p class="stmt">율리우스 폰 키르히만은 입법권자가 세 마디만 고치면 법학서적은 모두 휴지조각이 된다며 법학의 학문적 가치를 비판하였다.</p><p class="stmt">그러나 법학이 학문으로서 존재하기에, <strong>나의 연구는 입법권자로 하여금 문제의 세 마디를 바로잡도록 할 것이다.</strong></p></section>
+<div class="pair">
+<section class="sec" id="teaching"><h2 class="h">강의과목</h2><ul class="chips"><li>법학개론</li><li>융합캡스톤</li><li>행정법</li><li>항공우주법</li><li>헌법과 민주시민</li></ul></section>
+<section class="sec" id="education"><h2 class="h">학력</h2><ul class="edu"><li><span class="school">서강대학교</span><span class="deg">법학박사</span></li><li><span class="school">서강대학교</span><span class="deg">법학석사</span></li><li><span class="school">University of Queensland</span><span class="deg">정치학석사</span></li><li><span class="school">연세대학교</span><span class="deg">정치학사</span></li></ul></section>
 </div>
-
-<div class="wrap" id="view-en" lang="en" hidden>
-  <aside>
-    <div class="id">
-      <div class="lang-switch" role="group" aria-label="Language">
-        <button type="button" data-lang="ko" aria-pressed="false">한국어</button>
-        <button type="button" data-lang="en" aria-pressed="true">English</button>
-      </div>
-      <div>
-        <img class="photo" src="data:image/jpeg;base64,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" alt="Yohan Ahn" width="112" height="149" draggable="false">
-        <h1 class="name">Yohan Ahn</h1>
-      </div>
-      <nav class="toc" aria-label="Contents">
-        <a href="#en-teaching">Teaching</a>
-        <a href="#en-fields">Research Interests</a>
-        <a href="#en-education">Education</a>
-        <a href="#en-affiliation">Appointments</a>
-        <a href="#en-theses">Theses</a>
-        <a href="#en-papers">Journal Articles</a>
-        <a href="#en-projects">Research Projects &amp; Reports</a>
-        <a href="#en-talks">Conference Presentations</a>
-        <a href="#en-awards">Awards</a>
-      </nav>
-    </div>
-  </aside>
-
-  <main>
-    <section aria-label="Introduction">
-      <p class="kirchmann" lang="de">
-        <em>“Drei berichtigende Worte des Gesetzgebers und ganze Bibliotheken werden zu Makulatur.”</em><br>
-        <span lang="en">J. H. von Kirchmann, <i>Die Wertlosigkeit der Jurisprudenz als Wissenschaft</i> (1847)</span>
-      </p>
-      <p class="statement">Julius von Kirchmann dismissed the scholarly value of law, arguing that if the legislature changes just three words, every law book becomes waste paper.</p>
-      <p class="statement">Yet because law exists as a science, <strong>my research will lead the legislature to correct the three words in question.</strong></p>
-    </section>
-
-    <section id="en-teaching">
-      <h2>Teaching</h2>
-      <ul class="list plain">
-        <li>Introduction to Law</li>
-        <li>Convergence Capstone</li>
-        <li>Administrative Law</li>
-        <li>Air and Space Law</li>
-        <li>Constitution and Democratic Citizenship</li>
-      </ul>
-    </section>
-
-    <section id="en-fields">
-      <h2>Research Interests</h2>
-      <ul class="list plain">
-        <li>Legislative Policy</li>
-        <li>Election and Political Law</li>
-        <li>Constitutional Law</li>
-      </ul>
-    </section>
-
-    <section id="en-education">
-      <h2>Education</h2>
-      <ul class="list plain">
-        <li>B.A. in Political Science, Yonsei University</li>
-        <li>Master’s in Political Science, The University of Queensland</li>
-        <li>Master of Laws, Sogang University</li>
-        <li>Ph.D. in Law, Sogang University</li>
-      </ul>
-    </section>
-
-    <section id="en-affiliation">
-      <h2>Appointments</h2>
-      <ol class="list">
-        <li class="row"><span class="when">Jan 2023 – Dec 2026</span><div class="item"><span class="t">Department of Aerospace Policy, Korea Air Force Academy</span></div></li>
-        <li class="row"><span class="when">Apr 2022 – Jul 2022</span><div class="item"><span class="t">Electoral System Research Division, National Election Commission</span></div></li>
-        <li class="row"><span class="when">Jan 2020 – Feb 2021</span><div class="item"><span class="t">Planning and Legal Affairs Office, National Assembly Research Service</span></div></li>
-      </ol>
-    </section>
-
-    <section id="en-theses">
-      <h2>Theses</h2>
-      <ol class="list">
-        <li class="row"><span class="when">Aug 2022</span><div class="item">
-          <h3 class="t">A Study on Warrant Requirement and Investigations Conducted by the National Election Commission</h3>
-          <p class="src">Master’s thesis, Sogang University</p>
-        </div></li>
-        <li class="row"><span class="when">Aug 2026</span><div class="item">
-          <h3 class="t">The Independence and Political Neutrality of Korea’s National Election Commission</h3>
-          <p class="src">Doctoral dissertation, Sogang University</p>
-        </div></li>
-      </ol>
-    </section>
-
-    <section id="en-papers">
-      <h2>Journal Articles</h2>
-      <ol class="list">
-        <li class="row"><span class="when">Apr 2021</span><div class="item">
-          <h3 class="t">A Study on the Improvements of Korea’s Criminal Punishment Law for Severe Accidents</h3>
-          <p class="src">Legislation and Policy Studies, Vol. 13, No. 1, pp. 63–88</p>
-        </div></li>
-        <li class="row"><span class="when">Aug 2021</span><div class="item">
-          <h3 class="t">A Study on the Improvements of Korea’s Civil Act Article Regarding ‘Performance for Illegal Cause’</h3>
-          <p class="src">Legislation and Policy Studies, Vol. 13, No. 2, pp. 35–58</p>
-        </div></li>
-        <li class="row"><span class="when">Aug 2022</span><div class="item">
-          <h3 class="t">A Study on the Improvements of National Election Commission’s Investigative Powers</h3>
-          <p class="src">Legislation and Policy Studies, Vol. 14, No. 2, pp. 31–59</p>
-        </div></li>
-        <li class="row"><span class="when">Aug 2022</span><div class="item">
-          <h3 class="t">Constitutional Study Regarding the Scope of Korea’s Warrant Requirement for Administrative Institutions</h3>
-          <p class="src">Journal of Legislative Studies, Vol. 19, No. 2, pp. 159–184</p>
-        </div></li>
-        <li class="row"><span class="when">Dec 2023</span><div class="item">
-          <h3 class="t">Analysis on the Judicial Inclination of the Fifth Korean Constitutional Court Regarding Right to Freedom of Assembly and Association</h3>
-          <p class="src">Journal of Military Science Research, Vol. 74, pp. 107–124</p>
-        </div></li>
-        <li class="row"><span class="when">Mar 2024</span><div class="item">
-          <h3 class="t">A Study Regarding the Necessity of Transferring Absolute Ownership in Collateral Trust</h3>
-          <p class="src">Ewha Law Review, Vol. 13, pp. 71–88</p>
-        </div></li>
-        <li class="row"><span class="when">Apr 2024</span><div class="item">
-          <h3 class="t">Legislative and Interpretive Error in Korea’s Military Justice for Insult to Superior</h3>
-          <p class="src">Korean Lawyers Association Journal, No. 764, pp. 122–147</p>
-        </div></li>
-        <li class="row"><span class="when">Dec 2024</span><div class="item">
-          <h3 class="t">A Constitutional Study on Korea’s Election Law for Overturning of Election due to Election Crime</h3>
-          <p class="src">Beopje (Ministry of Government Legislation), No. 707, pp. 115–142</p>
-          <p class="note">Funded by Sogang University</p>
-        </div></li>
-        <li class="row"><span class="when">Dec 2024</span><div class="item">
-          <h3 class="t">A Study on Korea’s Legislation for Active Administration</h3>
-          <p class="src">Yujin Lee &amp; Yohan Ahn, Korean Lawyers Association Journal, No. 768, pp. 139–159</p>
-        </div></li>
-        <li class="row"><span class="when">Jul 2025</span><div class="item">
-          <h3 class="t">Determining Prerequisite for Constitutional Adjudication</h3>
-          <p class="src">Myongji Law Review, Vol. 24, No. 1, pp. 19–37</p>
-          <p class="note">Funded by the Center for Free Enterprise</p>
-        </div></li>
-        <li class="row"><span class="when">Sep 2025</span><div class="item">
-          <h3 class="t">Constitutional Court of Korea’s Interpretation on Election Crime Investigation in Comparative Perspective with Japan</h3>
-          <p class="src">Beopje (Ministry of Government Legislation), No. 710, pp. 259–280</p>
-        </div></li>
-        <li class="row"><span class="when">Oct 2025</span><div class="item">
-          <h3 class="t">Supreme Court of Korea’s Interpretation on ‘Supervision and Order’ for Public-Private Partnership Project Matters</h3>
-          <p class="src">Yohan Ahn &amp; Dojun Jeong, Korean Lawyers Association Journal, No. 773, pp. 272–293</p>
-          <p class="note">Funded by the Center for Free Enterprise</p>
-        </div></li>
-        <li class="row"><span class="when">Nov 2025</span><div class="item">
-          <h3 class="t">Constitutional Framework of the Electoral System and Election Management in Korea</h3>
-          <p class="src">The Study of Election, No. 23, pp. 61–88</p>
-        </div></li>
-        <li class="row"><span class="when">Dec 2025</span><div class="item">
-          <h3 class="t">A Constitutional Study on Cybersecurity Services: Issues Regarding the Duties of Korea’s National Intelligence Service</h3>
-          <p class="src">Yohan Ahn &amp; Eunseok Choi, Law &amp; Policy Review, Vol. 31, No. 3, pp. 181–208</p>
-          <p class="note">Government-funded</p>
-        </div></li>
-        <li class="row"><span class="when">Dec 2025</span><div class="item">
-          <h3 class="t">A Study on the Improvements of Korea’s Criminal Act Article Regarding ‘Complicity and Status’</h3>
-          <p class="src">Journal of Military Science Research, Vol. 76, pp. 37–54</p>
-        </div></li>
-        <li class="row"><span class="when">Dec 2025</span><div class="item">
-          <h3 class="t">Issues on Outer Space Treaty’s Non-Appropriation Principle and Liability Regime in Korea for Damage Caused by Space Objects: A Constitutional Perspective</h3>
-          <p class="src">Yohan Ahn &amp; Wonyong Cho, Journal of Law and Politics Research, Vol. 25, No. 4, pp. 39–65</p>
-        </div></li>
-        <li class="row"><span class="when">Apr 2026</span><div class="item">
-          <h3 class="t">A Study on the Normative Gap in Near Space</h3>
-          <p class="src">Jeongheum Cho, Uiseop Lee, Sehyeok Park, Jiwoong Choi &amp; Yohan Ahn, The Korean Journal of Air &amp; Space Law and Policy, Vol. 41, No. 1, pp. 129–149</p>
-        </div></li>
-        <li class="row"><span class="when">May 2026</span><div class="item">
-          <h3 class="t">Comparative Study on Independence and Authority Control of Election Management Bodies</h3>
-          <p class="src">The Study of Election, No. 24, pp. 65–85</p>
-        </div></li>
-      </ol>
-    </section>
-
-    <section id="en-projects">
-      <h2>Research Projects &amp; Reports</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2021</span><div class="item"><span class="t">Re-elections and By-elections in Foreign Countries</span><span class="src">National Election Commission</span></div></li>
-        <li class="row"><span class="when">2024</span><div class="item"><span class="t">A Constitutional Study on Improving Korea’s Public Official Election Act</span><span class="src">Sogang University</span></div></li>
-        <li class="row"><span class="when">2025</span><div class="item"><span class="t">A Constitutional Study on Cybersecurity Services</span><span class="src">Korea Air Force Academy</span></div></li>
-        <li class="row"><span class="when">2026</span><div class="item"><span class="t">A Legal Study on North Korea’s Civil Service and Administrative Bureaucracy</span><span class="src">Korea Air Force Academy</span></div></li>
-      </ol>
-    </section>
-
-    <section id="en-talks">
-      <h2>Conference Presentations</h2>
-      <ol class="list">
-        <li class="row"><span class="when">Jun 16, 2023</span><div class="item">
-          <span class="t">Legal Issues and the Distinct Nature of Aviation in Applying the Serious Accidents Punishment Act</span>
-          <span class="src">70th Conference, Korean Society of Air &amp; Space Law and Policy (Discussant)</span>
-        </div></li>
-        <li class="row"><span class="when">Aug 30, 2024</span><div class="item">
-          <span class="t">Whether to Retain the Nullification of Election Results for Election Crimes</span>
-          <span class="src">6th Korean Constitutional Law Scholars’ Conference, Korean Constitutional Law Association &amp; Korea Legislation Research Institute (Presenter)</span>
-        </div></li>
-        <li class="row"><span class="when">Apr 19, 2025</span><div class="item">
-          <span class="t">On Determining the Admissibility Requirements in Constitutional Review of Statutes</span>
-          <span class="src">149th Monthly Meeting, Korean Society of Constitutional Case Law (Presenter)</span>
-        </div></li>
-        <li class="row"><span class="when">Aug 28, 2025</span><div class="item">
-          <span class="t">Constitutional Issues in Space Legislation</span>
-          <span class="src">7th Korean Constitutional Law Scholars’ Conference, Korean Constitutional Law Association, Korea Legislation Research Institute, Governors Association of Korea, Jeju Special Self-Governing Province, National Election Commission, National Assembly Research Service &amp; Law Research Institute of the University of Seoul (Presenter)</span>
-        </div></li>
-      </ol>
-    </section>
-
-    <section id="en-awards">
-      <h2>Awards</h2>
-      <ol class="list">
-        <li class="row"><span class="when">2024</span><div class="item">
-          <span class="t">Best Paper Award, Ewha Law Review</span>
-          <span class="src">Ewha Womans University School of Law</span>
-        </div></li>
-      </ol>
-    </section>
-  </main>
+<div class="pair">
+<section class="sec" id="affiliation"><h2 class="h">소속</h2><ol class="aff"><li><span class="when">2023. 1. – 2026. 12.</span><strong class="org">공군사관학교</strong><span class="dept">항공우주정책학과</span></li><li><span class="when">2022. 4. – 2022. 7.</span><strong class="org">중앙선거관리위원회</strong><span class="dept">제도연구부</span></li><li><span class="when">2020. 1. – 2021. 2.</span><strong class="org">국회입법조사처</strong><span class="dept">기획법무담당관실</span></li></ol></section>
+<section class="sec" id="theses"><h2 class="h">학위논문</h2><ol class="thesis"><li><div class="meta-top"><span class="kind">박사</span><span class="when">2026. 8.</span></div><h3 class="ttl">선거관리위원회의 독립성과 정치적 중립성에 관한 연구</h3><p class="dept">박사학위논문, 서강대학교</p></li><li><div class="meta-top"><span class="kind">석사</span><span class="when">2022. 8.</span></div><h3 class="ttl">헌법상 영장주의와 선거관리위원회의 선거범죄 조사에 관한 연구</h3><p class="dept">석사학위논문, 서강대학교</p></li></ol></section>
 </div>
-
+<section class="sec" id="papers"><h2 class="h">연구논문</h2>
+<div class="yg"><div class="yr"><span>2026</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">선거관리 주체의 독립성과 권한 통제에 관한 비교연구: 미국 및 캐나다 법제 사례를 중심으로</h3>
+<p class="meta"><span><span class="jr">선거연구</span> 통권 제24호</span><span class="dot" aria-hidden="true">·</span><span>65-85</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2026. 5.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">근우주 영역의 규범적 공백에 관한 일고찰</h3>
+<p class="by">조정흠·이의섭·박세혁·최지웅·안요환</p>
+<p class="meta"><span><span class="jr">항공우주정책·법학회지</span> 제41권 제1호</span><span class="dot" aria-hidden="true">·</span><span>129-149</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2026. 4.</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2025</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">헌법적 관점에서 본 우주법상 전유화 금지 원칙과 우주사고 책임</h3>
+<p class="by">안요환·조원용</p>
+<p class="meta"><span><span class="jr">법과정책연구</span> 제25집 제4호</span><span class="dot" aria-hidden="true">·</span><span>39-65</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 12.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">공범과 신분에 관한 규정의 개선방안 연구</h3>
+<p class="meta"><span><span class="jr">군사과학논집</span> 제76집 통권</span><span class="dot" aria-hidden="true">·</span><span>37-54</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 12.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">사이버안보 업무에 관한 헌법학적 연구<span class="sub">- 국가정보기관 직무로서의 문제를 중심으로 -</span></h3>
+<p class="by">안요환·최은석</p>
+<p class="meta"><span><span class="jr">법과정책</span> 제31집 제3호</span><span class="dot" aria-hidden="true">·</span><span>181-208</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 12.</span></span></p>
+<p class="fund">국고 연구비 지원</p>
+</li>
+<li class="pub">
+<h3 class="ttl">우리 헌법상 선거제도와 선거관리 일반론</h3>
+<p class="meta"><span><span class="jr">선거연구</span> 제23호</span><span class="dot" aria-hidden="true">·</span><span>61-88</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 11.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">민간투자법의 입법론적 개선 필요성에 관한 연구<span class="sub">- 대법원 해석에 따른 감독명령의 사문화(死文化) -</span></h3>
+<p class="by">안요환·정도준</p>
+<p class="meta"><span><span class="jr">법조</span> 통권 제773호</span><span class="dot" aria-hidden="true">·</span><span>272-293</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 10.</span></span></p>
+<p class="fund">자유기업원 연구비 지원</p>
+</li>
+<li class="pub">
+<h3 class="ttl">선거범죄 조사 관련 우리나라 헌법재판소의 해석과 일본 사례</h3>
+<p class="meta"><span><span class="jr">법제</span> 통권 제710호</span><span class="dot" aria-hidden="true">·</span><span>259-280</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 9.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">위헌법률심판에서 재판의 전제성과 예외로서 심판의 필요성</h3>
+<p class="meta"><span><span class="jr">명지법학</span> 제24권 제1호</span><span class="dot" aria-hidden="true">·</span><span>19-37</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2025. 7.</span></span></p>
+<p class="fund">자유기업원 연구비 지원</p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2024</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">우리나라의 적극행정 법제에 관한 연구<span class="sub">- 제도의 모호성과 모순성 및 무가치성 문제를 중심으로 -</span></h3>
+<p class="by">이유진·안요환</p>
+<p class="meta"><span><span class="jr">법조</span> 통권 제768호</span><span class="dot" aria-hidden="true">·</span><span>139-159</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2024. 12.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">선거 관련 법제에 관한 헌법학적 연구<span class="sub">- 선거범죄로 인한 당선무효를 중심으로 -</span></h3>
+<p class="meta"><span><span class="jr">법제</span> 통권 제707호</span><span class="dot" aria-hidden="true">·</span><span>115-142</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2024. 12.</span></span></p>
+<p class="fund">서강대학교 연구비 지원</p>
+</li>
+<li class="pub">
+<h3 class="ttl">군형법상 상관모욕죄의 입법적 및 해석적 오류</h3>
+<p class="meta"><span><span class="jr">법조</span> 통권 제764호</span><span class="dot" aria-hidden="true">·</span><span>122-147</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2024. 4.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">부동산 담보신탁에서 완전한 소유권의 이전 필요성에 관한 검토<span class="sub">- 대법원 2022. 5. 12. 선고 2017다278187 판결을 중심으로 -</span></h3>
+<p class="meta"><span><span class="jr">Ewha Law Review</span> 제13권호</span><span class="dot" aria-hidden="true">·</span><span>71-88</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2024. 3.</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2023</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">제5기 헌법재판소 결정에 대한 성향분석<span class="sub">- 집회·결사의 자유를 중심으로 -</span></h3>
+<p class="meta"><span><span class="jr">군사과학논집</span> 제74집 통권</span><span class="dot" aria-hidden="true">·</span><span>107-124</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2023. 12.</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2022</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">헌법상 영장주의에 관한 일고찰<span class="sub">- 적용범위의 현실화를 위한 개헌안을 중심으로 -</span></h3>
+<p class="meta"><span><span class="jr">입법학연구</span> 제19권 제2호</span><span class="dot" aria-hidden="true">·</span><span>159-184</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2022. 8.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">선거관리위원회 조사권에 관한 일고찰</h3>
+<p class="meta"><span><span class="jr">입법과정책</span> 제14권 제2호</span><span class="dot" aria-hidden="true">·</span><span>31-59</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2022. 8.</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2021</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">불법원인급여에 대한 반환 금지 규정의 개선방안 연구<span class="sub">- 대법원 1993. 12. 10. 선고 93다12947 판결을 기초로 -</span></h3>
+<p class="meta"><span><span class="jr">입법과정책</span> 제13권 제2호</span><span class="dot" aria-hidden="true">·</span><span>35-58</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2021. 8.</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">우리나라 중대재해처벌 관련 법제의 개선방안 연구<span class="sub">- 「중대재해처벌법」을 중심으로 -</span></h3>
+<p class="meta"><span><span class="jr">입법과정책</span> 제13권 제1호</span><span class="dot" aria-hidden="true">·</span><span>63-88</span><span class="dot" aria-hidden="true">·</span><span><span class="when">2021. 4.</span></span></p>
+</li>
+</ol></div>
+</section>
+<section class="sec" id="projects"><h2 class="h">연구과제/보고서</h2><ol class="rows"><li class="row"><span class="when">2026</span><div><p class="ttl">북한 공무원·행정관료제도에 관한 법적 연구</p><p class="dept">공군사관학교</p></div></li><li class="row"><span class="when">2025</span><div><p class="ttl">사이버안보 업무에 관한 헌법학적 연구</p><p class="dept">공군사관학교</p></div></li><li class="row"><span class="when">2024</span><div><p class="ttl">우리나라 공직선거법의 개선방안에 관한 헌법학적 연구</p><p class="dept">서강대학교</p></div></li><li class="row"><span class="when">2021</span><div><p class="ttl">외국의 재선거와 보궐선거</p><p class="dept">중앙선거관리위원회</p></div></li></ol></section>
+<section class="sec" id="talks"><h2 class="h">학술대회 발표/토론</h2><ol class="rows"><li class="row"><div class="when-col"><span class="when">2025. 8. 28.</span><span class="rtag">발표</span></div><div><p class="ttl">우주법제의 헌법적 쟁점</p><p class="dept">제7회 한국헌법학자대회, 한국헌법학회·한국법제연구원·대한민국시도지사협의회·제주도특별자치도·중앙선거관리위원회·국회입법조사처·서울시립대학교 법학연구소</p></div></li><li class="row"><div class="when-col"><span class="when">2025. 4. 19.</span><span class="rtag">발표</span></div><div><p class="ttl">위헌법률심판의 적법요건 판단에 관한 일고찰</p><p class="dept">한국헌법판례연구학회 제149회 월례발표회</p></div></li><li class="row"><div class="when-col"><span class="when">2024. 8. 30.</span><span class="rtag">발표</span></div><div><p class="ttl">선거범죄로 인한 당선무효의 존립방안</p><p class="dept">제6회 한국헌법학자대회, 한국헌법학회·한국법제연구원</p></div></li><li class="row"><div class="when-col"><span class="when">2023. 6. 16.</span><span class="rtag">토론</span></div><div><p class="ttl">중대재해처벌법의 적용에서 항공분야의 특수성과 관련 법적 쟁점</p><p class="dept">한국항공우주정책·법학회 제70회 학술대회</p></div></li></ol></section>
+<section class="sec" id="awards"><h2 class="h">수상</h2><ol class="rows"><li class="row"><span class="when">2024</span><div><p class="ttl">Ewha Law Review 최우수 논문상</p><p class="dept">이화여자대학교 법학전문대학원</p></div></li></ol></section>
+</main>
+<footer class="foot"><div class="foot-in">© 2026 안요환</div></footer>
+</div>
+<div class="view" id="view-en" lang="en" hidden>
+<header class="mast"><div class="mast-in">
+<div class="mast-top"><div class="lang" role="group" aria-label="Language"><button type="button" data-lang="ko" aria-pressed="false">한국어</button><span aria-hidden="true">/</span><button type="button" data-lang="en" aria-pressed="true">English</button></div></div>
+<div class="hero">
+<div class="frame"><img class="photo" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAFAAPADASIAAhEBAxEB/8QAHAABAAEFAQEAAAAAAAAAAAAAAAIBAwUGBwQI/8QAQhAAAQMCBAMFBQYDBgYDAAAAAQACAwQRBRIhMQZBURMiYXGBBzKRscEUI0JSodEzQ+EVFnKCsvAXJGJzkvFEU6L/xAAZAQEBAQEBAQAAAAAAAAAAAAAAAQIDBAX/xAAhEQEBAAIDAQACAwEAAAAAAAAAAQIRAyExEiJBBDJRE//aAAwDAQACEQMRAD8A7MiIgIiICIiAiIgIiICIiAiIgIiogqiIgIiICIiAiIgIiICIiAiIgIiICIiAiIgIiICIiAqKzWVtLh9O6orKiOCJu75HWC5vxj7UqaJpw/Bw6UyCz6jMWWvybz9UHQa3GsMw52Wsr4IXflc8ZvhutZq/atwvTVAhjnmqTfvOijOUeptf0XJKniCWqbLH2cNO1ze82nBaD5kklx8T1WuTV+V9oj7upAV0rtWJ+12lbRu/s+ikE7gcrprWb4kDda3F7ZcahH3kNNOM17mIg26aH6LnTqsy5KgkPbHYuHU32VucyzVDhG3uuA05BXS9O44F7YcHr3iLE4XUBO0oOeP1O4+C3egxjDcUaHUNbDUAtzAMfc28l8ytjZDRQh0YbKC7tD+Ijl+uiyVHjVRgs9NUYdKYZIZ7tLTcOOoII5i11NJqPpVFz6i9rWHTmnikpJu0IHbluzPEdetln4uNsKleW5algHN8WXTrlJzfoojYkUWPbIxr2ODmuFwRzCkgIiICIiAiIgIiICIiAiIgIiICIiAvHi2J0+D4ZPX1TssULC49XHkB4nZXquqgoaWSqqZWxQxNLnvcbBoC4rxlxxLxPJ2NMwxYfES6MH3nnYOd+uisGM4m4qr8fqX1NVJaKPSOFh7rD08fNafK6Z5JGpNzc/PyXvke10WXUxh5cb/iPIKDj9mAbbNO7kdmn/fwWleHsJWwSh+bOMut9h+6hW0wo4qcx2c2Rl3v3Bd0+FvivXO9wpiWC9+63q5x3d9ArMbZ6Vgjc7M19rxkXv6Ii3SdkW5SGlpHea5/+ysgGt7WOemIY5gyljjcPHReGekjLM7GmF/Tkf2UI6iVjN7lvUbqKzEsYe1r2BzWu0IvfIV4YpXQSvpXC5YbN6Ecj/VVjrrPLS1wvuNwf2Uqxt4mVMYu5ndePDqir8U0lHI+Md0uN84NjbYG/wCiqyvkw+YXc8NLtZmnvq1A8TQdXAXF1SZhfTGMNzWYSzTfoD4hB2PgfjyI09PhmJyXvpFVaW8A/p5/FdFBuF8uYbMY4YmPdYZrEnku1ezvieTEIn4TWSCSanYDE8nVzdrenyUsSt6REUQREQEREBERAREQEREBERARFj8exNmDYFW4i/8A+PC54vzNtB8bIOY+13id08n9iUbw6OA3qA0+9Jyb6Lm5a6GjjjkcQ9zdQDsLr11Dn1NSaid5dO9xkeSd3HUleWZw77yQXP2vyHRbirTXgRgj+WTl63VtgLryv15DxvuqRfwyXuAFyNfmpNkOUviFw3QOd9P3RXo7wJJabjkxtyPDwVp80kX8OEtJ5kgErHzV8rjlbKbeGgXnMr3bvuoWvTLM4k5gR/nUI8zrka28VYGY/iPqvXQxOfJlcNCNxyPVS1IvU4Y8/eaG1geYXqjcRIYpQLObbMOfivJTC9URILgmxty8Ves6N/Zu94EgLUFY4/stSLe4/TwBU4nvaHxk95jr+ioXCRuT8w/2VKN7ZLPsMxaWO+iCoka5hhZu4XA6G/8ARZOgxOeiraerppnxTxgPFtwR/srDvjMb45Ru21/iQr+ZzSagaiNwt5FQfR/DWOw8Q4LFXRFuY9yVo/C8bj6+qyy477LMaNHj7sPe60Ncywb0lbqD6i49AuwrJVUREQREQEREBERAREQEREBaF7Xq51NwvDTDRtTUtD9dw0F1viAt9XMPbgXDBMNA2NQ4X6HL/wC0hHKO3cYXSk6m4HmoPhzZI3XytGZxPMq0Hh0rWfhbrqr0svc30ettLE7RIWscbMYLm3MqxUS5hlOkbdA0c1dkPcebaF1lCGldVThrRcBZt1Fk30sU1BU18lo2WC2Cg4KqJSHSEW6bLZMBwZsUTTlHituo6JrbXC82XLbenrx4MZN1ojeBnFzcsYy8ySvTLwq2npHujZZ7R7x0C6G2BrR7oWPxmJrqMxgAF2o9NfnZSZVv4xcmloDAWFuuYOLj01srUjBJDbQSEA36OC2+vw3JSxANvZpatWqojS1Fnc9R6rvhnt5uTj128Njkvs4EnyKi2TspbgaOs4eavTMs3O3XMvHI/ua7sNx5Lrtx0yMrA+4HQ29dUbl+zP8AANbtzFlYZU3Eb+gHyXoJb7o2b3j480GV4ZqH02O08rXWdFVxOaTsO8Lr6OXy2yd0UrHMJBdJcWX1FGSY2k7kC6zUqaIiiCIiAiIgIiICIiAiIgLQPbLAJeC43ltzHWRkHpo4Lf1qXtPi7XgSu27jo3f/ALCEfPAdkmJOw5KR7wjaDpaysyk6m/ReyGnkkiYWt8j5K703ray/VpYd8xKzfD1KHSajvArHYlSSMyTMYS027w8v3C2rg2hdVu7YDTmFz5L+LtxY/l22/C6S0bdFm4YbBQpqfs27L1tLRuvLI9lqDxYLwVcRlNrbD4f7ssmcp22UDG0m61pJWt4jRHsGtbe42WlcTYW8RR1ABAByn4/uurSU7ZBawNlicU4c/tGmdDoA4fA3vf8ARMdyplJlNOT0Mf2iAteyxuL+V/8A2reLYLLT/ftF2E625cvnddApuCqullffI5p1aSeV2kj9D8VkZOH2NoTBNE1wA1NveuLOC6/dlcf+Us04uQ+ImNwt5r1MmzRxknUbrMcQ8PyUjTI1rssRy5vzA6j9vRa+zRpAXbHLcefLG43TI0MTqrE6OBoOZ9RG0W8XAL6mC+b+BaUVnGeERkXH2hjz5N730X0grXOqoiKIIiICIiAiIgIiICIiAtf47g+0cE4qy1yKcuFurSD9FsCwPFeIQR4BiMFnSPNM9tm20JGilsnqyW3p801LMgAtqSt+wHAC/C6eY7nvBpHXQrRpYzLXQwge8WgDzK7XSU7aaljjA/htAXPkvj08M9YKow2COmfRspS4PJNy3bnp6qzh7J8Ia8UcL7uN33YbLPy1sMVzM8NA5uKx0vGWFwueyNstQWC7+yjvlHmucy/Ud7j+6sDifE43feQG/Sy9lNxLJI4NliN+ZAWFn43wGte2MxzwucbBz4xofGxJC9TWNc1skTw9jxcOadCFMrZ7Fx1fK2mCq7RoLTe6nNUdiwkleHCoyWCxup4qwthKw6MbW8STQG0bb62XhHEGK1BtEH2d+VuytvjiaHT1Dw1jRcudoAvKeNsKwp4jbR1Dri4ebMaR4X1/Rbxtvkc8tT2tho6zE227USlttQVkaasqpfu5Yu7bc8lrVJx1Q1jY+0p56btSQzO0EOt0IWZpa+OcgxSBzT0S2/tJJe4uYxh0NZh8sTowczTbzXF3QZZ5Y/yPI/Vd4cM8fouL4pCIeIK6IbF5IC3xXty5p1G3+x2hM/FRqSBalpnO8i4ho/QldvXLvZnS/wB3MMqMRrmsY6ryWLnWLWDYepK6hG9skbXtN2uFwusyl8ebPDLH1JERaYEREBERAREQEREBERBRcmnnr4+J6qOMOlE8xa5jyctuvhousrR6+FtLjtdIGEuyhzfInVcOadR7f4mUlyl/xx99K6LisxujLXMqAC3p3l19jA9tlz/EmufxaZ8oAlMbtumi6FAQNFMrvTWGPzuMdX4FDWuBkLrDcDmvCzhzDaRsgjD4S8Fr7C4cD1W1NAKo+lik95oPmsTc8der60EcJYJSzMnY+UvYbjmsxhOERUsT2RueYnHMA8bHnbzWwGhp2G4ibfyVJAALBS231ZJPEcKhEchHJXsVpg4AW0VaLSQr01wuwFJOk3+TVcRwSGtjY2WNz2MdmDWutc9SvBVYFhtZIx1ZSTExtyjTl0uFt8YuNlcEQPJJat1+2sxcP4TLC2KPD3BjRZmf8Pksjh+Bx0Vsr3uHION7LNNjaOSOtZXW/Wd68eR7crbLlmLUZ/4g5Gtu0zC46i111SY6LR8aoqgcS/bqcOBYAXPHIkWHyKuN1tLj9WR7MXpaueGmLnuEYcbMGwPJdSwlr2YTStffMIm3v5Ln9C+Ssw55eLkSstfrey6TC3JCxn5WgLXDO7Wf5eX4Y4poiL0PniIiAiIgIiICIiAiIgotc4hjZDWsmPdE0ZYXHYFbIvDi9MyooX523yC/7rGc3i68WXznK5xLhjYMTDpYy4WIa61x4LLxOsQvU6FjYOwvdg5X1XiPdNl5o+hldsjG/TdXs4ssY2ew3U/tGm6u009skgDV4JJjJKI49XFWqiqNrA3PRWGTfYn9vK4AOFtTss3tuTTNUgDHd7dX6twcywK1UcTUctSYoqhjnjkCk/EsFOA6WZjAdO86y1v9M/O2WmqHUsrMw7j9L9CvbFUtc0G4WvHEGYxG2GFzXBpDszTdXoZJITkcdlnemtbjYO2CtvlCxbau3NXPtNxurtm46XJpdbLzGNjw4FgLnjbm48gqOdmcvdRNaDnyjNawdzCIjgdA+OWKnkABkeJHNH4QFu6w2DU7BUSShoBA18ysyvRxzUeP+Rl9ZiIi6POIiICIiAiIgIiICIiAqOAcCCLgjUKqINPxOnqMOlLHRPfAT3JGtvcdD0KxshcRmdG9l+TmkfNdBWB4pps0EVQB7pyOPgdv1XHLj13Hqw5rbMa1fUBVAJ3Qi6rfKFweuJxwtvmcoVNI2pjyPaC09QvDiGKNo2ZnB5aN8jSV5/74UHZgQO7Q9ToFZGu05OGoC2zBZWYeGILl0jS93VxvZVbxMJbffMb1AIVZOJmhxyztAOw0WtL8VlaHD4qKMtijay+9hurkjATYhYSPi+MG07Gkc3NOvwXposfpcTleKfO5rLXfkIbfpdZsTuPU5haUaTuroIey6pbRZiVWPdZiHBMVaGvidC+OUBwDnFpZcbeKxlJCamrigG73gfuugNAa0AbDQLthhMvXm5eS4WaebD6M0dMGOeHyE3e625XqRF3k08dtt3RERVBERAREQEREBERAREQEREBWK2mbWUkkDtntsD0PIq+qIOdyMdFI6N4s5hII8VbLr6FZPiSHscXkI2kAf+lvosPm1Xkymrp9LDLclXYowJMxAXnqcPpO0LxBHruMq9cQuLqs0Re3xWJdOsumMdFhkgLaiijcb2vlCrH/AGTSMyQUUNxt92FbqaCY3LHkK1Bh85ddziun26fb3tZHVm8kbLHllXqfHGyIMjYGgbAC1lGmpuxbrqfFXXbarFy2xbtaa6zQEL7BQlcAoNOZ1lIxWycK0RknfWPHdj7rP8R3/T5raljeH4uzwWDSxcC74lZNezGaj5vJl9ZWiIi0wIiICIiAiIgIiICIiAiIgIiICIiDU+K2f88w9Yh8ytYe/K7VbZxTb7XF/wBv6rVqiLdeXP8AtXu4v6Rdp527XXrDwQsGc8Z0V2Osc0WKxp2lZjuHohbGNli/tpKGtKaXbJlzV555mgaLwurCVZdI+Q+Cml2vPkzOsDdemmYSQSvPBCSRdZGBllWK3nCwG4ZTAf8A1hetePCXB+F05HJgC9i9k8fNvoiIqgiIgIiICIiAiIgIiICIiAiIgLHY5jNLgGEzYjVutHENGjd7uTR4kr0V1fSYZSPq62dkEMYu57zYf1PguQ43xMeN+MMKoIYyzD2VTAxjt363LnDyG3JWTY3zF2zSwUlRPbtHxWfYaB29v1WElZZbhVU4rKZ8LrBx7zCeRWrzRuje6N7bOabEHkV5+XHV29nDlvHTFyRX1Vh0N+SyL4+isuYuLsx7oyNlbLHXXuc0KIjF9kVYiiJ3Xrig8FKKMdF6WMAtooqkcdl6Y2qLW2Xuw2kNVVsZbujvPPQKybumcrqbevEMUl4ewGkxDLmhiez7SwDXs3GxI8QSCtkgniqYI54JGyRSNDmPabhwOxWHxyjbieD1tEQC2anewDobafrZc89nnG4wrLhWJSf8m43jkP8AJJ3v/wBPyXvmPT51u66+ii1zXtD2ODmuFwQbghSWUEREBERAREQEREBEVC4AEk2A3KCqLW8X48wDCC6N1X9pmH8un759TsPitIxj2q4lUgsw2COjZ+d3ff8AsPgVZjaOp1lfSYfD21ZUxU8f5pXho/VaXj3tTwyhjdHhTDXTcnOBZGPXc+nxXKq3E6zEpzPWVMk8h/FI4uP9F4n67rcwTbI45xLimP1PbYhUukAPcjGjGeTeXnuvVwEQeN8LzbGR/wDocteebaLKcKVIpeK8JlOwqmg+un1WtD6AAuFj8Ww41bO3hA7dg1b+cfuskBYJbouWUlmq3jlcbuNLeB/7Vl7brY8Ywsy5qqlbd+8kY/F4jxWvXDhoV5MsbjXvwymU3Hmcw30VA0q+5qoGjmsNqsbbVXmjW6i0E8tl6aWnkqZhFAzPId+jR1KepvXqsEMk0rYomZpHHQfU+C2akpWUNP2TDme7V77e8f2VKGgioIi1hzyO9+Q7n+i9BXq4+P57rx8vJ9dTxE2t6L5zc/LM4jTvH5r6CxapFHhFZVE27KB7/g0r53voDzO69E8eet54P9oNVgRZR1gdU4fewbfvxf4eo8Pguu4ZitDjFI2qoKlk8TubTqD0I3B8182sdYL3UGJVeHVAno6mWnkH4o3EH+qlx2bfSCLkmE+1bEqfLHiNPFWMGhe37t/7H4BbxhHHeA4uWxtqxTTH+VUdw+h2PxWbjYrY0VAQQCDcHZVWQREQUWGxXi3A8HDhVV8ZkH8qPvv+A29Vx/FuM8bxbM2prpBGf5URyM+A39VgHTEnddJh/qbdLxT2syuzMwuhawbCSoNz55R+60zFeKcZxgEVtfLIw/y2nKz/AMRosLmuqZitzGQTLrKBdcqJcoh4Li2+o3VRMnooOKrqVFxA3QWnnVTppjT1UNQ3QxSNePQ3Vtw6lUGot1UH0tTTNqIGStNw9ocPVXgsDwbVmu4Vw+cm5MIB8xofks6DZc60rl6LCYxgfbk1VI20u72D8fiPH5rPAghVyhYyxmU1W8crjdxoNnDe+mluiqALXKzuNNw6StEDJstaRdzWi4A6v/L5qxhWDQ1rnvkq4Zo43ZXMgkzXPiRsvPeLKV65zY63XkoMPnxF5EQ7OJps+UjQeA6lbRSUcNFD2NO3T8Tju4+JXojgZFG2NjQxjRZrWiwCkQAu2GExebk5LmhawUCVVxVMt10cmo+0nEfsXCc0TTZ9U5sQ8jqf0C4xc6XXQ/a3V/8ANYfQg7B0rh+g+q52RrZdIi40q4CrLTbdTutIne2qkHlW8yoTY3VGewfivGcFcBR10jIx/Kcc7D6H6LecJ9rMbsrMWoS3kZac3Hq0/QrlOZSbIeqzcZTb6KwziHCMYA+w18Mrj+DNZ4/ynVZFfNMdQ5rgQ4gjYjktmwnj7HsMDWNrDPGP5dQM4+O4+KxcP8XbVT5qOyjc3VCdV0RO6iSigTr4IJLy1UL3PEsZyvb+q9IKoXC6CxDUve0tewtePgrhPqUOqpbxUFN0CbXVG6lB2b2UVYqOF3U5OtNO5vodR8yt4yrmXsgqAGV8HSRjvRwI+bf1XT1zvrSIFlqPtC43bwrh7Kalc12J1YPYg69k3m8/Qcz5LZsUxGnwqgkrKg2YwaDm48gPNcS43o58aDsed3qhn8QDbJyA8v3SLqtafUS1UrpZpHvkkJc973ElxPMlZDBMbxDAK5tdh8/ZvGjgdWyN/K4cx8lhYH3GvJXppMkZOi7amnPb6E4T4uoeK8PM1P8AdVMWk9O43LD1HVp5FZt2q+b+Dqyvw/iCPE6KUxiEfeDlID+AjmD/AFX0FgmMU2OYe2qg7rtpIzvG7of3XG9Vv9bewMU7WCkAoTPEUTnnkFBw32j1YquM6locC2BjIh4EC5/UrVt17MWnNXjFZUF2YyTvdfr3ivHddUVvp1VcwHPRUCoQb7oik9VHC27jryA3KtQunlf2kncb+Fqm2niz5y3vdVetYbIHmpBQt4pcjmtC4DqrgI6rz38VO/K6CO6BQBVcyCpcqeCryVCUEMzu0Lb7clUN6qD9JWuPPQq6blQRPgqXVXDqqBBEk+iNOqoVRp1QdC9k85GMV9Pexkpg5o8WuH7rrwkb2PauIa21yTyXD/ZnP2PGkLSbdtBIz1tf6LsE8c8ro4TYQNdmdrq7oFzy9anjCYo2oxutHaMLaVmkbDz/AOorzDh6JhMYbmY4WLTsR0W2SwtuCAArPZgyBRrb52xjDTg+P1lBazYZCG3/ACnUfoQvHV3cA35LZPaL2FXxnWGFxywlkcmujnNFj+3otdmjYHtc2NoIOniu08cnUOFeEGU+GQunj+8cM7/Mj6LZaSkqMMqxU0mgAs9nJ46FZXD2xzUFPNGWuZJG1wLdiCAdF7DC0ty20XJ1lemlqo6uBs0R0O4O7T0K8mO1QpMMnlJsI4nynya0n52VY4DSZpouneZycP3WA47rm/3NxOeN3dfC2Fh/xOAKknaOIAktBO53KppdVJsFAEk2XRlLloUv6pYhRLXNOZpvb8JRE7Kd+6rbHh3gVVxDWFx6KiuYO25GxSwuFGIWjF9zqVPxQUVQdVElPBURBuq21VAVIIK8lQ7KW6oUEJWlzDb0UmPzsBTwVqLuSOafMKC87ZQIF1O9h4KJNtlRbcNlHZymTqrZ94KDP8H1ApuMMJkvYfaWtP8AmuPqu/bsXzVTzmmqIahuhika8HpYgr6TjkEsTXtNw8ZgfA6rnk1FxwzMWMxjEY8GwqqxCQXFNE54HU8h8bLKD3Fzz2r4kYMEgomnWqmu7/CwX+ZHwSTdK5LVTyVFU6SV+Z8ji57uribk/FHklo11Gytn31c3HlsurDsPssxn7fw+/D5XXloX2b/23aj4G4+C3oBcO9m+JHDuLqZrjaOsvTv9dWn4gfFdybquWU1W54SaRLRfarUCHhanpwbGeqbp1DQT+y3qb3AuXe16ovU4VSB3usklI8yAPkUnpXOH22UW9bpIdVRp5LbK5uq2CjY8lJBWwHLXqrM7sxbGOZuVcvYaq1Ge0e5/jYeSC7sq30VDoqX0WhQlL2colVuoKNOquDqrLSLq4DzVE77qgNyqaJeyCp0KtS90tePXyVzdUkaHtLbIJb633Ub3UYySzXcaFNkAjVQO6mfkrbjqguWuwtK+geE6sVvCWGVF7l1MwE+IGU/JfPjTdpXZ/ZdVio4Lijvc080kZ8Ncw/1LGSxu38tcb9qtU6XiCCnJuyGnBt4ucT9Auxk2hJ8Fwjj2ft+MK650ZkZ8Gj90w9MmshutypXNreCAdVNoBGp5Lowu0c7qWqjqWmzonh48wb/RfSNPK2eKOVnuyNDh5EXXzW0X1K+guEpjU8MYbMdSaZg+DQPouebeLKVB91cY9p1UJ+Mnxh1xT08cfkbFx/1LstRq4Dqvn/imrFdxRidU03a6peGnwBy/RTFaw7zcoAl9UGg0WmUwSq3VPJAghO4tisDqdAkYysAHIKDu/P4M+an4IKl19E12Kobk7qhVFTsqc0OyiTZBFh1VwGwXmY7VXwbhBMFSvdQBVeSokLX0VQd7bqF1UG2yCIOWYjk7VTve6tzaAP5tUr6BQCrbwplQcVRWPoumeyCsAZilAXbGOZo87tP0XMWGy232a14o+MY4ibNqoXxevvD/AErGXix3F38A+IXz7xVMJuKsTffQ1LgD5afRfQLv4IXzlikpmxaskP46iQ/FxTBMnkA5FVv15Km/mBoq2v8ABdGU2b3XdeAJu04KwzwjLfg4hcJA1vbZdq9msmbg2kH5ZJGj/wAysZ+NYthxerbQ0c9W7aCF8h9ASvnR73PJe7VzjmPmV2v2l1po+FaloNnVGWEf5jr+gK4i86LM8WoDVykFBXAdFpFegHNHODGE9E09ValddzWdTc+SCrB3NdyblS9VS+iXVFb7Kl0vfdRJ18EFcyg5yF2isveNVB//2Q==" alt="Yohan Ahn" width="120" height="160" draggable="false"></div>
+<div class="who"><h1 class="name">Yohan Ahn</h1><p class="role">Department of Aerospace Policy, Korea Air Force Academy</p>
+<ul class="fields"><li>Legislative Policy</li><li>Election and Political Law</li><li>Constitutional Law</li></ul></div>
+<blockquote class="epi" lang="de"><p>“Drei berichtigende Worte des Gesetzgebers und ganze Bibliotheken werden zu Makulatur.”</p><cite lang="en">J. H. von Kirchmann, <i>Die Wertlosigkeit der Jurisprudenz als Wissenschaft</i> (1847)</cite></blockquote>
+</div></div></header>
+<nav class="nav" aria-label="Contents"><div class="nav-in"><a href="#en-intro">Introduction</a><a href="#en-teaching">Teaching</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-theses">Theses</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></div></nav>
+<main class="main">
+<section class="intro" id="en-intro" aria-label="Introduction"><p class="stmt">Julius von Kirchmann dismissed the scholarly value of law, arguing that if the legislature changes just three words, every law book becomes waste paper.</p><p class="stmt">Yet because law exists as a science, <strong>my research will lead the legislature to correct the three words in question.</strong></p></section>
+<div class="pair">
+<section class="sec" id="en-teaching"><h2 class="h">Teaching</h2><ul class="chips"><li>Introduction to Law</li><li>Convergence Capstone</li><li>Administrative Law</li><li>Air and Space Law</li><li>Constitution and Democratic Citizenship</li></ul></section>
+<section class="sec" id="en-education"><h2 class="h">Education</h2><ul class="edu"><li><span class="school">Sogang University</span><span class="deg">Ph.D. in Law</span></li><li><span class="school">Sogang University</span><span class="deg">Master of Laws</span></li><li><span class="school">The University of Queensland</span><span class="deg">Master’s in Political Science</span></li><li><span class="school">Yonsei University</span><span class="deg">B.A. in Political Science</span></li></ul></section>
+</div>
+<div class="pair">
+<section class="sec" id="en-affiliation"><h2 class="h">Appointments</h2><ol class="aff"><li><span class="when">Jan 2023 – Dec 2026</span><strong class="org">Korea Air Force Academy</strong><span class="dept">Department of Aerospace Policy</span></li><li><span class="when">Apr 2022 – Jul 2022</span><strong class="org">National Election Commission</strong><span class="dept">Electoral System Research Division</span></li><li><span class="when">Jan 2020 – Feb 2021</span><strong class="org">National Assembly Research Service</strong><span class="dept">Planning and Legal Affairs Office</span></li></ol></section>
+<section class="sec" id="en-theses"><h2 class="h">Theses</h2><ol class="thesis"><li><div class="meta-top"><span class="kind">Ph.D.</span><span class="when">Aug 2026</span></div><h3 class="ttl">The Independence and Political Neutrality of Korea’s National Election Commission</h3><p class="dept">Doctoral dissertation, Sogang University</p></li><li><div class="meta-top"><span class="kind">Master’s</span><span class="when">Aug 2022</span></div><h3 class="ttl">A Study on Warrant Requirement and Investigations Conducted by the National Election Commission</h3><p class="dept">Master’s thesis, Sogang University</p></li></ol></section>
+</div>
+<section class="sec" id="en-papers"><h2 class="h">Journal Articles</h2>
+<div class="yg"><div class="yr"><span>2026</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">Comparative Study on Independence and Authority Control of Election Management Bodies</h3>
+<p class="meta"><span><span class="jr">The Study of Election</span> No. 24</span><span class="dot" aria-hidden="true">·</span><span>pp. 65–85</span><span class="dot" aria-hidden="true">·</span><span><span class="when">May 2026</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Study on the Normative Gap in Near Space</h3>
+<p class="by">Jeongheum Cho, Uiseop Lee, Sehyeok Park, Jiwoong Choi &amp; Yohan Ahn</p>
+<p class="meta"><span><span class="jr">The Korean Journal of Air &amp; Space Law and Policy</span> Vol. 41, No. 1</span><span class="dot" aria-hidden="true">·</span><span>pp. 129–149</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Apr 2026</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2025</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">Issues on Outer Space Treaty’s Non-Appropriation Principle and Liability Regime in Korea for Damage Caused by Space Objects: A Constitutional Perspective</h3>
+<p class="by">Yohan Ahn &amp; Wonyong Cho</p>
+<p class="meta"><span><span class="jr">Journal of Law and Politics Research</span> Vol. 25, No. 4</span><span class="dot" aria-hidden="true">·</span><span>pp. 39–65</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Dec 2025</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Study on the Improvements of Korea’s Criminal Act Article Regarding ‘Complicity and Status’</h3>
+<p class="meta"><span><span class="jr">Journal of Military Science Research</span> Vol. 76</span><span class="dot" aria-hidden="true">·</span><span>pp. 37–54</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Dec 2025</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Constitutional Study on Cybersecurity Services: Issues Regarding the Duties of Korea’s National Intelligence Service</h3>
+<p class="by">Yohan Ahn &amp; Eunseok Choi</p>
+<p class="meta"><span><span class="jr">Law &amp; Policy Review</span> Vol. 31, No. 3</span><span class="dot" aria-hidden="true">·</span><span>pp. 181–208</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Dec 2025</span></span></p>
+<p class="fund">Government-funded</p>
+</li>
+<li class="pub">
+<h3 class="ttl">Constitutional Framework of the Electoral System and Election Management in Korea</h3>
+<p class="meta"><span><span class="jr">The Study of Election</span> No. 23</span><span class="dot" aria-hidden="true">·</span><span>pp. 61–88</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Nov 2025</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">Supreme Court of Korea’s Interpretation on ‘Supervision and Order’ for Public-Private Partnership Project Matters</h3>
+<p class="by">Yohan Ahn &amp; Dojun Jeong</p>
+<p class="meta"><span><span class="jr">Korean Lawyers Association Journal</span> No. 773</span><span class="dot" aria-hidden="true">·</span><span>pp. 272–293</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Oct 2025</span></span></p>
+<p class="fund">Funded by the Center for Free Enterprise</p>
+</li>
+<li class="pub">
+<h3 class="ttl">Constitutional Court of Korea’s Interpretation on Election Crime Investigation in Comparative Perspective with Japan</h3>
+<p class="meta"><span><span class="jr">Beopje (Ministry of Government Legislation)</span> No. 710</span><span class="dot" aria-hidden="true">·</span><span>pp. 259–280</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Sep 2025</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">Determining Prerequisite for Constitutional Adjudication</h3>
+<p class="meta"><span><span class="jr">Myongji Law Review</span> Vol. 24, No. 1</span><span class="dot" aria-hidden="true">·</span><span>pp. 19–37</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Jul 2025</span></span></p>
+<p class="fund">Funded by the Center for Free Enterprise</p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2024</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">A Study on Korea’s Legislation for Active Administration</h3>
+<p class="by">Yujin Lee &amp; Yohan Ahn</p>
+<p class="meta"><span><span class="jr">Korean Lawyers Association Journal</span> No. 768</span><span class="dot" aria-hidden="true">·</span><span>pp. 139–159</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Dec 2024</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Constitutional Study on Korea’s Election Law for Overturning of Election due to Election Crime</h3>
+<p class="meta"><span><span class="jr">Beopje (Ministry of Government Legislation)</span> No. 707</span><span class="dot" aria-hidden="true">·</span><span>pp. 115–142</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Dec 2024</span></span></p>
+<p class="fund">Funded by Sogang University</p>
+</li>
+<li class="pub">
+<h3 class="ttl">Legislative and Interpretive Error in Korea’s Military Justice for Insult to Superior</h3>
+<p class="meta"><span><span class="jr">Korean Lawyers Association Journal</span> No. 764</span><span class="dot" aria-hidden="true">·</span><span>pp. 122–147</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Apr 2024</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Study Regarding the Necessity of Transferring Absolute Ownership in Collateral Trust</h3>
+<p class="meta"><span><span class="jr">Ewha Law Review</span> Vol. 13</span><span class="dot" aria-hidden="true">·</span><span>pp. 71–88</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Mar 2024</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2023</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">Analysis on the Judicial Inclination of the Fifth Korean Constitutional Court Regarding Right to Freedom of Assembly and Association</h3>
+<p class="meta"><span><span class="jr">Journal of Military Science Research</span> Vol. 74</span><span class="dot" aria-hidden="true">·</span><span>pp. 107–124</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Dec 2023</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2022</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">Constitutional Study Regarding the Scope of Korea’s Warrant Requirement for Administrative Institutions</h3>
+<p class="meta"><span><span class="jr">Journal of Legislative Studies</span> Vol. 19, No. 2</span><span class="dot" aria-hidden="true">·</span><span>pp. 159–184</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Aug 2022</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Study on the Improvements of National Election Commission’s Investigative Powers</h3>
+<p class="meta"><span><span class="jr">Legislation and Policy Studies</span> Vol. 14, No. 2</span><span class="dot" aria-hidden="true">·</span><span>pp. 31–59</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Aug 2022</span></span></p>
+</li>
+</ol></div>
+<div class="yg"><div class="yr"><span>2021</span></div><ol class="pubs">
+<li class="pub">
+<h3 class="ttl">A Study on the Improvements of Korea’s Civil Act Article Regarding ‘Performance for Illegal Cause’</h3>
+<p class="meta"><span><span class="jr">Legislation and Policy Studies</span> Vol. 13, No. 2</span><span class="dot" aria-hidden="true">·</span><span>pp. 35–58</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Aug 2021</span></span></p>
+</li>
+<li class="pub">
+<h3 class="ttl">A Study on the Improvements of Korea’s Criminal Punishment Law for Severe Accidents</h3>
+<p class="meta"><span><span class="jr">Legislation and Policy Studies</span> Vol. 13, No. 1</span><span class="dot" aria-hidden="true">·</span><span>pp. 63–88</span><span class="dot" aria-hidden="true">·</span><span><span class="when">Apr 2021</span></span></p>
+</li>
+</ol></div>
+</section>
+<section class="sec" id="en-projects"><h2 class="h">Research Projects &amp; Reports</h2><ol class="rows"><li class="row"><span class="when">2026</span><div><p class="ttl">A Legal Study on North Korea’s Civil Service and Administrative Bureaucracy</p><p class="dept">Korea Air Force Academy</p></div></li><li class="row"><span class="when">2025</span><div><p class="ttl">A Constitutional Study on Cybersecurity Services</p><p class="dept">Korea Air Force Academy</p></div></li><li class="row"><span class="when">2024</span><div><p class="ttl">A Constitutional Study on Improving Korea’s Public Official Election Act</p><p class="dept">Sogang University</p></div></li><li class="row"><span class="when">2021</span><div><p class="ttl">Re-elections and By-elections in Foreign Countries</p><p class="dept">National Election Commission</p></div></li></ol></section>
+<section class="sec" id="en-talks"><h2 class="h">Conference Presentations</h2><ol class="rows"><li class="row"><div class="when-col"><span class="when">Aug 28, 2025</span><span class="rtag">Presenter</span></div><div><p class="ttl">Constitutional Issues in Space Legislation</p><p class="dept">7th Korean Constitutional Law Scholars’ Conference, Korean Constitutional Law Association, Korea Legislation Research Institute, Governors Association of Korea, Jeju Special Self-Governing Province, National Election Commission, National Assembly Research Service &amp; Law Research Institute of the University of Seoul</p></div></li><li class="row"><div class="when-col"><span class="when">Apr 19, 2025</span><span class="rtag">Presenter</span></div><div><p class="ttl">On Determining the Admissibility Requirements in Constitutional Review of Statutes</p><p class="dept">149th Monthly Meeting, Korean Society of Constitutional Case Law</p></div></li><li class="row"><div class="when-col"><span class="when">Aug 30, 2024</span><span class="rtag">Presenter</span></div><div><p class="ttl">Whether to Retain the Nullification of Election Results for Election Crimes</p><p class="dept">6th Korean Constitutional Law Scholars’ Conference, Korean Constitutional Law Association &amp; Korea Legislation Research Institute</p></div></li><li class="row"><div class="when-col"><span class="when">Jun 16, 2023</span><span class="rtag">Discussant</span></div><div><p class="ttl">Legal Issues and the Distinct Nature of Aviation in Applying the Serious Accidents Punishment Act</p><p class="dept">70th Conference, Korean Society of Air &amp; Space Law and Policy</p></div></li></ol></section>
+<section class="sec" id="en-awards"><h2 class="h">Awards</h2><ol class="rows"><li class="row"><span class="when">2024</span><div><p class="ttl">Best Paper Award, Ewha Law Review</p><p class="dept">Ewha Womans University School of Law</p></div></li></ol></section>
+</main>
+<footer class="foot"><div class="foot-in">© 2026 Yohan Ahn</div></footer>
+</div>
 <script>
 (function () {
   var views = { ko: document.getElementById('view-ko'), en: document.getElementById('view-en') };
-  var buttons = document.querySelectorAll('.lang-switch button');
+  var buttons = document.querySelectorAll('.lang button');
+
   function setLang(lang, save) {
     Object.keys(views).forEach(function (k) { views[k].hidden = k !== lang; });
     document.documentElement.lang = lang;
@@ -558,11 +510,40 @@ body { margin: 0; }
     if (save) { try { localStorage.setItem('lang', lang); } catch (e) {} }
   }
   buttons.forEach(function (b) {
-    b.addEventListener('click', function () { setLang(b.dataset.lang, true); window.scrollTo(0, 0); });
+    b.addEventListener('click', function () {
+      if (b.getAttribute('aria-pressed') === 'true') return;
+      setLang(b.dataset.lang, true);
+      window.scrollTo(0, 0);
+    });
   });
   var saved = null;
   try { saved = localStorage.getItem('lang'); } catch (e) {}
   setLang(saved === 'en' ? 'en' : 'ko', false);
+
+  // Highlight the section currently in view in each section bar.
+  if (!('IntersectionObserver' in window)) return;
+  Object.keys(views).forEach(function (k) {
+    var view = views[k];
+    var bar = view.querySelector('.nav-in');
+    var links = Array.prototype.slice.call(view.querySelectorAll('.nav a'));
+    var byId = {};
+    links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var a = byId[en.target.id];
+        if (!a) return;
+        links.forEach(function (l) { l.classList.toggle('on', l === a); });
+        if (bar.scrollWidth > bar.clientWidth) {
+          bar.scrollTo({ left: Math.max(0, a.offsetLeft - bar.clientWidth / 2 + a.offsetWidth / 2), behavior: 'smooth' });
+        }
+      });
+    }, { rootMargin: '-35% 0px -60% 0px' });
+    Object.keys(byId).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) obs.observe(el);
+    });
+  });
 })();
 </script>
 </body>
