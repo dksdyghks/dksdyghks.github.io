@@ -59,7 +59,7 @@ def write(items, REVIEW, out_js, subject, review_md, title, header):
         for blk in it['explain']:
             if 'h' in blk: blk['h'] = esc_text(blk['h'])
             for x in blk.get('items', []):
-                for k in ('why', 'h'):
+                for k in ('why', 'h', 'text'):
                     if k in x: x[k] = esc_text(x[k])
             if blk.get('t') == 'table':
                 blk['rows'] = [[esc_text(str(c)) for c in r] for r in blk['rows']]
