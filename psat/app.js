@@ -39,6 +39,7 @@
     return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
   }
   const snippet = (q) => { for (const b of q.body || []) { const t = b.t === 'table' ? `〈${b.caption || '표'}〉 ${(b.head || []).join(' · ')}` : b.t === 'box' ? (b.items || []).join(' ') : b.h; const p = plain(t || ''); if (p) return p.length > 90 ? p.slice(0, 90) + '…' : p; } return ''; };
+  const isHidden = (key) => (S.settings.hidden || []).includes(key);
   const seenKey = (q) => (q.src === 'gen' ? 'h:' + cyrb53(JSON.stringify([q.stem, q.body, q.options])) : 'id:' + q.id);
   const typeShort = (subj, type) => String(type || '').replace((SUBJ[subj] ? SUBJ[subj].name : '') + ' · ', '');
   let toastTimer = 0;
@@ -159,7 +160,7 @@
   }
   const dueItems = (subj) => {
     const t = dayKey();
-    return Array.from(S.items.values()).filter((it) => SUBJ[it.subj] && it.due && it.due <= t && (!subj || it.subj === subj)).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.lastAt - b.lastAt));
+    return Array.from(S.items.values()).filter((it) => SUBJ[it.subj] && it.due && it.due <= t && (!subj || it.subj === subj) && !isHidden(it.h || ('id:' + it.qid))).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.lastAt - b.lastAt));
   };
   function srUpdate(rec, ok) {
     const t = dayKey();
@@ -196,7 +197,7 @@
   }
   const bankCopy = (q, subj) => JSON.parse(JSON.stringify({ ...q, subject: subj, src: q.src || 'bank' }));
   function fromBank(subj, type) {
-    const pool = (P.bank[subj] || []).filter((q) => (!type || q.type === type) && !(q.setNo > 1) && !S.seen.has('id:' + q.id));
+    const pool = (P.bank[subj] || []).filter((q) => (!type || q.type === type) && !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id));
     if (!pool.length) return null;
     const q = bankCopy(pool[Math.floor(Math.random() * pool.length)], subj);
     if (q.set) { // 1지문 2문항: queue the sibling(s) to come right after
@@ -206,7 +207,7 @@
     }
     return q;
   }
-  const bankLeft = (subj, type) => (P.bank[subj] || []).filter((q) => (!type || q.type === type) && !(q.setNo > 1) && !S.seen.has('id:' + q.id)).length;
+  const bankLeft = (subj, type) => (P.bank[subj] || []).filter((q) => (!type || q.type === type) && !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id)).length;
   function nextQuestion(ctx) {
     const { subj, type } = ctx;
     if (ctx.mode === 'review') {
@@ -216,14 +217,14 @@
     while (S.queue.length) {
       const e = S.queue.shift(); saveKV('queue');
       const q = (P.bank[e.subj] || []).find((x) => x.id === e.id);
-      if (q && e.subj === subj && !S.seen.has('id:' + q.id)) return { q: bankCopy(q, subj) };
+      if (q && e.subj === subj && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id)) return { q: bankCopy(q, subj) };
     }
     if (S.settings.mixReview && !type && ctx.mode !== 'set') {
       const due = dueItems(subj);
       if (due.length && Math.random() < 0.22) return { q: due[0].q, review: true };
     }
     if (bankLeft(subj, type) && Math.random() < SUBJ[subj].bankP) { const q = fromBank(subj, type); if (q) return { q }; }
-    const g = fromGenerator(subj, type); if (g) return { q: g };
+    for (let i = 0; i < 8; i++) { const g = fromGenerator(subj, type); if (!g) break; if (!isHidden(seenKey(g))) return { q: g }; }
     const b = fromBank(subj, type); if (b) return { q: b };
     return null;
   }
@@ -559,6 +560,7 @@
             <button class="btn sm${rec && rec.star ? ' on' : ''}" data-act="star" aria-pressed="${rec && rec.star ? 'true' : 'false'}">★ 중요 <span class="kbd">S</span></button>
             <button class="btn sm${rec && rec.memo ? ' on' : ''}" data-act="memo">메모 <span class="kbd">M</span></button>
             <button class="btn sm${rec && rec.flag ? ' on' : ''}" data-act="flag">이상한 점 알리기</button>
+            <button class="btn sm" data-act="hide-q" title="이 문제를 다시는 내지 않습니다. 설정에서 되살릴 수 있습니다">이 문제 지우기</button>
           </div>
           <div class="memo-wrap hide" style="margin-top:10px"><label class="sr" for="memo">메모</label><textarea id="memo" class="memo" placeholder="풀이 요령, 실수한 이유 등을 적어 두세요. 오답노트에 함께 보관됩니다.">${esc(rec ? rec.memo : '')}</textarea></div>
           <div class="flag-wrap hide" style="margin-top:10px"><label class="sr" for="flag">알릴 내용</label><textarea id="flag" class="memo" placeholder="문제·정답·해설에서 이상한 점을 적어 주세요. 기록 화면에서 모아 볼 수 있습니다.">${esc(rec ? rec.flag : '')}</textarea></div>
@@ -727,6 +729,7 @@
         <div class="set-row"><div class="l">글자 크기</div>${seg('size', S.settings.size, [['s', '작게'], ['m', '보통'], ['l', '크게']])}</div>
         <div class="set-row"><div class="l">지문 글꼴<small>시험지처럼 명조, 화면에선 고딕이 편할 수도 있습니다</small></div>${seg('face', S.settings.face, [['serif', '명조'], ['sans', '고딕']])}</div>
       </div>
+      ${(S.settings.hidden || []).length ? `<div class="card"><h2>지운 문제</h2><div class="set-row"><div class="l">지운 문제 ${S.settings.hidden.length}개<small>해설 화면의 ‘이 문제 지우기’로 지운 문제는 다시 나오지 않습니다</small></div><button class="btn sm" data-act="unhide-all">모두 되살리기</button></div></div>` : ''}
       <div class="card"><h2>난이도</h2>
         <div class="set-row"><div class="l">문제 난이도<small>‘자동’은 유형마다 최근 5~6문제 결과를 보고 한 단계씩 올리거나 내립니다. 기본·실전·심화는 인원·조건·경우의 수·자료 크기로 조절되며, 어느 단계든 정답 검증은 같습니다. 직접 출제한 독해·논증 문항은 난이도와 관계없이 나옵니다.</small></div>${seg('level', S.settings.level, [['auto', '자동'], ['1', '기본'], ['2', '실전'], ['3', '심화']])}</div>
       </div>
@@ -888,6 +891,12 @@
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
       case 'help': viewHelp(); break;
       case 'memo': { const w = $('.memo-wrap'); w.classList.toggle('hide'); if (!w.classList.contains('hide')) $('#memo').focus(); break; }
+      case 'hide-q': {
+        const q = S.cur && S.cur.q; if (!q) break;
+        const key = seenKey(q); S.settings.hidden = [...new Set([...(S.settings.hidden || []), key])]; saveSettings();
+        toast('이 문제를 지웠습니다. 다시 나오지 않습니다. (설정에서 되살릴 수 있습니다)'); next(); break;
+      }
+      case 'unhide-all': S.settings.hidden = []; saveSettings(); toast('지운 문제를 모두 되살렸습니다.'); viewSettings(); break;
       case 'flag': { const w = $('.flag-wrap'); w.classList.toggle('hide'); if (!w.classList.contains('hide')) $('#flag').focus(); break; }
       case 'nf-subj': noteFilter.subj = el.dataset.v; viewNotes(); break;
       case 'nf-kind': noteFilter.kind = el.dataset.v; viewNotes(); break;
