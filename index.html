@@ -38,7 +38,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kaushan+Script&family=Nanum+Brush+Script&text=%EC%95%88%EC%9A%94%ED%99%98Yohan%20Ahn&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kaushan+Script&family=Nanum+Brush+Script&text=%EC%95%88%EC%9A%94%ED%99%98Yohan%20Ahn&display=block">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
 <style>
 /* Layout: a deep-navy hero (photo, signature-style name, affiliation, research fields; research statement on the right),
@@ -71,7 +71,8 @@
   --gold-wash: #FBF7EE;
   --gold-line: #EBDDBF;
 
-  --shadow: 0 1px 2px #0F1A2B0A, 0 14px 34px -18px #0F1A2B33;
+  --shadow: 0 0 0 1px #0F1A2B0D, 0 1px 2px #0F1A2B0A, 0 16px 36px -20px #0F1A2B38;
+  --hairline: #C9A15A8C;
 
   --f-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
   --f-serif-ko: "Noto Serif KR", "AppleMyungjo", "Nanum Myeongjo", serif;
@@ -138,11 +139,15 @@ button { font: inherit; }
 /* ---------- Hero ---------- */
 .hero {
   position: relative; overflow: hidden; color: var(--on-hero);
-  background-color: var(--hero);
-  background-image:
+  background:
+    linear-gradient(90deg, transparent 4%, var(--hairline) 50%, transparent 96%) 50% 100% / 100% 1px no-repeat,
     radial-gradient(60% 90% at 88% -10%, color-mix(in srgb, var(--glow-1) 55%, transparent), transparent 70%),
     radial-gradient(45% 70% at 0% 110%, color-mix(in srgb, var(--glow-2) 28%, transparent), transparent 70%),
-    linear-gradient(180deg, var(--hero) 0%, var(--hero-2) 100%);
+    linear-gradient(180deg, var(--hero) 0%, var(--hero-2) 100%) var(--hero);
+}
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .32; mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .hero::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
@@ -165,8 +170,17 @@ button { font: inherit; }
 .id-text { min-width: 0; padding-bottom: 2px; }
 .name {
   font-family: "Nanum Brush Script", var(--f-sans); font-weight: 400; letter-spacing: 0.01em;
-  font-size: clamp(4.25rem, 8vw, 6.25rem); line-height: 0.9; padding-right: 8px; color: var(--on-hero);
+  font-size: clamp(4.25rem, 8vw, 6.25rem); line-height: 0.9; padding-right: 8px; color: var(--on-hero); width: fit-content;
 }
+/* On first load the name appears left to right, like a signature being written (once; never with reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.ready) .view:not([hidden]) .name {
+    -webkit-mask-image: linear-gradient(90deg, #000 40%, transparent 60%); mask-image: linear-gradient(90deg, #000 40%, transparent 60%);
+    -webkit-mask-size: 250% 100%; mask-size: 250% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    animation: sign 1.35s cubic-bezier(.55, .1, .25, 1) .25s both;
+  }
+}
+@keyframes sign { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
 #view-en .name { font-family: "Kaushan Script", var(--f-sans); font-size: clamp(3rem, 6vw, 4.5rem); line-height: 1.05; letter-spacing: 0; }
 .role { margin-top: 18px; display: flex; align-items: flex-start; gap: 10px; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.4; color: var(--on-hero); }
 .role > span { min-width: 0; }
@@ -248,10 +262,16 @@ button { font: inherit; }
 .main { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 32px 24px; }
 .layout { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 28px; align-items: start; }
 .toc-col { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 32px); }
-.toc { display: flex; flex-direction: column; gap: 2px; }
-.toc a { display: block; font-size: 0.9375rem; font-weight: 500; color: var(--muted); padding: 9px 14px; border-radius: 12px; transition: color .15s, background-color .15s; }
-.toc a:hover { color: var(--ink); background: var(--card); }
-.toc a.on { color: var(--card); background: var(--ink); font-weight: 600; }
+.toc { position: relative; display: flex; flex-direction: column; }
+.toc::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--rule); }
+.toc a { position: relative; display: block; font-size: 0.9375rem; font-weight: 500; color: var(--muted); padding: 8px 12px 8px 20px; transition: color .2s; }
+.toc a:hover { color: var(--ink); }
+.toc a.on { color: var(--ink); font-weight: 700; }
+.toc-mark {
+  position: absolute; left: 0; top: 0; width: 2px; height: 0; border-radius: 2px; background: var(--mark); opacity: 0;
+  transition: transform .4s cubic-bezier(.2, .75, .2, 1), height .4s cubic-bezier(.2, .75, .2, 1), opacity .2s;
+}
+.toc-mark.still { transition: none; }
 @media (min-width: 1024px) {
   :root { --nav-h: 0px; }
   .nav { display: none; }
@@ -270,10 +290,10 @@ button { font: inherit; }
 .ttl.sm { font-size: 1rem; }
 .ttl-link {
   color: inherit; text-decoration: none;
-  background-image: linear-gradient(currentColor, currentColor); background-size: 0 1px; background-position: 0 100%; background-repeat: no-repeat;
-  transition: background-size .2s;
+  background-image: linear-gradient(var(--mark), var(--mark)); background-size: 0 1.5px; background-position: 0 100%; background-repeat: no-repeat;
+  transition: background-size .3s cubic-bezier(.2, .75, .2, 1);
 }
-.ttl-link:hover { background-size: 100% 1px; }
+.ttl-link:hover { background-size: 100% 1.5px; }
 .ext {
   display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 8px; border-radius: 7px; vertical-align: -2px;
   color: var(--muted); background: var(--chip); transition: color .15s, background-color .15s;
@@ -329,8 +349,18 @@ button { font: inherit; }
 .meta .jr { color: var(--ink-2); font-weight: 600; }
 .meta .dot { color: var(--faint); margin-left: 8px; }
 
-/* Footer */
-.foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 20px 56px; font-size: 0.8125rem; color: var(--faint); }
+/* Footer: a small signature closes the page, aligned with the cards */
+.foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 12px 76px; }
+.foot-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 22px; border-top: 1px solid var(--rule); }
+.foot-sign { font-family: "Nanum Brush Script", var(--f-sans); font-size: 2rem; line-height: 1; color: var(--muted); }
+#view-en .foot-sign { font-family: "Kaushan Script", var(--f-sans); font-size: 1.375rem; }
+.foot-copy { font-size: 0.8125rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+@media (min-width: 1024px) { .foot-row { margin-left: 196px; } }
+
+/* Cards rise in gently the first time they come into view (added by script; never with reduced motion) */
+.reveal .card { opacity: 0; transform: translateY(16px); transition: opacity .7s cubic-bezier(.2, .7, .2, 1), transform .7s cubic-bezier(.2, .7, .2, 1); }
+.reveal .card.in { opacity: 1; transform: none; }
+.reveal .card.now { transition: none; }
 
 /* ---------- Tablet ---------- */
 @media (max-width: 1199px) {
@@ -385,7 +415,9 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .lang-fab, .ext, .hero::after { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .lang-fab, .ext, .hero::after, .hero::before { display: none !important; }
+  .reveal .card { opacity: 1 !important; transform: none !important; }
+  .name { -webkit-mask-image: none !important; mask-image: none !important; animation: none !important; }
   .hero-top { display: none; }
   .flag { box-shadow: 0 0 0 0.5pt #999999; }
   .hero { background: none !important; color: #000000; border-bottom: 1px solid #000000; }
@@ -402,6 +434,8 @@ button { font: inherit; }
   .h::before { background: #000000; }
   .h { break-after: avoid; page-break-after: avoid; }
   .rows > li, .edu > li { break-inside: avoid; }
+  .rows > li, .pubs > li { padding-block: 11px; }
+  .edu > li { padding-block: 10px; }
   .courses { box-shadow: inset 0 0 0 1px #CCCCCC; background: none; }
   .course-list li { box-shadow: inset 0 0 0 1px #CCCCCC; }
   .foot { display: none; }
@@ -424,7 +458,7 @@ body { margin: 0; }
 </div></div></header>
 <nav class="nav" aria-label="목차"><div class="nav-in"><div class="nav-links"><a href="#intro">소개</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></div></div></nav>
 <main class="main" id="main"><div class="layout">
-<aside class="toc-col"><nav class="toc" aria-label="목차"><a href="#intro">소개</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></nav></aside>
+<aside class="toc-col"><nav class="toc" aria-label="목차"><span class="toc-mark" aria-hidden="true"></span><a href="#intro">소개</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></nav></aside>
 <div class="stack">
 <section class="card" id="education" aria-labelledby="education-h"><h2 class="h" id="education-h">학력</h2><ul class="edu"><li><div class="edu-main"><span class="edu-school">서강대학교</span><span class="sub-line">법학박사</span></div><div class="edu-thesis"><span class="edu-label">학위논문 · 2026. 8.</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=2496df649a4b4eccffe0bdc3ef48d419" target="_blank" rel="noopener" title="논문 페이지 열기">선거관리위원회의 독립성과 정치적 중립성에 관한 <span class="nw">연구<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></a></span></div></li><li><div class="edu-main"><span class="edu-school">서강대학교</span><span class="sub-line">법학석사</span></div><div class="edu-thesis"><span class="edu-label">학위논문 · 2022. 8.</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=e502ac393cc5d3a1ffe0bdc3ef48d419" target="_blank" rel="noopener" title="논문 페이지 열기">헌법상 영장주의와 선거관리위원회의 선거범죄 조사에 관한 <span class="nw">연구<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></a></span></div></li><li><div class="edu-main"><span class="edu-school">University of Queensland</span><span class="sub-line">정치학석사</span></div></li><li><div class="edu-main"><span class="edu-school">연세대학교</span><span class="sub-line">정치학사</span></div></li></ul></section>
 <section class="card" id="affiliation" aria-labelledby="affiliation-h"><h2 class="h" id="affiliation-h">소속</h2><ol class="rows"><li><span class="when">2023. 1. – 현재</span><div><p class="ttl sm">공군사관학교</p><p class="sub-line">항공우주정책학과</p><div class="courses"><p class="courses-head"><span class="courses-label">강의과목</span><span class="courses-note">개설 강좌별 3시간 / 3학점</span></p><ul class="course-list"><li><span>법학개론</span><span class="badge">영어강의</span></li><li>융합캡스톤</li><li>행정법</li><li>항공우주법</li><li>헌법과 민주시민</li></ul></div></div></li><li><span class="when">2022. 4. – 2022. 7.</span><div><p class="ttl sm">중앙선거관리위원회</p><p class="sub-line">제도연구부</p></div></li><li><span class="when">2020. 1. – 2021. 2.</span><div><p class="ttl sm">국회입법조사처</p><p class="sub-line">기획법무담당관실</p></div></li></ol></section>
@@ -434,7 +468,7 @@ body { margin: 0; }
 <section class="card" id="awards" aria-labelledby="awards-h"><h2 class="h" id="awards-h">수상</h2><ol class="rows"><li><span class="when">2024</span><div><p class="ttl sm">최우수 논문상</p><p class="sub-line">이화여자대학교 법학전문대학원</p></div></li></ol></section>
 </div></div></main>
 <button type="button" class="lang-btn lang-fab" data-lang="en" lang="en" aria-label="View this page in English"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>English</span></button>
-<footer class="foot"><div class="foot-in">© 2026 안요환</div></footer>
+<footer class="foot"><div class="foot-in"><div class="foot-row"><span class="foot-sign">안요환</span><span class="foot-copy">© 2026</span></div></div></footer>
 </div>
 <div class="view" id="view-en" lang="en" data-title="Yohan Ahn | Republic of Korea Air Force Academy" hidden>
 <a class="skip" href="#en-main">Skip to content</a>
@@ -448,7 +482,7 @@ body { margin: 0; }
 </div></div></header>
 <nav class="nav" aria-label="Contents"><div class="nav-in"><div class="nav-links"><a href="#en-intro">Introduction</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></div></div></nav>
 <main class="main" id="en-main"><div class="layout">
-<aside class="toc-col"><nav class="toc" aria-label="Contents"><a href="#en-intro">Introduction</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></nav></aside>
+<aside class="toc-col"><nav class="toc" aria-label="Contents"><span class="toc-mark" aria-hidden="true"></span><a href="#en-intro">Introduction</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></nav></aside>
 <div class="stack">
 <section class="card" id="en-education" aria-labelledby="en-education-h"><h2 class="h" id="en-education-h">Education</h2><ul class="edu"><li><div class="edu-main"><span class="edu-school">Sogang University</span><span class="sub-line">Ph.D. in Law</span></div><div class="edu-thesis"><span class="edu-label">Dissertation · Aug 2026</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=2496df649a4b4eccffe0bdc3ef48d419" target="_blank" rel="noopener" title="Open article page">The Independence and Political Neutrality of Korea’s National Election <span class="nw">Commission<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></a></span></div></li><li><div class="edu-main"><span class="edu-school">Sogang University</span><span class="sub-line">Master of Laws</span></div><div class="edu-thesis"><span class="edu-label">Thesis · Aug 2022</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=e502ac393cc5d3a1ffe0bdc3ef48d419" target="_blank" rel="noopener" title="Open article page">A Study on Warrant Requirement and Investigations Conducted by the National Election <span class="nw">Commission<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></a></span></div></li><li><div class="edu-main"><span class="edu-school">The University of Queensland</span><span class="sub-line">Master of International Relations</span></div></li><li><div class="edu-main"><span class="edu-school">Yonsei University</span><span class="sub-line">B.A. in Political Science</span></div></li></ul></section>
 <section class="card" id="en-affiliation" aria-labelledby="en-affiliation-h"><h2 class="h" id="en-affiliation-h">Appointments</h2><ol class="rows"><li><span class="when">Jan 2023 – Present</span><div><p class="ttl sm">Republic of Korea Air Force Academy</p><p class="sub-line">Department of Aerospace Policy</p><div class="courses"><p class="courses-head"><span class="courses-label">Teaching</span><span class="courses-note">3 hours / 3 credits per course</span></p><ul class="course-list"><li>Introduction to Law</li><li>Capstone Design</li><li>Administrative Law</li><li>Aviation and Space Law</li><li>Constitutional Law</li></ul></div></div></li><li><span class="when">Apr 2022 – Jul 2022</span><div><p class="ttl sm">National Election Commission</p><p class="sub-line">Electoral Systems Research Division</p></div></li><li><span class="when">Jan 2020 – Feb 2021</span><div><p class="ttl sm">National Assembly Research Service</p><p class="sub-line">Planning and Legal Affairs Division</p></div></li></ol></section>
@@ -458,13 +492,15 @@ body { margin: 0; }
 <section class="card" id="en-awards" aria-labelledby="en-awards-h"><h2 class="h" id="en-awards-h">Awards</h2><ol class="rows"><li><span class="when">2024</span><div><p class="ttl sm">Best Paper Award</p><p class="sub-line">Ewha Womans University School of Law</p></div></li></ol></section>
 </div></div></main>
 <button type="button" class="lang-btn lang-fab" data-lang="ko" lang="ko" aria-label="한국어로 보기"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>한국어</span></button>
-<footer class="foot"><div class="foot-in">© 2026 Yohan Ahn</div></footer>
+<footer class="foot"><div class="foot-in"><div class="foot-row"><span class="foot-sign">Yohan Ahn</span><span class="foot-copy">© 2026</span></div></div></footer>
 </div>
 <script>
 (function () {
+  var root = document.documentElement;
   var views = { ko: document.getElementById('view-ko'), en: document.getElementById('view-en') };
   var buttons = document.querySelectorAll('.lang-btn');
   var onSite = /github\.io$/.test(location.hostname);
+  var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Language: ?lang= in the link, then a section link (#en-…), then the visitor's last choice, then the browser language.
   function initialLang() {
@@ -484,7 +520,7 @@ body { margin: 0; }
 
   function setLang(lang, save) {
     Object.keys(views).forEach(function (k) { views[k].hidden = k !== lang; });
-    document.documentElement.lang = lang;
+    root.lang = lang;
     if (views[lang].dataset.title) document.title = views[lang].dataset.title;
     if (save) {
       try { localStorage.setItem('lang', lang); } catch (e) {}
@@ -499,18 +535,43 @@ body { margin: 0; }
     }
   }
 
+  // Cards rise in gently the first time they come into view.
+  var io = null;
+  if (!calm && 'IntersectionObserver' in window) {
+    root.classList.add('reveal');
+    io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.04 });
+    document.querySelectorAll('.card').forEach(function (c) { io.observe(c); });
+  }
+  function showNow(el) {
+    var card = el && el.closest && el.closest('.card');
+    if (io && card && !card.classList.contains('in')) { card.classList.add('in', 'now'); io.unobserve(card); }
+  }
+  function revealInView(view) {
+    if (!io) return;
+    view.querySelectorAll('.card:not(.in)').forEach(function (c) {
+      if (c.getBoundingClientRect().top < window.innerHeight) { c.classList.add('in'); io.unobserve(c); }
+    });
+  }
+
   // Contents: highlight the section in view. A clicked link stays highlighted until the scroll settles.
   var spies = Object.keys(views).map(function (k) {
     var view = views[k];
     var bar = view.querySelector('.nav-links');
+    var toc = view.querySelector('.toc');
     var links = Array.prototype.slice.call(view.querySelectorAll('.nav-links a, .toc a'));
     var ids = [];
     links.forEach(function (a) { var id = a.getAttribute('href').slice(1); if (ids.indexOf(id) === -1) ids.push(id); });
-    var spy = { view: view, bar: bar, links: links, ids: ids, current: null, lockUntil: 0 };
-    if (bar) bar.addEventListener('scroll', function () { edges(bar); }, { passive: true });
+    var spy = { view: view, bar: bar, toc: toc, marker: view.querySelector('.toc-mark'), links: links, ids: ids, current: null, lockUntil: 0 };
     links.forEach(function (a) {
-      a.addEventListener('click', function () { spy.lockUntil = Date.now() + 900; mark(spy, a.getAttribute('href').slice(1)); });
+      a.addEventListener('click', function () {
+        var id = a.getAttribute('href').slice(1);
+        showNow(document.getElementById(id));  // land exactly on the section, not where it sat before rising in
+        spy.lockUntil = Date.now() + 900; mark(spy, id);
+      });
     });
+    if (bar) bar.addEventListener('scroll', function () { edges(bar); }, { passive: true });
     return spy;
   });
 
@@ -521,17 +582,31 @@ body { margin: 0; }
     bar.classList.toggle('fade-r', max > 1 && bar.scrollLeft < max - 2);
   }
 
+  // Contents rail: the gold marker slides to the current section.
+  function placeMarker(spy, instant) {
+    if (!spy.marker || spy.view.hidden) return;
+    var a = spy.links.filter(function (l) { return spy.toc.contains(l) && l.classList.contains('on'); })[0];
+    if (!a || !a.offsetHeight) return;
+    if (instant) spy.marker.classList.add('still');
+    spy.marker.style.transform = 'translateY(' + a.offsetTop + 'px)';
+    spy.marker.style.height = a.offsetHeight + 'px';
+    spy.marker.style.opacity = '1';
+    if (instant) { void spy.marker.offsetHeight; spy.marker.classList.remove('still'); }
+  }
+
   function mark(spy, id) {
     if (spy.current === id) return;
+    var first = spy.current === null;
     spy.current = id;
     spy.links.forEach(function (l) {
       var on = l.getAttribute('href').slice(1) === id;
       l.classList.toggle('on', on);
       if (on) l.setAttribute('aria-current', 'true'); else l.removeAttribute('aria-current');
     });
+    placeMarker(spy, first);
     var a = spy.bar && spy.links.filter(function (l) { return spy.bar.contains(l) && l.classList.contains('on'); })[0];
     if (a && spy.bar.scrollWidth > spy.bar.clientWidth) {
-      spy.bar.scrollTo({ left: Math.max(0, a.offsetLeft - spy.bar.clientWidth / 2 + a.offsetWidth / 2), behavior: 'smooth' });
+      spy.bar.scrollTo({ left: Math.max(0, a.offsetLeft - spy.bar.clientWidth / 2 + a.offsetWidth / 2), behavior: first ? 'auto' : 'smooth' });
     }
   }
 
@@ -574,25 +649,37 @@ body { margin: 0; }
     return at;
   }
 
+  function switchTo(lang) {
+    var at = anchor(visibleView());
+    setLang(lang, true);
+    spies.forEach(function (s) { s.current = null; });
+    var view = visibleView();
+    // the other language's cards are shown at once (no rise), so the switch never lands on blank space
+    if (io) view.querySelectorAll('.card:not(.in)').forEach(function (c) { c.classList.add('in', 'now'); io.unobserve(c); });
+    var twin = view.querySelectorAll(BLOCKS)[at.i];
+    var prev = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    if (twin) window.scrollTo(0, twin.getBoundingClientRect().top + window.scrollY - at.top);
+    root.style.scrollBehavior = prev;
+    update();
+  }
+
   buttons.forEach(function (b) {
     b.addEventListener('click', function () {
-      var at = anchor(visibleView());
-      setLang(b.dataset.lang, true);
-      spies.forEach(function (s) { s.current = null; });
-      var twin = visibleView().querySelectorAll(BLOCKS)[at.i];
-      var root = document.documentElement, prev = root.style.scrollBehavior;
-      root.style.scrollBehavior = 'auto';
-      if (twin) window.scrollTo(0, twin.getBoundingClientRect().top + window.scrollY - at.top);
-      root.style.scrollBehavior = prev;
-      update();
+      root.classList.add('ready');
+      if (document.startViewTransition && !calm) document.startViewTransition(function () { switchTo(b.dataset.lang); });
+      else switchTo(b.dataset.lang);
     });
   });
 
   setLang(initialLang(), false);
   if (location.hash.length > 1) {
     var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
-    if (target) requestAnimationFrame(function () { target.scrollIntoView(); });
+    if (target) { showNow(target); requestAnimationFrame(function () { target.scrollIntoView(); revealInView(visibleView()); }); }
   }
+
+  // The signature-style name is written in once, on first load.
+  setTimeout(function () { root.classList.add('ready'); }, 1900);
 
   var ticking = false;
   window.addEventListener('scroll', function () {
@@ -600,7 +687,8 @@ body { margin: 0; }
     ticking = true;
     requestAnimationFrame(function () { ticking = false; update(); });
   }, { passive: true });
-  window.addEventListener('resize', update);
+  window.addEventListener('resize', function () { update(); spies.forEach(function (s) { placeMarker(s, true); }); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { spies.forEach(function (s) { placeMarker(s, true); }); });
   update();
 })();
 </script>
