@@ -353,12 +353,9 @@ button { font: inherit; }
 .meta .jr { color: var(--ink-2); font-weight: 600; }
 .meta .dot { color: var(--faint); margin-left: 8px; }
 
-/* Footer: a small signature closes the page, aligned with the cards */
-.foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 12px 76px; }
-.foot-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 22px; border-top: 1px solid var(--rule); }
-.foot-sign { font-family: "Nanum Brush Script", var(--f-sans); font-size: 2rem; line-height: 1; color: var(--muted); }
-#view-en .foot-sign { font-family: "Kaushan Script", var(--f-sans); font-size: 1.375rem; }
-.foot-copy { font-size: 0.8125rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+/* Footer: a quiet copyright line, aligned with the cards */
+.foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 28px 76px; }
+.foot-row { font-size: 0.8125rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 @media (min-width: 1024px) { .foot-row { margin-left: 196px; } }
 
 /* Cards rise in gently the first time they come into view (added by script; never with reduced motion) */
@@ -475,7 +472,7 @@ body { margin: 0; }
 <section class="card" id="awards" aria-labelledby="awards-h"><h2 class="h" id="awards-h">수상</h2><ol class="rows"><li><span class="when">2024</span><div><p class="ttl sm">최우수 논문상</p><p class="sub-line">이화여자대학교 법학전문대학원</p></div></li></ol></section>
 </div></div></main>
 <button type="button" class="lang-btn lang-fab" data-lang="en" lang="en" aria-label="View this page in English"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>English</span></button>
-<footer class="foot"><div class="foot-in"><div class="foot-row"><span class="foot-sign">안요환</span><span class="foot-copy">© 2026</span></div></div></footer>
+<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 안요환</p></div></footer>
 </div>
 <div class="view" id="view-en" lang="en" data-title="Yohan Ahn | Republic of Korea Air Force Academy" hidden>
 <a class="skip" href="#en-main">Skip to content</a>
@@ -499,7 +496,7 @@ body { margin: 0; }
 <section class="card" id="en-awards" aria-labelledby="en-awards-h"><h2 class="h" id="en-awards-h">Awards</h2><ol class="rows"><li><span class="when">2024</span><div><p class="ttl sm">Best Paper Award</p><p class="sub-line">Ewha Womans University School of Law</p></div></li></ol></section>
 </div></div></main>
 <button type="button" class="lang-btn lang-fab" data-lang="ko" lang="ko" aria-label="한국어로 보기"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>한국어</span></button>
-<footer class="foot"><div class="foot-in"><div class="foot-row"><span class="foot-sign">Yohan Ahn</span><span class="foot-copy">© 2026</span></div></div></footer>
+<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 Yohan Ahn</p></div></footer>
 </div>
 <script>
 (function () {
