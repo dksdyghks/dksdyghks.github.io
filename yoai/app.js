@@ -1,8 +1,8 @@
 /* 요AI — 연구자의 서재. 선행연구 PDF를 이 컴퓨터 안에 쌓아 두고, 모든 쪽을 찾아 읽고, 인용을 모아 각주 달린 Word로 낸다.
    서버도 인터넷도 쓰지 않는다. 문헌·노트·지난 대화는 이 브라우저의 저장소(IndexedDB)에만 있고, 한 번 연 뒤에는 오프라인에서도 열린다. */
-import { renderMarkdown } from './md.js?v=7bbf626d2f';
-import { buildDocx, DOCX_MIME } from './docx.js?v=7bbf626d2f';
-import { AI, WEB_MODELS, stripThink } from './ai.js?v=7bbf626d2f';
+import { renderMarkdown } from './md.js?v=11f1a9ca6d';
+import { buildDocx, DOCX_MIME } from './docx.js?v=11f1a9ca6d';
+import { AI, WEB_MODELS, stripThink } from './ai.js?v=11f1a9ca6d';
 
 const EMBED = window.parent !== window;
 const $ = (s, el = document) => el.querySelector(s);
@@ -40,7 +40,7 @@ const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFul
 
 /* ---------------- documents: kept whole, with the text of every page ---------------- */
 let pdfjsP = null;
-const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=7bbf626d2f').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=7bbf626d2f', import.meta.url).href; return m; }); return pdfjsP; };
+const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=11f1a9ca6d').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=11f1a9ca6d', import.meta.url).href; return m; }); return pdfjsP; };
 const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '' });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
@@ -234,6 +234,7 @@ async function syncFolder(files) {
 /* ---------------- citations in the style of Korean public-law journals: 저자, “제목”, 학술지, 연도, 쪽. ---------------- */
 function where(doc, a, b) {
   b = b || a;
+  if (doc && doc.kind === 'text') return { ui: a === b ? `${a}번째 부분` : `${a}–${b}번째 부분`, note: '' }; // a text file has no printed pages
   const off = doc && +doc.page1 > 1 ? +doc.page1 - 1 : null;
   const rng = (p, q) => (q > p ? `${p}-${q}` : `${p}`);
   if (off !== null) return { ui: `${rng(a + off, b + off)}면 (PDF ${rng(a, b)}쪽)`, note: `${rng(a + off, b + off)}면` };
@@ -939,13 +940,13 @@ function openHelp() {
   modal(`<h2>요AI 사용법</h2><div class="help">
     <p><b>1. 서재 채우기</b> — <b>서재 → 폴더 고르기</b>로 선행연구 PDF가 든 폴더를 고르면 하위 폴더까지 모두 넣고, 모든 쪽의 글자를 읽어 둡니다. Chrome·Edge에서는 폴더가 연결된 채로 남아, 요AI를 열 때마다 새로 넣거나 고친 파일을 맞춥니다.</p>
     <p><b>2. 묻기 (오프라인 AI)</b> — 처음 한 번 <b>AI 준비</b>에서 모델을 내려받으면(인터넷 필요), 그 뒤로는 인터넷 없이 이 컴퓨터 안에서 돌아갑니다. 질문하면 AI가 서재 전체에서 관련 쪽을 찾아 읽고 근거 쪽을 [번호]로 밝혀 답합니다. <b>숙지</b>를 해 두면 문헌 전체의 흐름까지 보고 답합니다. AI는 작은 공개 모델이라 틀릴 수 있으니, 번호를 눌러 원문을 꼭 확인하세요.</p>
-    <p><b>2-1. 찾기</b> — 서재 전체에서 쪽 단위로 찾습니다. 띄어쓰기·조사가 달라도 찾고(의회유보 → 의회 유보, 의회유보의), <b>"따옴표"</b>로 묶으면 그 표현 그대로, <b>-낱말</b>은 그 낱말이 없는 쪽만 찾습니다. 위의 목록에서 문헌 하나만 골라 찾을 수도 있습니다.</p>
-    <p><b>3. 읽기</b> — 결과를 누르면 그 쪽이 열립니다. <b>원문</b>은 PDF 그대로, <b>글자</b>는 찾은 낱말이 표시된 본문입니다. ← → 키로 쪽을 넘깁니다.</p>
-    <p><b>4. 인용 모으기</b> — 글자 보기에서 글을 고르면 <b>카드에 담기</b>와 <b>인용 복사</b>가 나타납니다. 인용 복사는 인용문과 각주(저자, “제목”, 학술지, 연도, 쪽)를 함께 복사합니다.</p>
-    <p><b>5. 노트</b> — 프로젝트마다 카드가 모입니다. 순서를 바꾸고 메모를 달아 <b>Word로 저장</b>하면 인용마다 Word 각주가 달린 문서가 됩니다.</p>
-    <p><b>6. 각주를 정확하게</b> — 서재에서 문헌의 <b>정보</b>에 저자·연도·학술지와 학술지 첫 쪽 번호를 적어 두면, 각주가 학술지 쪽수(○면)로 만들어집니다.</p>
-    <p><b>7. 오프라인</b> — 한 번 연 뒤에는 인터넷 없이도 열리고 모든 기능이 됩니다. Chrome·Edge에서 설치하면 컴퓨터의 앱처럼 쓸 수 있습니다(설정 참고).</p>
-    <p><b>8. 보관</b> — 모든 내용은 이 컴퓨터의 이 브라우저 안에만 있습니다. 설정의 <b>노트 백업</b>을 가끔 받아 두세요.</p></div>
+    <p><b>3. 찾기</b> — 서재 전체에서 쪽 단위로 찾습니다. 띄어쓰기·조사가 달라도 찾고(의회유보 → 의회 유보, 의회유보의), <b>"따옴표"</b>로 묶으면 그 표현 그대로, <b>-낱말</b>은 그 낱말이 없는 쪽만 찾습니다. 위의 목록에서 문헌 하나만 골라 찾을 수도 있습니다.</p>
+    <p><b>4. 읽기</b> — 결과를 누르면 그 쪽이 열립니다. <b>원문</b>은 PDF 그대로, <b>글자</b>는 찾은 낱말이 표시된 본문입니다. ← → 키로 쪽을 넘깁니다.</p>
+    <p><b>5. 인용 모으기</b> — 글자 보기에서 글을 고르면 <b>카드에 담기</b>와 <b>인용 복사</b>가 나타납니다. 인용 복사는 인용문과 각주(저자, “제목”, 학술지, 연도, 쪽)를 함께 복사합니다.</p>
+    <p><b>6. 노트</b> — 프로젝트마다 카드가 모입니다. 순서를 바꾸고 메모를 달아 <b>Word로 저장</b>하면 인용마다 Word 각주가 달린 문서가 됩니다.</p>
+    <p><b>7. 각주를 정확하게</b> — 서재에서 문헌의 <b>정보</b>에 저자·연도·학술지와 학술지 첫 쪽 번호를 적어 두면, 각주가 학술지 쪽수(○면)로 만들어집니다.</p>
+    <p><b>8. 오프라인</b> — 한 번 연 뒤에는 인터넷 없이도 열리고 모든 기능이 됩니다. Chrome·Edge에서 설치하면 컴퓨터의 앱처럼 쓸 수 있습니다(설정 참고).</p>
+    <p><b>9. 보관</b> — 모든 내용은 이 컴퓨터의 이 브라우저 안에만 있습니다. 설정의 <b>노트 백업</b>을 가끔 받아 두세요.</p></div>
     <div class="modal-foot"><button class="btn primary" data-close>닫기</button></div>`);
 }
 

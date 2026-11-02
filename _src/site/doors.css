@@ -17,10 +17,6 @@
 .door-rm { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font-size: .75rem; color: var(--muted); cursor: pointer; }
 .door-card.shake { animation: doorShake .34s; }
 @keyframes doorShake { 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }
-.door-app { position: fixed; inset: 0; z-index: 1001; background: var(--bg); opacity: 0; transform: scale(.06); transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .22s ease; }
-.door-app.in { opacity: 1; transform: none; }
-.door-app iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
-html.door-lock, html.door-lock body { overflow: hidden; }
 .stmt .s2 strong { -webkit-tap-highlight-color: transparent; }
 svg.flag { -webkit-tap-highlight-color: transparent; }
-@media (prefers-reduced-motion: reduce) { .door-app, .door-wrap, .door-card { transition: none; } .door-card.shake { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .door-wrap, .door-card { transition: none; } .door-card.shake { animation: none; } }
