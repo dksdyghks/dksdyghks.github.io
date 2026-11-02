@@ -121,6 +121,18 @@ main { max-width: calc(var(--wrap) + 48px); margin: 0 auto; padding: 8px var(--g
 .link-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 16px 18px; border: 0; border-radius: var(--radius); background: var(--sheet); box-shadow: var(--shadow); }
 .link-card .t { font-weight: 650; font-size: .9375rem; display: flex; align-items: center; gap: 8px; }
 .link-card .s { font-size: .8125rem; color: var(--muted); }
+.install-bar { display: flex; margin-top: 12px; border-radius: var(--radius); background: var(--sheet); box-shadow: var(--shadow); }
+.install-bar .ib-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px 18px; border: 0; background: none; border-radius: var(--radius) 0 0 var(--radius); }
+.install-bar .ib-main:hover, .install-bar .ib-x:hover { background: var(--hover); }
+.install-bar .ib-t { font-weight: 650; font-size: .9375rem; }
+.install-bar .ib-s { font-size: .8125rem; color: var(--muted); }
+.install-bar .nw { white-space: nowrap; }
+.install-bar .ib-x { flex: none; width: 48px; display: grid; place-items: center; border: 0; background: none; color: var(--faint); border-radius: 0 var(--radius) var(--radius) 0; }
+.install-bar .ib-x svg { width: 18px; height: 18px; }
+ol.howto { margin: 0; padding: 0; list-style: none; counter-reset: hw; }
+ol.howto li { counter-increment: hw; position: relative; margin: .75em 0; padding-left: 2.1em; }
+ol.howto li::before { content: counter(hw); position: absolute; left: 0; top: .2em; width: 1.55em; height: 1.55em; border-radius: 50%; background: var(--navy); color: var(--on-navy); font-size: .8125em; font-weight: 700; display: grid; place-items: center; }
+.ico-inline { width: 1.15em; height: 1.15em; vertical-align: -0.2em; }
 .notice { margin-top: 18px; padding: 14px 16px; border-radius: 12px; background: var(--sheet-2); border: 1px dashed var(--rule-2); color: var(--muted); font-size: .8125rem; line-height: 1.65; }
 .notice b { color: var(--ink-2); }
 

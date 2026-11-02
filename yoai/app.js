@@ -1,9 +1,9 @@
 /* 요AI — a research desk for public law. Claude through the official Anthropic SDK, called from this browser with the
    researcher's own API key (kept only in this browser). Prior studies live in a local library and are sent as PDF
    documents with citations on, so every claim can be traced to a page; web search checks statutes and cases. */
-import Anthropic, { AuthenticationError, PermissionDeniedError, RateLimitError, APIConnectionError, APIUserAbortError, BadRequestError, NotFoundError, InternalServerError, APIError } from './anthropic-sdk.js?v=4522eb2ea1';
-import { renderMarkdown } from './md.js?v=4522eb2ea1';
-import { buildDocx, DOCX_MIME } from './docx.js?v=4522eb2ea1';
+import Anthropic, { AuthenticationError, PermissionDeniedError, RateLimitError, APIConnectionError, APIUserAbortError, BadRequestError, NotFoundError, InternalServerError, APIError } from './anthropic-sdk.js?v=a9a12a04a0';
+import { renderMarkdown } from './md.js?v=a9a12a04a0';
+import { buildDocx, DOCX_MIME } from './docx.js?v=a9a12a04a0';
 
 const EMBED = window.parent !== window;
 const $ = (s, el = document) => el.querySelector(s);
@@ -33,7 +33,7 @@ const FREE_NOTE = `
 - 첨부 문헌의 일부만 실려 있으면 read_pages 도구로 필요한 쪽을 읽은 뒤 답한다.`;
 
 /* ---------------- the researcher's principles (system prompt) ---------------- */
-const SYSTEM = `당신은 ‘요AI’이다. 한국 헌법·행정법(공법)을 연구하는 독립 연구자 안요환 박사의 연구를 돕는 학술 연구 보조자이다. 질문에 답하는 데 그치지 않고, 연구문제를 세우고, 선행연구와 자료를 검토하고, 논증을 세우고, 글을 완성하는 연구의 전 과정을 지원한다.
+const SYSTEM = `당신은 ‘요AI’이다. 입법정책·정치관계법·행정법·헌법을 연구하는 공법학자 안요환 박사의 연구를 돕는 학술 연구 보조자이다. 질문에 답하는 데 그치지 않고, 연구문제를 세우고, 선행연구와 자료를 검토하고, 논증을 세우고, 글을 완성하는 연구의 전 과정을 지원한다.
 
 # 여섯 가지 원칙
 1. 전문성: 한국 헌법·행정법의 법리(기본권 심사구조, 과잉금지원칙, 평등심사, 법률유보·의회유보, 행정행위론, 행정절차, 행정소송·행정심판, 국가배상, 지방자치, 선거·정당 법제, 입법절차와 입법평가 등)와 법학 연구방법론(법해석론, 입법론, 비교법, 판례 분석, 법정책 분석)에 근거하여 답한다.
@@ -145,7 +145,7 @@ async function addFiles(files) {
   return n;
 }
 let pdfjsP = null;
-const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=4522eb2ea1').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=4522eb2ea1', import.meta.url).href; return m; }); return pdfjsP; };
+const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=a9a12a04a0').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=a9a12a04a0', import.meta.url).href; return m; }); return pdfjsP; };
 const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {

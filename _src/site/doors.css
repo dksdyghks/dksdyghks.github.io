@@ -1,0 +1,26 @@
+/* hidden doors: PIN box and the app frame (both themes) */
+.door-wrap { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(5, 11, 22, .52); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity .18s ease; }
+.door-wrap.in { opacity: 1; }
+.door-card { width: min(320px, 100%); background: var(--card); color: var(--ink); border-radius: 20px; padding: 26px 22px 20px; text-align: center; box-shadow: 0 24px 60px -20px rgba(0,0,0,.45), 0 0 0 1px var(--rule); transform: translateY(8px) scale(.98); transition: transform .2s ease; }
+.door-wrap.in .door-card { transform: none; }
+.door-card:focus { outline: none; }
+.door-t { margin: 0; font-family: var(--f-serif-ko); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; }
+.door-s { margin: 4px 0 16px; font-size: .8125rem; color: var(--muted); }
+.door-dots { display: flex; justify-content: center; gap: 12px; margin: 0 0 18px; }
+.door-dots i { width: 12px; height: 12px; border-radius: 50%; border: 1.5px solid var(--ink-2); transition: background .12s; }
+.door-dots i.on { background: var(--ink); border-color: var(--ink); }
+.door-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.door-pad button { height: 52px; border-radius: 14px; border: 1px solid var(--rule); background: var(--chip); color: var(--ink); font: 600 1.1875rem/1 var(--f-sans); cursor: pointer; }
+.door-pad button:hover { filter: brightness(.97); }
+.door-pad button:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+.door-pad .fn { background: none; border-color: transparent; font-size: .8125rem; font-weight: 500; color: var(--muted); }
+.door-rm { display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; font-size: .75rem; color: var(--muted); cursor: pointer; }
+.door-card.shake { animation: doorShake .34s; }
+@keyframes doorShake { 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }
+.door-app { position: fixed; inset: 0; z-index: 1001; background: var(--bg); opacity: 0; transform: scale(.06); transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .22s ease; }
+.door-app.in { opacity: 1; transform: none; }
+.door-app iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+html.door-lock, html.door-lock body { overflow: hidden; }
+.stmt .s2 strong { -webkit-tap-highlight-color: transparent; }
+svg.flag { -webkit-tap-highlight-color: transparent; }
+@media (prefers-reduced-motion: reduce) { .door-app, .door-wrap, .door-card { transition: none; } .door-card.shake { animation: none; } }
