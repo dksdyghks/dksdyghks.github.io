@@ -381,3 +381,9 @@ ol.howto li { margin: 4px 0; }
 
 /* the YO아이 mark */
 .mark { font-size: 12px; letter-spacing: .03em; }
+
+.dig-mode { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: .8125rem; color: var(--ink-2); }
+.dig-mode select { max-width: 100%; font: inherit; padding: 4px 8px; border: 1px solid var(--rule-2); border-radius: 8px; background: var(--card); color: var(--ink); }
+.dig-outline { margin-top: 12px; font-size: .8125rem; color: var(--ink-2); }
+.dig-outline summary { cursor: pointer; font-weight: 600; }
+.dig-outline pre { white-space: pre-wrap; font: inherit; line-height: 1.7; margin: 6px 0 0; }

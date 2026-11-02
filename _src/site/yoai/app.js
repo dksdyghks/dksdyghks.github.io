@@ -41,7 +41,7 @@ const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFul
 /* ---------------- documents: kept whole, with the text of every page ---------------- */
 let pdfjsP = null;
 const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js', import.meta.url).href; return m; }); return pdfjsP; };
-const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, ocr: !!d.ocr, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '' });
+const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, ocr: !!d.ocr, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '', digestMode: d.digest ? d.digest.mode || 'full' : '' });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
   const pdfjs = await pdfjsLib();
@@ -616,7 +616,7 @@ function viewLibrary() {
       <input type="file" id="folder-in" webkitdirectory multiple class="sr">
     </div>
     <div class="lib-box"><div class="lib-head"><b>AI 숙지</b><span class="ai-mini">AI: ${esc(aiLabel())} <button class="btn" data-act="ai-setup">AI 준비</button></span></div>
-      <p class="sub">AI가 문헌을 한 편씩 끝까지 읽고 요지를 정리해 둡니다. 묻기에서 문헌 전체의 흐름까지 보고 답하게 됩니다(이 컴퓨터 안에서만, 인터넷 없이).</p>
+      <p class="sub">AI가 문헌마다 목차·초록·서론·결론을 읽고 요지를 정리해 둡니다. 묻기에서 문헌 전체의 흐름까지 보고 답하게 됩니다(이 컴퓨터 안에서만, 인터넷 없이). 본문의 세부 내용은 질문할 때 관련 쪽을 찾아 직접 읽으므로, 숙지를 마치지 않아도 질문할 수 있습니다.</p>
       <div id="dig-status">${digestStatusHTML()}</div></div>
     <label class="drop" id="drop">파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
     <p class="sub">각 문헌의 <b>정보</b>에 저자·연도·학술지를 적으면 각주가 그대로 만들어지고, 학술지 논문의 <b>첫 쪽 번호</b>를 적으면 학술지 쪽수(○면)로 인용됩니다.</p>
@@ -717,7 +717,7 @@ async function ensureAI() {
   const c = S.settings.ai;
   if (!c) return false;
   if (c.backend === 'fake' && AI.fake) { AI.useFake(); return true; }
-  if (c.backend === 'ollama') { try { const ms = await AI.ollamaModels(); if (ms.some((m) => m.name === c.model)) return AI.useOllama(c.model); } catch (e) { /* not running */ } toast('Ollama에 연결하지 못했습니다. Ollama를 실행했는지 확인하세요.'); return false; }
+  if (c.backend === 'ollama') { try { const ms = await AI.ollamaModels(); const hit = ms.find((m) => m.name === c.model); if (hit) return AI.useOllama(c.model, hit.size); } catch (e) { /* not running */ } toast('Ollama에 연결하지 못했습니다. Ollama를 실행했는지 확인하세요.'); return false; }
   if (c.backend === 'web') {
     if (!navigator.onLine && !(await AI.webCached(c.model, c.f16))) { toast('AI 모델을 아직 내려받지 않았습니다. 인터넷에 연결된 상태에서 한 번 내려받아 주세요.'); return false; }
     return AI.loadWeb(c.model, c.f16);
@@ -761,11 +761,11 @@ async function openAISetup() {
       const box = $('#ollama-box', m.el); box.innerHTML = '<p class="sub">확인하는 중…</p>';
       try {
         const ms = await AI.ollamaModels();
-        box.innerHTML = ms.length ? `<div class="ai-models">${ms.map((x) => `<div class="ai-model"><div><b>${esc(x.name)}</b><div class="m">${x.size ? (x.size / 1073741824).toFixed(1) + 'GB' : ''}</div></div><span><button class="btn primary" data-ai-use="${esc(x.name)}">쓰기</button></span></div>`).join('')}</div>`
+        box.innerHTML = ms.length ? `<div class="ai-models">${ms.map((x) => `<div class="ai-model"><div><b>${esc(x.name)}</b><div class="m">${x.size ? (x.size / 1073741824).toFixed(1) + 'GB' : ''}</div></div><span><button class="btn primary" data-ai-use="${esc(x.name)}" data-ai-size="${x.size || 0}">쓰기</button></span></div>`).join('')}</div>`
           : '<p class="sub">Ollama는 연결됐지만 내려받은 모델이 없습니다. 명령 프롬프트(Windows)나 터미널(Mac)에서 <code>ollama pull exaone3.5:7.8b</code>를 실행한 뒤 다시 확인하세요.</p>';
       } catch (err) { box.innerHTML = `<p class="lib-line warn">Ollama에 연결하지 못했습니다. Ollama가 켜져 있는지, 아래 2~3단계를 마쳤는지 확인하세요.</p>${ollamaHowto(sup.ok)}`; }
     } else if (use) {
-      await AI.useOllama(use.dataset.aiUse); S.settings.ai = { backend: 'ollama', model: use.dataset.aiUse }; saveSettings(); toast(`${use.dataset.aiUse}을(를) 씁니다.`); m.close(); if (S.view === 'ask') viewAsk();
+      await AI.useOllama(use.dataset.aiUse, Number(use.dataset.aiSize) || 0); S.settings.ai = { backend: 'ollama', model: use.dataset.aiUse }; saveSettings(); toast(`${use.dataset.aiUse}을(를) 씁니다.`); m.close(); if (S.view === 'ask') viewAsk();
     } else if (how) { const box = $('#ollama-box', m.el); if (!box.querySelector('.howto')) box.insertAdjacentHTML('beforeend', ollamaHowto(sup.ok)); }
     const cp = e.target.closest('[data-copy]');
     if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); toast('복사했습니다. 창에 붙여 넣으세요.'); } catch (err) { toast('복사하지 못했습니다. 글자를 직접 골라 복사하세요.'); } }
@@ -798,68 +798,148 @@ function ollamaHowto(webOk = true) {
     <p class="sub">Ollama는 보안을 위해 웹페이지가 연결하는 것을 기본으로 막아 둡니다. 아래 순서대로 하면 이 페이지(0128.kr)만 연결할 수 있게 됩니다.</p>
     <p class="sub"><b>${firstName} 컴퓨터</b></p>${first}
     <details><summary>${otherName} 컴퓨터라면</summary>${other}</details>
-    <p class="sub">메모리(RAM)가 32GB 이상이면 더 정확한 큰 모델도 쓸 수 있습니다. 둘째 줄 대신 ${cmd('ollama pull exaone3.5:32b')}(약 19GB)를 넣으세요.</p></div>`;
+    <p class="sub">더 큰 <code>exaone3.5:32b</code>(약 19GB)는 그래픽 카드 메모리(VRAM)가 24GB 이상인 컴퓨터에서만 권합니다. 그보다 작으면 CPU로 돌아 컴퓨터 전체가 느려지고, 숙지도 몇 배 오래 걸립니다. 대부분의 컴퓨터에는 <code>exaone3.5:7.8b</code>가 알맞습니다.</p></div>`;
 }
 
 /* ---------------- 숙지: the AI reads each document once and keeps a structured digest ----------------
-   Long documents are read part by part (as much as fits the model at once), then the parts are combined. The digest
-   helps the AI see each document whole when it answers; quotations and page numbers always come from the pages themselves. */
-const DIG = { run: false, stop: false, done: 0, total: 0, doc: '', part: '' };
+   빠르게(기본): what a reader looks at first — 목차, 초록, 서론, 결론 — in one reading per document.
+   꼼꼼히: the whole text part by part, then the parts combined (many readings; long for a book or a dissertation).
+   The digest helps the AI see each document whole when it answers; quotations and page numbers always come from the pages themselves. */
+const DIG = { run: false, stop: false, done: 0, total: 0, doc: '', part: '', since: 0, times: [], warn: '', mode: '' };
 const charBudget = (ctx, reserve) => Math.max(1500, Math.floor((ctx - reserve) * 1.2));
+const digMode = () => (S.settings.digMode === 'full' ? 'full' : 'quick');
+const mmss = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분${s % 60 ? ` ${s % 60}초` : ''}`; };
 function digestStatusHTML() {
   const ok = S.docs.filter((d) => d.indexed && !d.blank), dug = ok.filter((d) => d.digest).length;
-  if (DIG.run) return `<b>숙지 중</b> ${DIG.done}/${DIG.total} · 「${esc(DIG.doc)}」 ${esc(DIG.part)} <button class="btn" data-act="dig-stop">멈추기</button>`;
-  return `${ok.length ? `문헌 ${ok.length}개 가운데 <b>${dug}개</b>를 숙지했습니다.` : '숙지할 문헌이 아직 없습니다.'} ${ok.length > dug ? `<button class="btn primary" data-act="dig-start">${dug ? '나머지 숙지하기' : '숙지 시작'}</button>` : ''}`;
+  const warn = DIG.warn ? `<p class="lib-line warn">${esc(DIG.warn)}</p>` : '';
+  if (DIG.run) {
+    const avg = DIG.times.length ? DIG.times.reduce((a, b) => a + b, 0) / DIG.times.length : 0;
+    const eta = avg ? ` · 한 편에 약 ${mmss(avg)}, 남은 시간 약 ${mmss(avg * (DIG.total - DIG.done))}` : '';
+    return `<b>숙지 중</b> ${DIG.done}/${DIG.total} · 「${esc(DIG.doc)}」 ${esc(DIG.part)} <span id="dig-clock">${DIG.since ? mmss(Date.now() - DIG.since) + '째' : ''}</span>${eta} <button class="btn" data-act="dig-stop">멈추기</button>${warn}`;
+  }
+  const mode = `<label class="dig-mode">방식 <select id="dig-mode"><option value="quick"${digMode() === 'quick' ? ' selected' : ''}>빠르게: 목차·초록·서론·결론만 읽음</option><option value="full"${digMode() === 'full' ? ' selected' : ''}>꼼꼼히: 처음부터 끝까지 읽음(오래 걸림)</option></select></label>`;
+  return `${ok.length ? `문헌 ${ok.length}개 가운데 <b>${dug}개</b>를 숙지했습니다.` : '숙지할 문헌이 아직 없습니다.'} ${ok.length > dug ? `<button class="btn primary" data-act="dig-start">${dug ? '나머지 숙지하기' : '숙지 시작'}</button>` : ''}${ok.length ? `<div>${mode}</div>` : ''}${warn}`;
 }
-async function digestAll() {
+let digClock = null;
+async function digestAll(opts = {}) {
   if (DIG.run) return;
   if (!(await ensureAI())) { openAISetup(); return; }
   if (S.indexing || S.docs.some((d) => !d.indexed)) await indexLibrary();
-  const todo = S.docs.filter((d) => d.indexed && !d.blank && !d.digest).sort((a, b) => a.addedAt - b.addedAt);
+  const todo = (opts.ids ? opts.ids.map(docOf).filter(Boolean) : S.docs.filter((d) => d.indexed && !d.blank && !d.digest).sort((a, b) => a.addedAt - b.addedAt));
   if (!todo.length) { toast('모든 문헌을 숙지했습니다.'); return; }
-  Object.assign(DIG, { run: true, stop: false, done: 0, total: todo.length, doc: '', part: '' }); paintStatus();
+  Object.assign(DIG, { run: true, stop: false, done: 0, total: todo.length, doc: '', part: '', since: 0, times: [], warn: '', mode: opts.mode || digMode() }); paintStatus();
+  digClock = setInterval(() => { const c = $('#dig-clock'); if (c && DIG.since) c.textContent = mmss(Date.now() - DIG.since) + '째'; }, 1000);
   try {
     for (const d of todo) {
       if (DIG.stop) break;
       DIG.doc = d.title; DIG.part = ''; paintStatus();
-      try { await digestDoc(d); } catch (e) { if (DIG.stop) break; toast(`「${d.title}」을(를) 숙지하지 못했습니다: ${e.message}`); }
+      const t0 = Date.now();
+      try { await digestDoc(d, DIG.mode); DIG.times.push(Date.now() - t0); } catch (e) { if (DIG.stop) break; toast(`「${d.title}」을(를) 숙지하지 못했습니다: ${e.message}`); }
       DIG.done++; paintStatus();
     }
   } finally {
-    const stopped = DIG.stop; Object.assign(DIG, { run: false, stop: false, doc: '', part: '' }); paintStatus(); redraw('library'); redraw('ask');
+    clearInterval(digClock);
+    const stopped = DIG.stop; Object.assign(DIG, { run: false, stop: false, doc: '', part: '', since: 0 }); paintStatus(); redraw('library'); redraw('ask');
     toast(stopped ? '숙지를 멈췄습니다. 다시 누르면 이어서 합니다.' : '숙지를 마쳤습니다.');
   }
 }
-async function digestDoc(d) {
+/* one reading, shown as it goes: the model first reads (no words yet), then writes */
+async function digestCall(messages, o, label) {
+  DIG.part = `${label} · 읽는 중`; DIG.since = Date.now(); paintStatus();
+  let out = '', last = 0, wrote = false;
+  for await (const piece of AI.stream(messages, o)) {
+    out += piece;
+    if (!wrote || Date.now() - last > 500) { wrote = true; last = Date.now(); DIG.part = `${label} · 쓰는 중 ${out.length}자`; paintStatus(); }
+  }
+  if (DIG.stop) throw new Error('멈춤');
+  if (AI.state.backend === 'ollama' && !DIG.warn) {
+    const l = await AI.ollamaLoad();
+    if (l && l.size && l.vram < l.size * 0.9) DIG.warn = `${AI.state.name}의 ${Math.round((1 - l.vram / l.size) * 100)}%가 그래픽 메모리에 들어가지 않아 CPU로 돌고 있습니다. 그래서 컴퓨터가 느려지고 숙지도 오래 걸립니다. AI 준비에서 더 작은 모델(예: exaone3.5:7.8b)로 바꾸면 훨씬 빨라집니다.`;
+  }
+  return stripThink(out);
+}
+/* the parts a reader looks at first, cut to fit one reading: 목차(headings with pages), 초록, 서론, 결론 */
+const HEAD_RE = /^\s*(제\s*\d+\s*[장절편]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*[.．]|(?:I{1,3}|IV|VI{0,3}|IX|X)\s*[.．])\s*\S/;
+const TOP_RE = /^\s*(제\s*\d+\s*[장편]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*[.．]|(?:I{1,3}|IV|VI{0,3}|IX|X)\s*[.．])/;
+const ABS_RE = /^\s*[<\[【〈(《]?\s*(국\s*문\s*초\s*록|국\s*문\s*요\s*약|논\s*문\s*요\s*약|초\s*록|요\s*약)\s*[>\]】〉)》]?\s*$/;
+const ABS_END = /^\s*[<\[【〈(]?\s*(주\s*제\s*어|핵\s*심\s*어|주\s*요\s*어|검\s*색\s*어|key\s*-?\s*words?|abstract)/i;
+const REF_RE = /^\s*[<\[【〈(]?\s*(참\s*고\s*문\s*헌|bibliography|references)\s*[>\]】〉)]?\s*$/i;
+const INTRO_RE = /서\s*론|서\s*설|들\s*어\s*가\s*며|머\s*리\s*말|문\s*제\s*의\s*제\s*기/;
+const CONC_RE = /결\s*론|맺\s*음\s*말|맺\s*는\s*말|나\s*가\s*며|결\s*어|마\s*치\s*며/;
+const TOC_LINE = /(\.{3,}|·{3,}|…|‥|\s\d{1,3}\s*$)/;
+function keyParts(pages, budget) {
+  const L = [];
+  pages.forEach((t, i) => String(t || '').split('\n').forEach((x) => { const v = x.replace(/\s+/g, ' ').trim(); if (v) L.push({ p: i + 1, t: v }); }));
+  if (!L.length) return { text: '', outline: '', found: [] };
+  const n = L.length;
+  let end = n; for (let i = n - 1; i > n * 0.4; i--) if (REF_RE.test(L[i].t)) { end = i; break; }
+  const heads = []; const seen = new Set();
+  for (let i = 0; i < end; i++) { const t = L[i].t; if (t.length <= 80 && HEAD_RE.test(t) && !TOC_LINE.test(t) && !seen.has(t)) { seen.add(t); heads.push({ i, p: L[i].p, t, top: TOP_RE.test(t) }); } }
+  const intro = heads.find((h) => INTRO_RE.test(h.t)) || heads[0] || null;
+  let conc = null; for (let k = heads.length - 1; k >= 0; k--) if (CONC_RE.test(heads[k].t) && (!intro || heads[k].i > intro.i)) { conc = heads[k]; break; }
+  let abs = -1; for (let i = 0; i < n; i++) if (ABS_RE.test(L[i].t)) { abs = i; break; }
+  const take = (from, to, max) => { // lines from..to-1 as running text with 〔쪽〕 marks, at most max characters
+    let out = '', pg = 0;
+    for (let i = from; i < to && out.length < max; i++) { if (L[i].p !== pg) { pg = L[i].p; out += `\n〔${pg}쪽〕 `; } out += L[i].t + ' '; }
+    return out.length > max ? out.slice(0, max) + '…' : out;
+  };
+  const found = []; const parts = []; let left = budget;
+  // 목차: top-level headings first, then the next level while there is room
+  const outlineOf = (list) => list.map((h) => `${h.t} (${h.p}쪽)`).join('\n');
+  let outline = outlineOf(heads.filter((h) => h.top));
+  const full = outlineOf(heads); if (full.length <= budget * 0.15) outline = full;
+  if (outline.length > budget * 0.15) outline = outline.slice(0, Math.floor(budget * 0.15));
+  if (outline) { parts.push(`[목차]\n${outline}`); left -= outline.length; found.push('목차'); }
+  if (abs >= 0) {
+    let stop = Math.min(n, abs + 1); while (stop < n && !ABS_END.test(L[stop].t) && !HEAD_RE.test(L[stop].t) && !REF_RE.test(L[stop].t) && stop - abs < 200) stop++;
+    const t = take(abs + 1, stop, Math.floor(budget * 0.2)); if (t.trim()) { parts.push(`[초록]${t}`); left -= t.length; found.push('초록'); }
+  }
+  const nextTop = (h) => { const k = heads.findIndex((x) => x.i > h.i && x.top); return k >= 0 ? heads[k].i : end; };
+  if (intro && (!conc || intro.i < conc.i)) { const t = take(intro.i, nextTop(intro), Math.floor(Math.min(left * 0.4, budget * 0.3))); parts.push(`[서론]${t}`); left -= t.length; found.push('서론'); }
+  if (conc) { const t = take(conc.i, end, Math.max(800, left)); parts.push(`[결론]${t}`); left -= t.length; found.push('결론'); }
+  if (!intro && !conc) { // no headings found: the beginning and the end of the text
+    const head = take(0, end, Math.floor(left * 0.45)); let k = end, tail = 0; while (k > 0 && tail < left * 0.5) { k--; tail += L[k].t.length + 1; }
+    parts.push(`[앞부분]${head}`, `[끝부분]${take(Math.max(k, 0), end, Math.floor(left * 0.5))}`); found.push('앞부분', '끝부분');
+  }
+  return { text: parts.join('\n\n'), outline: outlineOf(heads.filter((h) => h.top)).slice(0, 4000), found };
+}
+async function digestDoc(d, mode = 'quick') {
   const pg = await docPages(d.id); if (!pg) return;
-  const per = charBudget(AI.state.ctx, 2200);
-  const parts = []; let cur = { from: 1, to: 0, text: '' };
-  pg.pages.forEach((t, i) => {
-    const body = (t || '').replace(/\s+/g, ' ').trim(); if (!body) return;
-    if (cur.text && cur.text.length + body.length > per) { parts.push(cur); cur = { from: i + 1, to: 0, text: '' }; }
-    cur.text += `\n〔${i + 1}쪽〕 ${body.slice(0, per)}`; cur.to = i + 1;
-  });
-  if (cur.text) parts.push(cur);
   const meta = [d.author, d.year, d.venue].filter(Boolean).join(', ');
   const SYS = '너는 법학 문헌을 꼼꼼히 읽고 정리하는 연구 보조자다. 주어진 본문에 있는 내용만 쓰고, 없는 내용은 만들지 않는다. 한국어 개조식으로 쓴다.';
-  const notes = [];
-  for (let k = 0; k < parts.length; k++) {
-    if (DIG.stop) throw new Error('멈춤');
-    const pt = parts[k]; DIG.part = `${k + 1}/${parts.length}부분`; paintStatus();
-    const out = await AI.complete([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}의 ${pt.from}–${pt.to}쪽이다. 〔○쪽〕은 쪽의 시작이다.\n${pt.text}\n\n이 부분의 핵심을 6줄 이내 개조식으로 정리하라. 주장, 근거, 언급된 법령·판례·개념을 빠뜨리지 말고, 줄마다 끝에 (○쪽)을 붙여라.` }], { maxTokens: 600, temperature: 0.2 });
-    notes.push({ from: pt.from, to: pt.to, text: out });
+  const ASKED = '이 문헌을 다음 순서로 정리하라: 1) 주제와 문제의식 2) 핵심 주장 3) 근거와 방법 4) 결론과 제언 5) 다룬 법령·판례·핵심 개념. 각 항목은 2~4줄, 근거 쪽을 (○쪽)으로 밝혀라.';
+  let overview, notes = [], outline = '', found = [];
+  if (mode === 'quick') {
+    const kp = keyParts(pg.pages, Math.min(charBudget(AI.state.ctx, 2400), 9000)); outline = kp.outline; found = kp.found;
+    overview = await digestCall([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}에서 ${found.join('·')} 부분만 뽑은 것이다(본문 전체가 아니다). 〔○쪽〕은 쪽의 시작이다.\n${kp.text}\n\n이를 바탕으로 ${ASKED} 주어진 부분에 없는 내용은 쓰지 마라.` }], { maxTokens: 700, temperature: 0.2 }, `${found.join('·')} 읽기`);
+  } else {
+    const per = charBudget(AI.state.ctx, 2200);
+    const parts = []; let cur = { from: 1, to: 0, text: '' };
+    pg.pages.forEach((t, i) => {
+      const body = (t || '').replace(/\s+/g, ' ').trim(); if (!body) return;
+      if (cur.text && cur.text.length + body.length > per) { parts.push(cur); cur = { from: i + 1, to: 0, text: '' }; }
+      cur.text += `\n〔${i + 1}쪽〕 ${body.slice(0, per)}`; cur.to = i + 1;
+    });
+    if (cur.text) parts.push(cur);
+    for (let k = 0; k < parts.length; k++) {
+      if (DIG.stop) throw new Error('멈춤');
+      const pt = parts[k];
+      const out = await digestCall([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}의 ${pt.from}–${pt.to}쪽이다. 〔○쪽〕은 쪽의 시작이다.\n${pt.text}\n\n이 부분의 핵심을 6줄 이내 개조식으로 정리하라. 주장, 근거, 언급된 법령·판례·개념을 빠뜨리지 말고, 줄마다 끝에 (○쪽)을 붙여라.` }], { maxTokens: 400, temperature: 0.2 }, `${k + 1}/${parts.length}부분`);
+      notes.push({ from: pt.from, to: pt.to, text: out });
+    }
+    let joined = notes.map((x) => `[${x.from}–${x.to}쪽]\n${x.text}`).join('\n\n');
+    if (joined.length > charBudget(AI.state.ctx, 2600) && notes.length > 1) joined = joined.slice(0, charBudget(AI.state.ctx, 2600)); // the overview reads as much as fits; the part notes are kept whole
+    overview = parts.length > 1 ? await digestCall([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}을 부분별로 정리한 것이다.\n\n${joined}\n\n이를 바탕으로 ${ASKED}` }], { maxTokens: 800, temperature: 0.2 }, '종합') : notes[0].text;
   }
-  let joined = notes.map((n) => `[${n.from}–${n.to}쪽]\n${n.text}`).join('\n\n');
-  while (joined.length > charBudget(AI.state.ctx, 2600) && notes.length > 1) joined = joined.slice(0, charBudget(AI.state.ctx, 2600)); // the overview reads as much as fits; the part notes are kept whole
-  DIG.part = '종합'; paintStatus();
-  const overview = parts.length > 1 ? await AI.complete([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}을 부분별로 정리한 것이다.\n\n${joined}\n\n이를 바탕으로 이 문헌을 다음 순서로 정리하라: 1) 주제와 문제의식 2) 핵심 주장 3) 근거와 방법 4) 결론과 제언 5) 다룬 법령·판례·핵심 개념. 각 항목은 2~4줄, 근거 쪽을 (○쪽)으로 밝혀라.` }], { maxTokens: 900, temperature: 0.2 }) : notes[0].text;
   const full = await DB.get('docs', d.id); if (!full) return;
-  full.digest = { text: overview, parts: notes, model: AI.state.name, at: Date.now() };
-  await DB.put('docs', full); Object.assign(d, { digest: overview, digestModel: AI.state.name });
+  full.digest = { text: overview, parts: notes, model: AI.state.name, at: Date.now(), mode, outline, read: found };
+  await DB.put('docs', full); Object.assign(d, { digest: overview, digestModel: AI.state.name, digestMode: mode });
 }
 function showDigest(id) {
   const d = docOf(id); if (!d || !d.digest) return;
-  modal(`<h2>${esc(d.title)}</h2><p class="sub">AI 요지 · ${esc(d.digestModel || '')} · 쪽수는 원문으로 꼭 확인하세요.</p><div class="answer digest">${renderMarkdown(d.digest)}</div><div class="modal-foot"><button class="btn" data-act="dig-redo" data-id="${d.id}">다시 숙지</button><button class="btn primary" data-close>닫기</button></div>`);
+  const quick = d.digestMode === 'quick';
+  const m = modal(`<h2>${esc(d.title)}</h2><p class="sub">AI 요지 · ${esc(d.digestModel || '')} · ${quick ? '빠른 숙지(목차·초록·서론·결론을 읽음)' : '전문을 읽음'} · 쪽수는 원문으로 꼭 확인하세요.</p><div class="answer digest">${renderMarkdown(d.digest)}</div><div id="dig-outline"></div><div class="modal-foot">${quick ? `<button class="btn" data-act="dig-full" data-id="${d.id}">처음부터 끝까지 꼼꼼히 숙지</button>` : ''}<button class="btn" data-act="dig-redo" data-id="${d.id}">다시 숙지</button><button class="btn primary" data-close>닫기</button></div>`);
+  DB.get('docs', id).then((full) => { const o = full && full.digest && full.digest.outline; const box = $('#dig-outline', m.el); if (o && box) box.innerHTML = `<details class="dig-outline"><summary>목차 (문헌에서 그대로 뽑음)</summary><pre>${esc(o)}</pre></details>`; });
 }
 
 /* ---------------- 묻기: questions answered from the library, with the pages they rest on ---------------- */
@@ -925,7 +1005,7 @@ function viewAsk() {
     <div class="ask-thread" id="ask-thread">${msgs.length ? msgs.map((m, i) => (m.role === 'user' ? `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>` : `<div class="msg ai" data-i="${i}"><div class="answer">${answerHTML(m)}</div>${m.note ? `<p class="notice-line">${esc(m.note)}</p>` : ''}${m.live ? '' : `<div class="ai-foot"><button data-act="ask-card" data-i="${i}">노트에 담기</button><button data-act="ask-copy" data-i="${i}">복사</button></div>`}</div>`)).join('')
       : `<div class="ask-empty"><h1>서재에 물어보세요</h1><p class="lead">AI가 서재 전체에서 관련 쪽을 찾아 읽고, 근거가 된 쪽을 [번호]로 밝혀 답합니다. 번호를 누르면 그 쪽이 열립니다. 모든 것이 이 컴퓨터 안에서 이루어집니다.</p>
         <div class="dig-box" id="dig-status">${digestStatusHTML()}</div>
-        <p class="sub">‘숙지’는 AI가 문헌을 한 편씩 끝까지 읽고 요지(주제·주장·근거·결론·법령과 판례)를 정리해 두는 과정입니다. 숙지한 문헌은 답할 때 그 문헌 전체의 흐름을 함께 봅니다. 문헌이 많으면 오래 걸리니 켜 두고 다른 일을 하세요.</p></div>`}</div>
+        <p class="sub">‘숙지’는 AI가 문헌마다 목차·초록·서론·결론을 읽고 요지(주제·주장·근거·결론·법령과 판례)를 정리해 두는 과정입니다. 숙지한 문헌은 답할 때 그 문헌 전체의 흐름을 함께 봅니다. 숙지 전에도 질문할 수 있습니다. 질문하면 AI가 관련 쪽을 찾아 직접 읽습니다.</p></div>`}</div>
     <div class="ask-comp"><label class="sr" for="ask-in">질문</label><textarea id="ask-in" rows="2" placeholder="예: 의회유보의 범위에 관한 학설을 정리해 줘 · Enter 보내기, Shift+Enter 줄바꿈"></textarea>
       <div class="ask-bar"><label class="sr" for="ask-scope">범위</label><select id="ask-scope"><option value="">서재 전체에서</option>${docs.map((d) => `<option value="${d.id}"${S.askScope === d.id ? ' selected' : ''}>${esc(d.title)}에서</option>`).join('')}</select>${S.asking ? '<button class="send stop" data-act="ask-stop">멈추기</button>' : '<button class="send" data-act="ask-send">묻기</button>'}</div></div></div>`;
   const th = $('#ask-thread'); if (th) th.scrollTop = th.scrollHeight;
@@ -1072,6 +1152,7 @@ document.addEventListener('click', async (e) => {
     case 'ocr-one': if (did) ocrAll(did); break;
     case 'ocr-stop': OCR.stop = true; paintStatus(); break;
     case 'dig-start': digestAll(); break;
+    case 'dig-full': { const d = docOf(el.dataset.id); if (d) { $$('.modal-wrap').forEach((x) => x.remove()); digestAll({ ids: [d.id], mode: 'full' }); } break; }
     case 'dig-stop': DIG.stop = true; AI.stop(); paintStatus(); break;
     case 'dig-show': if (did) showDigest(did); break;
     case 'dig-redo': { const d = docOf(el.dataset.id); if (d) { const full = await DB.get('docs', d.id); if (full) { delete full.digest; await DB.put('docs', full); } d.digest = ''; $$('.modal-wrap').forEach((x) => x.remove()); digestAll(); } break; }
@@ -1148,6 +1229,7 @@ document.addEventListener('change', async (e) => {
   const t = e.target;
   if (t.id === 'q-doc') { S.qDoc = t.value; runFind(); }
   else if (t.id === 'ask-scope') S.askScope = t.value;
+  else if (t.id === 'dig-mode') { S.settings.digMode = t.value; saveSettings(); }
   else if (t.id === 'ask-sel') { ASK = S.chats.find((x) => x.id === t.value) || null; viewAsk(); }
   else if (t.id === 'project-sel') selectProject(t.value);
   else if (t.id === 'rd-pg') { const n = parseInt(t.value, 10); if (n) goPage(n); }
@@ -1215,5 +1297,5 @@ function lockView() {
   const kd = (e) => { if (/^[0-9]$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('del'); };
   document.addEventListener('keydown', kd);
 }
-window.YOAI = { S, AI, OCR, ocrAll, cleanOcr, searchLib, parseQuery, libLoad, footnote, addFiles, syncFolder, indexLibrary, gatherSources, digestAll, DIG };
+window.YOAI = { S, AI, OCR, ocrAll, cleanOcr, searchLib, parseQuery, libLoad, footnote, addFiles, syncFolder, indexLibrary, gatherSources, digestAll, DIG, keyParts };
 if (window.Door && window.Door.isOpen('yoai')) start(); else lockView();

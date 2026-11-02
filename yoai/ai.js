@@ -65,11 +65,22 @@ export const AI = {
       return (j.models || []).map((m) => ({ name: m.name, size: m.size || 0 }));
     } finally { clearTimeout(t); }
   },
-  async useOllama(model) {
+  /* a big model (about 12GB or more on disk, e.g. exaone3.5:32b) reads 8천 토큰 at a time: its working memory at 16천 would
+     push a usual computer into swapping */
+  async useOllama(model, size = 0) {
     await this.unload();
     ollama = { model };
-    this.set({ backend: 'ollama', model, name: model, status: 'ready', ctx: 16384, progress: 100, text: '' });
+    this.set({ backend: 'ollama', model, name: model, status: 'ready', ctx: size >= 12e9 ? 8192 : 16384, size, progress: 100, text: '' });
     return true;
+  },
+  /* how much of the loaded Ollama model sits in graphics memory; well under all of it means it runs on the processor (slow) */
+  async ollamaLoad() {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2500);
+    try {
+      const r = await fetch(`${OLLAMA}/api/ps`, { signal: ctl.signal }); if (!r.ok) return null;
+      const j = await r.json(); const m = (j.models || []).find((x) => x.name === (ollama && ollama.model) || x.model === (ollama && ollama.model));
+      return m ? { size: m.size || 0, vram: m.size_vram || 0 } : null;
+    } catch (e) { return null; } finally { clearTimeout(t); }
   },
   async unload() {
     this.stop();
