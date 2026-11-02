@@ -721,6 +721,14 @@
         <p class="prose" style="margin:0 0 10px">모든 기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 가끔 백업 파일을 저장해 두세요. 불러오면 지금 기록과 합쳐집니다(같은 풀이는 한 번만 셉니다).</p>
         <div class="tools-row" style="margin-top:0"><button class="btn sm" data-act="help">사용법</button><button class="btn sm" data-act="export">백업 파일 저장</button><label class="btn sm" style="cursor:pointer">백업 불러오기<input type="file" accept="application/json,.json" data-act="import" class="sr"></label><button class="btn sm ghost" data-act="relock">잠금 다시 걸기</button><button class="btn sm ghost" data-act="wipe" style="color:var(--pen)">기록 모두 지우기</button></div>
       </div>
+      <div class="card"><h2>휴대폰 앱처럼 쓰기</h2>
+        <p class="prose" style="margin:0">Safari나 Chrome의 메뉴(공유 버튼)에서 <b>홈 화면에 추가</b>를 누르면 송공 아이콘이 생기고 앱처럼 열립니다. 한 번 연 뒤에는 인터넷이 없어도 풀 수 있습니다. 아이폰은 홈 화면 앱과 Safari가 기록을 따로 보관하니, Safari에서 쌓은 기록은 백업 파일로 옮기세요.</p>
+        ${EMBED ? '<p class="prose" style="margin:10px 0 0">지금은 홈페이지 안에서 열려 있습니다. <a href="./" target="_blank" rel="noopener">송공만 따로 열기</a>를 누른 뒤 그 화면에서 홈 화면에 추가하세요.</p>' : ''}
+      </div>
+      <div class="card"><h2>다른 사람에게 보내기</h2>
+        <p class="prose" style="margin:0 0 10px">링크를 보내면 다른 사람도 송공을 쓸 수 있습니다. 비밀번호는 따로 알려 주세요. 기록은 사람마다 자기 기기에만 저장되어 서로 보이지 않습니다. 카카오톡에서 받은 링크는 메뉴의 ‘다른 브라우저로 열기’로 Safari나 Chrome에서 열어야 홈 화면에 추가할 수 있습니다.</p>
+        <div class="tools-row" style="margin-top:0"><button class="btn sm" data-act="share">링크 보내기</button></div>
+      </div>
       <div class="card"><h2>문항 안내</h2><div class="prose">
         <p><b>PSAT</b>은 기출을 그대로 싣지 않습니다. 인사혁신처 기출의 발문과 선지 구성을 본떠 새로 만든 문항입니다.</p>
         <ul><li><b>송공 생성</b>: 명제·순서·참거짓 추론, 논증 강화·약화, 표·그래프 해석, 계산, 법조문·일정·규칙 적용, 리그전·자리 배치. 조건과 정답을 프로그램이 직접 계산하고, 정답이 하나뿐인지 모든 경우를 따져 확인한 문항만 나옵니다. 사실상 끝없이 새로 나옵니다.</li>
@@ -744,11 +752,26 @@
         <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
         <h2>기록 보관</h2>
         <p>기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 <b>설정 → 백업 파일 저장</b>으로 파일을 받아 두고, 다른 기기에서 <b>백업 불러오기</b>를 누르면 기록이 합쳐집니다.</p>
+        <h2>휴대폰 앱처럼 쓰기</h2>
+        <p>Safari나 Chrome의 메뉴(공유 버튼)에서 <b>홈 화면에 추가</b>를 누르면 앱처럼 열리고, 한 번 연 뒤에는 인터넷이 없어도 풀 수 있습니다. 아이폰은 홈 화면 앱과 Safari가 기록을 따로 보관하니, 이미 쌓은 기록은 백업 파일로 옮기세요.</p>
+        <h2>다른 사람에게 보내기</h2>
+        <p><b>설정 → 링크 보내기</b>로 주소를 보내고 비밀번호는 따로 알려 주세요. 기록은 사람마다 자기 기기에만 저장되어 서로 보이지 않습니다.</p>
         <h2>문제가 이상할 때</h2>
         <p>해설 화면의 <b>이상한 점 알리기</b>에 적어 두면 <b>기록</b> 화면에 모입니다. ‘내용 복사’로 한꺼번에 전달하면 확인 후 고칩니다.</p>
         <h2>문항 구성</h2>
         <p>PSAT은 기출을 그대로 싣지 않고, 인사혁신처 5급 공채 기출의 발문·선지 양식을 본뜬 문항만 냅니다. 퀴즈·표·법조문 문항은 프로그램이 조건과 정답을 직접 계산하고 정답이 하나뿐인지 모든 경우를 따져 확인한 것만 나오며, 독해·논증은 직접 쓴 문항입니다. 한 번 푼 문제는 다시 나오지 않습니다(복습 제외).</p>
       </div>`), 'help');
+  }
+
+  /* ----- 다른 사람에게 보내기: only the link travels; each person's records stay on their own device ----- */
+  async function shareApp() {
+    const url = new URL('./', location.href).href;
+    if (navigator.share) {
+      try { await navigator.share({ title: '송공', text: '5급 공채 PSAT 연습', url }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; /* otherwise fall through to copying */ }
+    }
+    try { await navigator.clipboard.writeText(url); toast('링크를 복사했습니다. 메신저에 붙여 넣어 보내세요.'); }
+    catch (e) { prompt('이 링크를 복사해 보내세요', url); }
   }
 
   /* ----- backup ----- */
@@ -885,6 +908,7 @@
       case 'set': S.settings[el.dataset.k] = el.dataset.v; saveSettings(); viewSettings(); break;
       case 'toggle': S.settings[el.dataset.k] = !S.settings[el.dataset.k]; saveSettings(); el.setAttribute('aria-checked', S.settings[el.dataset.k] ? 'true' : 'false'); break;
       case 'export': exportBackup(); break;
+      case 'share': shareApp(); break;
       case 'wipe': wipe(); break;
       case 'relock': Door.close('songgong'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); break;
       case 'copy-flags': {

@@ -1,9 +1,9 @@
 /* 요AI — a research desk for public law. Claude through the official Anthropic SDK, called from this browser with the
    researcher's own API key (kept only in this browser). Prior studies live in a local library and are sent as PDF
    documents with citations on, so every claim can be traced to a page; web search checks statutes and cases. */
-import Anthropic, { AuthenticationError, PermissionDeniedError, RateLimitError, APIConnectionError, APIUserAbortError, BadRequestError, NotFoundError, InternalServerError, APIError } from './anthropic-sdk.js?v=b9b8836120';
-import { renderMarkdown } from './md.js?v=b9b8836120';
-import { buildDocx, DOCX_MIME } from './docx.js?v=b9b8836120';
+import Anthropic, { AuthenticationError, PermissionDeniedError, RateLimitError, APIConnectionError, APIUserAbortError, BadRequestError, NotFoundError, InternalServerError, APIError } from './anthropic-sdk.js?v=4522eb2ea1';
+import { renderMarkdown } from './md.js?v=4522eb2ea1';
+import { buildDocx, DOCX_MIME } from './docx.js?v=4522eb2ea1';
 
 const EMBED = window.parent !== window;
 const $ = (s, el = document) => el.querySelector(s);
@@ -145,7 +145,7 @@ async function addFiles(files) {
   return n;
 }
 let pdfjsP = null;
-const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=b9b8836120').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=b9b8836120', import.meta.url).href; return m; }); return pdfjsP; };
+const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=4522eb2ea1').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=4522eb2ea1', import.meta.url).href; return m; }); return pdfjsP; };
 const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
