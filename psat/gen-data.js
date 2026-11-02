@@ -17,11 +17,11 @@
     { title: '품목별 수입량', unit: '천 톤', kind: 'amt', noun: '품목', ents: ['밀', '옥수수', '대두', '쌀', '보리'], lo: 80, hi: 1200, g: [-0.08, 0.11], measure: '수입량', hiW: '많' },
     { title: '권역별 신재생에너지 발전량', unit: 'GWh', kind: 'amt', noun: '권역', ents: ['수도권', '충청권', '호남권', '영남권', '강원권'], lo: 900, hi: 7800, g: [-0.04, 0.2], measure: '발전량', hiW: '많' },
   ];
-  function makeData(T, r, lv) {
+  function makeData(T, r, lv, shape) {
     const startY = r.pick([2020, 2021]);
-    const ny = lv === 1 ? 4 : lv === 3 ? 5 : r.pick([4, 5]);
+    const ny = shape ? shape.ny : lv === 1 ? 4 : lv === 3 ? 5 : r.pick([4, 5]);
     const years = Array.from({ length: ny }, (_, i) => startY + i);
-    const nE = lv === 1 ? 4 : lv === 3 ? 5 : r.pick([4, 5]);
+    const nE = shape ? shape.nE : lv === 1 ? 4 : lv === 3 ? 5 : r.pick([4, 5]);
     const ents = T.ents.slice(0, nE);
     const v = {};
     for (const e of ents) {
@@ -155,6 +155,41 @@
     },
   };
   const KINDS = Object.keys(ST);
+  /* the same statements read off a grouped bar chart (values printed on the bars, as in the exam booklet) */
+  function chartBlock(D) {
+    return { t: 'chart', kind: 'bar', caption: D.T.title, unit: `(단위: ${D.T.unit})`, cats: D.years.map((y) => `${y}년`), series: D.ents.map((e) => ({ name: e, v: D.v[e].slice() })), dec: D.d };
+  }
+  function genChart(r, lv) {
+    const T = r.pick(THEMES);
+    const D = makeData(T, r, lv, { nE: lv === 1 ? 3 : lv === 3 ? 4 : r.pick([3, 4]), ny: 4 }); if (!D) return null;
+    const years = `${D.years[0]}~${D.years[D.years.length - 1]}년`;
+    if (r.chance(0.5)) {
+      const pol = r.pick(['right', 'right', 'wrong']);
+      const sel = pickStatements(D, r, pol === 'right' ? 1 : 4, pol === 'right' ? 4 : 1, lv); if (!sel) return null;
+      const key = pol === 'right' ? sel.t[0] : sel.f[0];
+      const opts = r.shuffle([...sel.t, ...sel.f]);
+      return {
+        type: '자료해석 · 그래프 해석',
+        stem: `다음 <그림>은 ${years} ${T.title}에 관한 자료이다. 이에 대한 설명으로 ${pol === 'right' ? '옳은' : '옳지 않은'} 것은?`,
+        body: [chartBlock(D)],
+        options: opts.map((s) => esc(s.text)), answer: opts.indexOf(key),
+        explain: [{ t: 'p', h: '그래프의 막대 위 숫자를 표로 옮겨 읽으면 계산이 빨라진다. 필요한 값만 골라 적는다.' }, { t: 'ox', items: opts.map((s) => ({ ok: s.truth, v: s.truth ? '옳다' : '옳지 않다', why: esc(s.why) })) }],
+      };
+    }
+    const nT = r.int(1, 3);
+    const sel = pickStatements(D, r, nT, 4 - nT, lv); if (!sel) return null;
+    const items = r.shuffle([...sel.t, ...sel.f]);
+    const labels = P.BOGI.slice(0, 4);
+    const trueSet = labels.filter((_, i) => items[i].truth);
+    const { options, answer } = P.comboOptions(r, labels, trueSet);
+    return {
+      type: '자료해석 · 그래프 해석',
+      stem: `다음 <그림>은 ${years} ${T.title}에 관한 자료이다. 이에 대한 <보기>의 설명으로 옳은 것만을 모두 고르면?`,
+      body: [chartBlock(D), { t: 'box', title: '보기', items: items.map((s, i) => `${labels[i]}. ${esc(s.text)}`) }],
+      options, answer,
+      explain: [{ t: 'bx', items: items.map((s, i) => ({ label: labels[i], text: esc(s.text), ok: s.truth, v: s.truth ? '옳다' : '옳지 않다', why: esc(s.why) })) }, { t: 'p', h: `따라서 옳은 것은 ${trueSet.join(', ')}이므로 정답은 <b>${CIRC[answer]}</b>이다.` }],
+    };
+  }
   function tableBlock(D) {
     return { t: 'table', caption: `${D.T.title}`, unit: `(단위: ${D.T.unit})`, head: [D.T.noun, ...D.years.map((y) => `${y}`)], rows: D.ents.map((e) => [e, ...D.v[e].map((x) => val(D, x))]), num: true };
   }
@@ -387,4 +422,5 @@
   P.addGen('data', 'D-wavg', '자료해석 · 계산', 1.2, genWeighted);
   P.addGen('data', 'D-exec', '자료해석 · 계산', 1.2, genExec);
   P.addGen('data', 'D-pt', '자료해석 · 계산', 0.8, genPoint);
+  P.addGen('data', 'D-chart', '자료해석 · 그래프 해석', 3, genChart, true);
 })(typeof window !== 'undefined' ? window : globalThis);

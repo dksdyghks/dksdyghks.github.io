@@ -99,7 +99,8 @@ main { max-width: calc(var(--wrap) + 48px); margin: 0 auto; padding: 8px var(--g
 .hello h1 { margin: 0; font-family: var(--f-serif); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.03em; }
 .today { display: flex; gap: 18px; color: var(--muted); font-size: .875rem; }
 .today b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
-.subjects { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.subjects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .subjects { grid-template-columns: 1fr; } .subj { min-height: 0; } }
 .subj {
   position: relative; display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 20px 20px 18px; border: 0; border-radius: var(--radius);
   background: var(--sheet); box-shadow: var(--shadow); min-height: 142px; transition: transform .15s ease, box-shadow .15s ease;
@@ -115,7 +116,8 @@ main { max-width: calc(var(--wrap) + 48px); margin: 0 auto; padding: 8px var(--g
 .due { display: inline-flex; align-items: center; gap: 5px; font-size: .75rem; font-weight: 600; color: var(--gold-ink); background: var(--gold-wash); border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent); padding: 2px 8px; border-radius: 999px; }
 .acc-bar { height: 4px; border-radius: 4px; background: var(--chip); overflow: hidden; }
 .acc-bar i { display: block; height: 100%; background: var(--ink-2); border-radius: 4px; }
-.row-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.row-links { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+@media (max-width: 900px) { .row-links { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .link-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 16px 18px; border: 0; border-radius: var(--radius); background: var(--sheet); box-shadow: var(--shadow); }
 .link-card .t { font-weight: 650; font-size: .9375rem; display: flex; align-items: center; gap: 8px; }
 .link-card .s { font-size: .8125rem; color: var(--muted); }
@@ -135,6 +137,8 @@ main { max-width: calc(var(--wrap) + 48px); margin: 0 auto; padding: 8px var(--g
 .passage p { margin: 0; text-indent: .6em; }
 .passage p + p { margin-top: .45em; }
 .passage p.noind, .passage .noind p { text-indent: 0; }
+.passage p.fn { text-indent: 0; margin-top: .7em; font-family: var(--f-sans); font-size: .875em; line-height: 1.7; color: var(--muted); }
+.passage p.fn + p.fn { margin-top: .15em; }
 .passage h4 { margin: .2em 0 .4em; font-family: var(--f-sans); font-size: .9375em; }
 .frame { border: 1px solid var(--rule-2); border-radius: 4px; padding: 16px 18px; }
 ul.cond { margin: .5em 0 0; padding: 0; list-style: none; }
@@ -165,9 +169,18 @@ table.t thead th { background: var(--chip); font-weight: 600; border-bottom: 1px
 table.t tbody th { font-weight: 600; text-align: center; background: var(--sheet-2); }
 table.t.num td { text-align: right; }
 table.t td.l, table.t th.l { text-align: left; }
+@media (max-width: 600px) {
+  table.t { font-size: .84em; }
+  table.t th, table.t td { padding: 6px 5px; white-space: normal; word-break: keep-all; overflow-wrap: break-word; }
+  table.t .nw { white-space: nowrap; }
+}
 .tbl-note { margin: 6px 0 0; font-size: .8125em; color: var(--muted); }
 .chart { width: 100%; height: auto; display: block; }
-.chart text { font-family: var(--f-sans); fill: var(--ink-2); }
+.chart.cn { display: none; }
+@media (max-width: 600px) { .chart.cw { display: none; } .chart.cn { display: block; } }
+.chart text { font-family: var(--f-sans); fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 14px; font-size: .8125em; color: var(--ink-2); margin: 0 0 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
 
 /* ---------- options: OMR marks, then red-pen grading ---------- */
 .opts { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 6px; }

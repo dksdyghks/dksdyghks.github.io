@@ -100,6 +100,36 @@ details.think div { white-space: pre-wrap; margin-top: 6px; padding: 8px 12px; b
 .ai-foot button:hover { background: var(--chip); color: var(--ink); }
 .ai-foot .meta { margin-left: auto; }
 .notice-line { font-size: .8125rem; padding: 10px 12px; border-radius: 10px; background: var(--red-wash); color: var(--red); margin-top: 6px; }
+.doc-chip small { font-size: .6875rem; color: var(--muted); white-space: nowrap; }
+/* citation check */
+.verify { margin-top: 12px; border: 1px solid var(--rule); border-radius: 12px; background: var(--panel); padding: 10px 12px; font-size: .8125rem; color: var(--ink-2); }
+.verify.busy { color: var(--muted); }
+.verify .vh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.verify .vh .meta { margin-left: auto; font-size: .75rem; color: var(--muted); }
+.verify .vc { display: inline-flex; gap: 4px; }
+.verify .vc i, .verify .vb { font-style: normal; font-size: .6875rem; font-weight: 600; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.verify .vc i.ok, .verify li.ok .vb { background: #E7F3EC; color: #1F6A47; }
+.verify .vc i.part, .verify li.part .vb { background: var(--gold-wash); color: var(--gold-ink); }
+.verify .vc i.no, .verify li.no .vb { background: var(--red-wash); color: var(--red); }
+.verify p { margin: 8px 0 0; line-height: 1.65; }
+.verify ol { list-style: none; margin: 8px 0 0; padding: 0; }
+.verify li { padding: 8px 0; border-top: 1px dashed var(--rule-2); background: none; }
+.verify li .vn { font-size: .6875rem; color: var(--muted); margin-left: 6px; }
+.verify li .vt { margin-top: 4px; color: var(--ink); line-height: 1.6; }
+.verify li .vr { margin-top: 2px; color: var(--muted); line-height: 1.6; }
+.verify .vflag { color: var(--gold-ink); font-size: .75rem; }
+.verify .err, .modal .err { color: var(--red); }
+:root[data-theme="dark"] .verify .vc i.ok, :root[data-theme="dark"] .verify li.ok .vb { background: #11261B; color: #8ED7AE; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .verify .vc i.ok, :root:not([data-theme="light"]) .verify li.ok .vb { background: #11261B; color: #8ED7AE; } }
+/* export & style dialogs */
+.modal label.check { display: flex; gap: 8px; align-items: flex-start; font-size: .8125rem; color: var(--ink-2); margin: 0 0 10px; line-height: 1.5; }
+.modal label.check input { margin-top: 3px; }
+.pick-list { display: grid; gap: 6px; max-height: 40vh; overflow: auto; margin: 0 0 12px; }
+.doc-pick { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; align-items: start; border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; font-size: .8125rem; cursor: pointer; }
+.doc-pick input { margin-top: 3px; grid-row: span 2; }
+.doc-pick span { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.doc-pick small { color: var(--muted); font-size: .75rem; }
+.doc-pick:has(input:checked) { border-color: var(--gold); background: var(--gold-wash); }
 .cursor::after { content: "▍"; animation: blink 1s steps(1) infinite; color: var(--gold); }
 @keyframes blink { 50% { opacity: 0; } }
 

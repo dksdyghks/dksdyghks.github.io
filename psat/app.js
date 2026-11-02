@@ -14,9 +14,8 @@
     lang: { name: '언어논리', pace: 135, bankP: 0.62, key: '1', hint: '독해 · 논증 · 형식논리' },
     data: { name: '자료해석', pace: 135, bankP: 0.4, key: '2', hint: '표 해석 · 매칭 · 계산' },
     sit: { name: '상황판단', pace: 135, bankP: 0.4, key: '3', hint: '법조문 · 규칙 적용 · 퀴즈' },
-    con: { name: '헌법', pace: 60, bankP: 0.5, key: '4', hint: '조문 · 주요 결정' },
   };
-  const ORDER = ['lang', 'data', 'sit', 'con'];
+  const ORDER = ['lang', 'data', 'sit'];
   const INTERVALS = [1, 3, 7, 14, 30];
   const DEFAULTS = { theme: 'auto', size: 'm', face: 'serif', timer: true, mixReview: true, level: 'auto' };
   const CAUSES = ['계산 실수', '조건을 놓침', '개념·법리 부족', '시간 부족', '기타'];
@@ -41,7 +40,7 @@
   }
   const snippet = (q) => { for (const b of q.body || []) { const t = b.t === 'table' ? `〈${b.caption || '표'}〉 ${(b.head || []).join(' · ')}` : b.t === 'box' ? (b.items || []).join(' ') : b.h; const p = plain(t || ''); if (p) return p.length > 90 ? p.slice(0, 90) + '…' : p; } return ''; };
   const seenKey = (q) => (q.src === 'gen' ? 'h:' + cyrb53(JSON.stringify([q.stem, q.body, q.options])) : 'id:' + q.id);
-  const typeShort = (subj, type) => String(type || '').replace(SUBJ[subj].name + ' · ', '');
+  const typeShort = (subj, type) => String(type || '').replace((SUBJ[subj] ? SUBJ[subj].name : '') + ' · ', '');
   let toastTimer = 0;
   function toast(msg) {
     let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
@@ -114,7 +113,9 @@
     return saveChain;
   }
   const saveKV = (k) => persist(() => DB.put('kv', S[k], k));
-  const CUR_KEY = 'songgong.cur';
+  const CUR_KEY = 'songgong.cur', SET_KEY = 'songgong.set';
+  function saveSet() { try { if (S.set) localStorage.setItem(SET_KEY, JSON.stringify(S.set)); else localStorage.removeItem(SET_KEY); } catch (e) { /* ignore */ } }
+  function loadSet() { try { const v = localStorage.getItem(SET_KEY); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
   function saveCur() {
     try {
       if (S.cur) localStorage.setItem(CUR_KEY, JSON.stringify({ q: S.cur.q, ctx: S.cur.ctx, phase: S.cur.phase, choice: S.cur.choice, ms: S.cur.ms, ok: S.cur.ok, review: S.cur.review, no: S.cur.no }));
@@ -138,6 +139,7 @@
       try { const v = localStorage.getItem('songgong.settings'); if (v) S.settings = { ...DEFAULTS, ...JSON.parse(v) }; } catch (e2) { /* ignore */ }
     }
     S.cur = loadCur();
+    S.set = loadSet();
   }
 
   /* ---------------- statistics ---------------- */
@@ -157,7 +159,7 @@
   }
   const dueItems = (subj) => {
     const t = dayKey();
-    return Array.from(S.items.values()).filter((it) => it.due && it.due <= t && (!subj || it.subj === subj)).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.lastAt - b.lastAt));
+    return Array.from(S.items.values()).filter((it) => SUBJ[it.subj] && it.due && it.due <= t && (!subj || it.subj === subj)).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.lastAt - b.lastAt));
   };
   function srUpdate(rec, ok) {
     const t = dayKey();
@@ -216,7 +218,7 @@
       const q = (P.bank[e.subj] || []).find((x) => x.id === e.id);
       if (q && e.subj === subj && !S.seen.has('id:' + q.id)) return { q: bankCopy(q, subj) };
     }
-    if (S.settings.mixReview && !type) {
+    if (S.settings.mixReview && !type && ctx.mode !== 'set') {
       const due = dueItems(subj);
       if (due.length && Math.random() < 0.22) return { q: due[0].q, review: true };
     }
@@ -229,40 +231,70 @@
   /* ---------------- rendering of question blocks ---------------- */
   const stemHTML = (s) => esc(s).replace(/&lt;(\/?)(u|b)&gt;/g, '<$1$2>');
   function tableHTML(b) {
+    const keep = (c) => { const t = String(c == null ? '' : c); return t.length <= 10 && !/[<&]/.test(t) ? `<span class="nw">${t}</span>` : t; }; // short values never split across lines
     const head = b.head ? `<thead><tr>${b.head.map((c, i) => `<th${i === 0 && b.num ? ' class="l"' : ''} scope="col">${c}</th>`).join('')}</tr></thead>` : '';
-    const rows = (b.rows || []).map((r) => `<tr>${r.map((c, i) => (i === 0 && b.head ? `<th scope="row">${c}</th>` : `<td>${c}</td>`)).join('')}</tr>`).join('');
+    const rows = (b.rows || []).map((r) => `<tr>${r.map((c, i) => (i === 0 && b.head ? `<th scope="row">${keep(c)}</th>` : `<td>${keep(c)}</td>`)).join('')}</tr>`).join('');
     const cap = b.caption || b.unit ? `<div class="tbl-cap"><b>${b.caption ? `〈${esc(b.caption).replace(/^〈|〉$/g, '')}〉` : ''}</b><span>${b.unit ? esc(b.unit) : ''}</span></div>` : '';
     return `<div class="tblock">${cap}<div class="tbl-wrap"><table class="t${b.num ? ' num' : ''}">${head}<tbody>${rows}</tbody></table></div>${b.note ? `<p class="tbl-note">※ ${b.note.replace(/^※\s*/, '')}</p>` : ''}</div>`;
   }
+  let chartSeq = 0;
+  /* exam-style monochrome bar chart: a nice 0-based scale, each series told apart by tone and hatching (not colour alone),
+     every bar labelled with its value (rotated when bars are narrow) and a legend for two or more series */
   function chartHTML(b) {
-    // vertical bars or lines, monochrome like an exam booklet, values printed on the marks
-    const W = 640, H = 300, L = 46, R = 16, T = 26, B = 46;
-    const series = b.series || [], cats = b.cats || [];
+    const id = 'c' + (++chartSeq);
+    const series = b.series || [], cats = b.cats || [], n = Math.max(1, series.length), dec = b.dec || 0;
     const all = series.flatMap((s) => s.v);
-    const max = b.max || Math.ceil(Math.max(...all) * 1.15 / (b.step || 1)) * (b.step || 1);
-    const x0 = L, x1 = W - R, y0 = H - B, y1 = T;
-    const X = (i) => x0 + ((i + 0.5) * (x1 - x0)) / cats.length;
-    const Y = (v) => y0 - ((v / max) * (y0 - y1));
-    let g = `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="currentColor" stroke-width="1.2"/>`;
-    const ticks = 5;
-    for (let k = 0; k <= ticks; k++) { const v = (max * k) / ticks, y = Y(v); g += `<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="currentColor" stroke-opacity="${k ? 0.12 : 0}"/><text x="${x0 - 6}" y="${y + 4}" text-anchor="end" font-size="11">${P.fmt(v, b.dec || 0)}</text>`; }
-    cats.forEach((c, i) => { g += `<text x="${X(i)}" y="${y0 + 18}" text-anchor="middle" font-size="12">${esc(c)}</text>`; });
-    const n = series.length, bw = Math.min(34, ((x1 - x0) / cats.length) * 0.62 / Math.max(1, n));
-    series.forEach((s, si) => {
-      if (b.kind === 'line') {
-        const pts = s.v.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
-        g += `<polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="2" ${si ? 'stroke-dasharray="5 4"' : ''}/>`;
-        s.v.forEach((v, i) => { g += `<circle cx="${X(i)}" cy="${Y(v)}" r="3.6" fill="${si ? 'var(--sheet)' : 'currentColor'}" stroke="currentColor" stroke-width="1.6"/><text x="${X(i)}" y="${Y(v) - 9}" text-anchor="middle" font-size="11">${P.fmt(v, b.dec || 0)}</text>`; });
-      } else {
+    const top = Math.max(...all, 0);
+    const rough = top / 5;
+    const mag = Math.pow(10, Math.floor(Math.log10(rough || 1)));
+    const step = b.step || [1, 2, 2.5, 5, 10].map((k) => k * mag).find((k) => k >= rough) || 10 * mag;
+    const styles = [
+      { fill: 'currentColor', op: 0.86, pat: '' },
+      { fill: 'currentColor', op: 0.45, pat: '' },
+      { fill: 'hatch', op: 1, pat: 'hatch' },
+      { fill: 'var(--sheet)', op: 1, pat: 'outline' },
+      { fill: 'dots', op: 1, pat: 'dots' },
+    ];
+    /* one drawing routine, two canvases: a wide one for desktop and a compact one that fits a phone without side-scrolling */
+    const draw = (W, H, key, f) => {
+      const R = 10, T = 18, B = 40;
+      const rotate0 = n >= 3 || Math.min(40, (((W - f.L - R) / cats.length) * 0.76) / n) < 30;
+      let max = b.max || Math.ceil((top * (1 + (rotate0 ? 0.3 : 0.14))) / step) * step;
+      if (!b.max && /%/.test(b.unit || '') && !/%p/.test(b.unit || '') && top <= 85 && max > 100) max = 100; // a percentage axis ends at 100 when the labels still fit
+      const ticks = []; for (let v = 0; v <= max + 1e-9; v += step) ticks.push(P.fmt(v, Number.isInteger(step) ? 0 : 1));
+      const L = Math.max(f.L, Math.ceil(10 + Math.max(...ticks.map((t) => t.length)) * f.axis * 0.62)); // room for the longest tick label
+      const groupW = (W - L - R) / cats.length;
+      const bw = Math.min(40, (groupW * 0.76) / n);
+      const rotate = n >= 3 || bw < 30;
+      const y0 = H - B, y1 = T;
+      const Y = (v) => y0 - (v / max) * (y0 - y1);
+      const pid = id + key;
+      const fillOf = (st) => (st.pat === 'hatch' ? `url(#${pid}h)` : st.pat === 'dots' ? `url(#${pid}d)` : st.fill);
+      let g = `<defs><pattern id="${pid}h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--sheet)"/><line x1="0" y1="0" x2="0" y2="6" stroke="currentColor" stroke-width="2.2"/></pattern><pattern id="${pid}d" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="var(--sheet)"/><circle cx="2.5" cy="2.5" r="1.1" fill="currentColor"/></pattern></defs>`;
+      ticks.forEach((t, k) => {
+        const v = k * step, y = Y(v);
+        g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="currentColor" stroke-opacity="${v ? 0.12 : 0.9}" stroke-width="${v ? 1 : 1.2}"/><text x="${L - 6}" y="${y + 4}" text-anchor="end" font-size="${f.axis}">${t}</text>`;
+      });
+      cats.forEach((c, i) => { g += `<text x="${L + groupW * (i + 0.5)}" y="${y0 + 18}" text-anchor="middle" font-size="${f.cat}">${esc(c)}</text>`; });
+      series.forEach((s, si) => {
+        const st = styles[si % styles.length];
         s.v.forEach((v, i) => {
-          const x = X(i) - (n * bw) / 2 + si * bw, y = Y(v);
-          g += `<rect x="${x + 1}" y="${y}" width="${bw - 2}" height="${y0 - y}" fill="currentColor" fill-opacity="${si ? 0.28 : 0.82}" rx="1.5"/><text x="${x + bw / 2}" y="${y - 5}" text-anchor="middle" font-size="11">${P.fmt(v, b.dec || 0)}</text>`;
+          const x = L + groupW * (i + 0.5) - (n * bw) / 2 + si * bw, y = Y(v), h = y0 - y;
+          g += `<rect x="${x + 0.75}" y="${y}" width="${Math.max(1, bw - 1.5)}" height="${h}" fill="${fillOf(st)}" fill-opacity="${st.op}" stroke="currentColor" stroke-width="${st.pat ? 1 : 0}"/>`;
+          const lab = P.fmt(v, dec), cx = x + bw / 2;
+          g += rotate
+            ? `<text x="${cx + f.val * 0.35}" y="${y - 4}" transform="rotate(-90 ${cx + f.val * 0.35} ${y - 4})" text-anchor="start" font-size="${f.val}">${lab}</text>`
+            : `<text x="${cx}" y="${y - 5}" text-anchor="middle" font-size="${f.val}">${lab}</text>`;
         });
-      }
-    });
-    const legend = n > 1 ? `<div class="tbl-note">${series.map((s, si) => `${b.kind === 'line' ? (si ? '- - -' : '—●—') : si ? '▨' : '■'} ${esc(s.name)}`).join('&nbsp;&nbsp;&nbsp;')}</div>` : '';
+      });
+      return `<svg class="chart ${key}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(b.caption || '그래프')}" style="color:var(--ink-2)">${g}</svg>`;
+    };
+    const sw = (si) => { const st = styles[si % styles.length]; return `<svg width="16" height="11" viewBox="0 0 16 11" aria-hidden="true" style="vertical-align:-1px;color:var(--ink-2)"><defs><pattern id="${id}lh${si}" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="var(--sheet)"/><line x1="0" y1="0" x2="0" y2="5" stroke="currentColor" stroke-width="2"/></pattern><pattern id="${id}ld${si}" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="4" fill="var(--sheet)"/><circle cx="2" cy="2" r="0.9" fill="currentColor"/></pattern></defs><rect x="0.5" y="0.5" width="15" height="10" fill="${st.pat === 'hatch' ? `url(#${id}lh${si})` : st.pat === 'dots' ? `url(#${id}ld${si})` : st.fill}" fill-opacity="${st.op}" stroke="currentColor" stroke-width="${st.pat ? 1 : 0}"/></svg>`; };
+    const legend = n > 1 ? `<div class="legend">${series.map((s, si) => `<span>${sw(si)} ${esc(s.name)}</span>`).join('')}</div>` : '';
     const cap = `<div class="tbl-cap"><b>${b.caption ? `〈${esc(b.caption)}〉` : ''}</b><span>${b.unit ? esc(b.unit) : ''}</span></div>`;
-    return `<div class="tblock">${cap}<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(b.caption || '그래프')}" style="color:var(--ink-2)">${g}</svg>${legend}${b.note ? `<p class="tbl-note">※ ${b.note}</p>` : ''}</div>`;
+    const wide = draw(680, 300, 'cw', { L: 52, axis: 11, cat: 12, val: 11 });
+    const narrow = draw(340, 300, 'cn', { L: 30, axis: 9.5, cat: 10.5, val: 9.5 });
+    return `<div class="tblock">${cap}${legend}<div class="chart-box">${wide}${narrow}</div>${b.note ? `<p class="tbl-note">※ ${b.note}</p>` : ''}</div>`;
   }
   function oxItem(n, text, it, isAns) {
     return `<li class="ox${isAns ? ' ans' : ''}"><span class="n" aria-hidden="true">${n}</span><div class="ob">${text ? `<div class="ot">${text}</div>` : ''}<div class="ow"><b class="v ${it.ok ? 'yes' : 'no'}">${it.v}.</b> ${it.why}${isAns ? ' <span class="ans-tag">정답</span>' : ''}</div></div></li>`;
@@ -326,7 +358,7 @@
       <main id="main">${inner}</main>`;
   }
   const app = () => $('#app');
-  const WIDTH = { home: 'w-mid', types: 'w-mid', notes: 'w-mid', stats: 'w-mid', settings: 'w-mid', help: 'w-read', quiz: 'w-read', explain: 'w-wide' };
+  const WIDTH = { home: 'w-mid', types: 'w-mid', notes: 'w-mid', stats: 'w-mid', settings: 'w-mid', help: 'w-read', setup: 'w-read', setresult: 'w-mid', quiz: 'w-read', explain: 'w-wide' };
   function paint(html, view) {
     S.view = view;
     stopTimer();
@@ -362,8 +394,8 @@
           <span style="display:flex;gap:8px;align-items:center"><button class="subj-types" data-act="types" data-subj="${k}">유형별</button><span class="subj-go">풀기 ${ICON.arrow}</span></span>
         </div></div>`;
     }).join('');
-    const resume = S.cur && S.cur.q ? `<button class="item resume" data-act="resume"><span class="t1"><span class="tag rev">이어서 풀기</span>${esc(SUBJ[S.cur.q.subject].name)} · ${esc(typeShort(S.cur.q.subject, S.cur.q.type))}${S.cur.phase === 'x' ? ' · 해설 보는 중' : ''}</span><span class="t2">${esc(stemText(S.cur.q.stem))}</span></button>` : '';
-    const nItems = Array.from(S.items.values()).filter((it) => it.wrong > 0 || it.star).length;
+    const resume = S.cur && S.cur.q && SUBJ[S.cur.q.subject] ? `<button class="item resume" data-act="resume"><span class="t1"><span class="tag rev">이어서 풀기</span>${esc(SUBJ[S.cur.q.subject].name)} · ${esc(typeShort(S.cur.q.subject, S.cur.q.type))}${S.cur.phase === 'x' ? ' · 해설 보는 중' : ''}</span><span class="t2">${esc(stemText(S.cur.q.stem))}</span></button>` : '';
+    const nItems = Array.from(S.items.values()).filter((it) => SUBJ[it.subj] && (it.wrong > 0 || it.star)).length;
     const html = shell('', `
       <section class="hello">
         <h1>${now.getMonth() + 1}월 ${now.getDate()}일 ${WD[now.getDay()]}요일</h1>
@@ -373,11 +405,12 @@
       <div class="subjects">${cards}</div>
       <div class="row-links">
         <button class="link-card" data-act="notes"><span class="t">오답노트 ${due.length ? `<span class="due">오늘 복습 ${due.length}</span>` : ''}</span><span class="s">${nItems ? `${nItems}문항 보관 중` : '틀린 문제가 자동으로 모입니다'}</span></button>
+        <button class="link-card" data-act="setup"><span class="t">실전 세트</span><span class="s">5·10·20문항을 시험 속도로</span></button>
         <button class="link-card" data-act="stats"><span class="t">기록</span><span class="s">과목·유형별 정답률과 시간</span></button>
         <button class="link-card" data-act="settings"><span class="t">설정 · 백업</span><span class="s">${S.persistent ? (S.meta.lastBackup ? `마지막 백업 ${md(dayKey(S.meta.lastBackup))}` : '백업 파일로 기록 보관') : '<b>기록이 저장되지 않는 환경</b>'}</span></button>
       </div>
       ${S.persistent ? '' : '<div class="notice"><b>이 브라우저에서는 기록이 저장되지 않습니다.</b> 비공개(시크릿) 창이거나 저장 공간이 막혀 있을 수 있습니다. 문제 풀이는 가능하지만 창을 닫으면 기록이 사라집니다.</div>'}
-      <p class="notice">처음이라면 <button class="linkish" data-act="help">사용법</button>을 먼저 보세요. 숫자 키 <b>1~4</b>로 과목을 바로 시작하고, 문제에서는 <b>1~5</b>로 고른 뒤 <b>Enter</b>로 채점합니다. ${EMBED ? '<b>Esc</b>를 누르면 바로 닫힙니다(풀던 문제는 그대로 남습니다).' : ''}</p>`);
+      <p class="notice">처음이라면 <button class="linkish" data-act="help">사용법</button>을 먼저 보세요. 숫자 키 <b>1~3</b>으로 과목을 바로 시작하고, 문제에서는 <b>1~5</b>로 고른 뒤 <b>Enter</b>로 채점합니다. ${EMBED ? '<b>Esc</b>를 누르면 바로 닫힙니다(풀던 문제는 그대로 남습니다).' : ''}</p>`);
     paint(html, 'home');
   }
 
@@ -398,7 +431,10 @@
     stopTimer(); lastT = performance.now();
     tick = setInterval(() => {
       const now = performance.now();
-      if (!document.hidden && S.cur && S.cur.phase === 'q') S.cur.ms += now - lastT;
+      if (!document.hidden && S.cur && S.cur.phase === 'q') {
+        S.cur.ms += now - lastT;
+        if (S.set && !S.set.done && S.cur.ctx && S.cur.ctx.mode === 'set') { S.set.usedMs += now - lastT; if (S.set.usedMs >= S.set.limitMs) { lastT = now; finishSet(true); return; } }
+      }
       lastT = now; drawTimer();
       if (++saveTick % 20 === 0) saveCur();
     }, 250);
@@ -407,6 +443,10 @@
   function stopTimer() { if (tick) clearInterval(tick); tick = 0; }
   function drawTimer() {
     const el = $('#timer'); if (!el || !S.cur) return;
+    if (S.set && !S.set.done && S.cur.ctx && S.cur.ctx.mode === 'set') {
+      const left = Math.max(0, S.set.limitMs - S.set.usedMs);
+      el.textContent = '남은 ' + clock(left); el.classList.toggle('over', left < 60000); el.classList.toggle('paused', document.hidden); return;
+    }
     el.textContent = clock(S.cur.ms);
     el.classList.toggle('over', S.cur.ms / 1000 > SUBJ[S.cur.q.subject].pace);
     el.classList.toggle('paused', document.hidden);
@@ -420,14 +460,14 @@
       return;
     }
     const d = S.daily[dayKey()];
-    const no = ((d && d.s && d.s[got.q.subject]) ? d.s[got.q.subject].n : 0) + 1;
+    const no = ctx.mode === 'set' && S.set ? S.set.results.length + 1 : ((d && d.s && d.s[got.q.subject]) ? d.s[got.q.subject].n : 0) + 1;
     S.cur = { q: got.q, ctx, phase: 'q', choice: null, ms: 0, ok: null, review: !!got.review, no };
     saveCur();
     viewQuiz();
   }
   function viewQuiz() {
     const c = S.cur, q = c.q;
-    const crumb = `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}`;
+    const crumb = c.ctx && c.ctx.mode === 'set' && S.set ? `<b>실전 세트</b> · ${SUBJ[q.subject].name} ${S.set.results.length + 1}/${S.set.n}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}`;
     paint(shell(crumb, `
       <article class="sheet fade-in" aria-label="문제">${questionHTML(q, { choice: c.choice, no: c.no, review: c.review })}</article>
       <div class="actions">
@@ -459,8 +499,8 @@
       const key = q.subject + '|' + q.type, st = S.lv[key] || (S.lv[key] = { lv: 2, recent: [] });
       st.recent.push(ok); if (st.recent.length > 6) st.recent.shift();
       const good = st.recent.filter(Boolean).length;
-      if (st.recent.length >= 5 && good >= 5 && st.lv < 3) { st.lv++; st.recent = []; lvMsg = `이 유형의 난이도를 ‘${P.LEVELS[st.lv]}’으로 올립니다.`; }
-      else if (st.recent.length >= 5 && good <= 2 && st.lv > 1) { st.lv--; st.recent = []; lvMsg = `이 유형의 난이도를 ‘${P.LEVELS[st.lv]}’으로 낮춥니다.`; }
+      if (st.recent.length >= 5 && good >= 5 && st.lv < 3) { st.lv++; st.recent = []; lvMsg = `이 유형의 난이도를 ‘${P.LEVELS[st.lv]}’${P.pp(P.LEVELS[st.lv], '으로/로')} 올립니다.`; }
+      else if (st.recent.length >= 5 && good <= 2 && st.lv > 1) { st.lv--; st.recent = []; lvMsg = `이 유형의 난이도를 ‘${P.LEVELS[st.lv]}’${P.pp(P.LEVELS[st.lv], '으로/로')} 낮춥니다.`; }
     }
     c.lvMsg = lvMsg;
     let rec = S.items.get(q.id);
@@ -481,6 +521,11 @@
         await DB.put('kv', S.daily, 'daily');
         await DB.put('kv', S.lv, 'lv');
       });
+    }
+    if (c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done) {
+      S.set.results.push({ q, choice: c.choice, ok, ms: Math.round(c.ms) }); saveSet();
+      if (S.set.results.length >= S.set.n) { finishSet(false); return; }
+      startSession(c.ctx); return;
     }
     viewExplain();
   }
@@ -519,7 +564,7 @@
       </div>
       <div class="actions ${wide ? '' : 'narrow'}">
         <button class="btn" data-act="home">그만 풀기</button>
-        <button class="btn primary grow" data-act="next">${c.ctx && c.ctx.mode === 'note' ? '오답노트로' : '다음 문제'} <span class="kbd">Enter</span></button>
+        <button class="btn primary grow" data-act="next">${c.ctx && c.ctx.mode === 'note' ? '오답노트로' : c.ctx && c.ctx.mode === 'setreview' ? '세트 결과로' : '다음 문제'} <span class="kbd">Enter</span></button>
       </div>`), 'explain');
   }
   function ensureRec(q) {
@@ -538,14 +583,65 @@
     if (!S.cur) { viewHome(); return; }
     const ctx = S.cur.ctx || { subj: S.cur.q.subject, mode: 'new' };
     if (ctx.mode === 'note') { S.cur = null; saveCur(); viewNotes(); return; }
+    if (ctx.mode === 'setreview') { S.cur = null; saveCur(); viewSetResult(); return; }
     startSession(ctx);
+  }
+
+  /* ----- 실전 세트 ----- */
+  let setPick = { subj: 'lang', n: 10 };
+  function viewSetup() {
+    const segS = ORDER.map((k) => `<button class="${setPick.subj === k ? 'on' : ''}" data-act="set-subj" data-v="${k}">${SUBJ[k].name}</button>`).join('');
+    const segN = [5, 10, 20].map((n) => `<button class="${setPick.n === n ? 'on' : ''}" data-act="set-n" data-v="${n}">${n}문항</button>`).join('');
+    const lim = setPick.n * SUBJ[setPick.subj].pace * 1000;
+    paint(shell('<b>실전 세트</b>', `
+      <div class="page-h"><h1>실전 세트</h1></div>
+      <div class="card"><div class="set-row"><div class="l">과목</div><div class="seg">${segS}</div></div>
+        <div class="set-row"><div class="l">문항 수</div><div class="seg">${segN}</div></div>
+        <div class="set-row"><div class="l">제한 시간<small>실제 시험 속도(문항당 ${human(SUBJ[setPick.subj].pace * 1000)})로 계산합니다. 다른 창을 보는 동안은 멈춥니다.</small></div><b style="font-variant-numeric:tabular-nums">${human(lim)}</b></div>
+        <p class="prose" style="margin:8px 0 12px">문항 사이에는 해설을 보여 주지 않고 시험처럼 이어서 풉니다. 끝나면 점수와 문항별 해설을 한꺼번에 봅니다. 틀린 문제는 오답노트에 담깁니다.</p>
+        <button class="btn primary" data-act="set-start">시작하기</button></div>
+      ${S.set && S.set.done ? '<button class="item" data-act="set-result" style="margin-top:12px"><span class="t1"><span class="tag">지난 세트</span></span><span class="t2">지난 실전 세트 결과 다시 보기</span></button>' : ''}`), 'setup');
+  }
+  function startSet() {
+    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false };
+    saveSet();
+    startSession({ subj: setPick.subj, type: '', mode: 'set' });
+  }
+  function finishSet(timeUp) {
+    if (!S.set) { viewHome(); return; }
+    S.set.done = true; S.set.timeUp = !!timeUp; saveSet();
+    S.cur = null; saveCur(); stopTimer();
+    if (timeUp) toast('제한 시간이 끝났습니다.');
+    viewSetResult();
+  }
+  function viewSetResult() {
+    const st = S.set; if (!st) { viewHome(); return; }
+    const okN = st.results.filter((x) => x.ok).length, used = st.results.reduce((a, x) => a + x.ms, 0);
+    const rows = st.results.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(typeShort(x.q.subject, x.q.type))}</td><td>${x.choice < 0 ? '모름' : x.ok ? '<b style="color:var(--ok)">○</b>' : '<b style="color:var(--pen)">×</b>'}</td><td>${human(x.ms)}</td><td><button class="btn sm" data-act="set-review" data-i="${i}">해설</button></td></tr>`).join('');
+    const miss = st.n - st.results.length;
+    paint(shell('<b>실전 세트</b> · 결과', `
+      <div class="page-h"><h1>${SUBJ[st.subj].name} 실전 세트 결과</h1><button class="btn primary sm" data-act="setup">새 세트</button></div>
+      <div class="stat-grid">
+        <div class="stat"><div class="k">점수</div><div class="v">${okN}<small>/ ${st.n}</small></div></div>
+        <div class="stat"><div class="k">정답률</div><div class="v">${pct(okN, st.n)}<small>%</small></div></div>
+        <div class="stat"><div class="k">쓴 시간</div><div class="v" style="font-size:1.125rem">${human(used)}</div></div>
+        <div class="stat"><div class="k">제한 시간</div><div class="v" style="font-size:1.125rem">${human(st.limitMs)}</div></div>
+      </div>
+      ${miss > 0 ? `<p class="notice">시간이 끝나 ${miss}문항은 풀지 못했습니다. 풀지 못한 문항은 점수에서 오답으로 셉니다.</p>` : ''}
+      <div class="card"><h2>문항별</h2><table class="st"><thead><tr><th>문항</th><th>유형</th><th>결과</th><th>시간</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="notice">틀린 문제는 오답노트에 담겼고, 1일 뒤부터 복습에 나옵니다.</p>`), 'setresult');
+  }
+  function reviewSetItem(i) {
+    const x = S.set && S.set.results[i]; if (!x) return;
+    S.cur = { q: x.q, ctx: { subj: x.q.subject, mode: 'setreview' }, phase: 'x', choice: x.choice, ms: x.ms, ok: x.ok, review: false, no: i + 1 };
+    viewExplain();
   }
 
   /* ----- 오답노트 ----- */
   let noteFilter = { subj: '', kind: 'all' };
   function viewNotes() {
     const t = dayKey();
-    const all = Array.from(S.items.values()).filter((it) => it.wrong > 0 || it.star || it.memo);
+    const all = Array.from(S.items.values()).filter((it) => SUBJ[it.subj] && (it.wrong > 0 || it.star || it.memo));
     const due = dueItems(noteFilter.subj);
     let list = all.filter((it) => !noteFilter.subj || it.subj === noteFilter.subj);
     if (noteFilter.kind === 'due') list = list.filter((it) => it.due && it.due <= t);
@@ -586,7 +682,7 @@
     const subjRows = ORDER.map((k) => { const a = S.agg.subj[k] || { n: 0, ok: 0, ms: 0 }; return `<tr><td>${SUBJ[k].name}</td><td>${a.n.toLocaleString()}</td><td>${a.n ? pct(a.ok, a.n) + '%' : '–'}</td><td>${a.n ? human(a.ms / a.n) : '–'}</td><td>${human(SUBJ[k].pace * 1000)}</td></tr>`; }).join('');
     const types = Object.entries(S.agg.type).map(([k, a]) => { const [s, ...rest] = k.split('|'); return { s, t: rest.join('|'), a }; }).filter((x) => SUBJ[x.s] && x.a.n >= 3).sort((x, y) => x.a.ok / x.a.n - y.a.ok / y.a.n);
     const typeRows = types.map((x) => `<tr><td>${SUBJ[x.s].name} · ${esc(typeShort(x.s, x.t))}</td><td>${x.a.n}</td><td>${pct(x.a.ok, x.a.n)}%</td><td>${human(x.a.ms / x.a.n)}</td><td><button class="btn sm" data-act="start" data-subj="${x.s}" data-type="${esc(x.t)}">집중</button></td></tr>`).join('');
-    const flags = Array.from(S.items.values()).filter((it) => it.flag);
+    const flags = Array.from(S.items.values()).filter((it) => it.flag && SUBJ[it.subj]);
     paint(shell('<b>기록</b>', `
       <div class="page-h"><h1>기록</h1></div>
       <div class="stat-grid">
@@ -598,6 +694,7 @@
       <div class="card"><h2>최근 30일</h2><div class="bars" aria-label="최근 30일 하루 풀이 수">${bars}</div><div class="bars-x"><span>${md(days[0])}</span><span>오늘</span></div></div>
       <div class="card"><h2>과목별</h2><table class="st"><thead><tr><th>과목</th><th>풀이</th><th>정답률</th><th>평균 시간</th><th>권장</th></tr></thead><tbody>${subjRows}</tbody></table></div>
       <div class="card"><h2>유형별 · 정답률 낮은 순</h2>${typeRows ? `<table class="st"><thead><tr><th>유형</th><th>풀이</th><th>정답률</th><th>평균</th><th></th></tr></thead><tbody>${typeRows}</tbody></table>` : '<p class="subj-meta" style="margin:0">유형마다 3문항 이상 풀면 약한 유형이 여기에 나타납니다.</p>'}</div>
+      ${(() => { const cs = {}; let tot = 0; for (const it of S.items.values()) if (it.cause && SUBJ[it.subj]) { cs[it.cause] = (cs[it.cause] || 0) + 1; tot++; } return tot ? `<div class="card"><h2>틀린 이유</h2><table class="st"><tbody>${Object.entries(cs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}문항</td><td>${pct(v, tot)}%</td></tr>`).join('')}</tbody></table><p class="subj-meta" style="margin:8px 0 0">해설 화면에서 고른 ‘틀린 이유’를 모은 것입니다. 가장 많은 이유부터 습관을 고치면 점수가 빨리 오릅니다.</p></div>` : ''; })()}
       ${flags.length ? `<div class="card"><h2>이상한 점을 알린 문제 ${flags.length}개</h2><p class="subj-meta" style="margin:0 0 10px">아래 버튼으로 내용을 복사해 전달하면 확인 후 고칩니다.</p><button class="btn sm" data-act="copy-flags">내용 복사</button><ul class="prose" style="margin-top:12px">${flags.map((it) => `<li>${esc(it.qid)} — ${esc(plain(it.flag).slice(0, 120))}</li>`).join('')}</ul></div>` : ''}`), 'stats');
   }
 
@@ -614,7 +711,7 @@
         <div class="set-row"><div class="l">지문 글꼴<small>시험지처럼 명조, 화면에선 고딕이 편할 수도 있습니다</small></div>${seg('face', S.settings.face, [['serif', '명조'], ['sans', '고딕']])}</div>
       </div>
       <div class="card"><h2>난이도</h2>
-        <div class="set-row"><div class="l">문제 난이도<small>‘자동’은 유형마다 최근 5~6문제 결과를 보고 한 단계씩 올리거나 내립니다. 기본·실전·심화는 인원·조건·경우의 수·자료 크기로 조절되며, 어느 단계든 정답 검증은 같습니다. 독해·논증 직접 출제 문항과 헌법은 난이도와 관계없이 나옵니다.</small></div>${seg('level', S.settings.level, [['auto', '자동'], ['1', '기본'], ['2', '실전'], ['3', '심화']])}</div>
+        <div class="set-row"><div class="l">문제 난이도<small>‘자동’은 유형마다 최근 5~6문제 결과를 보고 한 단계씩 올리거나 내립니다. 기본·실전·심화는 인원·조건·경우의 수·자료 크기로 조절되며, 어느 단계든 정답 검증은 같습니다. 직접 출제한 독해·논증 문항은 난이도와 관계없이 나옵니다.</small></div>${seg('level', S.settings.level, [['auto', '자동'], ['1', '기본'], ['2', '실전'], ['3', '심화']])}</div>
       </div>
       <div class="card"><h2>풀이</h2>
         <div class="set-row"><div class="l">타이머 표시<small>권장 시간을 넘기면 빨갛게 바뀝니다. 다른 창을 보는 동안은 멈춥니다</small></div>${sw('timer', S.settings.timer)}</div>
@@ -626,9 +723,8 @@
       </div>
       <div class="card"><h2>문항 안내</h2><div class="prose">
         <p><b>PSAT</b>은 기출을 그대로 싣지 않습니다. 인사혁신처 기출의 발문과 선지 구성을 본떠 새로 만든 문항입니다.</p>
-        <ul><li><b>송공 생성</b>: 명제·순서·참거짓 추론, 표 해석, 계산, 법조문·일정·규칙 적용, 리그전·자리 배치, 헌법 조문. 조건과 정답을 프로그램이 직접 계산하고, 정답이 하나뿐인지 모든 경우를 따져 확인한 문항만 나옵니다. 사실상 끝없이 새로 나옵니다.</li>
-        <li><b>송공 출제</b>: 독해·논증처럼 사람이 써야 하는 문항. 현재 ${nBank}문항.</li>
-        <li><b>헌법</b>: 조문 문항은 현행 헌법(1987) 원문만을 근거로 하며, 해설에 해당 조문을 그대로 인용합니다. 판례 문항은 결론이 확정된 주요 결정만 다룹니다. 기출은 원문을 확보하는 대로 출처(시험·연도·문항 번호)와 함께 넣습니다.</li></ul>
+        <ul><li><b>송공 생성</b>: 명제·순서·참거짓 추론, 논증 강화·약화, 표·그래프 해석, 계산, 법조문·일정·규칙 적용, 리그전·자리 배치. 조건과 정답을 프로그램이 직접 계산하고, 정답이 하나뿐인지 모든 경우를 따져 확인한 문항만 나옵니다. 사실상 끝없이 새로 나옵니다.</li>
+        <li><b>송공 출제</b>: 사람이 직접 쓴 문항 — 독해(세부 내용·추론·빈칸·논지·문맥 수정·적용), 논증(강화·약화·논쟁 분석), 1지문 2문항 세트, 형식논리, 자료해석·상황판단 대표 유형. 선지마다 근거 문단을 대어 정답을 확인했고, 계산·논리가 들어간 문항은 프로그램으로 경우를 모두 따져 한 번 더 검증했습니다. 현재 ${nBank}문항.</li></ul>
         <p>한 번 푼 문제는 다시 나오지 않습니다(오답노트 복습 제외).</p></div></div>`), 'settings');
   }
 
@@ -638,7 +734,7 @@
       <div class="page-h"><h1>사용법</h1></div>
       <div class="card prose">
         <h2>한 문제씩 풀기</h2>
-        <p>처음 화면에서 과목을 누르면(숫자 키 <b>1~4</b>) 바로 한 문제가 나옵니다. 선택지를 누르고(<b>1~5</b>) <b>정답 확인</b>(Enter)을 누르면 다음 화면에서 채점과 해설을 보여 줍니다. <b>다음 문제</b>(Enter)로 계속 풀거나 <b>그만 풀기</b>로 멈추면 됩니다. 모르는 문제는 <b>모르겠음</b>을 누르면 해설로 넘어가며, 오답으로 기록됩니다.</p>
+        <p>처음 화면에서 과목을 누르면(숫자 키 <b>1~3</b>) 바로 한 문제가 나옵니다. 선택지를 누르고(<b>1~5</b>) <b>정답 확인</b>(Enter)을 누르면 다음 화면에서 채점과 해설을 보여 줍니다. <b>다음 문제</b>(Enter)로 계속 풀거나 <b>그만 풀기</b>로 멈추면 됩니다. 모르는 문제는 <b>모르겠음</b>을 누르면 해설로 넘어가며, 오답으로 기록됩니다.</p>
         <p>창을 닫거나 Esc를 눌러도 풀던 문제는 그대로 남아, 다시 열면 이어서 풀 수 있습니다. 다른 창을 보는 동안에는 타이머가 멈춥니다.</p>
         <h2>해설 읽는 법</h2>
         <p>해설은 출발점 → 경우 나누기 → 확정 순서로 사람이 푸는 방식대로 적었고, 선지마다 근거와 판정을 붙였습니다. 빨간 동그라미가 정답, 빗금이 고른 오답입니다. 넓은 화면에서는 왼쪽에 문제, 오른쪽에 해설이 나란히 보입니다.</p>
@@ -779,6 +875,12 @@
       case 'nf-subj': noteFilter.subj = el.dataset.v; viewNotes(); break;
       case 'nf-kind': noteFilter.kind = el.dataset.v; viewNotes(); break;
       case 'open-note': openNote(el.dataset.id); break;
+      case 'setup': viewSetup(); break;
+      case 'set-subj': setPick.subj = el.dataset.v; viewSetup(); break;
+      case 'set-n': setPick.n = +el.dataset.v; viewSetup(); break;
+      case 'set-start': startSet(); break;
+      case 'set-result': viewSetResult(); break;
+      case 'set-review': reviewSetItem(+el.dataset.i); break;
       case 'review-start': startSession({ subj: noteFilter.subj || '', type: '', mode: 'review' }); break;
       case 'set': S.settings[el.dataset.k] = el.dataset.v; saveSettings(); viewSettings(); break;
       case 'toggle': S.settings[el.dataset.k] = !S.settings[el.dataset.k]; saveSettings(); el.setAttribute('aria-checked', S.settings[el.dataset.k] ? 'true' : 'false'); break;
@@ -786,7 +888,7 @@
       case 'wipe': wipe(); break;
       case 'relock': Door.close('songgong'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); break;
       case 'copy-flags': {
-        const txt = Array.from(S.items.values()).filter((it) => it.flag).map((it) => `[${it.qid}] ${SUBJ[it.subj].name} · ${it.type}\n문제: ${stemText(it.q.stem)}\n선택지: ${it.q.options.map((o, i) => `${i + 1}) ${plain(o)}`).join(' / ')}\n정답: ${it.q.answer + 1}번\n알린 내용: ${it.flag}`).join('\n\n');
+        const txt = Array.from(S.items.values()).filter((it) => it.flag && SUBJ[it.subj]).map((it) => `[${it.qid}] ${SUBJ[it.subj].name} · ${it.type}\n문제: ${stemText(it.q.stem)}\n선택지: ${it.q.options.map((o, i) => `${i + 1}) ${plain(o)}`).join(' / ')}\n정답: ${it.q.answer + 1}번\n알린 내용: ${it.flag}`).join('\n\n');
         (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('복사했습니다.'), () => { prompt('아래 내용을 복사하세요', txt); });
         break;
       }
@@ -841,9 +943,9 @@
     else { S.cur = null; viewHome(); }
   }
   // test hook: show a given generated question (used by the automated walkthroughs)
-  function showGen(subj, genId, seed, choice) {
+  function showGen(subj, genId, seed, choice, lv) {
     const g = (P.gens[subj] || []).find((x) => x.id === genId); if (!g) return false;
-    const q = P.make(subj, g, seed); if (!q) return false;
+    const q = P.make(subj, g, seed, lv); if (!q) return false;
     S.cur = { q, ctx: { subj, mode: 'new' }, phase: 'q', choice: null, ms: 0, ok: null, review: false, no: 1 };
     if (choice == null) viewQuiz(); else { S.cur.choice = choice; submit(choice < 0); }
     return true;
