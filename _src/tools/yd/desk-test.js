@@ -78,9 +78,11 @@ const MODE = process.argv[2] || 'desktop';
   log('source opens:', await p.evaluate(() => `${window.YOAI.S.view} p${window.YOAI.S.reader.page}`));
   // 숙지
   await p.evaluate(() => document.querySelector('[data-act="go"][data-v="library"]').click());
-  await p.click('[data-act="dig-start"]'); await p.waitForFunction(() => !window.YOAI.DIG.run && window.YOAI.S.docs.every((d) => d.digest), null, { timeout: 20000 });
-  log('digests:', await p.evaluate(() => window.YOAI.S.docs.map((d) => d.digest.slice(0, 30)).join(' | ')));
-  await p.click('[data-act="dig-show"] >> nth=0'); log('digest window:', (await p.textContent('.modal')).replace(/\s+/g, ' ').slice(0, 90)); await p.click('.modal [data-close]');
+  log('숙지 (no AI):', (await p.textContent('#dig-status')).replace(/\s+/g, ' ').slice(0, 60), '| all known:', await p.evaluate(() => window.YOAI.S.docs.every((d) => d.blank || d.hasFacts)));
+  await p.click('[data-act="dig-show"] >> nth=0'); await p.waitForSelector('.modal [data-act="dig-one"]');
+  log('요지 window:', (await p.textContent('.modal')).replace(/\s+/g, ' ').slice(0, 90));
+  await p.click('.modal [data-act="dig-one"]'); await p.waitForFunction(() => !window.YOAI.DIG.run && window.YOAI.S.docs.some((d) => d.digest), null, { timeout: 20000 });
+  log('AI 요지 for one:', await p.evaluate(() => window.YOAI.S.docs.filter((d) => d.digest).map((d) => d.digest.slice(0, 30)).join(' | ')));
   // an earlier AI conversation is still readable
   await p.evaluate(async (id) => { await new Promise((res, rej) => { const r = indexedDB.open('yoai', 2); r.onsuccess = () => { const t = r.result.transaction('chats', 'readwrite'); t.objectStore('chats').put({ id: 'old1', projectId: window.YOAI.S.project.id, title: '예전 대화', updatedAt: Date.now(), messages: [{ role: 'user', text: '의회유보란?' }, { role: 'assistant', docIds: [id], content: [{ type: 'text', text: '본질적 사항은 법률로 정한다 [첨부 문헌]', citations: [{ type: 'page_location', document_index: 0, document_title: '의회유보와 본질성이론', start_page_number: 1, end_page_number: 2, cited_text: '본질적 사항' }] }] }] }); t.oncomplete = () => { r.result.close(); res(); }; t.onerror = rej; }; r.onerror = rej; }); }, did);
   await p.reload(); await p.waitForSelector('.side-nav');

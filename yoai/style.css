@@ -387,3 +387,12 @@ ol.howto li { margin: 4px 0; }
 .dig-outline { margin-top: 12px; font-size: .8125rem; color: var(--ink-2); }
 .dig-outline summary { cursor: pointer; font-weight: 600; }
 .dig-outline pre { white-space: pre-wrap; font: inherit; line-height: 1.7; margin: 6px 0 0; }
+
+.fact { margin-top: 14px; }
+.fact h3 { font-size: .875rem; margin: 0 0 6px; }
+.fact h3 .m, .fact .m { font-weight: 400; color: var(--ink-2); font-size: .8125rem; }
+.fact p { margin: 0; font-size: .875rem; line-height: 1.75; }
+.fact ul { margin: 0; padding-left: 1.1em; font-size: .875rem; line-height: 1.7; }
+.fact ul.toc { list-style: none; padding-left: 0; }
+.fact ul.toc li.sub { padding-left: 1.2em; color: var(--ink-2); }
+.fact .chips .tag { margin: 0 4px 4px 0; display: inline-block; }
