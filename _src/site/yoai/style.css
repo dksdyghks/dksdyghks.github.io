@@ -396,3 +396,6 @@ ol.howto li { margin: 4px 0; }
 .fact ul.toc { list-style: none; padding-left: 0; }
 .fact ul.toc li.sub { padding-left: 1.2em; color: var(--ink-2); }
 .fact .chips .tag { margin: 0 4px 4px 0; display: inline-block; }
+
+.wiped { max-width: 560px; margin: 18vh auto 0; padding: 0 20px; font-size: .9375rem; line-height: 1.75; }
+.wiped h1 { font-size: 1.375rem; margin: 0 0 12px; }

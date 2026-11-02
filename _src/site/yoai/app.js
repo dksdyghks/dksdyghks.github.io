@@ -10,6 +10,7 @@ const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const DEFAULTS = { theme: 'auto', read: 'pdf' };
+let WIPED = false; // set once 요AI has been removed from this computer: nothing may be written after that
 
 /* ---------------- storage ---------------- */
 const DB = (() => {
@@ -29,7 +30,7 @@ const DB = (() => {
   return { open, get: (s, k) => run(s, 'readonly', (o) => o.get(k)), all: (s) => run(s, 'readonly', (o) => o.getAll()), put: (s, v, k) => run(s, 'readwrite', (o) => (k === undefined ? o.put(v) : o.put(v, k))), del: (s, k) => run(s, 'readwrite', (o) => o.delete(k)) };
 })();
 const S = { settings: { ...DEFAULTS }, projects: [], chats: [], docs: [], cards: [], project: null, view: 'find', q: '', qDoc: '', reader: null, chat: null, persistent: false, folder: null, sync: null, indexing: null };
-async function saveSettings() { applyTheme(); try { await DB.put('kv', S.settings, 'settings'); } catch (e) { /* ignore */ } }
+async function saveSettings() { applyTheme(); if (WIPED) return; try { await DB.put('kv', S.settings, 'settings'); } catch (e) { /* ignore */ } }
 const saveProject = (p) => { p.updatedAt = Date.now(); return DB.put('projects', p).catch(() => {}); };
 const saveCard = (c) => { c.updatedAt = Date.now(); return DB.put('cards', c).catch((e) => toast('노트를 저장하지 못했습니다: ' + e.message)); };
 function applyTheme() { const r = document.documentElement; if (S.settings.theme === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', S.settings.theme); }
@@ -1153,6 +1154,19 @@ function formBox(title, fields) {
 function download(name, data, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800); }
 let installEvt = null;
 addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+/* remove everything 요AI keeps in this browser — and only that: 송공 (songgong DB, songgong-* caches) is left alone */
+async function wipeAll() {
+  WIPED = true;
+  try { await AI.unload(); } catch (e) { /* ignore */ }
+  try { closePdf(); } catch (e) { /* ignore */ }
+  const del = (name) => new Promise((res) => { try { const r = indexedDB.deleteDatabase(name); r.onsuccess = r.onerror = () => res(true); r.onblocked = () => res(false); } catch (e) { res(false); } });
+  let blocked = !(await del('yoai'));
+  try { if (indexedDB.databases) for (const d of await indexedDB.databases()) if (d.name && /^webllm/i.test(d.name)) blocked = !(await del(d.name)) || blocked; } catch (e) { /* ignore */ }
+  try { for (const k of await caches.keys()) if (/^(yoai-|webllm)/i.test(k)) await caches.delete(k); } catch (e) { /* ignore */ }
+  try { if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) if (/\/yoai\/$/.test(r.scope)) await r.unregister(); } catch (e) { /* ignore */ }
+  for (const st of ['localStorage', 'sessionStorage']) { try { const sto = window[st]; for (const k of Object.keys(sto)) if (/^(yoai|door:yoai)/.test(k)) sto.removeItem(k); } catch (e) { /* ignore */ } }
+  document.body.innerHTML = `<main class="wiped"><h1>요AI를 이 컴퓨터에서 지웠습니다</h1><p>문헌·노트·지난 대화·AI 모델·오프라인용 파일을 모두 지웠습니다. 송공 기록은 그대로입니다.</p>${blocked ? '<p><b>다른 창에 요AI가 열려 있으면 그 창을 닫아야 마저 지워집니다.</b></p>' : ''}<p>이 탭을 닫으세요.</p><p><a href="../">0128.kr로 돌아가기</a></p></main>`;
+}
 function openSettings() {
   const m = modal(`<h2>설정</h2>
     <label class="field"><span>테마</span><select id="s-theme">${[['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']].map(([v, l]) => `<option value="${v}"${S.settings.theme === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -1162,8 +1176,15 @@ function openSettings() {
     <h3 class="mh">보관</h3>
     <p class="sub">문헌·노트·지난 대화는 이 브라우저 안에만 있습니다. 폴더를 연결해 두면 문헌은 폴더에서 다시 읽을 수 있으니, <b>노트 백업</b>을 가끔 받아 두세요(문헌 본문은 빠지고 문헌 정보는 들어갑니다).</p>
     <div class="tools-row"><button class="btn" id="backup">노트·프로젝트 백업(.json)</button><label class="btn" style="cursor:pointer">백업 불러오기<input type="file" id="restore" accept=".json,application/json" class="sr"></label><button class="btn" id="relock">잠금 다시 걸기</button></div>
+    <h3 class="mh">이 컴퓨터에서 지우기</h3>
+    <p class="sub">요AI가 이 브라우저에 저장한 것을 모두 지웁니다: 문헌·노트·지난 대화·폴더 연결, 브라우저 안 AI 모델, 오프라인용 파일. 송공 기록은 그대로 둡니다. Ollama는 컴퓨터의 프로그램이라 여기서 지울 수 없습니다(Windows 설정의 앱 목록에서 제거).</p>
+    <div class="tools-row"><button class="btn danger" id="wipe">요AI 자료 모두 지우기</button></div>
     <div class="modal-foot"><button class="btn" data-close>닫기</button><button class="btn primary" id="save">저장</button></div>`);
   $('#save', m.el).addEventListener('click', async () => { Object.assign(S.settings, { theme: $('#s-theme', m.el).value, read: $('#s-read', m.el).value }); await saveSettings(); m.close(); toast('저장했습니다.'); });
+  $('#wipe', m.el).addEventListener('click', async () => {
+    if (!(await confirmBox('문헌·노트·지난 대화·AI 모델이 이 컴퓨터에서 모두 지워집니다. 되돌릴 수 없습니다. 노트를 남기려면 먼저 ‘노트·프로젝트 백업’을 받으세요. 지울까요?', '모두 지우기'))) return;
+    m.close(); await wipeAll();
+  });
   const ins = $('#install', m.el); if (ins) ins.addEventListener('click', async () => { const e = installEvt; installEvt = null; try { await e.prompt(); } catch (err) { /* ignore */ } m.close(); });
   $('#relock', m.el).addEventListener('click', () => { window.Door.close('yoai'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); });
   $('#backup', m.el).addEventListener('click', () => {
