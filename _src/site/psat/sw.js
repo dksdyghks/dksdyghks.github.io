@@ -10,7 +10,7 @@ const APP = 'songgong-app-' + VER;
 const FONTS = 'songgong-fonts';
 const WAIT = 4000;
 const ROOT = new URL('./', self.location.href).href;
-const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

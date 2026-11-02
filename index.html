@@ -753,7 +753,7 @@ body { margin: 0; }
 })();
 
 /* Two hidden doors on the homepage. Three quick presses on the Taegukgi open 송공; three on the gold sentence open 요AI.
-   Each asks its own PIN (stored only as an iterated, salted SHA-256 digest), then the app opens over the page in a frame.
+   Each asks its own PIN (stored only as an iterated, salted SHA-256 digest), then the app opens as its own page.
    One or two presses do nothing at all, so a stray click never shows a password box. */
 (function () {
   'use strict';
@@ -850,48 +850,13 @@ body { margin: 0; }
   }
 
   /* ---------- the app over the page ---------- */
-  var cur = null;
-  function openApp(name, from) {
+  function openApp(name) {
     var d = DOORS[name];
-    if (!onSite) { window.open(ORIGIN + d.path, '_blank', 'noopener'); return; }   // the claude.ai mirror cannot frame the site
-    if (cur) return;
-    var r = from && from.getBoundingClientRect ? from.getBoundingClientRect() : null;
-    var ov = document.createElement('div');
-    ov.className = 'door-app';
-    if (r) ov.style.transformOrigin = (r.left + r.width / 2) + 'px ' + (r.top + r.height / 2) + 'px';
-    ov.innerHTML = '<iframe title="' + d.title + '" src="' + d.path + '" allow="clipboard-write"></iframe>';
-    document.body.appendChild(ov);
-    document.documentElement.classList.add('door-lock');
-    cur = { name: name, el: ov, from: from };
-    try { history.pushState({ door: name }, '', '#' + name); } catch (e) { /* ignore */ }
-    requestAnimationFrame(function () { ov.classList.add('in'); var f = ov.querySelector('iframe'); setTimeout(function () { try { f.focus(); } catch (e) { /* ignore */ } }, 250); });
+    if (!onSite) { window.open(ORIGIN + d.path, '_blank', 'noopener'); return; }   // the claude.ai mirror links to the site
+    // each app opens as its own page, so adding it to the home screen (or installing it) gives the app itself, not this page
+    location.assign(d.path);
   }
-  function teardown() {
-    if (!cur) return;
-    var c = cur; cur = null;
-    c.el.classList.remove('in');
-    document.documentElement.classList.remove('door-lock');
-    setTimeout(function () { c.el.remove(); }, 260);
-    if (c.from && c.from.focus) { try { c.from.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
-  }
-  function closeApp() {
-    if (!cur) return;
-    // ask the app to save first; it answers at once (or we close anyway after a moment)
-    var f = cur.el.querySelector('iframe'), done = false;
-    var finish = function () { if (done) return; done = true; window.removeEventListener('message', onSaved); if (history.state && history.state.door) history.back(); else teardown(); };
-    var onSaved = function (e) { if (e.origin === location.origin && e.data && /:saved$/.test(e.data.type)) finish(); };
-    window.addEventListener('message', onSaved);
-    try { f.contentWindow.postMessage({ type: cur.name + ':save' }, location.origin); } catch (e) { /* ignore */ }
-    setTimeout(finish, 300);
-  }
-  window.addEventListener('popstate', function () { if (cur) teardown(); });
-  window.addEventListener('message', function (e) {
-    if (e.origin !== location.origin || !e.data || !cur) return;
-    if (e.data.type === cur.name + ':close') { if (history.state && history.state.door) history.back(); else teardown(); }
-  });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && cur) closeApp(); });
 
-  /* ---------- three quick presses ---------- */
   function door(el, name) {
     var times = [];
     el.addEventListener('mousedown', function (e) { if (e.detail > 1) e.preventDefault(); });   // no text selection on a triple press
@@ -904,9 +869,9 @@ body { margin: 0; }
   function wire() {
     Array.prototype.forEach.call(document.querySelectorAll('svg.flag'), function (el) { door(el, 'songgong'); });
     Array.prototype.forEach.call(document.querySelectorAll('.stmt .s2 strong'), function (el) { door(el, 'yoai'); });
-    // reopening after a reload while an app was open
     var h = location.hash.slice(1);
-    if (DOORS[h]) { if (isOpen(h)) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } openApp(h, null); } else { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } } }
+    // an older bookmark or home-screen icon that points at the app on this page (#songgong, #yoai) still leads into the app
+    if (DOORS[h]) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } if (isOpen(h)) openApp(h); else askPin(h, null); }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire); else wire();
 })();

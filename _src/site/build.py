@@ -597,7 +597,7 @@ for app in ('psat', 'yoai'):
         shutil.rmtree(dst)
     dst.mkdir(parents=True)
     files = sorted(p for p in src.iterdir() if p.is_file() and p.suffix in ('.js', '.css', '.html', '.svg', '.png', '.json', '.webmanifest'))
-    shared = [Path('/home/user/yohan-ahn/fonts/noto-serif-kr/noto-serif-kr.css')] if app == 'psat' else []  # its font is part of it
+    shared = [Path('/home/user/yohan-ahn/fonts/noto-serif-kr/noto-serif-kr.css')]  # the serif face both apps use is part of each
     ver = hashlib.sha256(b''.join(p.read_bytes() for p in files + [f for f in shared if f.exists()])).hexdigest()[:10]
     import re as _re
     for p in files:
@@ -605,10 +605,12 @@ for app in ('psat', 'yoai'):
             (dst / p.name).write_text(p.read_text().replace('__V__', ver))
         elif app == 'yoai' and p.name == 'app.js':
             # version the module's own relative imports too, so a returning browser never mixes an old helper with a new app.js
-            txt = _re.sub(r"(['\"])\./((?:docx|md|anthropic-sdk|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
+            txt = _re.sub(r"(['\"])\./((?:docx|md|ai|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
             (dst / p.name).write_text(txt)
         else:
             shutil.copy2(p, dst / p.name)
+    for sub in (p for p in src.iterdir() if p.is_dir() and not p.name.startswith(('_', '.'))):  # e.g. yoai/vendor: fixed-version third-party code
+        shutil.copytree(sub, dst / sub.name)
     print('copied', app, len(files), 'files, version', ver)
 print('built', len(artifact), len(page))
 

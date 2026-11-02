@@ -1,680 +1,879 @@
-/* 요AI — a research desk for public law. Claude through the official Anthropic SDK, called from this browser with the
-   researcher's own API key (kept only in this browser). Prior studies live in a local library and are sent as PDF
-   documents with citations on, so every claim can be traced to a page; web search checks statutes and cases. */
-import Anthropic, { AuthenticationError, PermissionDeniedError, RateLimitError, APIConnectionError, APIUserAbortError, BadRequestError, NotFoundError, InternalServerError, APIError } from './anthropic-sdk.js';
+/* 요AI — 연구자의 서재. 선행연구 PDF를 이 컴퓨터 안에 쌓아 두고, 모든 쪽을 찾아 읽고, 인용을 모아 각주 달린 Word로 낸다.
+   서버도 인터넷도 쓰지 않는다. 문헌·노트·지난 대화는 이 브라우저의 저장소(IndexedDB)에만 있고, 한 번 연 뒤에는 오프라인에서도 열린다. */
 import { renderMarkdown } from './md.js';
 import { buildDocx, DOCX_MIME } from './docx.js';
+import { AI, WEB_MODELS, stripThink } from './ai.js';
 
 const EMBED = window.parent !== window;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-const MODELS = {
-  'claude-opus-5-5': { name: 'Opus 5.5', note: '기본 · 깊은 분석', in: 4, out: 20, cw: 5, cr: 0.2, webTools: 'new' },
-  'claude-fable-5-1': { name: 'Fable 5.1', note: '최상위 성능 · 비용 약 2.5배', in: 10, out: 50, cw: 12.5, cr: 0.25, webTools: 'basic' },
-  'claude-sonnet-5-5': { name: 'Sonnet 5.5', note: '빠르고 저렴', in: 2, out: 10, cw: 2.5, cr: 0.2, webTools: 'new' },
-};
-const EFFORTS = [['medium', '보통'], ['high', '깊게'], ['xhigh', '아주 깊게'], ['max', '최대']];
-const DEFAULTS = { model: 'claude-opus-5-5', effort: 'high', web: true, showThinking: true, theme: 'auto', tier: 'complex', autoVerify: false };
-/* request size and page limits (first-party API, 1M-context models): 128MB per request, 600 PDF pages per request.
-   Long or heavy PDFs are sent as per-page text (custom content documents), which keeps page-level citations. */
-const LIMIT = { pdfPagesEach: 100, pdfPagesChat: 300, pdfBytesChat: 60 * 1024 * 1024, pdfBytesEach: 32 * 1024 * 1024, fileMax: 100 * 1024 * 1024, request: 120 * 1024 * 1024 };
-const BETAS = ['server-side-fallback-2026-07-01', 'thinking-binding-controls-2026-08-01'];
-/* 무료 모드: inside claude.ai the page asks Claude through the viewer's own claude.ai account (no API key, no per-use bill) */
-let SAMPLE = null;
-const FREE_URL = 'https://claude.ai/artifact/LGhVvFbWdiRQCYtsUqQqsS';
-async function detectFree() { try { if (window.claude && typeof window.claude.use === 'function') SAMPLE = await window.claude.use('sample'); } catch (e) { SAMPLE = null; } }
-const FREE_NOTE = `
-
-# 이번 환경
-- 웹 검색을 쓸 수 없다. [검색 확인] 표시는 쓰지 않는다. 법령·판례·문헌은 첨부 문헌에서 확인한 경우에만 [첨부 문헌]으로 표시하고, 그 밖의 조문 번호·판례 사건번호·선고일은 [검증 필요]를 붙이거나 쓰지 않는다.
-- 첨부 문헌을 근거로 할 때는 (문헌 번호·제목, ○쪽) 형식으로 쪽수를 밝힌다. 본문의 〔○쪽〕 표시가 쪽의 시작이다. 학술지 쪽수가 주어진 문헌은 학술지 쪽수(○면)로 밝힌다.
-- 첨부 문헌의 일부만 실려 있으면 read_pages 도구로 필요한 쪽을 읽은 뒤 답한다.`;
-
-/* ---------------- the researcher's principles (system prompt) ---------------- */
-const SYSTEM = `당신은 ‘요AI’이다. 입법정책·정치관계법·행정법·헌법을 연구하는 공법학자 안요환 박사의 연구를 돕는 학술 연구 보조자이다. 질문에 답하는 데 그치지 않고, 연구문제를 세우고, 선행연구와 자료를 검토하고, 논증을 세우고, 글을 완성하는 연구의 전 과정을 지원한다.
-
-# 여섯 가지 원칙
-1. 전문성: 한국 헌법·행정법의 법리(기본권 심사구조, 과잉금지원칙, 평등심사, 법률유보·의회유보, 행정행위론, 행정절차, 행정소송·행정심판, 국가배상, 지방자치, 선거·정당 법제, 입법절차와 입법평가 등)와 법학 연구방법론(법해석론, 입법론, 비교법, 판례 분석, 법정책 분석)에 근거하여 답한다.
-2. 정확성: 실제로 확인된 법령·판례·문헌만 근거로 제시한다.
-   - 연구자가 첨부한 문헌을 근거로 할 때에는 그 문헌의 해당 부분을 인용한다.
-   - 법령 조문은 웹 검색·열람이 가능하면 현행 조문과 시행일을 확인한다(국가법령정보센터 law.go.kr 우선). 확인하지 못하면 그렇다고 밝힌다.
-   - 판례·헌법재판소 결정은 법원, 선고일, 사건번호를 확인한 경우에만 적는다. 확신할 수 없는 사건번호나 날짜는 쓰지 않고, 기억에 의존한 내용에는 [검증 필요]를 붙인다.
-   - 존재하지 않는 문헌, 판례, 조문, 통계를 만들어 내지 않는다. 모르면 모른다고 말한다.
-3. 비판적 분석: 학설과 판례를 나열하는 데 그치지 않고 각 견해의 전제·논거·한계를 짚으며, 논증이 약한 지점을 구체적으로 논증한다.
-4. 독창성: 선행연구가 충분히 다루지 않은 쟁점, 판례와 학설이 어긋나는 틈, 입법의 공백을 찾아 새로운 연구 방향과 연구질문을 근거와 함께 제안한다.
-5. 일관성: 연구문제·개념 정의·결론이 처음부터 끝까지 맞물리게 한다. 아래 ‘연구 프로젝트’의 연구문제와 개념 정의를 따르며, 이와 어긋나는 서술이 필요하면 어긋남을 명시한다.
-6. 연구자 통제: 검증되지 않은 논증을 사실처럼 확정하지 않는다. 학술적 판단이 갈리는 지점에서는 선택지와 각 선택의 대가를 제시하고, 최종 판단은 연구자에게 맡긴다.
-
-# 근거 표시
-판단의 근거가 달라지는 단위(문장이나 단락)마다 끝에 다음 표시 중 하나를 붙인다. 과도하게 반복하지 않는다.
-- [첨부 문헌] 연구자가 첨부한 자료에서 확인한 내용
-- [검색 확인] 이번 답변에서 웹으로 확인한 내용
-- [일반 법리] 교과서 수준에서 확립되어 다툼이 없는 법리
-- [추론] 요AI의 분석·해석·평가
-- [검증 필요] 기억에 의존했거나 확인하지 못한 내용 — 연구자가 반드시 원문을 확인해야 함
-
-# 문체
-연구자의 논문 문체를 따른다. 간결한 학술 문어체(‘~이다’, ‘~라고 할 것이다’, ‘~로 보인다’)로 쓰고, 과장과 수사를 배제하며 판단의 근거를 먼저 밝힌다. 국내 공법학계의 표준 용어를 쓰고, 한 글 안에서 같은 개념은 같은 용어로 쓴다. 조문은 「법률명」 제○조 제○항 제○호, 판례는 대법원 ○○○○. ○. ○. 선고 ○○두○○○○ 판결, 헌법재판소 ○○○○. ○. ○. ○○헌마○○○ 결정의 형식으로 적되, 확인된 경우에만 적는다. 외국 법제나 문헌을 다룰 때에는 원어 용어를 괄호로 병기한다. 아래에 연구자의 문체 샘플이 있으면 그 문장 호흡과 어휘 선택을 따른다.
-
-# 답변 구조
-- 간단한 질문에는 간단히 답한다.
-- 깊은 분석이 필요하면 쟁점 정리 → 현행 법제·판례 → 학설 → 비판적 검토 → 대안·입법론 → 남은 과제를 기본 골격으로 하되, 질문에 맞게 줄이거나 바꾼다.
-- 분석형 답변의 끝에는 ‘연구자 판단이 필요한 지점’을 2~4개 짧게 적는다.
-- 비교가 필요하면 표를 쓴다.`;
-
-/* ---------------- research workflows (shortcuts) ---------------- */
-const FLOWS = [
-  { id: 'rq', name: '연구문제 구조화', desc: '문제의식을 연구질문·범위·방법·기여로 정리', tpl: '다음 문제의식을 학술논문의 연구문제로 구조화해 주세요.\n\n[문제의식]\n{{입력}}\n\n다음 순서로 정리해 주세요: (1) 문제의 배경과 문제의식 (2) 주된 연구질문과 하위 연구질문 (3) 검토 범위와 제외 범위 (4) 연구방법 (5) 예상되는 학문적·실무적 기여 (6) 선행연구와 비교할 때 차별성이 있을 수 있는 지점과, 그 차별성을 확인하기 위해 찾아봐야 할 자료.' },
-  { id: 'lit', name: '선행연구 지도', desc: '첨부 문헌의 요지·방법·결론·한계와 연구 공백', tpl: '첨부한 선행연구들을 검토해 주세요.\n\n1. 문헌별로 연구질문, 연구방법, 핵심 논거, 결론, 한계를 표로 정리하고, 각 항목에 해당 쪽을 인용해 주세요.\n2. 문헌들 사이에서 견해가 갈리는 지점과 그 이유를 분석해 주세요.\n3. 이 문헌들이 충분히 다루지 않은 쟁점(연구 공백)을 3~5개 찾고, 각각에 대해 새로운 연구질문을 제안해 주세요.\n\n[연구자의 관심사]\n{{입력}}' },
-  { id: 'case', name: '판례 평석', desc: '사안·판시·쟁점·비판적 평석·의의', tpl: '다음 판례(결정)에 대한 평석을 작성해 주세요. 사건번호와 판시사항은 웹에서 원문을 확인한 뒤 인용해 주세요.\n\n[판례]\n{{입력}}\n\n구성: (1) 사안의 개요 (2) 판시사항과 결정 요지(다수의견·별개의견·반대의견 구분) (3) 쟁점의 정리 (4) 비판적 검토 — 법리의 정합성, 선례와의 관계, 학설의 평가 (5) 판례의 의의와 남은 과제.' },
-  { id: 'const', name: '헌법적 논증', desc: '제한되는 기본권·심사기준·과잉금지·평등', tpl: '다음 법률(조항 또는 제도)의 위헌 여부를 논증해 주세요.\n\n[심사 대상]\n{{입력}}\n\n구성: (1) 제한되는 기본권과 그 보호영역 (2) 심사기준의 선택과 그 이유(엄격/완화) (3) 과잉금지원칙 네 단계(목적의 정당성, 방법의 적정성, 피해의 최소성, 법익의 균형성) (4) 필요하면 평등원칙 심사 (5) 결론과 예상되는 반론, 그에 대한 재반론. 관련 헌법재판소 결정은 확인된 것만 인용해 주세요.' },
-  { id: 'bill', name: '입법개선안', desc: '문제 진단 → 대안 비교 → 조문 대비표', tpl: '다음 문제에 대한 입법개선안을 제시해 주세요.\n\n[문제]\n{{입력}}\n\n구성: (1) 현행 법제의 규율 구조와 문제점 진단(현행 조문은 웹에서 확인) (2) 가능한 입법 대안 2~3가지와 각각의 장단점, 헌법적 쟁점 (3) 권고안 (4) 개정 조문 대비표(현행 | 개정안 | 개정 이유) (5) 시행에 필요한 경과규정과 하위법령 정비 사항.' },
-  { id: 'counter', name: '반론 검토', desc: '내 주장에 대한 가장 강한 반론과 재반론', tpl: '다음 주장에 대해 심사위원이나 반대 학설의 입장에서 제기할 수 있는 가장 강한 반론 5개를 제시하고, 각각에 대한 재반론과 내 논증을 보완할 방법을 알려 주세요. 반론의 강도 순으로 정렬해 주세요.\n\n[주장]\n{{입력}}' },
-  { id: 'verify', name: '인용 검증', desc: '글 속 법령·판례·문헌 인용을 웹으로 대조', tpl: '다음 글에 나오는 모든 법령 조문, 판례·결정, 문헌 인용을 하나씩 웹에서 확인해 표로 정리해 주세요. 열: 인용 | 확인 결과(일치 / 불일치 / 확인 불가) | 확인한 출처 | 비고(정정할 내용). 확인하지 못한 것은 확인 불가로 두고 추측하지 마세요.\n\n[글]\n{{입력}}' },
-  { id: 'edit', name: '학술 문체 교정', desc: '논리 흐름·용어 일관성·문장 교정', tpl: '다음 글을 학술논문 문체로 교정해 주세요. 내용은 바꾸지 말고, (1) 교정한 글 (2) 주요 수정 사항과 이유(논리 흐름, 용어 일관성, 문장 호흡, 근거 제시 방식) 순서로 보여 주세요.\n\n[글]\n{{입력}}' },
-  { id: 'sum', name: '문헌 요약', desc: '첨부 문헌의 장별 요약과 핵심 논거', tpl: '첨부 문헌을 요약해 주세요. (1) 한 문단 요지 (2) 장·절별 요약(쪽수 인용) (3) 핵심 논거와 그 근거 (4) 이 문헌을 내 연구에 인용할 때 유의할 점.\n\n[내 연구와의 관련성]\n{{입력}}' },
-];
-const CHAINS = [
-  { id: 'plan', name: '연구계획서 초안', desc: '연구문제 구조화 → 선행연구 검토 → 연구계획서', steps: [
-    '다음 문제의식을 연구문제로 구조화해 주세요(배경, 주·하위 연구질문, 범위, 방법, 기여).\n\n{{입력}}',
-    '방금 정리한 연구문제를 기준으로, 첨부한 선행연구(첨부가 없다면 웹 검색으로 확인할 수 있는 국내 선행연구)를 검토하여 연구 공백과 이 연구의 차별성을 논증해 주세요. 확인하지 못한 문헌은 쓰지 마세요.',
-    '지금까지의 내용을 바탕으로 연구계획서 초안을 작성해 주세요: 연구의 필요성 → 연구 목적과 질문 → 선행연구 검토와 차별성 → 연구 내용(장별 구성) → 연구 방법 → 기대효과. 마지막에 연구자가 결정해야 할 사항을 정리해 주세요.',
-  ] },
-  { id: 'case2', name: '판례 평석 → 반론 검토', desc: '평석 작성 후 그 평석에 대한 반론까지', steps: [
-    '다음 판례(결정)에 대한 평석을 작성해 주세요. 사건번호와 판시사항은 웹에서 확인해 주세요.\n\n{{입력}}',
-    '방금 작성한 평석의 핵심 주장에 대해 가장 강한 반론 5개와 재반론을 제시하고, 평석을 보완할 수정안을 제안해 주세요.',
-  ] },
-];
+const DEFAULTS = { theme: 'auto', read: 'pdf' };
 
 /* ---------------- storage ---------------- */
 const DB = (() => {
   let db = null;
   const open = () => new Promise((res, rej) => {
-    const req = indexedDB.open('yoai', 1);
-    req.onupgradeneeded = () => { const d = req.result; for (const s of ['projects', 'chats', 'docs']) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' }); if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); };
-    req.onsuccess = () => { db = req.result; res(db); }; req.onerror = () => rej(req.error);
+    const req = indexedDB.open('yoai', 2);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      for (const s of ['projects', 'chats', 'docs', 'cards']) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+    };
+    req.onsuccess = () => { db = req.result; db.onversionchange = () => db.close(); res(db); };
+    req.onerror = () => rej(req.error);
+    req.onblocked = () => rej(new Error('다른 창에 열린 요AI 때문에 저장소를 열지 못했습니다. 다른 창을 닫고 다시 여세요.'));
   });
-  const run = (st, mode, fn) => new Promise((res, rej) => { if (!db) { res(undefined); return; } let out; const t = db.transaction(st, mode); const r = fn(t.objectStore(st)); if (r) r.onsuccess = () => { out = r.result; }; t.oncomplete = () => res(out); t.onerror = () => rej(t.error); });
-  return { open, get: (s, k) => run(s, 'readonly', (o) => o.get(k)), all: (s) => run(s, 'readonly', (o) => o.getAll()), put: (s, v, k) => run(s, 'readwrite', (o) => (k === undefined ? o.put(v) : o.put(v, k))), del: (s, k) => run(s, 'readwrite', (o) => o.delete(k)), ready: () => !!db };
+  const run = (st, mode, fn) => new Promise((res, rej) => { if (!db) { res(undefined); return; } let out; const t = db.transaction(st, mode); const r = fn(t.objectStore(st)); if (r) r.onsuccess = () => { out = r.result; }; t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
+  return { open, get: (s, k) => run(s, 'readonly', (o) => o.get(k)), all: (s) => run(s, 'readonly', (o) => o.getAll()), put: (s, v, k) => run(s, 'readwrite', (o) => (k === undefined ? o.put(v) : o.put(v, k))), del: (s, k) => run(s, 'readwrite', (o) => o.delete(k)) };
 })();
-const S = { settings: { ...DEFAULTS }, projects: [], chats: [], docs: [], project: null, chat: null, attach: [], busy: null, ctxOpen: false, persistent: false };
-const store = (k) => { try { return k === 'local' ? localStorage : sessionStorage; } catch (e) { return null; } };
-const KEY = 'yoai.key';
-function getKey() { for (const k of ['session', 'local']) { try { const v = store(k) && store(k).getItem(KEY); if (v) return v; } catch (e) { /* ignore */ } } return ''; }
-function setKey(v, remember) { try { store('local').removeItem(KEY); store('session').removeItem(KEY); } catch (e) { /* ignore */ } if (!v) return; try { (remember ? store('local') : store('session')).setItem(KEY, v); } catch (e) { /* ignore */ } }
+const S = { settings: { ...DEFAULTS }, projects: [], chats: [], docs: [], cards: [], project: null, view: 'find', q: '', qDoc: '', reader: null, chat: null, persistent: false, folder: null, sync: null, indexing: null };
 async function saveSettings() { applyTheme(); try { await DB.put('kv', S.settings, 'settings'); } catch (e) { /* ignore */ } }
 const saveProject = (p) => { p.updatedAt = Date.now(); return DB.put('projects', p).catch(() => {}); };
-const saveChat = (c) => { c.updatedAt = Date.now(); return DB.put('chats', c).catch((e) => toast('대화를 저장하지 못했습니다: ' + e.message)); };
+const saveCard = (c) => { c.updatedAt = Date.now(); return DB.put('cards', c).catch((e) => toast('노트를 저장하지 못했습니다: ' + e.message)); };
 function applyTheme() { const r = document.documentElement; if (S.settings.theme === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', S.settings.theme); }
-
 let toastT = 0;
-function toast(m) { let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); } t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
+function toast(m) { let t = $('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); } t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2800); }
+const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(b / 1024))}KB`);
+const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`; };
 
-/* ---------------- documents ---------------- */
-const b64cache = new Map();
-function toBase64(buf) { const bytes = new Uint8Array(buf); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
-async function docBlock(id, mode) {
-  const d = await DB.get('docs', id); if (!d) return null;
-  const meta = [d.author, d.year, d.venue].filter(Boolean).join(', ');
-  if (d.kind === 'pdf' && mode === 'pages') {
-    const pg = await docPages(id);
-    const off = +d.page1 > 1 ? ` 학술지 쪽수로는 첫 블록이 ${d.page1}면이다.` : '';
-    return { type: 'document', source: { type: 'content', content: pg.pages.map((t) => ({ type: 'text', text: t && t.trim() ? t : '(이 쪽에서는 글자를 추출하지 못했다)' })) }, title: d.title, context: `${meta ? meta + ' · ' : ''}PDF 본문을 쪽별로 옮긴 문헌이다. 내용 블록 하나가 PDF 한 쪽이며, 첫 블록이 1쪽이다.${off}`, citations: { enabled: true } };
-  }
-  if (d.kind === 'pdf') {
-    if (!b64cache.has(id)) b64cache.set(id, toBase64(d.bytes));
-    return { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64cache.get(id) }, title: d.title, ...(meta ? { context: meta } : {}), citations: { enabled: true } };
-  }
-  return { type: 'document', source: { type: 'text', media_type: 'text/plain', data: d.text }, title: d.title, ...(meta ? { context: meta } : {}), citations: { enabled: true } };
-}
-async function addFiles(files) {
-  let n = 0;
-  for (const f of files) {
-    const ext = (f.name.split('.').pop() || '').toLowerCase();
-    if (f.size > LIMIT.fileMax) { toast(`${f.name}: 100MB를 넘는 파일은 넣을 수 없습니다.`); continue; }
-    const title = f.name.replace(/\.[^.]+$/, '');
-    const doc = { id: uid(), title, author: '', year: '', venue: '', size: f.size, addedAt: Date.now() };
-    if (ext === 'pdf' || f.type === 'application/pdf') { doc.kind = 'pdf'; doc.bytes = await f.arrayBuffer(); doc.npages = await pdfPageCount(doc.bytes); }
-    else if (['txt', 'md', 'text'].includes(ext) || f.type.startsWith('text/')) { doc.kind = 'text'; doc.text = await f.text(); }
-    else { toast(`${f.name}: PDF나 텍스트 파일만 넣을 수 있습니다.`); continue; }
-    await DB.put('docs', doc); S.docs.push(docMeta(doc)); n++;
-  }
-  if (n) toast(`서재에 ${n}개 문헌을 넣었습니다.`);
-  return n;
-}
+/* ---------------- documents: kept whole, with the text of every page ---------------- */
 let pdfjsP = null;
 const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js', import.meta.url).href; return m; }); return pdfjsP; };
-const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt });
+const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '' });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
   const pdfjs = await pdfjsLib();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
   const pages = [];
   for (let i = 1; i <= doc.numPages; i++) { const pg = await doc.getPage(i); const tc = await pg.getTextContent(); pages.push(tc.items.map((it) => (it.str || '') + (it.hasEOL ? '\n' : '')).join('').replace(/[ \t]+\n/g, '\n').trim()); }
+  doc.destroy();
   return pages;
 }
 const chunkText = (t) => { const out = []; for (let i = 0; i < t.length; i += 3000) out.push(t.slice(i, i + 3000)); return out.length ? out : ['']; };
 async function docPages(id) {
   const d = await DB.get('docs', id); if (!d) return null;
-  if (!d.pages) { if (d.kind === 'pdf' && (d.npages || 0) > 60) toast(`‘${d.title}’의 본문을 쪽별로 추출하는 중입니다…`); d.pages = d.kind === 'pdf' ? await pdfText(d.bytes) : chunkText(d.text || ''); await DB.put('docs', d); }
-  return { id, title: d.title, meta: [d.author, d.year, d.venue].filter(Boolean).join(', '), page1: +d.page1 > 1 ? +d.page1 : 0, pages: d.pages };
+  if (!Array.isArray(d.pages) || d.blank == null) {
+    if (!Array.isArray(d.pages)) d.pages = d.kind === 'pdf' ? (d.bytes ? await pdfText(d.bytes) : []) : chunkText(d.text || '');
+    const all = d.pages.join('');
+    d.chars = all.replace(/\s+/g, '').length; d.blank = d.chars < 50;
+    await DB.put('docs', d);
+    const m = S.docs.find((x) => x.id === id); if (m) Object.assign(m, { indexed: true, chars: d.chars, blank: d.blank });
+  }
+  return { id, pages: d.pages };
 }
-const docTitle = (id) => { const d = S.docs.find((x) => x.id === id); return d ? d.title : '(삭제된 문헌)'; };
-const fmtSize = (b) => (b > 1048576 ? `${(b / 1048576).toFixed(1)}MB` : `${Math.max(1, Math.round(b / 1024))}KB`);
+async function addFiles(files, opts = {}) {
+  const ids = [];
+  for (const f of files) {
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    const title = f.name.replace(/\.[^.]+$/, '');
+    const doc = { id: uid(), title, author: '', year: '', venue: '', size: f.size, addedAt: Date.now(), ...(opts.folder ? { folder: opts.folder, sig: opts.sig } : {}) };
+    if (ext === 'pdf' || f.type === 'application/pdf') { doc.kind = 'pdf'; doc.bytes = await f.arrayBuffer(); doc.npages = await pdfPageCount(doc.bytes); }
+    else if (['txt', 'md', 'text'].includes(ext) || (f.type || '').startsWith('text/')) { doc.kind = 'text'; doc.text = await f.text(); }
+    else { if (!opts.quiet) toast(`${f.name}: PDF나 텍스트 파일만 넣을 수 있습니다.`); continue; }
+    try { await DB.put('docs', doc); }
+    catch (e) { // storage full: keep the text of every page, which is what finding and reading need
+      if (doc.kind !== 'pdf') { toast(`${f.name}: 저장 공간이 부족해 넣지 못했습니다.`); continue; }
+      try { doc.pages = await pdfText(doc.bytes); doc.bytes = null; doc.textOnly = true; await DB.put('docs', doc); toast(`저장 공간이 부족해 ‘${title}’은(는) 본문 글자만 보관합니다.`); }
+      catch (e2) { toast(`${f.name}: 저장 공간이 부족해 넣지 못했습니다.`); continue; }
+    }
+    S.docs.push(docMeta(doc)); ids.push(doc.id);
+  }
+  if (ids.length && !opts.quiet) toast(`서재에 ${ids.length}개 문헌을 넣었습니다. 본문을 읽어 찾을 수 있게 합니다.`);
+  if (ids.length) { LIB = null; indexLibrary(); }
+  return ids;
+}
+async function removeDoc(id) { await DB.del('docs', id); S.docs = S.docs.filter((d) => d.id !== id); LIB = null; if (PDFDOC && PDFDOC.id === id) closePdf(); }
+async function replaceDoc(id, f, sig) { // a file in the connected folder changed: same entry, new contents (cards keep pointing at it)
+  const d = await DB.get('docs', id); if (!d) return;
+  d.size = f.size; d.sig = sig; delete d.pages; delete d.blank; delete d.chars; delete d.textOnly; delete d.digest;
+  if (d.kind === 'pdf') { d.bytes = await f.arrayBuffer(); d.npages = await pdfPageCount(d.bytes); } else d.text = await f.text();
+  await DB.put('docs', d); LIB = null; if (PDFDOC && PDFDOC.id === id) closePdf();
+  const i = S.docs.findIndex((x) => x.id === id); if (i >= 0) S.docs[i] = docMeta(d);
+}
+const docOf = (id) => S.docs.find((d) => d.id === id) || null;
 
-/* ---------------- request building ---------------- */
-async function docModeFor(chat, id) {
-  chat.docMode = chat.docMode || {};
-  if (chat.docMode[id]) return chat.docMode[id];
-  const d = S.docs.find((x) => x.id === id);
-  let mode = 'doc';
-  if (d && d.kind === 'pdf') {
-    if (!d.npages) { const full = await DB.get('docs', id); const np = full ? await pdfPageCount(full.bytes) : 0; if (full && np) { full.npages = np; await DB.put('docs', full); } d.npages = np; }
-    const np = d.npages || 30;
-    const sent = Object.keys(chat.docMode).filter((k) => chat.docMode[k] === 'pdf').map((k) => S.docs.find((x) => x.id === k)).filter(Boolean);
-    const pages = sent.reduce((n, x) => n + (x.npages || 30), 0), bytes = sent.reduce((n, x) => n + (x.size || 0), 0);
-    mode = d.size > LIMIT.pdfBytesEach || np > LIMIT.pdfPagesEach || pages + np > LIMIT.pdfPagesChat || bytes + d.size > LIMIT.pdfBytesChat ? 'pages' : 'pdf';
-    if (mode === 'pages') {
-      const pg = await docPages(id);
-      if (pg.pages.join('').replace(/\s+/g, '').length < 50) { mode = 'none'; toast(`‘${d.title}’은(는) 글자를 추출할 수 없는 스캔본이고 분량이 커서 보낼 수 없습니다. 필요한 쪽만 잘라 다시 넣어 주세요.`); }
+/* ---------------- index and search: every page of every document, on this computer ---------------- */
+let LIB = null; // { key, docs: [{ id, pages, norm }] }
+const libKey = () => S.docs.filter((d) => d.indexed && !d.blank).map((d) => `${d.id}:${d.sig || d.size}`).join(',');
+async function libLoad() {
+  const key = libKey();
+  if (LIB && LIB.key === key) return LIB;
+  const docs = [];
+  for (const d of S.docs) {
+    if (!d.indexed || d.blank) continue;
+    const pg = await docPages(d.id); if (!pg) continue;
+    docs.push({ id: d.id, pages: pg.pages, norm: pg.pages.map((t) => t.toLowerCase().replace(/\s+/g, ' ')) });
+  }
+  LIB = { key, docs };
+  return LIB;
+}
+const WORD_RE = /[^0-9a-zÀ-ɏ가-힣一-鿿ㄱ-ㆎ]+/;
+/* "따옴표" = that exact expression, -낱말 = pages without it; everything else is matched in two-letter pieces, so spacing
+   and particles do not matter (의회유보 also finds 의회 유보, 의회유보의, 의회유보를) */
+function parseQuery(q) {
+  const phrases = [], neg = [];
+  let rest = String(q || '').replace(/["“”]([^"“”]+)["“”]/g, (_, a) => { const p = a.toLowerCase().replace(/\s+/g, ' ').trim(); if (p) phrases.push(p); return ` ${a} `; });
+  rest = rest.replace(/(^|\s)-(\S+)/g, (_, s, w) => { neg.push(w.toLowerCase()); return ' '; });
+  const terms = new Set(), words = [];
+  for (const w of rest.toLowerCase().split(WORD_RE)) {
+    if (!w) continue;
+    if (w.length > 1) words.push(w);
+    if (/[가-힣一-鿿ㄱ-ㆎ]/.test(w)) { if (w.length === 1) terms.add(w); else for (let i = 0; i + 1 < w.length; i++) terms.add(w.slice(i, i + 2)); }
+    else if (w.length > 1 || /\d/.test(w)) terms.add(w);
+  }
+  return { terms: [...terms], words, phrases, neg };
+}
+function searchLib(lib, q, k = 50, only = '') { // BM25 over pages; pages matching more of the query and the exact phrase rank higher
+  const pq = typeof q === 'string' ? parseQuery(q) : q;
+  if (!pq.terms.length) return [];
+  const docs = only ? lib.docs.filter((d) => d.id === only) : lib.docs;
+  let N = 0, tot = 0; for (const d of docs) for (const p of d.norm) { N++; tot += p.length; }
+  if (!N) return [];
+  const avg = tot / N || 1;
+  const idf = pq.terms.map((t) => { let n = 0; for (const d of docs) for (const p of d.norm) if (p.includes(t)) n++; return n ? Math.log(1 + (N - n + 0.5) / (n + 0.5)) : 0; });
+  const whole = pq.words.join(' ');
+  const out = [];
+  for (const d of docs) d.norm.forEach((p, i) => {
+    if (pq.phrases.some((ph) => !p.includes(ph)) || pq.neg.some((w) => p.includes(w))) return;
+    let sc = 0, hit = 0;
+    for (let j = 0; j < pq.terms.length; j++) {
+      if (!idf[j]) continue;
+      let tf = 0, at = p.indexOf(pq.terms[j]);
+      while (at >= 0 && tf < 30) { tf++; at = p.indexOf(pq.terms[j], at + 1); }
+      if (!tf) continue;
+      hit++; sc += idf[j] * (tf * 2.2) / (tf + 1.2 * (0.25 + 0.75 * p.length / avg));
     }
-  }
-  chat.docMode[id] = mode;
-  return mode;
+    if (!sc) return;
+    sc *= 0.4 + 0.6 * hit / pq.terms.length;
+    if (whole.length > 3 && p.includes(whole)) sc *= 1.6;
+    for (const w of pq.words) if (w.length > 1 && p.includes(w)) sc *= 1.15;
+    out.push({ id: d.id, page: i + 1, score: sc });
+  });
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, k);
 }
-function projectText(p) {
-  if (!p) return '';
-  const f = (label, v) => (v && v.trim() ? `- ${label}: ${v.trim()}` : '');
-  const lines = [f('연구문제', p.question), f('핵심 개념 정의', p.concepts), f('연구자가 확정한 사항(이 판단을 전제로 삼는다)', p.decided), f('미결 쟁점', p.open), f('메모', p.notes)].filter(Boolean);
-  let out = lines.length ? `# 연구 프로젝트: ${p.title}\n${lines.join('\n')}` : '';
-  if (p.style && p.style.trim()) out += `${out ? '\n\n' : ''}# 연구자의 문체 프로필(내용이 아니라 문장 호흡·종결 표현·어휘·표기 관행을 따를 것)\n${p.style.trim()}`;
-  return out;
-}
-/* History is rebuilt the same way on every request (append-only): a project-context change made mid-conversation travels as a
-   role:"system" message right after the user turn it applies to, never by editing earlier turns or the top-level system prompt. */
-async function apiMessages(chat, docIds) {
-  const out = []; let pendingSys = null;
-  const list = chat.messages.filter((m) => m.role === 'user' || (m.role === 'assistant' && m.api !== false && m.content && m.content.length));
-  for (let k = 0; k < list.length; k++) {
-    const m = list[k];
-    if (m.role === 'user') {
-      const content = [];
-      for (const id of m.docs || []) { const mode = await docModeFor(chat, id); if (mode === 'none') continue; const b = await docBlock(id, mode); if (b) { content.push(b); if (docIds) docIds.push(id); } }
-      content.push({ type: 'text', text: m.text });
-      if (m.sysNote && chat.inlineSys) content.push({ type: 'text', text: `[연구 프로젝트 맥락 갱신]\n${m.sysNote}` });
-      out.push({ role: 'user', content });
-      if (m.sysNote && !chat.inlineSys) pendingSys = m.sysNote;
-      const next = list[k + 1];
-      if (pendingSys && (!next || next.role === 'assistant')) { out.push({ role: 'system', content: pendingSys }); pendingSys = null; }
-    } else out.push({ role: 'assistant', content: m.content });
-  }
-  return out;
-}
-function tools() {
-  if (!S.settings.web) return undefined;
-  const basic = (MODELS[S.settings.model] || {}).webTools === 'basic';
-  return [
-    { type: basic ? 'web_search_20250305' : 'web_search_20260209', name: 'web_search', max_uses: 8 },
-    { type: basic ? 'web_fetch_20250910' : 'web_fetch_20260209', name: 'web_fetch', max_uses: 8, citations: { enabled: true } },
-  ];
-}
-function client() { return new Anthropic({ apiKey: getKey(), dangerouslyAllowBrowser: true, maxRetries: 2 }); }
-function cost(usage, model) {
-  const M = MODELS[model] || MODELS['claude-opus-5-5'];
-  if (!usage) return 0;
-  return ((usage.input_tokens || 0) * M.in + (usage.cache_creation_input_tokens || 0) * M.cw + (usage.cache_read_input_tokens || 0) * M.cr + (usage.output_tokens || 0) * M.out) / 1e6
-    + ((usage.server_tool_use && usage.server_tool_use.web_search_requests) || 0) * 0.01;
-}
-function addUsage(a, b) { if (!b) return a; const o = { ...(a || {}) }; for (const k of ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']) o[k] = (o[k] || 0) + (b[k] || 0); const ws = (b.server_tool_use && b.server_tool_use.web_search_requests) || 0; o.server_tool_use = { web_search_requests: ((o.server_tool_use && o.server_tool_use.web_search_requests) || 0) + ws }; return o; }
-
-/* ---------------- one turn: stream, continue paused turns, store the full content ---------------- */
-async function runTurnFree() {
-  const chat = S.chat; if (!chat || S.busy) return;
-  const ac = new AbortController();
-  const msg = { id: uid(), role: 'assistant', content: [], model: 'claude.ai', free: true, at: Date.now(), live: true };
-  chat.messages.push(msg);
-  S.busy = { ac, msg };
-  paintThread(); paintComposer();
-  try {
-    const ids = [...new Set(chat.messages.flatMap((m) => m.docs || []))];
-    const docs = []; for (const id of ids) { const d = await docPages(id); if (d) docs.push(d); }
-    const LIMIT = 150000; let used = 0, docText = '';
-    docs.forEach((d, i) => {
-      const total = d.pages.reduce((n, t) => n + t.length, 0);
-      const header = `【문헌 ${i + 1}】 ${d.title}${d.meta ? ` (${d.meta})` : ''} — 총 ${d.pages.length}쪽${d.page1 ? ` · 학술지 쪽수로는 〔1쪽〕이 ${d.page1}면이다(학술지 쪽수 = PDF 쪽수 + ${d.page1 - 1})` : ''}`;
-      if (used + total <= LIMIT) { used += total; docText += `\n\n${header}\n${d.pages.map((t, k) => `〔${k + 1}쪽〕\n${t}`).join('\n')}`; }
-      else { const head = d.pages.slice(0, 2).map((t, k) => `〔${k + 1}쪽〕\n${t}`).join('\n'); used += head.length; docText += `\n\n${header} — 분량이 많아 1~2쪽만 실었다. 나머지 쪽은 read_pages 도구로 읽을 것.\n${head}`; }
-    });
-    const pt = projectText(S.project);
-    const intro = `${SYSTEM}${FREE_NOTE}${pt ? `\n\n${pt}` : ''}${docText ? `\n\n# 첨부 문헌${docText}` : ''}\n\n# 연구자의 요청\n`;
-    const turns = [];
-    for (const m of chat.messages) {
-      if (m === msg) break;
-      if (m.role === 'user') turns.push({ role: 'user', content: m.text });
-      else if (m.role === 'assistant' && m.api !== false) { const t = (m.content || []).filter((b) => b.type === 'text').map((b) => b.text).join(''); if (t) turns.push({ role: 'assistant', content: t }); }
-    }
-    const merged = [];
-    for (const t of turns) { const last = merged[merged.length - 1]; if (last && last.role === t.role) last.content += `\n\n${t.content}`; else merged.push({ ...t }); }
-    if (merged.length && merged[0].role === 'user') merged[0].content = intro + merged[0].content;
-    const tools = docs.length ? [{
-      name: 'read_pages', description: '첨부 문헌의 특정 쪽 본문을 읽는다. doc은 문헌 번호(1부터), from과 to는 쪽 번호이며 한 번에 최대 15쪽까지 읽는다.',
-      inputSchema: { type: 'object', properties: { doc: { type: 'integer' }, from: { type: 'integer' }, to: { type: 'integer' } }, required: ['doc', 'from', 'to'] },
-      execute: ({ doc, from, to }) => { const d = docs[(doc | 0) - 1]; if (!d) throw new Error('그런 번호의 문헌이 없습니다.'); const a = Math.max(1, from | 0), z = Math.min(d.pages.length, to | 0, a + 14); return d.pages.slice(a - 1, z).map((t, k) => `〔${a + k}쪽〕\n${t}`).join('\n') || '(해당 쪽에 글자가 없습니다)'; },
-    }] : undefined;
-    let pending = 0;
-    const res = await SAMPLE(merged, { modelTier: S.settings.tier || 'complex', signal: ac.signal, cache: false, ...(tools ? { tools } : {}), onText: ({ text }) => { msg.content = [{ type: 'text', text }]; if (!pending) pending = requestAnimationFrame(() => { pending = 0; paintLive(msg); }); } });
-    msg.content = [{ type: 'text', text: (res && res.text) || '' }];
-    if (res && res.truncated) msg.notice = '답변이 길이 한도에서 멈췄습니다. “이어서 써 주세요”라고 보내면 계속합니다.';
-  } catch (e) {
-    msg.api = false;
-    const code = e && e.code;
-    if (e && e.text) msg.content = [{ type: 'text', text: e.text }];
-    msg.notice = ac.signal.aborted ? '중단했습니다. 이 답변은 다음 질문의 맥락에 포함되지 않습니다.'
-      : code === 'not_granted' ? '이 페이지가 Claude에 질문하도록 허용되지 않았습니다. 페이지의 권한 메뉴에서 허용한 뒤 다시 보내 주세요.'
-      : code === 'rate_limited' ? 'claude.ai 사용량 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요.'
-      : `답변을 받지 못했습니다: ${(e && e.message) || e}`;
-  } finally {
-    msg.live = false; S.busy = null;
-    if (!chat.title || chat.title === '새 대화') chat.title = (chat.messages.find((m) => m.role === 'user') || {}).text?.slice(0, 40) || '새 대화';
-    await saveChat(chat);
-    paintThread(); paintComposer(); paintSide();
-  }
-}
-async function runTurn() {
-  if (SAMPLE) return runTurnFree();
-  const chat = S.chat; if (!chat || S.busy) return;
-  const ac = new AbortController();
-  const msg = { id: uid(), role: 'assistant', content: [], model: S.settings.model, at: Date.now(), usage: null, live: true };
-  chat.messages.push(msg);
-  S.busy = { ac, msg };
-  paintThread(); paintComposer();
-  const cl = client();
-  let parts = [], done = false;
-  try {
-    const pt = projectText(S.project);
-    if (chat.sys0 === undefined) { chat.sys0 = pt; chat.ctxNow = pt; }
-    else if (pt !== chat.ctxNow) {
-      const lu = chat.messages.filter((m) => m.role === 'user').pop();
-      if (lu) lu.sysNote = `연구 프로젝트 맥락이 바뀌었다. 지금부터는 이전 맥락 대신 아래 내용을 전제로 삼는다.\n\n${pt || '(지금은 프로젝트 맥락이 비어 있다.)'}`;
-      chat.ctxNow = pt;
-    }
-    const docIds = [];
-    const base = await apiMessages({ messages: chat.messages.filter((m) => m !== msg), docMode: chat.docMode || (chat.docMode = {}), inlineSys: !!chat.inlineSys }, docIds);
-    msg.docIds = docIds;
-    const sys = [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }];
-    if (chat.sys0) sys.push({ type: 'text', text: chat.sys0 });
-    const bytes = JSON.stringify(base).length;
-    if (bytes > LIMIT.request) throw new Error('첨부 문헌이 너무 커서(요청 128MB 한도) 보낼 수 없습니다. 일부 문헌을 빼고 새 대화에서 시도해 주세요.');
-    for (let round = 0; round < 6; round++) {
-      const params = {
-        model: S.settings.model, max_tokens: 64000,
-        thinking: { type: 'adaptive', display: S.settings.showThinking ? 'summarized' : 'omitted', block_binding: { prefix_mismatch_behavior: 'drop_block' } },
-        output_config: { effort: S.settings.effort },
-        system: sys,
-        messages: parts.length ? base.concat([{ role: 'assistant', content: parts }]) : base,
-        cache_control: { type: 'ephemeral' },
-        betas: BETAS, fallbacks: 'default',
-      };
-      const t = tools(); if (t) params.tools = t;
-      const stream = cl.beta.messages.stream(params, { signal: ac.signal });
-      const prior = parts.slice();
-      let pending = 0;
-      stream.on('streamEvent', (ev, snap) => {
-        msg.content = prior.concat(snap.content || []);
-        if (!pending) pending = requestAnimationFrame(() => { pending = 0; paintLive(msg); });
-      });
-      const final = await stream.finalMessage();
-      parts = prior.concat(final.content);
-      msg.content = parts; msg.usage = addUsage(msg.usage, final.usage); msg.model = final.model || msg.model;
-      msg.stop = final.stop_reason;
-      if (final.stop_reason === 'refusal') { msg.notice = `안전 정책에 따라 답변이 거절되었습니다${final.stop_details && final.stop_details.category ? ` (분류: ${final.stop_details.category})` : ''}. 질문을 바꾸어 다시 시도해 주세요.`; break; }
-      if (final.stop_reason !== 'pause_turn') break;
-    }
-    if (msg.stop === 'max_tokens') msg.notice = '답변이 길이 한도에서 멈췄습니다. “이어서 써 주세요”라고 보내면 계속합니다.';
-    done = true;
-  } catch (e) {
-    msg.api = false;
-    if (e instanceof APIUserAbortError || ac.signal.aborted) msg.notice = '중단했습니다. 이 답변은 다음 질문의 맥락에 포함되지 않습니다.';
-    else if (e instanceof AuthenticationError) msg.notice = 'API 키가 올바르지 않습니다. 설정에서 키를 다시 확인해 주세요.';
-    else if (e instanceof PermissionDeniedError) msg.notice = '이 API 키로는 선택한 모델이나 기능을 쓸 수 없습니다. 설정에서 모델을 바꾸거나 콘솔에서 권한을 확인해 주세요.';
-    else if (e instanceof RateLimitError) msg.notice = '요청 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요.';
-    else if (e instanceof BadRequestError && /role\s*'?system'?|system.*not supported/i.test(e.message || '') && !chat.inlineSys) { chat.inlineSys = true; msg.notice = '이 모델은 대화 중 시스템 메시지를 받지 않아, 프로젝트 맥락 변경을 질문에 덧붙이는 방식으로 바꾸었습니다. ‘다시 생성’을 눌러 주세요.'; }
-    else if (e instanceof BadRequestError) msg.notice = `요청이 거부되었습니다: ${e.message}`;
-    else if (e instanceof NotFoundError) msg.notice = '선택한 모델을 찾을 수 없습니다. 설정에서 다른 모델을 골라 주세요.';
-    else if (e instanceof InternalServerError) msg.notice = `Anthropic 서버 오류(${e.status})입니다. 잠시 후 다시 시도해 주세요.`;
-    else if (e instanceof APIConnectionError) msg.notice = '네트워크에 연결할 수 없습니다. 인터넷 연결을 확인해 주세요.';
-    else if (e instanceof APIError) msg.notice = `API 오류(${e.status || ''}): ${e.message}`;
-    else msg.notice = e.message || String(e);
-    if (msg.content.length && !(e instanceof APIUserAbortError)) msg.content = msg.content.filter((b) => b.type === 'text');
-  } finally {
-    msg.live = false; S.busy = null;
-    if (!chat.title || chat.title === '새 대화') chat.title = (chat.messages.find((m) => m.role === 'user') || {}).text?.slice(0, 40) || '새 대화';
-    await saveChat(chat);
-    paintThread(); paintComposer(); paintSide();
-  }
-  if (done && S.settings.autoVerify && S.chat === chat && answerParts(msg.content).cites.length) verifyAnswer(chat.messages.indexOf(msg));
-}
-async function send(text, opts = {}) {
-  text = (text || '').trim();
-  if (!text || S.busy) return;
-  if (!SAMPLE && !getKey()) { openSettings(true); return; }
-  if (!S.chat) await newChat();
-  S.chat.messages.push({ id: uid(), role: 'user', text, docs: S.attach.slice(), at: Date.now() });
-  S.attach = [];
-  const ta = $('#input'); if (ta && !opts.keepInput) { ta.value = ''; autoGrow(ta); }
-  await saveChat(S.chat);
-  await runTurn();
-}
-async function runChain(chain, input) {
-  for (let i = 0; i < chain.steps.length; i++) {
-    const prompt = chain.steps[i].replace('{{입력}}', input || '(입력 없음)');
-    await send(`[${chain.name} ${i + 1}/${chain.steps.length}]\n${prompt}`);
-    const last = S.chat && S.chat.messages[S.chat.messages.length - 1];
-    if (!last || last.api === false || last.notice) { toast('연쇄 작업을 멈췄습니다.'); return; }
-  }
-  toast(`‘${chain.name}’을(를) 마쳤습니다.`);
-}
-
-/* ---------------- rendering an answer ---------------- */
-const VTAGS = [['첨부 문헌', 'doc'], ['검색 확인', 'web'], ['일반 법리', 'law'], ['추론', 'inf'], ['검증 필요', 'chk']];
-function answerParts(content) {
-  let md = '', thinking = '';
-  const cites = [], acts = [];
-  const citeKey = (c) => (c.url ? c.url : `${c.document_index}|${c.document_title}|${c.start_page_number ?? c.start_block_index ?? c.start_char_index ?? ''}|${c.end_page_number ?? c.end_block_index ?? c.end_char_index ?? ''}`);
-  for (const b of content || []) {
-    if (b.type === 'thinking' && b.thinking) thinking += (thinking ? '\n\n' : '') + b.thinking;
-    else if (b.type === 'text') {
-      md += b.text;
-      if (b.citations && b.citations.length) {
-        const nums = [];
-        for (const c of b.citations) {
-          let i = cites.findIndex((x) => citeKey(x) === citeKey(c));
-          if (i < 0) { cites.push(c); i = cites.length - 1; }
-          if (!nums.includes(i + 1)) nums.push(i + 1);
-        }
-        md += nums.map((n) => `〔c${n}〕`).join('');
+let indexP = null;
+function indexLibrary() { // read every page's text once, in the background
+  if (indexP) return indexP;
+  indexP = (async () => {
+    for (;;) {
+      const todo = S.docs.filter((d) => !d.indexed);
+      if (!todo.length) break;
+      S.indexing = { done: 0, total: todo.length }; paintStatus();
+      for (const d of todo) {
+        try { await docPages(d.id); } catch (e) { Object.assign(d, { indexed: true, blank: true }); }
+        S.indexing.done++; paintStatus();
       }
-    } else if (b.type === 'server_tool_use') {
-      const q = b.input && (b.input.query || b.input.url);
-      if (q) acts.push(`${b.name === 'web_fetch' ? '열람' : '검색'}: ${q}`);
-    } else if (b.type === 'fallback') acts.push(`모델 전환: ${(b.from_ || b.from || {}).model || ''} → ${(b.to || {}).model || ''}`);
-  }
-  let html = renderMarkdown(md);
-  html = html.replace(/〔c(\d+)〕/g, (_, n) => `<sup class="cite"><a href="#" data-n="${n}" aria-label="출처 ${n}">${n}</a></sup>`);
-  for (const [t, cls] of VTAGS) html = html.split(`[${t}]`).join(`<span class="tag-v ${cls}">${t}</span>`);
-  return { html, md, thinking, cites, acts };
+    }
+    S.indexing = null; LIB = null; paintStatus();
+    if (S.view === 'find' && S.q) runFind();
+  })().finally(() => { indexP = null; });
+  return indexP;
 }
-/* where a citation points: PDF page (page_location), page block of a per-page document (content_block_location), with the
-   journal's printed page when the researcher has entered the article's first page in the library */
-function citeWhere(c, m) {
-  let a = 0, b = 0;
-  if (c.type === 'content_block_location') { a = (c.start_block_index | 0) + 1; b = Math.max(a, c.end_block_index | 0); }
-  else if (c.start_page_number) { a = c.start_page_number; b = Math.max(a, (c.end_page_number || a + 1) - 1); }
-  const id = m && m.docIds ? m.docIds[c.document_index] : null;
-  const doc = (id && S.docs.find((x) => x.id === id)) || S.docs.find((x) => x.title === c.document_title) || null;
-  if (!a) return { ui: '', note: '', doc };
-  const off = doc && +doc.page1 > 0 ? +doc.page1 - 1 : null;
-  const rng = (p, q, dash) => (q > p ? `${p}${dash}${q}` : `${p}`);
-  if (off !== null) return { ui: `${rng(a + off, b + off, '–')}면 (PDF ${rng(a, b, '–')}쪽)`, note: `${rng(a + off, b + off, '-')}면`, doc };
-  return { ui: `${rng(a, b, '–')}쪽`, note: `PDF ${rng(a, b, '-')}쪽`, doc };
-}
-const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`; };
-const shorten = (t, n) => { const s = String(t || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; };
-/* footnote text in the style common to Korean public-law journals: 저자, “제목”, 학술지, 연도, 쪽. */
-function footnoteFor(c, m, withQuote) {
-  const q = withQuote && c.cited_text ? ` 인용: “${shorten(c.cited_text, 300)}”` : '';
-  if (c.url) return `“${c.title || c.url}”, ${c.url} (최종 확인: ${kdate(m && m.at)}).${q}`;
-  const w = citeWhere(c, m), d = w.doc;
-  const title = (d && d.title) || c.document_title || '문헌';
-  return `${d && d.author ? `${d.author}, ` : ''}“${title}”${d && d.venue ? `, ${d.venue}` : ''}${d && d.year ? `, ${d.year}` : ''}${w.note ? `, ${w.note}` : ''}.${q}`;
-}
-function citeHTML(c, n, m) {
-  const where = citeWhere(c, m).ui;
-  const title = c.title || c.document_title || '문헌';
-  const head = c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(title)}</a>` : `<b>${esc(title)}</b>${where ? ` · ${where}` : ''}`;
-  const q = c.cited_text ? ` <span class="q">“${esc(c.cited_text.length > 160 ? c.cited_text.slice(0, 160) + '…' : c.cited_text)}”</span>` : '';
-  return `<li id="cite-${n}">${head}${q}</li>`;
-}
-function assistantHTML(m, idx) {
-  const p = answerParts(m.content);
-  const M = MODELS[m.model] || { name: m.model || '' };
-  const usage = m.free ? '무료 모드 · claude.ai' : m.usage ? `${M.name} · 약 $${cost(m.usage, m.model).toFixed(3)}` : (m.model ? M.name : '');
-  return `<div class="msg ai" data-i="${idx}">
-    <div class="ai-head"><span class="mark">요</span><span>요AI</span></div>
-    ${p.acts.length ? `<div class="activity">${p.acts.map((a) => `<span class="act" title="${esc(a)}">${esc(a)}</span>`).join('')}</div>` : ''}
-    ${p.thinking && S.settings.showThinking ? `<details class="think"><summary>사고 과정 요약</summary><div>${esc(p.thinking)}</div></details>` : ''}
-    <div class="answer${m.live ? ' cursor' : ''}">${p.html || (m.live ? '' : '')}</div>
-    ${p.cites.length ? `<div class="sources"><b>출처</b><ol>${p.cites.map((c, i) => citeHTML(c, i + 1, m)).join('')}</ol></div>` : ''}
-    ${verifyHTML(m)}
-    ${m.notice ? `<div class="notice-line">${esc(m.notice)}</div>` : ''}
-    ${m.live ? '' : `<div class="ai-foot"><button data-act="copy" data-i="${idx}">복사</button><button data-act="docx" data-i="${idx}" title="이 답변을 Word 문서로 저장(출처는 각주)">Word</button>${!m.free && m.api !== false && p.cites.length ? `<button data-act="verify" data-i="${idx}" title="출처가 달린 주장마다 인용 원문이 그 주장을 뒷받침하는지 대조">${m.verify && !m.verify.error ? '인용 다시 검증' : '인용 검증'}</button>` : ''}<button data-act="decide" data-i="${idx}" title="선택한 문장을 프로젝트의 ‘확정 사항’에 추가">확정 사항에 추가</button>${idx === S.chat.messages.length - 1 ? '<button data-act="regen">다시 생성</button>' : ''}<span class="meta">${esc(usage)}</span></div>`}
-  </div>`;
-}
-function userHTML(m) {
-  const mode = (S.chat && S.chat.docMode) || {};
-  const tag = (id) => (mode[id] === 'pages' ? '<small>쪽별 본문으로 보냄</small>' : mode[id] === 'none' ? '<small>보내지 못함</small>' : '');
-  const att = (m.docs || []).length ? `<div class="att">${m.docs.map((id) => `<span class="doc-chip"><b>${esc(docTitle(id))}</b>${tag(id)}</span>`).join('')}</div>` : '';
-  return `<div class="msg user"><div class="bubble">${att}${esc(m.text)}</div></div>`;
+function libStats() {
+  const ok = S.docs.filter((d) => d.indexed && !d.blank);
+  return { n: S.docs.length, ok: ok.length, pages: ok.reduce((n, d) => n + (d.npages || 0), 0), chars: ok.reduce((n, d) => n + (d.chars || 0), 0), blank: S.docs.filter((d) => d.blank).length, size: S.docs.reduce((n, d) => n + (d.size || 0), 0) };
 }
 
-/* ---------------- citation check: does each cited passage really support the sentence it is attached to? ---------------- */
-const VERIFY_SYS = `당신은 학술 인용 검증자이다. 연구 보조 AI가 쓴 답변과, 그 답변이 출처로 단 인용 원문 목록을 받는다. 답변에서 출처 표시 〔cN〕가 붙은 주장마다, 그 출처의 인용 원문이 주장을 실제로 뒷받침하는지 판정한다.
-- 뒷받침함: 인용 원문만으로 주장의 핵심이 확인된다.
-- 일부만 뒷받침함: 주장의 일부만 확인되거나, 주장이 원문보다 넓거나 강하게 표현되었다.
-- 뒷받침하지 않음: 원문이 주장과 다르거나 관계가 없다.
-원문 밖의 지식으로 판정하지 않고 주어진 인용 원문에만 비추어 판정한다. 같은 주장에 출처가 여럿이면 출처마다 따로 판정한다. claim에는 판정한 주장을 답변에서 그대로 옮기되 120자를 넘으면 줄이고, reason은 80자 이내로 쓴다. summary에는 전체 판정을 한두 문장으로 쓴다.`;
-const VERDICTS = [['뒷받침함', 'ok'], ['일부만 뒷받침함', 'part'], ['뒷받침하지 않음', 'no']];
-const VERIFY_SCHEMA = { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { n: { type: 'integer' }, claim: { type: 'string' }, verdict: { type: 'string', enum: VERDICTS.map((v) => v[0]) }, reason: { type: 'string' } }, required: ['n', 'claim', 'verdict', 'reason'], additionalProperties: false } }, summary: { type: 'string' } }, required: ['items', 'summary'], additionalProperties: false };
-async function verifyAnswer(idx) {
-  const chat = S.chat, m = chat && chat.messages[idx];
-  if (!m || m.role !== 'assistant' || m.verifying) return;
-  if (SAMPLE) { toast('인용 검증은 API 모드에서 쓸 수 있습니다.'); return; }
-  if (!getKey()) { openSettings(true); return; }
-  const p = answerParts(m.content);
-  if (!p.cites.length) { toast('출처가 달린 답변에만 쓸 수 있습니다.'); return; }
-  m.verifying = true; paintLive(m);
+/* ---------------- the connected folder: everything in it, kept in step ---------------- */
+const FOLDER_FILE = /\.(pdf|txt|md)$/i;
+async function* walkDir(dir, path = '') {
+  for await (const [name, h] of dir.entries()) {
+    if (name.startsWith('.') || name.startsWith('~$')) continue;
+    if (h.kind === 'directory') yield* walkDir(h, `${path}${name}/`);
+    else if (FOLDER_FILE.test(name)) yield { path: path + name, get: () => h.getFile() };
+  }
+}
+async function connectFolder() {
+  if (window.showDirectoryPicker) { // Chrome·Edge: the folder stays connected and is read again whenever 요AI opens
+    let h; try { h = await window.showDirectoryPicker({ id: 'yoai-library', mode: 'read' }); } catch (e) { return; }
+    S.folder = { name: h.name, handle: h, perm: 'granted' };
+    try { await DB.put('kv', h, 'folder'); } catch (e) { /* this browser cannot keep it; connected for this session */ }
+    await syncFolder();
+  } else { const inp = $('#folder-in'); if (inp) inp.click(); } // other browsers: read the chosen folder now
+}
+async function syncFolder(files) {
+  if (S.sync) return;
+  let root, list = [];
   try {
-    const src = p.cites.map((c, i) => `〔c${i + 1}〕 ${c.url ? `${c.title || ''} <${c.url}>` : `${c.document_title || '문헌'} ${citeWhere(c, m).ui}`}\n인용 원문: “${c.cited_text || '(원문 없음)'}”`).join('\n\n');
-    const res = await client().messages.create({ model: S.settings.model, max_tokens: 16000, thinking: { type: 'adaptive', display: 'omitted' }, output_config: { effort: 'medium', format: { type: 'json_schema', schema: VERIFY_SCHEMA } }, system: VERIFY_SYS, messages: [{ role: 'user', content: `# 답변\n\n${p.md}\n\n# 출처 목록\n\n${src}` }] });
-    if (res.stop_reason === 'refusal') throw new Error('안전 정책에 따라 검증이 거절되었습니다.');
-    const txt = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-    let out; try { out = JSON.parse(txt); } catch (e) { throw new Error(res.stop_reason === 'max_tokens' ? '검증 결과가 길이 한도에서 잘렸습니다.' : '검증 결과를 읽지 못했습니다.'); }
-    const items = (out.items || []).filter((it) => it && it.claim).map((it) => ({ n: it.n | 0, claim: String(it.claim), verdict: String(it.verdict || '').trim(), reason: String(it.reason || '') }));
-    m.verify = { at: Date.now(), items, summary: String(out.summary || ''), usage: res.usage, model: res.model || S.settings.model };
-  } catch (e) {
-    m.verify = { at: Date.now(), error: e instanceof AuthenticationError ? 'API 키가 올바르지 않습니다.' : e instanceof RateLimitError ? '요청 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요.' : (e && e.message) || String(e) };
-  } finally {
-    m.verifying = false;
-    await saveChat(chat);
-    if (S.chat === chat) paintLive(m);
-  }
-}
-function verifyHTML(m) {
-  if (m.verifying) return '<div class="verify busy" role="status">인용 원문과 주장을 대조하는 중…</div>';
-  const v = m.verify; if (!v) return '';
-  if (v.error) return `<div class="verify"><div class="vh"><b>인용 검증</b></div><p class="err">검증하지 못했습니다: ${esc(v.error)}</p></div>`;
-  const cls = (verdict) => (VERDICTS.find((x) => x[0] === verdict) || [null, 'part'])[1];
-  const count = (k) => v.items.filter((it) => cls(it.verdict) === k).length;
-  const chk = (answerParts(m.content).md.match(/\[검증 필요\]/g) || []).length;
-  const cost$ = v.usage ? ` · 약 $${cost(v.usage, v.model).toFixed(3)}` : '';
-  return `<div class="verify"><div class="vh"><b>인용 검증</b><span class="vc"><i class="ok">뒷받침 ${count('ok')}</i><i class="part">일부 ${count('part')}</i><i class="no">불일치 ${count('no')}</i></span><span class="meta">${esc((MODELS[v.model] || { name: v.model }).name)}${cost$}</span></div>
-    ${v.summary ? `<p>${esc(v.summary)}</p>` : ''}
-    <ol>${v.items.map((it) => `<li class="${cls(it.verdict)}"><span class="vb">${esc(it.verdict)}</span><span class="vn">출처 ${it.n}</span><div class="vt">${esc(it.claim)}</div><div class="vr">${esc(it.reason)}</div></li>`).join('')}</ol>
-    ${chk ? `<p class="vflag">이 답변에는 원문 확인이 필요한 [검증 필요] 표시가 ${chk}곳 있습니다. 인용 검증은 출처가 달린 문장만 대조합니다.</p>` : ''}</div>`;
-}
-
-/* ---------------- style profile from the researcher's own papers ---------------- */
-const STYLE_PROMPT = `첨부한 문헌은 연구자 본인이 쓴 논문이다. 내용이 아니라 문체를 분석하여, 다른 사람이 이 연구자의 글을 이어 쓸 때 그대로 따를 수 있는 ‘문체 프로필’을 작성하라.
-형식: 아래 일곱 항목을 번호를 붙여 짧은 문장으로 쓰고, 전체를 1,500자 이내로 한다. 마크다운 제목이나 굵은 글씨는 쓰지 않는다.
-1. 문장: 평균적인 문장 길이와 호흡, 한 문단을 짜는 방식
-2. 종결과 판단: 즐겨 쓰는 종결 표현, 단정과 유보를 나타내는 표현(예: ‘~라고 할 것이다’, ‘~로 보인다’)
-3. 전개: 자주 쓰는 연결어와 전환 표현, 논증을 펼치는 순서
-4. 용어와 표기: 한자·원어 병기 관행, 법령·판례·문헌을 본문에서 언급하는 방식, 숫자와 기호 표기
-5. 각주: 각주를 쓰는 방식과 분량, 각주에 주로 담는 내용
-6. 피하는 것: 이 연구자의 글에 나타나지 않는 표현이나 습관
-7. 대표 문장: 문체를 잘 보여 주는 문장 세 개를 원문 그대로 옮기고, 각 문장 끝에 (문헌 제목, ○쪽)을 붙인다.
-원문에서 확인되는 특징만 쓰고, 확인되지 않는 것은 짐작하여 쓰지 않는다.`;
-async function styleExcerpt(id) {
-  const d = await docPages(id); if (!d) return null;
-  const pages = d.pages.length > 4 ? d.pages.slice(1) : d.pages; // skip the cover/abstract page of longer papers
-  let text = '';
-  for (let k = 0; k < pages.length && text.length < 30000; k++) text += `〔${(d.pages.length > 4 ? 2 : 1) + k}쪽〕\n${pages[k]}\n`;
-  return { title: d.title, text: text.slice(0, 32000) };
-}
-function openStyleExtract() {
-  if (!S.docs.length) { toast('먼저 서재에 선생님이 쓴 논문을 넣어 주세요.'); return; }
-  let ac = null;
-  const m = modal(`<h2>내 논문에서 문체 추출</h2><p class="sub">서재에서 선생님이 직접 쓴 논문을 1~3편 고르세요. 내용이 아니라 문장 호흡·종결 표현·인용 관행 같은 문체만 분석하여 ‘문체 프로필’로 정리합니다. 결과를 확인하고 고친 뒤 저장하면, 이 프로젝트의 모든 답변이 그 문체를 따릅니다.</p>
-    <div class="pick-list">${S.docs.slice().sort((a, b) => b.addedAt - a.addedAt).map((d) => `<label class="doc-pick"><input type="checkbox" value="${d.id}"><span>${esc(d.title)}</span><small>${esc([d.author, d.year].filter(Boolean).join(', '))}</small></label>`).join('')}</div>
-    <div id="st-out"></div>
-    <div class="modal-foot"><button class="btn" data-close>닫기</button><button class="btn primary" id="st-run">분석하기</button></div>`, () => { if (ac) ac.abort(); });
-  const out = $('#st-out', m.el), btn = $('#st-run', m.el);
-  btn.addEventListener('click', async () => {
-    if (ac) { ac.abort(); return; }
-    const ids = $$('.doc-pick input:checked', m.el).map((x) => x.value);
-    if (!ids.length) { toast('분석할 논문을 고르세요.'); return; }
-    if (ids.length > 3) { toast('세 편까지 고를 수 있습니다.'); return; }
-    if (!SAMPLE && !getKey()) { m.close(); openSettings(true); return; }
-    ac = new AbortController(); btn.textContent = '중단'; out.innerHTML = '<p class="sub" role="status">논문을 읽고 문체를 분석하는 중입니다. 1~2분 걸릴 수 있습니다…</p>';
+    if (files) {
+      files = files.filter((f) => FOLDER_FILE.test(f.name) && !/(^|\/)[.~]/.test(f.webkitRelativePath || f.name));
+      root = ((files[0] && files[0].webkitRelativePath) || '').split('/')[0] || '폴더';
+      list = files.map((f) => ({ path: (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name, get: async () => f }));
+      S.folder = { name: root, handle: null, perm: 'once' };
+    } else {
+      const h = S.folder && S.folder.handle; if (!h) return;
+      let perm = await h.queryPermission({ mode: 'read' });
+      if (perm !== 'granted') { try { perm = await h.requestPermission({ mode: 'read' }); } catch (e) { /* needs a click */ } }
+      if (perm !== 'granted') { S.folder.perm = 'prompt'; paintStatus(); return; }
+      S.folder.perm = 'granted'; root = h.name;
+      for await (const e of walkDir(h)) list.push(e);
+    }
+  } catch (e) { toast('폴더를 읽지 못했습니다: ' + (e.message || e)); return; }
+  S.sync = { done: 0, total: list.length }; paintStatus();
+  const seen = new Set(); let added = 0, changed = 0, removed = 0;
+  for (const e of list) {
+    const key = `${root}/${e.path}`; seen.add(key);
     try {
-      const ex = (await Promise.all(ids.map(styleExcerpt))).filter(Boolean);
-      let text = '', usage = null;
-      if (SAMPLE) {
-        const res = await SAMPLE(`${STYLE_PROMPT}\n\n${ex.map((e, i) => `【문헌 ${i + 1}】 ${e.title}\n${e.text}`).join('\n\n')}`, { modelTier: 'complex', signal: ac.signal, cache: false });
-        text = (res && res.text) || '';
-      } else {
-        const res = await client().messages.create({ model: S.settings.model, max_tokens: 8000, thinking: { type: 'adaptive', display: 'omitted' }, output_config: { effort: 'high' }, messages: [{ role: 'user', content: ex.map((e) => ({ type: 'document', source: { type: 'text', media_type: 'text/plain', data: e.text }, title: e.title })).concat([{ type: 'text', text: STYLE_PROMPT }]) }] }, { signal: ac.signal });
-        text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim(); usage = res.usage;
-      }
-      if (!text) throw new Error('결과가 비어 있습니다.');
-      out.innerHTML = `<label class="field"><span>문체 프로필 <small>고쳐 쓸 수 있습니다${usage ? ` · 약 $${cost(usage, S.settings.model).toFixed(3)}` : ''}</small></span><textarea id="st-text" rows="12"></textarea></label><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button class="btn" id="st-append">기존 내용 뒤에 덧붙이기</button><button class="btn primary" id="st-save">문체 프로필로 저장</button></div>`;
-      $('#st-text', m.el).value = text;
-      const save = async (append) => { const v = $('#st-text', m.el).value.trim(); if (!v) return; S.project.style = append && S.project.style && S.project.style.trim() ? `${S.project.style.trim()}\n\n${v}` : v; await saveProject(S.project); paintCtx(); m.close(); toast('문체 프로필을 저장했습니다.'); };
-      $('#st-save', m.el).addEventListener('click', () => save(false));
-      $('#st-append', m.el).addEventListener('click', () => save(true));
-    } catch (e) {
-      out.innerHTML = `<p class="sub err">${esc(ac && ac.signal.aborted ? '중단했습니다.' : `분석하지 못했습니다: ${(e && e.message) || e}`)}</p>`;
-    } finally { ac = null; btn.textContent = '다시 분석하기'; }
-  });
+      const f = await e.get(); const sig = `${f.size}|${f.lastModified}`;
+      const old = S.docs.find((d) => d.folder === key);
+      if (!old) { if ((await addFiles([f], { folder: key, sig, quiet: true })).length) added++; }
+      else if (old.sig !== sig) { await replaceDoc(old.id, f, sig); changed++; }
+    } catch (err) { /* unreadable this time; tried again on the next reading */ }
+    S.sync.done++; paintStatus();
+  }
+  for (const d of S.docs.filter((x) => x.folder && x.folder.startsWith(root + '/') && !seen.has(x.folder))) { await removeDoc(d.id); removed++; }
+  S.sync = null; S.settings.folderName = root; S.settings.folderAt = Date.now(); saveSettings();
+  toast(added || changed || removed ? `폴더 ‘${root}’: 새 문헌 ${added}개, 바뀐 문헌 ${changed}개, 빠진 문헌 ${removed}개를 맞췄습니다.` : `폴더 ‘${root}’: 바뀐 문헌이 없습니다.`);
+  LIB = null; paintSide(); paintStatus(); if (S.view === 'library') viewLibrary();
+  indexLibrary();
 }
 
-/* ---------------- Word export: answers as a .docx with the sources as footnotes ---------------- */
-const TAG_RE = /\s*\[(첨부 문헌|검색 확인|일반 법리|추론|검증 필요)\]/g;
-function docxSection(m, o, question, heading) {
-  const p = answerParts(m.content);
-  return { heading, question, md: o.tags ? p.md : p.md.replace(TAG_RE, ''), notes: p.cites.map((c) => footnoteFor(c, m, o.quote)) };
+/* ---------------- citations in the style of Korean public-law journals: 저자, “제목”, 학술지, 연도, 쪽. ---------------- */
+function where(doc, a, b) {
+  b = b || a;
+  const off = doc && +doc.page1 > 1 ? +doc.page1 - 1 : null;
+  const rng = (p, q) => (q > p ? `${p}-${q}` : `${p}`);
+  if (off !== null) return { ui: `${rng(a + off, b + off)}면 (PDF ${rng(a, b)}쪽)`, note: `${rng(a + off, b + off)}면` };
+  return { ui: `${rng(a, b)}쪽`, note: `PDF ${rng(a, b)}쪽` };
 }
-function exportDocx(idx) {
-  const chat = S.chat; if (!chat || !chat.messages.length) { toast('저장할 대화가 없습니다.'); return; }
-  const one = idx != null;
-  const m = modal(`<h2>${one ? '이 답변을' : '이 대화를'} Word로 저장</h2><p class="sub">답변의 출처 번호는 Word 각주로 바뀝니다. 문헌 각주는 서재에 적은 저자·학술지·연도와 쪽수(첫 쪽 번호를 적어 두면 학술지 쪽수)로 만듭니다.</p>
-    <label class="check"><input type="checkbox" id="dx-q" ${one ? '' : 'checked'}> 질문도 함께 넣기</label>
-    <label class="check"><input type="checkbox" id="dx-tags" checked> 근거 표시([첨부 문헌]·[추론]·[검증 필요] 등) 남기기</label>
-    <label class="check"><input type="checkbox" id="dx-quote"> 각주에 인용 원문도 적기</label>
-    <div class="modal-foot"><button class="btn" data-close>취소</button><button class="btn primary" id="dx-go">Word 파일 만들기</button></div>`);
-  $('#dx-go', m.el).addEventListener('click', async () => {
-    const o = { q: $('#dx-q', m.el).checked, tags: $('#dx-tags', m.el).checked, quote: $('#dx-quote', m.el).checked };
-    const sections = [];
-    const qOf = (k) => { for (let j = k - 1; j >= 0; j--) if (chat.messages[j].role === 'user') return chat.messages[j]; return null; };
-    const qText = (u) => (u ? `${u.text}${(u.docs || []).length ? `\n\n첨부: ${u.docs.map(docTitle).join(', ')}` : ''}` : '');
-    if (one) { const a = chat.messages[idx]; sections.push(docxSection(a, o, o.q ? qText(qOf(idx)) : '', null)); }
-    else {
-      let k = 0;
-      chat.messages.forEach((a, j) => { if (a.role !== 'assistant' || a.api === false || !answerParts(a.content).md.trim()) return; k++; sections.push(docxSection(a, o, o.q ? qText(qOf(j)) : '', o.q ? `질문 ${k}` : null)); });
-    }
-    if (!sections.length) { toast('저장할 답변이 없습니다.'); return; }
-    const last = one ? chat.messages[idx] : chat.messages.filter((x) => x.role === 'assistant').pop();
-    const model = last && (last.free ? 'claude.ai 무료 모드' : (MODELS[last.model] || { name: last.model || '' }).name);
-    const bytes = buildDocx({ title: chat.title || '요AI', subtitle: `${kdate(last && last.at)} · 요AI${model ? ` · ${model}` : ''}${S.project ? ` · ${S.project.title}` : ''}`, sections });
-    m.close();
-    await saveFile(`${(chat.title || '요AI').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 50) || '요AI'}.docx`, bytes, DOCX_MIME);
-  });
+function footnote(doc, page, page2) {
+  if (!doc) return '(서재에서 지운 문헌)';
+  const w = page ? where(doc, page, page2).note : '';
+  return `${doc.author ? `${doc.author}, ` : ''}“${doc.title}”${doc.venue ? `, ${doc.venue}` : ''}${doc.year ? `, ${doc.year}` : ''}${w ? `, ${w}` : ''}.`;
 }
+const pageLabel = (doc, p) => where(doc, p).ui;
 
 /* ---------------- shell ---------------- */
 const IC = {
   menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  find: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
+  ask: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5.5h14v10H11l-4 3.5v-3.5H5z"/><path d="M9.5 9.2a2.5 2.5 0 1 1 3.4 2.3c-.5.2-.9.6-.9 1.1"/><path d="M12 14.3h.01"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M9 11h6M9 15h6M14.5 3.5V7H18"/></svg>',
   lib: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4v16H5zM10 4h4v16h-4z"/><path d="M15.5 5.5l3.8-1 3 15.5-3.8 1z"/></svg>',
-  ctx: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M14 4v16"/></svg>',
+  arch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v4H4zM5.5 10v9.5h13V10M10 14h4"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg>',
   close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-  help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg>',
 };
+const VIEWS = { ask: '묻기', find: '찾기', read: '읽기', notes: '노트', library: '서재', archive: '지난 대화' };
 function paintShell() {
-  $('#app').innerHTML = `<div class="shell${S.ctxOpen ? ' ctx-open' : ''}">
+  $('#app').innerHTML = `<div class="shell">
     <aside class="side" id="side"></aside>
     <section class="main">
       <div class="topbar"><button class="icon menu-btn" data-act="menu" aria-label="메뉴">${IC.menu}</button><div class="title" id="title"></div>
-        <button class="icon" data-act="library" title="서재" aria-label="서재">${IC.lib}</button>
-        <button class="icon${S.ctxOpen ? ' on' : ''}" data-act="ctx" title="연구 프로젝트 맥락" aria-label="연구 프로젝트 맥락">${IC.ctx}</button>
+        <span class="net" id="net"></span>
         ${EMBED ? `<button class="icon" data-act="close" title="닫기" aria-label="닫기">${IC.close}</button>` : ''}</div>
-      <div class="thread" id="thread"><div class="thread-in" id="thread-in"></div></div>
-      <div class="composer" id="composer"></div>
-    </section>
-    <aside class="ctx" id="ctx"></aside><div class="scrim" data-act="scrim"></div></div>`;
-  paintSide(); paintThread(); paintComposer(); paintCtx();
+      <div class="thread" id="view"></div>
+    </section><div class="scrim" data-act="scrim"></div></div>`;
+  paintSide(); paintNet(); show(S.view);
 }
+function paintNet() { const n = $('#net'); if (n) { n.textContent = navigator.onLine ? '' : '오프라인'; n.hidden = navigator.onLine; } }
 function paintSide() {
   const el = $('#side'); if (!el) return;
-  const chats = S.chats.filter((c) => c.projectId === (S.project && S.project.id)).sort((a, b) => b.updatedAt - a.updatedAt);
-  el.innerHTML = `<div class="side-top"><span class="mark">요</span><div class="brand">요AI<small>공법 연구 보조</small></div></div>
+  const nCards = S.cards.filter((c) => c.projectId === (S.project && S.project.id)).length;
+  const nChats = S.chats.filter((c) => !c.local).length;
+  const nav = (v, ic, label, n) => `<button class="side-btn nav${S.view === v || (v === 'find' && S.view === 'read') ? ' on' : ''}" data-act="go" data-v="${v}">${ic} ${label}${n != null ? `<span class="n">${n}</span>` : ''}</button>`;
+  el.innerHTML = `<div class="side-top"><span class="mark">YO</span><div class="brand">YO아이<small>연구 서재 · 오프라인</small></div></div>
     <div class="side-sec"><div class="side-label"><span>연구 프로젝트</span><button class="icon" style="width:26px;height:26px" data-act="new-project" title="새 프로젝트" aria-label="새 프로젝트">${IC.plus}</button></div>
       <select id="project-sel" aria-label="연구 프로젝트">${S.projects.map((p) => `<option value="${p.id}"${S.project && p.id === S.project.id ? ' selected' : ''}>${esc(p.title)}</option>`).join('')}</select></div>
-    <button class="new-chat" data-act="new-chat">${IC.plus} 새 대화</button>
-    <div class="side-label" style="padding-left:16px">대화</div>
-    <div class="side-list">${chats.map((c) => `<button class="chat-link${S.chat && c.id === S.chat.id ? ' on' : ''}" data-act="open-chat" data-id="${c.id}" title="${esc(c.title)}">${esc(c.title || '새 대화')}</button>`).join('') || '<p style="font-size:.75rem;color:var(--muted);padding:6px 10px">아직 대화가 없습니다.</p>'}</div>
-    <div class="side-foot"><button class="side-btn" data-act="library">${IC.lib} 서재 <span style="margin-left:auto;font-size:.75rem;color:var(--muted)">${S.docs.length}</span></button><button class="side-btn" data-act="help">${IC.help} 사용법</button><button class="side-btn" data-act="settings">${IC.gear} 설정</button></div>`;
-  const t = $('#title'); if (t) t.textContent = S.chat ? S.chat.title || '새 대화' : (S.project ? S.project.title : '요AI');
+    <nav class="side-nav">${nav('ask', IC.ask, '묻기')}${nav('find', IC.find, '찾기')}${nav('notes', IC.notes, '노트', nCards)}${nav('library', IC.lib, '서재', S.docs.length)}${nChats ? nav('archive', IC.arch, '지난 대화', nChats) : ''}</nav>
+    <div class="side-status" id="side-status"></div>
+    <div class="side-foot"><button class="side-btn" data-act="help">${IC.help} 사용법</button><button class="side-btn" data-act="settings">${IC.gear} 설정</button></div>`;
+  paintStatus();
 }
-function paintThread() {
-  const el = $('#thread-in'); if (!el) return;
-  if (!S.chat || !S.chat.messages.length) {
-    el.innerHTML = `<div class="empty"><h1>무엇을 연구할까요?</h1><p class="lead">질문을 입력하거나, 아래 작업을 고르세요. 선행연구 PDF는 서재에 넣어 두고 질문할 때 첨부하면, 답변이 쪽수와 함께 인용합니다.</p>
-      <div class="flows">${FLOWS.slice(0, 6).map((f) => `<button class="flow" data-act="flow" data-id="${f.id}"><b>${esc(f.name)}</b><span>${esc(f.desc)}</span></button>`).join('')}</div>
-      <div class="principles"><b>요AI의 원칙</b> — 확인된 법령·판례·문헌만 근거로 삼고, 근거마다 [첨부 문헌] [검색 확인] [일반 법리] [추론] [검증 필요]를 붙입니다. 검증되지 않은 논증은 확정하지 않으며, 판단이 갈리는 지점은 선택지로 제시하고 결정은 연구자에게 남깁니다.</div></div>`;
+function statusText() {
+  if (S.sync) return `폴더 읽는 중 ${S.sync.done}/${S.sync.total}`;
+  if (S.indexing) return `본문 읽는 중 ${S.indexing.done}/${S.indexing.total}`;
+  if (DIG.run) return `숙지 중 ${DIG.done}/${DIG.total}${DIG.doc ? ` · ${DIG.doc}` : ''}`;
+  return '';
+}
+function paintStatus() {
+  const t = statusText();
+  const s = $('#side-status'); if (s) { s.textContent = t; s.hidden = !t; }
+  const f = $('#find-status'); if (f) f.innerHTML = findStatus();
+  const l = $('#lib-status'); if (l) l.innerHTML = libStatusHTML();
+  const dg = $('#dig-status'); if (dg) dg.innerHTML = digestStatusHTML();
+}
+function closeSide() { const sd = $('#side'); if (sd) sd.classList.remove('open'); const sh = $('.shell'); if (sh) sh.classList.remove('side-open'); }
+function show(v) {
+  S.view = v; closeSide(); selTool(null);
+  if (v !== 'read') closePdf();
+  const t = $('#title'); if (t) t.textContent = v === 'archive' && S.chat ? S.chat.title || '지난 대화' : `${VIEWS[v] || ''}${S.project && (v === 'notes') ? ` · ${S.project.title}` : ''}`;
+  ({ ask: viewAsk, find: viewFind, read: viewRead, notes: viewNotes, library: viewLibrary, archive: viewArchive }[v] || viewFind)();
+  paintSide();
+}
+const view = () => $('#view');
+const redraw = (v) => { if (S.view === v) ({ notes: viewNotes, library: viewLibrary, find: viewFind, ask: viewAsk, archive: viewArchive }[v])(); }; // only if still on screen
+
+/* ---------------- 찾기 ---------------- */
+function findStatus() {
+  const st = libStats(), t = statusText();
+  if (!st.n) return '서재가 비어 있습니다. <button class="linkish" data-act="go" data-v="library">서재</button>에서 PDF 폴더를 고르면 모든 쪽을 찾을 수 있습니다.';
+  return `문헌 ${st.ok}개 · ${st.pages.toLocaleString()}쪽에서 찾습니다${t ? ` · <b>${t}</b>` : ''}${st.blank ? ` · 글자 없는 스캔본 ${st.blank}개 제외` : ''}. 띄어쓰기와 조사는 달라도 찾고, <b>"따옴표"</b>로 묶으면 그 표현 그대로, <b>-낱말</b>은 그 낱말이 없는 쪽만 찾습니다.`;
+}
+function viewFind() {
+  const docs = S.docs.filter((d) => d.indexed && !d.blank).sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+  view().innerHTML = `<div class="page">
+    <div class="find-box">
+      <label class="sr" for="q">서재에서 찾기</label><input id="q" type="search" placeholder="서재 전체에서 찾기 · 예: 의회유보 본질성이론" value="${esc(S.q)}" autocomplete="off" enterkeyhint="search">
+      <label class="sr" for="q-doc">찾을 문헌</label><select id="q-doc"><option value="">모든 문헌</option>${docs.map((d) => `<option value="${d.id}"${S.qDoc === d.id ? ' selected' : ''}>${esc(d.title)}</option>`).join('')}</select>
+    </div>
+    <p class="find-meta" id="find-status">${findStatus()}</p>
+    <div id="hits"></div></div>`;
+  if (S.q) runFind();
+  setTimeout(() => { const q = $('#q'); if (q && !S.q && matchMedia('(pointer: fine)').matches) q.focus(); }, 30);
+}
+function hlTerms(pq) { return [...pq.phrases, ...pq.words].filter((w) => w.length > 1).sort((a, b) => b.length - a.length); }
+function highlight(text, terms) { // escape, then mark the query words wherever they occur (case-insensitive)
+  let html = esc(text);
+  const pats = terms.map((t) => esc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).filter(Boolean);
+  if (!pats.length) return html;
+  const re = new RegExp(`(${pats.join('|')})`, 'gi');
+  return html.split(/(<[^>]+>)/).map((part) => (part.startsWith('<') ? part : part.replace(re, '<mark>$1</mark>'))).join('');
+}
+function snippet(text, pq) {
+  const flat = text.replace(/\s+/g, ' '), low = flat.toLowerCase();
+  let at = -1;
+  for (const t of [...pq.phrases, ...pq.words, ...pq.terms]) { const i = low.indexOf(t); if (i >= 0) { at = i; break; } }
+  const a = Math.max(0, at - 70), s = flat.slice(a, a + 240);
+  return (a ? '…' : '') + s + (a + 240 < flat.length ? '…' : '');
+}
+let findT = 0, findSeq = 0;
+async function runFind() {
+  const box = $('#hits'); if (!box) return;
+  const seq = ++findSeq;
+  const pq = parseQuery(S.q);
+  if (!pq.terms.length) { box.innerHTML = ''; return; }
+  box.innerHTML = '<p class="sub">찾는 중…</p>';
+  const lib = await libLoad();
+  if (seq !== findSeq) return;
+  const hits = searchLib(lib, pq, 60, S.qDoc);
+  if (!hits.length) { box.innerHTML = '<p class="find-none">맞는 쪽이 없습니다. 다른 낱말이나 동의어, 법률명·조문 번호로 찾아 보세요.</p>'; return; }
+  const terms = hlTerms(pq);
+  const nDocs = new Set(hits.map((h) => h.id)).size;
+  S.hits = hits;
+  box.innerHTML = `<p class="find-count">${nDocs}개 문헌의 ${hits.length}${hits.length === 60 ? '+' : ''}쪽</p>` + hits.map((h, i) => {
+    const d = docOf(h.id), D = lib.docs.find((x) => x.id === h.id);
+    const meta = [d.author, d.year].filter(Boolean).join(', ');
+    return `<button class="hit" data-act="open-hit" data-i="${i}"><span class="hit-h"><b>${esc(d.title)}</b><span>${pageLabel(d, h.page)}${meta ? ` · ${esc(meta)}` : ''}</span></span><span class="hit-s">${highlight(snippet(D.pages[h.page - 1], pq), terms)}</span></button>`;
+  }).join('');
+}
+
+/* ---------------- 읽기: the page as printed, or as text to quote from ---------------- */
+let PDFDOC = null, renderTask = null;
+function closePdf() { if (renderTask) { try { renderTask.cancel(); } catch (e) { /* ignore */ } renderTask = null; } if (PDFDOC) { try { PDFDOC.doc.destroy(); } catch (e) { /* ignore */ } PDFDOC = null; } }
+async function pdfDocFor(id) {
+  if (PDFDOC && PDFDOC.id === id) return PDFDOC.doc;
+  closePdf();
+  const d = await DB.get('docs', id); if (!d || !d.bytes) return null;
+  const pdfjs = await pdfjsLib();
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(d.bytes.slice(0)) }).promise;
+  PDFDOC = { id, doc };
+  return doc;
+}
+function openDoc(id, page, terms) { S.reader = { id, page: Math.max(1, page || 1), terms: terms || [], from: S.view === 'read' ? (S.reader && S.reader.from) : S.view }; show('read'); }
+async function viewRead() {
+  const r = S.reader, d = r && docOf(r.id);
+  if (!d) { view().innerHTML = '<div class="page"><p class="find-none">문헌을 찾을 수 없습니다(서재에서 지웠을 수 있습니다).</p></div>'; return; }
+  const pg = await docPages(d.id);
+  const n = Math.max(1, (pg && pg.pages.length) || d.npages || 1);
+  r.page = Math.min(Math.max(1, r.page), n);
+  const pdfOk = d.kind === 'pdf' && !d.textOnly;
+  const mode = pdfOk ? S.settings.read : 'text';
+  const meta = [d.author, d.year, d.venue].filter(Boolean).join(', ');
+  const t = $('#title'); if (t) t.textContent = d.title;
+  view().innerHTML = `<div class="reader">
+    <div class="rd-bar">
+      <button class="btn" data-act="rd-back">← ${r.from === 'notes' ? '노트' : r.from === 'library' ? '서재' : '찾기'}</button>
+      <div class="rd-t"><b title="${esc(d.title)}">${esc(d.title)}</b><small>${esc(meta || '저자·연도 미입력')} · ${pageLabel(d, r.page)}</small></div>
+      <div class="rd-nav"><button class="icon" data-act="rd-prev" aria-label="앞 쪽" ${r.page <= 1 ? 'disabled' : ''}>‹</button><label class="sr" for="rd-pg">쪽</label><input id="rd-pg" inputmode="numeric" value="${r.page}" aria-label="쪽 번호"><span>/ ${n}</span><button class="icon" data-act="rd-next" aria-label="다음 쪽" ${r.page >= n ? 'disabled' : ''}>›</button></div>
+      ${pdfOk ? `<div class="seg" role="group" aria-label="보기"><button class="${mode === 'pdf' ? 'on' : ''}" data-act="rd-mode" data-v="pdf">원문</button><button class="${mode === 'text' ? 'on' : ''}" data-act="rd-mode" data-v="text">글자</button></div>` : ''}
+    </div>
+    <div class="rd-find"><label class="sr" for="rd-q">이 문헌에서 찾기</label><input id="rd-q" type="search" placeholder="이 문헌에서 찾기" autocomplete="off" value="${esc(r.q || '')}"><div id="rd-hits" class="rd-hits"></div></div>
+    <div class="rd-body" id="rd-body">${mode === 'pdf' ? '<div class="rd-canvas"><canvas id="rd-canvas" aria-label="원문 쪽"></canvas></div><p class="rd-tip">글을 골라 인용하려면 <b>글자</b> 보기로 바꾸세요.</p>' : `<div class="rd-text" id="rd-text">${pageTextHTML(pg ? pg.pages[r.page - 1] : '', r.terms)}</div><p class="rd-tip">글을 골라 <b>카드에 담기</b>나 <b>인용 복사</b>를 누르세요.</p>`}</div>
+    <div class="rd-foot"><button class="btn" data-act="rd-card">이 쪽을 노트에 표시</button><button class="btn" data-act="rd-cite">이 쪽 각주 복사</button>${d.digest ? '<button class="btn" data-act="rd-digest">AI 요지</button>' : ''}</div>
+  </div>`;
+  if (mode === 'pdf') drawPage(d.id, r.page);
+  if (r.q) runDocFind();
+  const b = $('#rd-body'); if (b) b.scrollTop = 0;
+}
+function pageTextHTML(text, terms) {
+  if (!text || !text.trim()) return '<p class="sub">이 쪽에서는 글자를 추출하지 못했습니다(스캔본일 수 있습니다). 원문 보기로 확인하세요.</p>';
+  return text.split(/\n{2,}|\n(?=\s)/).map((p) => `<p>${highlight(p.replace(/\n/g, ' '), terms || [])}</p>`).join('');
+}
+async function drawPage(id, n) {
+  const canvas = $('#rd-canvas'); if (!canvas) return;
+  try {
+    const doc = await pdfDocFor(id); if (!doc || !$('#rd-canvas')) return;
+    const page = await doc.getPage(Math.min(n, doc.numPages));
+    const box = canvas.parentElement.clientWidth || 700;
+    const v1 = page.getViewport({ scale: 1 });
+    const scale = Math.min(2.4, box / v1.width), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const vp = page.getViewport({ scale: scale * dpr });
+    if (renderTask) { try { renderTask.cancel(); } catch (e) { /* ignore */ } }
+    canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+    canvas.style.width = `${Math.floor(vp.width / dpr)}px`; canvas.style.height = `${Math.floor(vp.height / dpr)}px`;
+    renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+    await renderTask.promise; renderTask = null;
+  } catch (e) { if (!e || e.name !== 'RenderingCancelledException') { const b = $('#rd-body'); if (b && $('#rd-canvas')) b.insertAdjacentHTML('afterbegin', '<p class="sub">원문을 그리지 못했습니다. 글자 보기로 확인하세요.</p>'); } }
+}
+function goPage(n) { const r = S.reader; if (!r) return; r.page = n; viewRead(); }
+let docFindT = 0;
+async function runDocFind() {
+  const r = S.reader, box = $('#rd-hits'); if (!r || !box) return;
+  const pq = parseQuery(r.q || '');
+  if (!pq.terms.length) { box.innerHTML = ''; return; }
+  const lib = await libLoad();
+  const hits = searchLib(lib, pq, 30, r.id).sort((a, b) => a.page - b.page);
+  box.innerHTML = hits.length ? hits.map((h) => `<button class="pg-chip${h.page === r.page ? ' on' : ''}" data-act="rd-go" data-p="${h.page}">${h.page}</button>`).join('') : '<span class="sub">이 문헌에는 맞는 쪽이 없습니다.</span>';
+}
+/* the selection toolbar: what is selected in the page text becomes a card or a quotation with its footnote */
+function readerSelection() {
+  const sel = window.getSelection(), box = $('#rd-text');
+  if (!sel || sel.isCollapsed || !box || !box.contains(sel.anchorNode) || !box.contains(sel.focusNode)) return null;
+  const text = sel.toString().replace(/\s+/g, ' ').trim();
+  return text.length >= 2 ? { text, rect: sel.getRangeAt(0).getBoundingClientRect() } : null;
+}
+function selTool(s) {
+  let t = $('#seltool');
+  if (!s) { if (t) t.remove(); return; }
+  if (!t) { t = document.createElement('div'); t.id = 'seltool'; t.className = 'seltool'; t.innerHTML = '<button data-act="sel-card">카드에 담기</button><button data-act="sel-cite">인용 복사</button>'; document.body.appendChild(t); }
+  const below = s.rect.bottom + 10 + 44 < window.innerHeight;
+  t.style.top = `${Math.round(below ? s.rect.bottom + 10 : Math.max(8, s.rect.top - 52))}px`;
+  t.style.left = `${Math.round(Math.min(window.innerWidth - 220, Math.max(8, s.rect.left + s.rect.width / 2 - 105)))}px`;
+  t.dataset.text = s.text;
+}
+async function copyText(text, done) {
+  try { await navigator.clipboard.writeText(text); toast(done); } catch (e) { prompt('아래 내용을 복사하세요', text); }
+}
+async function addCard(quote, docId, page) {
+  if (!S.project) return;
+  const order = Math.max(0, ...S.cards.filter((c) => c.projectId === S.project.id).map((c) => c.order || 0)) + 1;
+  const c = { id: uid(), projectId: S.project.id, docId: docId || null, page: page || 0, quote: quote || '', memo: '', order, createdAt: Date.now() };
+  S.cards.push(c); await saveCard(c); paintSide();
+  toast(`‘${S.project.title}’ 노트에 담았습니다.`);
+  return c;
+}
+
+/* ---------------- 노트: quotations and thoughts per project, out to Word with footnotes ---------------- */
+const projectCards = () => S.cards.filter((c) => c.projectId === (S.project && S.project.id)).sort((a, b) => (a.order || 0) - (b.order || 0));
+function viewNotes() {
+  const p = S.project; if (!p) return;
+  const cards = projectCards();
+  const f = (k, label, rows) => `<label class="field"><span>${label}</span><textarea data-pf="${k}" rows="${rows || 2}">${esc(p[k] || '')}</textarea></label>`;
+  view().innerHTML = `<div class="page">
+    <div class="notes-head"><h1>${esc(p.title)}</h1>
+      <div class="tools"><button class="btn" data-act="card-new">${IC.plus} 메모 카드</button><button class="btn primary" data-act="notes-docx">Word로 저장</button><button class="btn" data-act="notes-md">마크다운</button></div></div>
+    <details class="proj"${p.question || p.concepts || p.decided || p.open || p.notes || p.style ? '' : ' open'}><summary>연구 프로젝트 메모</summary>
+      <label class="field"><span>프로젝트 이름</span><input data-pf="title" value="${esc(p.title)}"></label>
+      ${f('question', '연구문제', 3)}${f('concepts', '핵심 개념 정의', 3)}${f('decided', '확정한 사항', 3)}${f('open', '미결 쟁점', 3)}${f('notes', '메모', 3)}${f('style', '문체 메모', 2)}
+      <button class="btn danger" data-act="del-project">이 프로젝트 지우기</button></details>
+    <div class="cards">${cards.map(cardHTML).join('') || '<p class="find-none">아직 카드가 없습니다. <b>찾기</b>에서 쪽을 열고, 글을 골라 <b>카드에 담기</b>를 누르면 여기에 쪽수와 함께 모입니다.</p>'}</div></div>`;
+}
+function cardHTML(c, i) {
+  const d = c.docId ? docOf(c.docId) : null;
+  return `<article class="card" data-id="${c.id}">
+    ${c.quote ? `<blockquote>“${esc(c.quote)}”</blockquote>` : ''}
+    ${c.docId ? `<div class="src">${esc(footnote(d, c.page))}${d ? ` <button class="linkish" data-act="card-open">원문 ${c.page}쪽</button>` : ''}</div>` : ''}
+    <label class="sr" for="memo-${c.id}">메모</label><textarea id="memo-${c.id}" data-card-memo="${c.id}" rows="2" placeholder="${c.docId ? '이 인용에 대한 내 생각' : '메모'}">${esc(c.memo || '')}</textarea>
+    <div class="card-tools"><span class="n">${i + 1}</span><button data-act="card-up" title="위로" aria-label="위로">↑</button><button data-act="card-down" title="아래로" aria-label="아래로">↓</button>${c.docId ? '<button data-act="card-cite">인용 복사</button>' : ''}<button data-act="card-del" class="del">지우기</button></div>
+  </article>`;
+}
+function citeText(quote, d, page) { return `${quote ? `“${quote}”\n` : ''}${footnote(d, page)}`; }
+function notesExport(kind) {
+  const p = S.project, cards = projectCards();
+  if (!cards.length && !p.question) { toast('저장할 노트가 없습니다.'); return; }
+  const memoMd = [['연구문제', p.question], ['핵심 개념 정의', p.concepts], ['확정한 사항', p.decided], ['미결 쟁점', p.open], ['메모', p.notes]].filter(([, v]) => v && v.trim()).map(([k, v]) => `**${k}**\n\n${v.trim()}`).join('\n\n');
+  const name = `${(p.title || '요AI 노트').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 50) || '요AI 노트'}`;
+  if (kind === 'md') {
+    let out = `# ${p.title}\n\n${memoMd ? memoMd + '\n\n' : ''}`;
+    cards.forEach((c) => { const d = c.docId ? docOf(c.docId) : null; if (c.quote) out += `> ${c.quote}\n\n`; if (c.docId) out += `— ${footnote(d, c.page)}\n\n`; if (c.memo) out += `${c.memo}\n\n`; out += '---\n\n'; });
+    download(`${name}.md`, out, 'text/markdown;charset=utf-8'); return;
+  }
+  const sections = [];
+  if (memoMd) sections.push({ heading: '연구 프로젝트 메모', md: memoMd, notes: [] });
+  cards.forEach((c, i) => {
+    const d = c.docId ? docOf(c.docId) : null, note = c.docId ? footnote(d, c.page) : null;
+    let md = '';
+    if (c.quote) md += `> ${c.quote.replace(/\s+/g, ' ')}${note ? '〔c1〕' : ''}\n\n`;
+    if (c.memo && c.memo.trim()) md += c.memo.trim() + (note && !c.quote ? '〔c1〕' : '');
+    else if (note && !c.quote) md += `(${d ? d.title : '문헌'} ${c.page}쪽)〔c1〕`;
+    sections.push({ heading: i === 0 ? '모은 인용과 메모' : null, md, notes: note ? [note] : [] });
+  });
+  const bytes = buildDocx({ title: p.title, subtitle: `${kdate()} · 요AI 연구 노트`, sections });
+  download(`${name}.docx`, bytes, DOCX_MIME);
+}
+
+/* ---------------- 서재 ---------------- */
+function libStatusHTML() {
+  const st = libStats(), f = S.folder, t = statusText();
+  const folder = f ? `<b>${esc(f.name)}</b> · ${f.perm === 'granted' ? '연결됨(열 때마다 다시 읽음)' : f.perm === 'prompt' ? '‘다시 읽기’를 누르면 바뀐 내용을 맞춥니다' : '이번에 읽음(폴더가 바뀌면 다시 골라 주세요)'}`
+    : S.settings.folderName ? `<b>${esc(S.settings.folderName)}</b> · 바뀐 내용을 맞추려면 폴더를 다시 고르세요` : '아직 없음';
+  return `<div class="lib-line">연결된 폴더: ${folder}${S.settings.folderAt ? ` · 마지막 확인 ${new Date(S.settings.folderAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}</div>
+    <div class="lib-line">문헌 ${st.n}개${st.ok ? ` · ${st.pages.toLocaleString()}쪽 · 본문 ${st.chars >= 10000 ? `약 ${Math.round(st.chars / 10000).toLocaleString()}만` : st.chars.toLocaleString()}자` : ''} · ${fmtSize(st.size)}${t ? ` · <b>${t}</b>` : ''}</div>
+    ${st.blank ? `<div class="lib-line warn">글자를 추출할 수 없는 스캔본 ${st.blank}개는 찾기에서 빠집니다. 문자 인식(OCR)을 한 PDF로 바꾸어 넣어 주세요.</div>` : ''}
+    <div class="lib-line" id="store-line"></div>`;
+}
+async function paintStore() {
+  const el = $('#store-line'); if (!el || !navigator.storage || !navigator.storage.estimate) return;
+  try {
+    const e = await navigator.storage.estimate(), kept = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+    el.innerHTML = `이 컴퓨터의 저장 공간: ${fmtSize(e.usage || 0)} 사용${e.quota ? ` / ${fmtSize(e.quota)} 가능` : ''} · ${kept ? '브라우저가 임의로 지우지 않도록 보호됨' : '<button class="linkish" data-act="persist">브라우저가 임의로 지우지 않게 보호하기</button>'}`;
+  } catch (err) { /* not available */ }
+}
+function viewLibrary() {
+  const rows = S.docs.slice().sort((a, b) => b.addedAt - a.addedAt).map((d) => `<div class="doc-row" data-id="${d.id}">
+      <div><button class="doc-open" data-act="doc-open" title="${esc(d.title)}">${esc(d.title)}</button><div class="m">${esc([d.author, d.year, d.venue].filter(Boolean).join(', ') || '저자·연도 미입력')} · ${d.kind === 'pdf' ? `PDF${d.npages ? ` ${d.npages}쪽` : ''}` : '텍스트'} · ${fmtSize(d.size || 0)}${+d.page1 > 1 ? ` · ${d.page1}면부터` : ''}${d.blank ? ' · <b class="warn">글자 없음</b>' : !d.indexed ? ' · 읽는 중' : ''}${d.folder ? ` · <span title="${esc(d.folder)}">폴더</span>` : ''}${d.digest ? ' · <button class="linkish" data-act="dig-show">AI 요지</button>' : ''}</div></div>
+      <div class="doc-tools"><button class="btn" data-act="doc-edit">정보</button><button class="btn danger" data-act="doc-del">지우기</button></div></div>`).join('');
+  view().innerHTML = `<div class="page">
+    <div class="notes-head"><h1>서재</h1></div>
+    <div class="lib-box">
+      <div class="lib-head"><b>폴더 통째로 넣기</b><span><button class="btn primary" data-act="folder">${S.folder || S.settings.folderName ? '다른 폴더 고르기' : '폴더 고르기'}</button><button class="btn" data-act="folder-sync" ${S.folder && S.folder.handle ? '' : 'hidden'}>다시 읽기</button></span></div>
+      <p class="sub">폴더(하위 폴더 포함) 안의 PDF·텍스트를 모두 넣고 모든 쪽의 글자를 읽어 둡니다. 문헌은 이 컴퓨터 안에만 있으며 어디로도 보내지 않습니다.</p>
+      <div id="lib-status">${libStatusHTML()}</div>
+      <input type="file" id="folder-in" webkitdirectory multiple class="sr">
+    </div>
+    <div class="lib-box"><div class="lib-head"><b>AI 숙지</b><span class="ai-mini">AI: ${esc(aiLabel())} <button class="btn" data-act="ai-setup">AI 준비</button></span></div>
+      <p class="sub">AI가 문헌을 한 편씩 끝까지 읽고 요지를 정리해 둡니다. 묻기에서 문헌 전체의 흐름까지 보고 답하게 됩니다(이 컴퓨터 안에서만, 인터넷 없이).</p>
+      <div id="dig-status">${digestStatusHTML()}</div></div>
+    <label class="drop" id="drop">파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
+    <p class="sub">각 문헌의 <b>정보</b>에 저자·연도·학술지를 적으면 각주가 그대로 만들어지고, 학술지 논문의 <b>첫 쪽 번호</b>를 적으면 학술지 쪽수(○면)로 인용됩니다.</p>
+    <div class="doc-list">${rows || '<p class="find-none">아직 문헌이 없습니다.</p>'}</div></div>`;
+  paintStore();
+}
+async function editDoc(id) {
+  const d = docOf(id); if (!d) return;
+  const v = await formBox('문헌 정보', [{ label: '제목', value: d.title }, { label: '저자', value: d.author }, { label: '연도', value: d.year }, { label: '학술지·출판사 (예: 「공법연구」 제50집 제1호)', value: d.venue }, { label: '첫 쪽 번호 (학술지 논문의 인쇄된 첫 쪽, 없으면 비워 두기)', value: d.page1 }]);
+  if (!v) return;
+  const full = await DB.get('docs', id); if (!full) return;
+  [full.title, full.author, full.year, full.venue] = v.slice(0, 4).map((x) => x.trim());
+  full.page1 = /^\d+$/.test(v[4].trim()) ? v[4].trim() : '';
+  if (!full.title) full.title = d.title;
+  await DB.put('docs', full); Object.assign(d, docMeta(full)); redraw('library');
+}
+
+/* ---------------- 지난 대화: earlier AI conversations, kept readable ---------------- */
+function archParts(m) {
+  let md = ''; const cites = [];
+  for (const b of m.content || []) {
+    if (b.type !== 'text') continue;
+    md += b.text;
+    if (b.citations && b.citations.length) {
+      const nums = [];
+      for (const c of b.citations) {
+        const k = c.url || c.source || `${c.document_index}|${c.document_title}|${c.start_page_number ?? c.start_block_index ?? ''}`;
+        let i = cites.findIndex((x) => x.k === k); if (i < 0) { cites.push({ k, c }); i = cites.length - 1; }
+        if (!nums.includes(i + 1)) nums.push(i + 1);
+      }
+      md += nums.map((n) => `〔c${n}〕`).join('');
+    }
+  }
+  return { md, cites: cites.map((x) => x.c) };
+}
+function archWhere(c, m) {
+  const lib = c.type === 'search_result_location' && /^yoai-lib:([^:]+):(\d+)$/.exec(c.source || '');
+  if (lib) return { doc: docOf(lib[1]), a: +lib[2] };
+  const id = m && m.docIds ? m.docIds[c.document_index] : null;
+  const doc = (id && docOf(id)) || S.docs.find((x) => x.title === c.document_title) || null;
+  const a = c.type === 'content_block_location' ? (c.start_block_index | 0) + 1 : c.start_page_number || 0;
+  return { doc, a, title: c.document_title };
+}
+function archNote(c, m) {
+  if (c.url) return `“${c.title || c.url}”, ${c.url} (최종 확인: ${kdate(m.at)}).`;
+  const w = archWhere(c, m);
+  return w.doc ? footnote(w.doc, w.a) : `“${w.title || '문헌'}”${w.a ? `, ${w.a}쪽` : ''}.`;
+}
+function viewArchive() {
+  const chats = S.chats.filter((x) => !x.local).sort((a, b) => b.updatedAt - a.updatedAt);
+  const c = S.chat && !S.chat.local && S.chats.includes(S.chat) ? S.chat : null;
+  if (!c) {
+    view().innerHTML = `<div class="page"><div class="notes-head"><h1>지난 대화</h1></div><p class="sub">예전에 AI와 나눈 대화입니다. 읽기와 Word·마크다운 저장, 지우기만 됩니다.</p>
+      <div class="doc-list">${chats.map((x) => { const p = S.projects.find((q) => q.id === x.projectId); return `<div class="doc-row"><div><button class="doc-open" data-act="arch-open" data-id="${x.id}">${esc(x.title || '대화')}</button><div class="m">${esc(p ? p.title : '')} · ${kdate(x.updatedAt)} · 질문 ${x.messages.filter((m) => m.role === 'user').length}개</div></div></div>`; }).join('') || '<p class="find-none">지난 대화가 없습니다.</p>'}</div></div>`;
     return;
   }
-  el.innerHTML = S.chat.messages.map((m, i) => (m.role === 'user' ? userHTML(m) : assistantHTML(m, i))).join('');
-  const th = $('#thread'); th.scrollTop = th.scrollHeight;
+  const html = c.messages.map((m) => {
+    if (m.role === 'user') return `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>`;
+    const p = archParts(m); if (!p.md.trim()) return '';
+    let body = renderMarkdown(p.md).replace(/〔c(\d+)〕/g, (_, n) => `<sup class="cite">${n}</sup>`);
+    return `<div class="msg ai"><div class="answer">${body}</div>${p.cites.length ? `<div class="sources"><b>출처</b><ol>${p.cites.map((x) => `<li>${esc(archNote(x, m))}</li>`).join('')}</ol></div>` : ''}</div>`;
+  }).join('');
+  view().innerHTML = `<div class="page"><div class="notes-head"><button class="btn" data-act="arch-list">← 목록</button><div class="tools"><button class="btn" data-act="arch-docx">Word로 저장</button><button class="btn" data-act="arch-md">마크다운</button><button class="btn danger" data-act="arch-del">지우기</button></div></div><div class="thread-in arch">${html}</div></div>`;
 }
-function paintLive(m) {
-  const node = $(`.msg.ai[data-i="${S.chat.messages.indexOf(m)}"]`);
-  if (!node) { paintThread(); return; }
-  const th = $('#thread'); const atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 80;
-  node.outerHTML = assistantHTML(m, S.chat.messages.indexOf(m));
+function archExport(kind) {
+  const c = S.chat; if (!c) return;
+  const name = `${(c.title || '대화').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 50) || '대화'}`;
+  if (kind === 'md') {
+    let out = `# ${c.title}\n\n`;
+    for (const m of c.messages) {
+      if (m.role === 'user') out += `## 질문\n\n${m.text}\n\n`;
+      else { const p = archParts(m); if (!p.md.trim()) continue; out += `## 답변\n\n${p.md.replace(/〔c(\d+)〕/g, '[$1]')}\n\n`; if (p.cites.length) out += p.cites.map((x, i) => `${i + 1}. ${archNote(x, m)}`).join('\n') + '\n\n'; }
+    }
+    download(`${name}.md`, out, 'text/markdown;charset=utf-8'); return;
+  }
+  const sections = []; let q = '', k = 0;
+  for (const m of c.messages) {
+    if (m.role === 'user') { q = m.text; continue; }
+    const p = archParts(m); if (!p.md.trim()) continue;
+    k++; sections.push({ heading: `질문 ${k}`, question: q, md: p.md.replace(/\s*\[(첨부 문헌|검색 확인|일반 법리|추론|검증 필요)\]/g, ''), notes: p.cites.map((x) => archNote(x, m)) });
+  }
+  if (!sections.length) { toast('저장할 답변이 없습니다.'); return; }
+  download(`${name}.docx`, buildDocx({ title: c.title || '대화', subtitle: `${kdate(c.updatedAt)} · 요AI 지난 대화`, sections }), DOCX_MIME);
+}
+
+/* ---------------- 오프라인 AI: 준비 ---------------- */
+const aiLabel = () => { const st = AI.state; return st.status === 'ready' ? `${st.name} · ${st.backend === 'ollama' ? 'Ollama' : st.backend === 'fake' ? '시험용' : '브라우저 안'}` : st.status === 'loading' ? `불러오는 중 ${st.progress}%` : st.status === 'error' ? '불러오지 못함' : '준비 안 됨'; };
+AI.on(() => { const b = $('#ai-bar'); if (b) b.innerHTML = aiBarHTML(); const p = $('#ai-progress'); if (p) p.innerHTML = aiProgressHTML(); });
+function aiBarHTML() {
+  const st = AI.state;
+  return `<span class="ai-dot ${st.status}"></span><span>AI: <b>${esc(aiLabel())}</b>${st.status === 'ready' ? ` · 한 번에 약 ${Math.round(st.ctx / 1000)}천 토큰` : ''}</span>${st.status === 'loading' ? `<span class="bar"><i style="width:${st.progress}%"></i></span>` : ''}<button class="btn" data-act="ai-setup">${st.status === 'ready' ? '바꾸기' : 'AI 준비'}</button>`;
+}
+function aiProgressHTML() { const st = AI.state; return st.status === 'loading' ? `<div class="bar"><i style="width:${st.progress}%"></i></div><p class="sub">${esc(st.text || '')}</p>` : st.status === 'error' ? `<p class="lib-line warn">${esc(st.text)}</p>` : ''; }
+/* bring back the AI chosen last time (from this computer's storage; only the first download needs the internet) */
+async function ensureAI() {
+  if (AI.ready()) return true;
+  if (AI.state.status === 'loading') { await new Promise((res) => { const off = AI.on((st) => { if (st.status !== 'loading') { off(); res(); } }); }); return AI.ready(); }
+  const c = S.settings.ai;
+  if (!c) return false;
+  if (c.backend === 'fake' && AI.fake) { AI.useFake(); return true; }
+  if (c.backend === 'ollama') { try { const ms = await AI.ollamaModels(); if (ms.some((m) => m.name === c.model)) return AI.useOllama(c.model); } catch (e) { /* not running */ } toast('Ollama에 연결하지 못했습니다. Ollama를 실행했는지 확인하세요.'); return false; }
+  if (c.backend === 'web') {
+    if (!navigator.onLine && !(await AI.webCached(c.model, c.f16))) { toast('AI 모델을 아직 내려받지 않았습니다. 인터넷에 연결된 상태에서 한 번 내려받아 주세요.'); return false; }
+    return AI.loadWeb(c.model, c.f16);
+  }
+  return false;
+}
+async function openAISetup() {
+  const sup = await AI.webSupport();
+  const cached = {};
+  if (sup.ok) for (const m of WEB_MODELS) cached[m.id] = await AI.webCached(m.id, sup.f16);
+  const cur = S.settings.ai || {};
+  const rows = sup.ok ? WEB_MODELS.map((m) => `<div class="ai-model${cur.backend === 'web' && cur.model === m.id ? ' on' : ''}"><div><b>${m.name}</b>${m.id === sup.rec ? ' <span class="tag">이 컴퓨터에 권장</span>' : ''}<div class="m">${m.note} · 그래픽 메모리 약 ${(m.vram / 1024).toFixed(1)}GB${cached[m.id] ? ' · <b>내려받음</b>' : ''}</div></div>
+      <span><button class="btn${cached[m.id] ? '' : ' primary'}" data-ai-web="${m.id}">${cached[m.id] ? '쓰기' : '내려받아 쓰기'}</button>${cached[m.id] ? `<button class="btn danger" data-ai-del="${m.id}" title="이 컴퓨터에서 지우기">지우기</button>` : ''}</span></div>`).join('')
+    : `<p class="lib-line warn">${esc(sup.reason)}</p>`;
+  const m = modal(`<h2>AI 준비</h2>
+    <p class="sub">AI는 이 컴퓨터 안에서만 돌아갑니다. 서재 문헌과 질문은 어디로도 보내지 않습니다. 모델은 처음 한 번만 인터넷으로 내려받고, 그 뒤로는 인터넷 없이 씁니다.</p>
+    <h3 class="mh">브라우저 안에서 (설치 없음)</h3>
+    <div class="ai-models">${rows}</div>
+    <div id="ai-progress">${aiProgressHTML()}</div>
+    <h3 class="mh">Ollama로 (더 큰 모델)</h3>
+    <p class="sub">컴퓨터에 <b>Ollama</b>(ollama.com, 무료)를 설치하면 한국어에 강한 더 큰 모델(예: LG <b>EXAONE 3.5</b>)을 쓸 수 있습니다. <button class="linkish" data-ai-howto>설치 방법</button></p>
+    <div id="ollama-box"><button class="btn" data-ai-ollama>Ollama 연결 확인</button></div>
+    <div class="modal-foot"><button class="btn" data-close>닫기</button></div>`);
+  m.el.addEventListener('click', async (e) => {
+    const w = e.target.closest('[data-ai-web]'), del = e.target.closest('[data-ai-del]'), ol = e.target.closest('[data-ai-ollama]'), use = e.target.closest('[data-ai-use]'), how = e.target.closest('[data-ai-howto]');
+    if (w) {
+      const id = w.dataset.aiWeb;
+      if (!cached[id] && !navigator.onLine) { toast('처음 내려받을 때는 인터넷 연결이 필요합니다.'); return; }
+      if (navigator.storage && navigator.storage.persist) { try { await navigator.storage.persist(); } catch (err) { /* ignore */ } }
+      S.settings.ai = { backend: 'web', model: id, f16: sup.f16 }; saveSettings();
+      $$('button', m.el).forEach((b) => { b.disabled = true; });
+      const ok = await AI.loadWeb(id, sup.f16);
+      $$('button', m.el).forEach((b) => { b.disabled = false; });
+      if (ok) { toast(`${AI.state.name}을(를) 준비했습니다.`); m.close(); if (S.view === 'ask') viewAsk(); }
+    } else if (del) {
+      if (!(await confirmBox('이 모델을 이 컴퓨터에서 지울까요? 다시 쓰려면 다시 내려받아야 합니다.', '지우기'))) return;
+      if (AI.state.backend === 'web' && AI.state.model === del.dataset.aiDel) await AI.unload();
+      try { await AI.deleteWeb(del.dataset.aiDel, sup.f16); toast('지웠습니다.'); } catch (err) { toast('지우지 못했습니다: ' + err.message); }
+      m.close(); openAISetup();
+    } else if (ol) {
+      const box = $('#ollama-box', m.el); box.innerHTML = '<p class="sub">확인하는 중…</p>';
+      try {
+        const ms = await AI.ollamaModels();
+        box.innerHTML = ms.length ? `<div class="ai-models">${ms.map((x) => `<div class="ai-model"><div><b>${esc(x.name)}</b><div class="m">${x.size ? (x.size / 1073741824).toFixed(1) + 'GB' : ''}</div></div><span><button class="btn primary" data-ai-use="${esc(x.name)}">쓰기</button></span></div>`).join('')}</div>`
+          : '<p class="sub">Ollama는 연결됐지만 내려받은 모델이 없습니다. 터미널에서 <code>ollama pull exaone3.5:7.8b</code>를 실행한 뒤 다시 확인하세요.</p>';
+      } catch (err) { box.innerHTML = `<p class="lib-line warn">Ollama에 연결하지 못했습니다. Ollama가 실행 중인지, 이 페이지를 허용해 두었는지 확인하세요.</p>${ollamaHowto()}`; }
+    } else if (use) {
+      await AI.useOllama(use.dataset.aiUse); S.settings.ai = { backend: 'ollama', model: use.dataset.aiUse }; saveSettings(); toast(`${use.dataset.aiUse}을(를) 씁니다.`); m.close(); if (S.view === 'ask') viewAsk();
+    } else if (how) { const box = $('#ollama-box', m.el); if (!box.querySelector('.howto')) box.insertAdjacentHTML('beforeend', ollamaHowto()); }
+  });
+}
+function ollamaHowto() {
+  return `<ol class="howto">
+    <li><b>ollama.com</b>에서 Ollama를 내려받아 설치합니다.</li>
+    <li>터미널(맥) 또는 명령 프롬프트(윈도)에서 모델을 받습니다: <code>ollama pull exaone3.5:7.8b</code> (메모리 16GB 이상이면 <code>exaone3.5:32b</code>도 가능)</li>
+    <li>이 페이지가 Ollama를 쓰도록 허용합니다. 맥: <code>launchctl setenv OLLAMA_ORIGINS "https://0128.kr"</code> · 윈도: 환경 변수 <code>OLLAMA_ORIGINS</code>에 <code>https://0128.kr</code>를 넣습니다. 그다음 Ollama를 껐다가 다시 켭니다.</li>
+    <li>브라우저가 ‘로컬 네트워크 접근’을 물으면 허용합니다. 그리고 <b>Ollama 연결 확인</b>을 누릅니다.</li></ol>`;
+}
+
+/* ---------------- 숙지: the AI reads each document once and keeps a structured digest ----------------
+   Long documents are read part by part (as much as fits the model at once), then the parts are combined. The digest
+   helps the AI see each document whole when it answers; quotations and page numbers always come from the pages themselves. */
+const DIG = { run: false, stop: false, done: 0, total: 0, doc: '', part: '' };
+const charBudget = (ctx, reserve) => Math.max(1500, Math.floor((ctx - reserve) * 1.2));
+function digestStatusHTML() {
+  const ok = S.docs.filter((d) => d.indexed && !d.blank), dug = ok.filter((d) => d.digest).length;
+  if (DIG.run) return `<b>숙지 중</b> ${DIG.done}/${DIG.total} · 「${esc(DIG.doc)}」 ${esc(DIG.part)} <button class="btn" data-act="dig-stop">멈추기</button>`;
+  return `${ok.length ? `문헌 ${ok.length}개 가운데 <b>${dug}개</b>를 숙지했습니다.` : '숙지할 문헌이 아직 없습니다.'} ${ok.length > dug ? `<button class="btn primary" data-act="dig-start">${dug ? '나머지 숙지하기' : '숙지 시작'}</button>` : ''}`;
+}
+async function digestAll() {
+  if (DIG.run) return;
+  if (!(await ensureAI())) { openAISetup(); return; }
+  if (S.indexing || S.docs.some((d) => !d.indexed)) await indexLibrary();
+  const todo = S.docs.filter((d) => d.indexed && !d.blank && !d.digest).sort((a, b) => a.addedAt - b.addedAt);
+  if (!todo.length) { toast('모든 문헌을 숙지했습니다.'); return; }
+  Object.assign(DIG, { run: true, stop: false, done: 0, total: todo.length, doc: '', part: '' }); paintStatus();
+  try {
+    for (const d of todo) {
+      if (DIG.stop) break;
+      DIG.doc = d.title; DIG.part = ''; paintStatus();
+      try { await digestDoc(d); } catch (e) { if (DIG.stop) break; toast(`「${d.title}」을(를) 숙지하지 못했습니다: ${e.message}`); }
+      DIG.done++; paintStatus();
+    }
+  } finally {
+    const stopped = DIG.stop; Object.assign(DIG, { run: false, stop: false, doc: '', part: '' }); paintStatus(); redraw('library'); redraw('ask');
+    toast(stopped ? '숙지를 멈췄습니다. 다시 누르면 이어서 합니다.' : '숙지를 마쳤습니다.');
+  }
+}
+async function digestDoc(d) {
+  const pg = await docPages(d.id); if (!pg) return;
+  const per = charBudget(AI.state.ctx, 2200);
+  const parts = []; let cur = { from: 1, to: 0, text: '' };
+  pg.pages.forEach((t, i) => {
+    const body = (t || '').replace(/\s+/g, ' ').trim(); if (!body) return;
+    if (cur.text && cur.text.length + body.length > per) { parts.push(cur); cur = { from: i + 1, to: 0, text: '' }; }
+    cur.text += `\n〔${i + 1}쪽〕 ${body.slice(0, per)}`; cur.to = i + 1;
+  });
+  if (cur.text) parts.push(cur);
+  const meta = [d.author, d.year, d.venue].filter(Boolean).join(', ');
+  const SYS = '너는 법학 문헌을 꼼꼼히 읽고 정리하는 연구 보조자다. 주어진 본문에 있는 내용만 쓰고, 없는 내용은 만들지 않는다. 한국어 개조식으로 쓴다.';
+  const notes = [];
+  for (let k = 0; k < parts.length; k++) {
+    if (DIG.stop) throw new Error('멈춤');
+    const pt = parts[k]; DIG.part = `${k + 1}/${parts.length}부분`; paintStatus();
+    const out = await AI.complete([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}의 ${pt.from}–${pt.to}쪽이다. 〔○쪽〕은 쪽의 시작이다.\n${pt.text}\n\n이 부분의 핵심을 6줄 이내 개조식으로 정리하라. 주장, 근거, 언급된 법령·판례·개념을 빠뜨리지 말고, 줄마다 끝에 (○쪽)을 붙여라.` }], { maxTokens: 600, temperature: 0.2 });
+    notes.push({ from: pt.from, to: pt.to, text: out });
+  }
+  let joined = notes.map((n) => `[${n.from}–${n.to}쪽]\n${n.text}`).join('\n\n');
+  while (joined.length > charBudget(AI.state.ctx, 2600) && notes.length > 1) joined = joined.slice(0, charBudget(AI.state.ctx, 2600)); // the overview reads as much as fits; the part notes are kept whole
+  DIG.part = '종합'; paintStatus();
+  const overview = parts.length > 1 ? await AI.complete([{ role: 'system', content: SYS }, { role: 'user', content: `다음은 「${d.title}」${meta ? `(${meta})` : ''}을 부분별로 정리한 것이다.\n\n${joined}\n\n이를 바탕으로 이 문헌을 다음 순서로 정리하라: 1) 주제와 문제의식 2) 핵심 주장 3) 근거와 방법 4) 결론과 제언 5) 다룬 법령·판례·핵심 개념. 각 항목은 2~4줄, 근거 쪽을 (○쪽)으로 밝혀라.` }], { maxTokens: 900, temperature: 0.2 }) : notes[0].text;
+  const full = await DB.get('docs', d.id); if (!full) return;
+  full.digest = { text: overview, parts: notes, model: AI.state.name, at: Date.now() };
+  await DB.put('docs', full); Object.assign(d, { digest: overview, digestModel: AI.state.name });
+}
+function showDigest(id) {
+  const d = docOf(id); if (!d || !d.digest) return;
+  modal(`<h2>${esc(d.title)}</h2><p class="sub">AI 요지 · ${esc(d.digestModel || '')} · 쪽수는 원문으로 꼭 확인하세요.</p><div class="answer digest">${renderMarkdown(d.digest)}</div><div class="modal-foot"><button class="btn" data-act="dig-redo" data-id="${d.id}">다시 숙지</button><button class="btn primary" data-close>닫기</button></div>`);
+}
+
+/* ---------------- 묻기: questions answered from the library, with the pages they rest on ---------------- */
+const ASK_SYS = `너는 공법학자 안요환 박사의 개인 연구 서재를 읽고 답하는 연구 보조자다.
+1. 아래 [자료]에 실린 서재 문헌의 내용만 근거로 답한다. 자료에 없는 사실·법령·판례·통계를 지어내지 않는다.
+2. 근거가 된 자료 번호를 문장 끝에 [1], [2]처럼 붙인다. 여러 자료이면 [1][3]처럼 쓴다.
+3. 자료로 답할 수 없으면 '서재 자료에서 확인되지 않는다'고 쓰고, 찾아볼 만한 낱말을 제안한다.
+4. 자료끼리 견해가 다르면 나누어 정리한다.
+5. 한국어 학술 문어체(~이다)로 간결하게 쓴다.`;
+const projectAsks = () => S.chats.filter((c) => c.local && c.projectId === (S.project && S.project.id)).sort((a, b) => b.updatedAt - a.updatedAt);
+let ASK = null; // the conversation on screen
+function excerpt(text, pq, max) {
+  const flat = (text || '').replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) return flat;
+  const low = flat.toLowerCase(); let at = 0;
+  for (const t of [...pq.phrases, ...pq.words, ...pq.terms]) { const i = low.indexOf(t); if (i >= 0) { at = i; break; } }
+  const a = Math.max(0, Math.min(flat.length - max, at - Math.floor(max / 3)));
+  return (a ? '…' : '') + flat.slice(a, a + max) + (a + max < flat.length ? '…' : '');
+}
+async function gatherSources(question, prev, scope) {
+  const lib = await libLoad();
+  const pq = parseQuery(`${question} ${prev || ''}`);
+  const qq = parseQuery(question);
+  const hits = searchLib(lib, pq.terms.length ? pq : qq, 40, scope);
+  const budget = charBudget(AI.state.ctx, 2600);
+  const perDoc = {}, picked = []; let used = 0;
+  const docsHit = [...new Set(hits.map((h) => h.id))];
+  const digests = docsHit.map((id) => docOf(id)).filter((d) => d && d.digest).slice(0, 4);
+  const digText = digests.map((d) => `「${d.title}」 요지: ${d.digest.replace(/\s+/g, ' ').slice(0, Math.floor(budget * 0.25 / Math.max(1, digests.length)))}`).join('\n');
+  used += digText.length;
+  const pageMax = Math.max(900, Math.min(2200, Math.floor(budget / 5)));
+  for (const h of hits) {
+    if ((perDoc[h.id] || 0) >= 3) continue;
+    const D = lib.docs.find((x) => x.id === h.id);
+    const ex = excerpt(D.pages[h.page - 1], qq.terms.length ? qq : pq, pageMax);
+    if (used + ex.length > budget) { if (picked.length) break; }
+    picked.push({ docId: h.id, page: h.page, text: ex }); used += ex.length + 60; perDoc[h.id] = (perDoc[h.id] || 0) + 1;
+  }
+  return { sources: picked, digText, terms: hlTerms(qq) };
+}
+function askPrompt(question, src, history) {
+  const block = src.sources.map((x, i) => { const d = docOf(x.docId); const meta = [d && d.author, d && d.year].filter(Boolean).join(', '); return `[${i + 1}] 「${d ? d.title : '문헌'}」${meta ? `(${meta})` : ''} ${pageLabel(d, x.page)}\n${x.text}`; }).join('\n\n');
+  const msgs = [{ role: 'system', content: ASK_SYS }];
+  for (const h of history) msgs.push({ role: h.role, content: h.role === 'assistant' ? h.text.slice(0, 1200) : h.text });
+  msgs.push({ role: 'user', content: `${src.digText ? `[관련 문헌의 요지(배경용, 인용하지 말 것)]\n${src.digText}\n\n` : ''}[자료]\n${block || '(서재에서 맞는 쪽을 찾지 못했다)'}\n\n[질문]\n${question}` });
+  return msgs;
+}
+function answerHTML(m) {
+  let html = renderMarkdown(stripThink(m.text || ''));
+  html = html.replace(/\[(\d{1,2})\]/g, (all, n) => (m.sources && m.sources[n - 1] ? `<button class="src-ref" data-act="ask-src" data-n="${n}" title="${esc(srcTitle(m.sources[n - 1]))}">${n}</button>` : all));
+  const list = (m.sources || []).map((x, i) => `<li><button class="linkish" data-act="ask-src" data-n="${i + 1}">${esc(srcTitle(x))}</button></li>`).join('');
+  return `${html}${list ? `<details class="sources"${m.live ? '' : ''}><summary>읽은 쪽 ${m.sources.length}개</summary><ol>${list}</ol></details>` : ''}`;
+}
+const srcTitle = (x) => { const d = docOf(x.docId); return `${d ? d.title : '(지운 문헌)'} · ${d ? pageLabel(d, x.page) : x.page + '쪽'}`; };
+function viewAsk() {
+  const list = projectAsks();
+  if (!ASK || ASK.projectId !== (S.project && S.project.id)) ASK = list[0] || null;
+  const docs = S.docs.filter((d) => d.indexed && !d.blank).sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+  const msgs = ASK ? ASK.messages : [];
+  view().innerHTML = `<div class="page ask">
+    <div class="ai-bar" id="ai-bar">${aiBarHTML()}</div>
+    <div class="ask-top">${list.length ? `<label class="sr" for="ask-sel">대화</label><select id="ask-sel">${list.map((c) => `<option value="${c.id}"${ASK && c.id === ASK.id ? ' selected' : ''}>${esc(c.title)}</option>`).join('')}</select>` : ''}<button class="btn" data-act="ask-new">${IC.plus} 새 대화</button>${ASK ? '<button class="btn" data-act="ask-docx">Word</button><button class="btn danger" data-act="ask-del">지우기</button>' : ''}</div>
+    <div class="ask-thread" id="ask-thread">${msgs.length ? msgs.map((m, i) => (m.role === 'user' ? `<div class="msg user"><div class="bubble">${esc(m.text)}</div></div>` : `<div class="msg ai" data-i="${i}"><div class="answer">${answerHTML(m)}</div>${m.note ? `<p class="notice-line">${esc(m.note)}</p>` : ''}${m.live ? '' : `<div class="ai-foot"><button data-act="ask-card" data-i="${i}">노트에 담기</button><button data-act="ask-copy" data-i="${i}">복사</button></div>`}</div>`)).join('')
+      : `<div class="ask-empty"><h1>서재에 물어보세요</h1><p class="lead">AI가 서재 전체에서 관련 쪽을 찾아 읽고, 근거가 된 쪽을 [번호]로 밝혀 답합니다. 번호를 누르면 그 쪽이 열립니다. 모든 것이 이 컴퓨터 안에서 이루어집니다.</p>
+        <div class="dig-box" id="dig-status">${digestStatusHTML()}</div>
+        <p class="sub">‘숙지’는 AI가 문헌을 한 편씩 끝까지 읽고 요지(주제·주장·근거·결론·법령과 판례)를 정리해 두는 과정입니다. 숙지한 문헌은 답할 때 그 문헌 전체의 흐름을 함께 봅니다. 문헌이 많으면 오래 걸리니 켜 두고 다른 일을 하세요.</p></div>`}</div>
+    <div class="ask-comp"><label class="sr" for="ask-in">질문</label><textarea id="ask-in" rows="2" placeholder="예: 의회유보의 범위에 관한 학설을 정리해 줘 · Enter 보내기, Shift+Enter 줄바꿈"></textarea>
+      <div class="ask-bar"><label class="sr" for="ask-scope">범위</label><select id="ask-scope"><option value="">서재 전체에서</option>${docs.map((d) => `<option value="${d.id}"${S.askScope === d.id ? ' selected' : ''}>${esc(d.title)}에서</option>`).join('')}</select>${S.asking ? '<button class="send stop" data-act="ask-stop">멈추기</button>' : '<button class="send" data-act="ask-send">묻기</button>'}</div></div></div>`;
+  const th = $('#ask-thread'); if (th) th.scrollTop = th.scrollHeight;
+  if (!AI.ready() && S.settings.ai && AI.state.status === 'none') ensureAI();
+}
+function paintAskLive(m) {
+  const th = $('#ask-thread'); if (!th || !ASK) return;
+  const i = ASK.messages.indexOf(m), node = th.querySelector(`.msg.ai[data-i="${i}"] .answer`);
+  if (!node) { viewAsk(); return; }
+  const atBottom = th.scrollHeight - th.scrollTop - th.clientHeight < 80;
+  node.innerHTML = answerHTML(m);
   if (atBottom) th.scrollTop = th.scrollHeight;
 }
-function paintComposer() {
-  const el = $('#composer'); if (!el) return;
-  const keep = $('#input') ? $('#input').value : '';
-  const M = MODELS[S.settings.model];
-  el.innerHTML = `<div class="comp-in">
-      ${S.attach.length ? `<div class="comp-att">${S.attach.map((id) => `<span class="doc-chip"><b>${esc(docTitle(id))}</b><button data-act="unattach" data-id="${id}" aria-label="첨부 빼기">×</button></span>`).join('')}</div>` : ''}
-      <label class="sr" for="input">질문</label><textarea id="input" rows="2" placeholder="질문이나 지시를 입력하세요. Enter 보내기 · Shift+Enter 줄바꿈 · / 작업 목록"></textarea>
-      <div class="comp-bar">
-        <button class="pill" data-act="attach">문헌 첨부${S.attach.length ? ` ${S.attach.length}` : ''}</button>
-        <button class="pill" data-act="flows">작업</button>
-        ${SAMPLE ? `<span class="pill"><label class="sr" for="tier">분석 깊이</label><select id="tier">${[['default', '보통'], ['complex', '깊게']].map(([v, l]) => `<option value="${v}"${(S.settings.tier || 'complex') === v ? ' selected' : ''}>깊이: ${l}</option>`).join('')}</select></span>` : `<button class="pill${S.settings.web ? ' on' : ''}" data-act="web" aria-pressed="${S.settings.web}">웹 검색 ${S.settings.web ? '켬' : '끔'}</button>
-        <span class="pill"><label class="sr" for="effort">분석 깊이</label><select id="effort">${EFFORTS.map(([v, l]) => `<option value="${v}"${S.settings.effort === v ? ' selected' : ''}>깊이: ${l}</option>`).join('')}</select></span>
-        <span class="pill"><label class="sr" for="model">모델</label><select id="model">${Object.entries(MODELS).map(([id, m]) => `<option value="${id}"${S.settings.model === id ? ' selected' : ''}>${m.name}</option>`).join('')}</select></span>`}
-        ${S.busy ? '<button class="send stop" data-act="stop">중단</button>' : '<button class="send" data-act="send">보내기</button>'}
-      </div></div>
-    <p class="hint">${SAMPLE ? '무료 모드 · claude.ai 계정으로 동작 · 웹 검색 없음' : esc(M ? `${M.name} · ${M.note}` : '')} · 답변은 연구 보조 자료이며 최종 판단은 연구자가 합니다.</p>`;
-  const ta = $('#input'); ta.value = keep; autoGrow(ta);
+async function askSend() {
+  const ta = $('#ask-in'); const q = ta ? ta.value.trim() : '';
+  if (!q || S.asking) return;
+  if (!libStats().ok) { toast('서재에 읽을 문헌이 없습니다. 서재에서 PDF 폴더를 고르세요.'); return; }
+  if (!(await ensureAI())) { openAISetup(); return; }
+  if (!ASK) { ASK = { id: uid(), projectId: S.project.id, local: true, title: q.slice(0, 40), messages: [], createdAt: Date.now(), updatedAt: Date.now() }; S.chats.push(ASK); }
+  const prevQ = [...ASK.messages].reverse().find((m) => m.role === 'user');
+  const history = ASK.messages.filter((m) => !m.note).slice(-2).map((m) => ({ role: m.role, text: m.text }));
+  ASK.messages.push({ role: 'user', text: q, at: Date.now() });
+  const src = await gatherSources(q, prevQ && prevQ.text, S.askScope || '');
+  const msg = { role: 'assistant', text: '', sources: src.sources.map((x) => ({ docId: x.docId, page: x.page })), terms: src.terms, model: AI.state.name, at: Date.now(), live: true };
+  ASK.messages.push(msg); S.asking = true;
+  if (ta) ta.value = '';
+  viewAsk();
+  try {
+    for await (const d of AI.stream(askPrompt(q, src, history), { maxTokens: 1500 })) { msg.text += d; paintAskLive(msg); }
+    msg.text = stripThink(msg.text);
+    if (!msg.text) msg.note = 'AI가 답을 내지 않았습니다. 질문을 바꾸어 다시 물어보세요.';
+  } catch (e) { msg.note = `답하지 못했습니다: ${e.message || e}`; }
+  finally {
+    msg.live = false; S.asking = false; ASK.updatedAt = Date.now();
+    await DB.put('chats', ASK).catch(() => {});
+    if (S.view === 'ask') viewAsk();
+  }
 }
-function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + 'px'; }
-function paintCtx() {
-  const el = $('#ctx'); if (!el) return;
-  const p = S.project; if (!p) { el.innerHTML = ''; return; }
-  const f = (k, label, hint, rows) => `<label class="field"><span>${label}${hint ? ` <small>${hint}</small>` : ''}</span><textarea data-pf="${k}" rows="${rows || 3}">${esc(p[k] || '')}</textarea></label>`;
-  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between"><h2>연구 프로젝트</h2><button class="icon" data-act="ctx" aria-label="패널 닫기" title="닫기">${IC.close}</button></div><p class="sub">여기 적은 내용은 이 프로젝트의 모든 대화에 전제로 들어갑니다. AI는 제안만 하고, ‘확정 사항’은 연구자가 정합니다.</p>
-    <label class="field"><span>프로젝트 이름</span><input data-pf="title" value="${esc(p.title)}"></label>
-    ${f('question', '연구문제', '', 3)}${f('concepts', '핵심 개념 정의', '용어를 일관되게', 3)}${f('decided', '연구자가 확정한 사항', '답변의 전제', 4)}${f('open', '미결 쟁점', '', 3)}${f('notes', '메모', '', 2)}${f('style', '문체 프로필', '내 논문에서 추출하거나 직접 적기', 5)}
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 14px"><button class="btn" data-act="style-extract">내 논문에서 문체 추출</button></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" data-act="export-docx">이 대화 Word로 저장</button><button class="btn" data-act="export-chat">마크다운(.md)</button><button class="btn danger" data-act="del-project">프로젝트 삭제</button></div>`;
+function askExport() {
+  if (!ASK) return;
+  const sections = []; let q = '', k = 0;
+  for (const m of ASK.messages) {
+    if (m.role === 'user') { q = m.text; continue; }
+    if (!m.text) continue;
+    k++;
+    const notes = (m.sources || []).map((x) => footnote(docOf(x.docId), x.page));
+    sections.push({ heading: `질문 ${k}`, question: q, md: stripThink(m.text).replace(/\[(\d{1,2})\]/g, (all, n) => (notes[n - 1] ? `〔c${n}〕` : all)), notes });
+  }
+  if (!sections.length) { toast('저장할 답이 없습니다.'); return; }
+  download(`${(ASK.title || '묻기').replace(/[\\/:*?"<>|]/g, ' ').trim().slice(0, 50) || '묻기'}.docx`, buildDocx({ title: ASK.title, subtitle: `${kdate(ASK.updatedAt)} · 요AI · ${ASK.messages.find((m) => m.model) ? ASK.messages.find((m) => m.model).model : ''}`, sections }), DOCX_MIME);
 }
 
 /* ---------------- modals ---------------- */
@@ -687,91 +886,6 @@ function modal(html, onClose) {
   w.addEventListener('click', (e) => { if (e.target === w || e.target.closest('[data-close]')) close(); });
   return { el: w, close };
 }
-function openLibrary(selecting) {
-  const rows = () => S.docs.slice().sort((a, b) => b.addedAt - a.addedAt).map((d) => `<div class="doc-row">${selecting ? `<input type="checkbox" data-pick="${d.id}" ${S.attach.includes(d.id) ? 'checked' : ''} aria-label="${esc(d.title)} 첨부">` : '<span></span>'}
-      <div><div class="t" title="${esc(d.title)}">${esc(d.title)}</div><div class="m">${esc([d.author, d.year, d.venue].filter(Boolean).join(', ') || '저자·연도 미입력')} · ${d.kind === 'pdf' ? `PDF${d.npages ? ` ${d.npages}쪽` : ''}` : '텍스트'} ${fmtSize(d.size || 0)}${+d.page1 > 0 ? ` · ${d.page1}면부터` : ''}</div></div>
-      <div style="display:flex;gap:4px"><button class="btn" data-edit="${d.id}">정보</button><button class="btn danger" data-del="${d.id}">삭제</button></div></div>`).join('') || '<p class="sub" style="margin:8px 0">아직 문헌이 없습니다.</p>';
-  const m = modal(`<h2>서재</h2><p class="sub">선행연구 PDF와 자료를 이 브라우저에 보관합니다(서버에 올리지 않습니다). ${selecting ? '이번 질문에 첨부할 문헌을 고르세요.' : ''}</p>
-    <label class="drop" id="drop">PDF·텍스트 파일을 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
-    <div id="docs">${rows()}</div>
-    <div class="modal-foot">${selecting ? '<button class="btn primary" data-close>첨부하기</button>' : '<button class="btn" data-close>닫기</button>'}</div>`, () => { paintComposer(); paintSide(); });
-  const refresh = () => { $('#docs', m.el).innerHTML = rows(); };
-  const drop = $('#drop', m.el);
-  $('#files', m.el).addEventListener('change', async (e) => { await addFiles(Array.from(e.target.files)); refresh(); });
-  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
-  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-  drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('over'); await addFiles(Array.from(e.dataTransfer.files)); refresh(); });
-  m.el.addEventListener('change', (e) => { const id = e.target.dataset && e.target.dataset.pick; if (!id) return; if (e.target.checked) { if (!S.attach.includes(id)) S.attach.push(id); } else S.attach = S.attach.filter((x) => x !== id); });
-  m.el.addEventListener('click', async (e) => {
-    const del = e.target.closest('[data-del]'), ed = e.target.closest('[data-edit]');
-    if (del) { const id = del.dataset.del; if (!(await confirmBox('이 문헌을 서재에서 지울까요? 이미 나눈 대화에서는 ‘삭제된 문헌’으로 표시되고, 다음 질문부터 맥락에서 빠집니다.', '지우기'))) return; await DB.del('docs', id); S.docs = S.docs.filter((d) => d.id !== id); S.attach = S.attach.filter((x) => x !== id); b64cache.delete(id); refresh(); }
-    if (ed) { const d = S.docs.find((x) => x.id === ed.dataset.edit); if (!d) return; const v = await formBox('문헌 정보', [{ label: '제목', value: d.title }, { label: '저자', value: d.author }, { label: '연도', value: d.year }, { label: '학술지·출처 (예: 공법연구 제50집 제1호)', value: d.venue }, { label: '첫 쪽 번호 (학술지에 실린 첫 쪽, 예: 123 — 비우면 PDF 쪽수로 인용)', value: d.page1 || '' }]); if (!v) return; const pg = parseInt(v[4], 10); Object.assign(d, { title: v[0].trim() || d.title, author: v[1].trim(), year: v[2].trim(), venue: v[3].trim(), page1: pg > 0 ? pg : '' }); const full = await DB.get('docs', d.id); await DB.put('docs', { ...full, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 }); refresh(); }
-  });
-}
-function openFlows() {
-  const m = modal(`<h2>작업</h2><p class="sub">입력창에 쓴 내용이 작업의 ‘입력’으로 들어갑니다. 고른 작업은 입력창에 채워지니, 확인하고 보내세요. ‘자동 연쇄’는 여러 단계를 차례로 실행합니다.</p>
-    <div class="flow-list">${FLOWS.map((f) => `<button class="flow-item" data-flow="${f.id}"><b>${esc(f.name)}</b><span>${esc(f.desc)}</span></button>`).join('')}${CHAINS.map((c) => `<button class="flow-item chain" data-chain="${c.id}"><b>${esc(c.name)}</b><span>${esc(c.desc)}</span></button>`).join('')}</div>
-    <div class="modal-foot"><button class="btn" data-close>닫기</button></div>`);
-  m.el.addEventListener('click', async (e) => {
-    const f = e.target.closest('[data-flow]'), c = e.target.closest('[data-chain]');
-    if (f) { useFlow(f.dataset.flow); m.close(); }
-    if (c) { const ch = CHAINS.find((x) => x.id === c.dataset.chain); const input = $('#input').value.trim(); if (!input && !(await confirmBox('입력창이 비어 있습니다. 그대로 실행할까요?', '실행'))) return; m.close(); $('#input').value = ''; runChain(ch, input); }
-  });
-}
-function useFlow(id) {
-  const f = FLOWS.find((x) => x.id === id); if (!f) return;
-  const ta = $('#input'); const cur = ta.value.replace(/^\/\S*\s*/, '').trim();
-  ta.value = f.tpl.replace('{{입력}}', cur || '(여기에 내용을 적어 주세요)'); autoGrow(ta); ta.focus();
-  const at = ta.value.indexOf('(여기에 내용을 적어 주세요)'); if (at >= 0) ta.setSelectionRange(at, at + '(여기에 내용을 적어 주세요)'.length);
-}
-function openSettings(needKey) {
-  const k = getKey();
-  const m = modal(`<h2>설정</h2><p class="sub">API 키는 이 브라우저에만 저장되며 Anthropic API로만 전송됩니다.</p>
-    <label class="field"><span>Anthropic API 키 <small>console.anthropic.com → API Keys</small></span><input id="key" type="password" autocomplete="off" placeholder="sk-ant-…" value="${esc(k)}"></label>
-    <label style="display:flex;gap:6px;align-items:center;font-size:.8125rem;margin:-4px 0 12px"><input type="checkbox" id="remember" ${k && store('local') && store('local').getItem(KEY) ? 'checked' : ''}> 이 기기에 기억하기 (끄면 이 창을 닫을 때 지워짐)</label>
-    <label class="field"><span>기본 모델</span><select id="s-model">${Object.entries(MODELS).map(([id, mm]) => `<option value="${id}"${S.settings.model === id ? ' selected' : ''}>${mm.name} — ${mm.note} (입력 $${mm.in} · 출력 $${mm.out} / 100만 토큰)</option>`).join('')}</select></label>
-    <label class="field"><span>기본 분석 깊이</span><select id="s-effort">${EFFORTS.map(([v, l]) => `<option value="${v}"${S.settings.effort === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-    <label style="display:flex;gap:6px;align-items:center;font-size:.8125rem;margin:0 0 8px"><input type="checkbox" id="s-think" ${S.settings.showThinking ? 'checked' : ''}> 답변 위에 사고 과정 요약 보이기</label>
-    <label style="display:flex;gap:6px;align-items:center;font-size:.8125rem;margin:0 0 8px"><input type="checkbox" id="s-verify" ${S.settings.autoVerify ? 'checked' : ''}> 출처가 달린 답변은 끝나자마자 인용을 자동 검증 (답변마다 비용이 조금 더 듭니다)</label>
-    <label class="field"><span>테마</span><select id="s-theme">${[['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']].map(([v, l]) => `<option value="${v}"${S.settings.theme === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-    <p class="sub">거절 대비: 안전 분류기가 답변을 거절하면 서버가 자동으로 다른 모델로 이어서 답하도록 설정해 두었습니다(server-side fallback). 대화 도중 프로젝트 맥락을 고쳐도 이전 대화가 깨지지 않도록, 바뀐 맥락은 그 시점의 시스템 메시지로 덧붙여 보냅니다.</p>
-    <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" id="backup">대화·프로젝트 백업(.json)</button><label class="btn" style="cursor:pointer">백업 불러오기<input type="file" id="restore" accept=".json,application/json" class="sr"></label><button class="btn" id="relock">잠금 다시 걸기</button><button class="btn danger" id="forget">키 지우기</button></div>
-    <div class="modal-foot"><button class="btn" data-close>닫기</button><button class="btn primary" id="save">저장</button></div>`);
-  if (needKey) setTimeout(() => $('#key', m.el).focus(), 50);
-  $('#save', m.el).addEventListener('click', async () => {
-    const v = $('#key', m.el).value.trim();
-    if (v && !/^sk-ant-/.test(v)) { toast('API 키는 sk-ant- 로 시작합니다.'); return; }
-    setKey(v, $('#remember', m.el).checked);
-    Object.assign(S.settings, { model: $('#s-model', m.el).value, effort: $('#s-effort', m.el).value, showThinking: $('#s-think', m.el).checked, autoVerify: $('#s-verify', m.el).checked, theme: $('#s-theme', m.el).value });
-    await saveSettings(); m.close(); paintComposer(); paintThread(); toast('저장했습니다.');
-  });
-  $('#forget', m.el).addEventListener('click', () => { setKey(''); $('#key', m.el).value = ''; toast('키를 지웠습니다.'); });
-  $('#relock', m.el).addEventListener('click', () => { window.Door.close('yoai'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); });
-  $('#backup', m.el).addEventListener('click', () => { const data = { app: 'yoai', v: 1, exportedAt: new Date().toISOString(), projects: S.projects, chats: S.chats, docs: S.docs.map((d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue })) }; saveFile(`yoai-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data), 'application/json'); toast('백업 파일을 저장했습니다. (문헌 파일 자체는 포함되지 않습니다)'); });
-  $('#restore', m.el).addEventListener('change', async (e) => {
-    const f = e.target.files[0]; if (!f) return;
-    try { const d = JSON.parse(await f.text()); if (d.app !== 'yoai') throw new Error('요AI 백업 파일이 아닙니다.');
-      for (const p of d.projects || []) { if (!S.projects.some((x) => x.id === p.id)) { S.projects.push(p); await DB.put('projects', p); } }
-      for (const c of d.chats || []) { if (!S.chats.some((x) => x.id === c.id)) { S.chats.push(c); await DB.put('chats', c); } }
-      toast('불러왔습니다.'); m.close(); paintShell();
-    } catch (err) { toast('불러오지 못했습니다: ' + err.message); }
-  });
-}
-function openHelp() {
-  modal(`<h2>요AI 사용법</h2><div style="font-size:.875rem;line-height:1.85;color:var(--ink-2)">
-    <p><b>1. 무료 모드와 API 모드</b> — <b>무료 모드</b>는 claude.ai 안에서 열리며 선생님의 Claude 구독 계정으로 동작합니다(추가 요금 없음, 웹 검색 없음, PDF는 글자를 뽑아 쪽수와 함께 읽음). <b>API 모드</b>는 0128.kr에서 Anthropic API 키를 넣어 쓰며, 웹 검색과 PDF 원문 쪽수 인용까지 되지만 쓴 만큼 요금이 나갑니다(답변마다 대략의 비용 표시). 두 모드는 저장 공간이 따로이므로, 옮길 때는 설정의 백업 파일을 쓰세요.</p>
-    <p><b>2. 연구 프로젝트</b> — 왼쪽에서 프로젝트를 만들고, 오른쪽 ‘연구 프로젝트’ 칸에 연구문제·개념 정의·확정 사항·미결 쟁점·문체 프로필을 적어 두면 그 프로젝트의 모든 대화가 이를 전제로 답합니다. 답변에서 동의하는 문장을 드래그한 뒤 <b>확정 사항에 추가</b>를 누르면 확정 사항으로 옮겨집니다.</p>
-    <p><b>3. 서재와 첨부</b> — 선행연구 PDF를 서재에 넣어 두고(파일당 100MB까지), 질문할 때 <b>문헌 첨부</b>로 고릅니다. 답변은 해당 쪽을 인용하며, 출처 번호를 누르면 인용 문장이 보입니다. 첨부한 문헌은 같은 대화의 다음 질문에도 계속 쓰입니다.</p>
-    <p><b>4. 작업</b> — <b>작업</b> 버튼이나 입력창 맨 앞의 <b>/</b>로 연구문제 구조화, 선행연구 지도, 판례 평석, 헌법적 논증, 입법개선안, 반론 검토, 인용 검증, 문체 교정, 문헌 요약을 바로 불러옵니다. ‘자동 연쇄’는 여러 단계를 차례로 실행합니다.</p>
-    <p><b>5. 근거 표시</b> — [첨부 문헌] [검색 확인] [일반 법리] [추론] [검증 필요]로 근거의 성격을 구분합니다. 특히 [검증 필요]는 반드시 원문을 확인하세요.</p>
-    <p><b>6. 깊이와 모델</b> — 깊이는 ‘깊게’가 기본입니다. 결정적인 논증에는 ‘최대’나 Fable 5.1을 쓰고, 가벼운 질문에는 ‘보통’이나 Sonnet 5.5가 빠르고 저렴합니다. 웹 검색을 켜면 법령·판례를 확인하며 답합니다.</p>
-    <p><b>7. Word로 저장</b> — 답변 아래 <b>Word</b>를 누르면 그 답변이, 오른쪽 패널의 <b>이 대화 Word로 저장</b>을 누르면 대화 전체가 .docx로 저장됩니다. 출처 번호는 Word 각주(저자, “제목”, 학술지, 연도, 쪽)로 바뀝니다. 서재의 <b>정보</b>에서 저자·학술지·연도와 <b>첫 쪽 번호</b>를 적어 두면 각주가 학술지 쪽수로 나옵니다.</p>
-    <p><b>8. 인용 검증</b> — (API 모드) 답변 아래 <b>인용 검증</b>을 누르면 출처가 달린 주장마다 인용 원문이 그 주장을 정말 뒷받침하는지 따로 대조하여 ‘뒷받침함 / 일부만 / 불일치’로 보여 줍니다. 설정에서 자동 검증을 켤 수 있습니다. [검증 필요] 표시는 여전히 원문으로 직접 확인하세요.</p>
-    <p><b>9. 문체 프로필</b> — 오른쪽 패널의 <b>내 논문에서 문체 추출</b>로 서재에 넣은 본인 논문 1~3편을 분석하면, 문장 호흡·종결 표현·인용 관행을 정리한 프로필이 만들어집니다. 고쳐서 저장하면 그 프로젝트의 답변이 그 문체를 따릅니다.</p>
-    <p><b>10. 긴 문헌</b> — 100쪽이 넘거나 아주 큰 PDF, 또는 한 대화에 많이 첨부한 PDF는 본문 글자를 쪽별로 나누어 보냅니다(첨부 표시에 ‘쪽별 본문으로 보냄’). 쪽 단위 인용은 그대로 됩니다. 글자가 없는 스캔본은 필요한 쪽만 잘라 넣으세요.</p>
-    <p><b>11. 보관</b> — 대화·프로젝트·문헌은 이 브라우저에 저장됩니다. 설정에서 백업 파일을 받아 두세요.</p></div>
-    <div class="modal-foot"><button class="btn primary" data-close>닫기</button></div>`);
-}
 function confirmBox(text, okLabel) {
   return new Promise((res) => {
     const m = modal(`<h2>확인</h2><p style="font-size:.875rem;color:var(--ink-2);line-height:1.7">${esc(text)}</p><div class="modal-foot"><button class="btn" data-close>취소</button><button class="btn primary" id="cb-ok">${esc(okLabel || '확인')}</button></div>`, () => res(false));
@@ -780,131 +894,220 @@ function confirmBox(text, okLabel) {
 }
 function formBox(title, fields) {
   return new Promise((res) => {
-    const m = modal(`<h2>${esc(title)}</h2>${fields.map((f, i) => `<label class="field"><span>${esc(f.label)}</span><input id="fb${i}" value="${esc(f.value || '')}" autocomplete="off"></label>`).join('')}<div class="modal-foot"><button class="btn" data-close>취소</button><button class="btn primary" id="fb-ok">저장</button></div>`, () => res(null));
-    const done = () => { const out = fields.map((_, i) => $('#fb' + i, m.el).value); res(out); m.close(); };
-    $('#fb-ok', m.el).addEventListener('click', done);
-    m.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !e.isComposing) { e.preventDefault(); done(); } });
+    let done = false;
+    const m = modal(`<h2>${esc(title)}</h2>${fields.map((f, i) => `<label class="field"><span>${esc(f.label)}</span><input id="fb${i}" value="${esc(f.value || '')}" autocomplete="off"></label>`).join('')}<div class="modal-foot"><button class="btn" data-close>취소</button><button class="btn primary" id="fb-ok">저장</button></div>`, () => { if (!done) res(null); });
+    const ok = () => { done = true; const out = fields.map((_, i) => $('#fb' + i, m.el).value); res(out); m.close(); };
+    $('#fb-ok', m.el).addEventListener('click', ok);
+    m.el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !e.isComposing) { e.preventDefault(); ok(); } });
     setTimeout(() => { const f = $('#fb0', m.el); if (f) f.focus(); }, 30);
   });
 }
-async function saveFile(name, text, type) {
-  try { if (window.claude && typeof window.claude.use === 'function') { const dl = await window.claude.use('downloads'); if (dl) { await dl.save({ filename: name, data: new Blob([text], { type }) }); return; } } }
-  catch (e) { if (e && e.code === 'declined') return; }
-  download(name, text, type);
+function download(name, data, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800); }
+let installEvt = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
+function openSettings() {
+  const m = modal(`<h2>설정</h2>
+    <label class="field"><span>테마</span><select id="s-theme">${[['auto', '자동'], ['light', '밝게'], ['dark', '어둡게']].map(([v, l]) => `<option value="${v}"${S.settings.theme === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <label class="field"><span>쪽을 열 때 기본 보기</span><select id="s-read"><option value="pdf"${S.settings.read === 'pdf' ? ' selected' : ''}>원문(PDF 그대로)</option><option value="text"${S.settings.read === 'text' ? ' selected' : ''}>글자(골라서 인용)</option></select></label>
+    <h3 class="mh">컴퓨터에 설치</h3>
+    <p class="sub">${installEvt ? '<button class="btn" id="install">요AI를 앱으로 설치</button> ' : ''}Chrome·Edge 주소창 오른쪽의 설치 아이콘(또는 메뉴 → 앱 설치)으로 요AI를 컴퓨터에 설치하면 바탕화면·시작 메뉴에서 창으로 열립니다. 한 번 연 뒤에는 인터넷 없이도 열립니다.</p>
+    <h3 class="mh">보관</h3>
+    <p class="sub">문헌·노트·지난 대화는 이 브라우저 안에만 있습니다. 폴더를 연결해 두면 문헌은 폴더에서 다시 읽을 수 있으니, <b>노트 백업</b>을 가끔 받아 두세요(문헌 본문은 빠지고 문헌 정보는 들어갑니다).</p>
+    <div class="tools-row"><button class="btn" id="backup">노트·프로젝트 백업(.json)</button><label class="btn" style="cursor:pointer">백업 불러오기<input type="file" id="restore" accept=".json,application/json" class="sr"></label><button class="btn" id="relock">잠금 다시 걸기</button></div>
+    <div class="modal-foot"><button class="btn" data-close>닫기</button><button class="btn primary" id="save">저장</button></div>`);
+  $('#save', m.el).addEventListener('click', async () => { Object.assign(S.settings, { theme: $('#s-theme', m.el).value, read: $('#s-read', m.el).value }); await saveSettings(); m.close(); toast('저장했습니다.'); });
+  const ins = $('#install', m.el); if (ins) ins.addEventListener('click', async () => { const e = installEvt; installEvt = null; try { await e.prompt(); } catch (err) { /* ignore */ } m.close(); });
+  $('#relock', m.el).addEventListener('click', () => { window.Door.close('yoai'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); });
+  $('#backup', m.el).addEventListener('click', () => {
+    const data = { app: 'yoai', v: 2, exportedAt: new Date().toISOString(), projects: S.projects, cards: S.cards, chats: S.chats, docs: S.docs.map((d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1, folder: d.folder })) };
+    download(`yoai-backup-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`, JSON.stringify(data), 'application/json');
+  });
+  $('#restore', m.el).addEventListener('change', async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const d = JSON.parse(await f.text()); if (!d || d.app !== 'yoai') throw new Error('요AI 백업 파일이 아닙니다.');
+      let n = 0;
+      for (const p of d.projects || []) if (p && p.id && !S.projects.some((x) => x.id === p.id)) { S.projects.push(p); await DB.put('projects', p); n++; }
+      for (const c of d.cards || []) if (c && c.id && !S.cards.some((x) => x.id === c.id)) { S.cards.push(c); await DB.put('cards', c); n++; }
+      for (const c of d.chats || []) if (c && c.id && !S.chats.some((x) => x.id === c.id)) { S.chats.push(c); await DB.put('chats', c); n++; }
+      for (const m2 of d.docs || []) { const doc = docOf(m2.id) || (m2.folder && S.docs.find((x) => x.folder === m2.folder)); if (!doc) continue; const full = await DB.get('docs', doc.id); if (!full) continue; for (const k of ['author', 'year', 'venue', 'page1']) if (!full[k] && m2[k]) full[k] = m2[k]; await DB.put('docs', full); Object.assign(doc, docMeta(full)); }
+      toast(`불러왔습니다(새 항목 ${n}개).`); m.close(); paintShell();
+    } catch (err) { toast('불러오지 못했습니다: ' + err.message); }
+  });
 }
-function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800); }
-function chatMarkdown(c) {
-  let out = `# ${c.title}\n\n`;
-  for (const m of c.messages) {
-    if (m.role === 'user') out += `## 질문\n\n${(m.docs || []).length ? `첨부: ${m.docs.map(docTitle).join(', ')}\n\n` : ''}${m.text}\n\n`;
-    else { const p = answerParts(m.content); const tmp = document.createElement('div'); tmp.innerHTML = p.html; out += `## 요AI\n\n${tmp.innerText.trim()}\n\n`; if (p.cites.length) out += p.cites.map((x, i) => `${i + 1}. ${x.title || x.document_title || ''}${x.start_page_number ? ` ${x.start_page_number}쪽` : ''}${x.url ? ` <${x.url}>` : ''}${x.cited_text ? ` — “${x.cited_text.slice(0, 200)}”` : ''}`).join('\n') + '\n\n'; }
-  }
-  return out;
+function openHelp() {
+  modal(`<h2>요AI 사용법</h2><div class="help">
+    <p><b>1. 서재 채우기</b> — <b>서재 → 폴더 고르기</b>로 선행연구 PDF가 든 폴더를 고르면 하위 폴더까지 모두 넣고, 모든 쪽의 글자를 읽어 둡니다. Chrome·Edge에서는 폴더가 연결된 채로 남아, 요AI를 열 때마다 새로 넣거나 고친 파일을 맞춥니다.</p>
+    <p><b>2. 묻기 (오프라인 AI)</b> — 처음 한 번 <b>AI 준비</b>에서 모델을 내려받으면(인터넷 필요), 그 뒤로는 인터넷 없이 이 컴퓨터 안에서 돌아갑니다. 질문하면 AI가 서재 전체에서 관련 쪽을 찾아 읽고 근거 쪽을 [번호]로 밝혀 답합니다. <b>숙지</b>를 해 두면 문헌 전체의 흐름까지 보고 답합니다. AI는 작은 공개 모델이라 틀릴 수 있으니, 번호를 눌러 원문을 꼭 확인하세요.</p>
+    <p><b>2-1. 찾기</b> — 서재 전체에서 쪽 단위로 찾습니다. 띄어쓰기·조사가 달라도 찾고(의회유보 → 의회 유보, 의회유보의), <b>"따옴표"</b>로 묶으면 그 표현 그대로, <b>-낱말</b>은 그 낱말이 없는 쪽만 찾습니다. 위의 목록에서 문헌 하나만 골라 찾을 수도 있습니다.</p>
+    <p><b>3. 읽기</b> — 결과를 누르면 그 쪽이 열립니다. <b>원문</b>은 PDF 그대로, <b>글자</b>는 찾은 낱말이 표시된 본문입니다. ← → 키로 쪽을 넘깁니다.</p>
+    <p><b>4. 인용 모으기</b> — 글자 보기에서 글을 고르면 <b>카드에 담기</b>와 <b>인용 복사</b>가 나타납니다. 인용 복사는 인용문과 각주(저자, “제목”, 학술지, 연도, 쪽)를 함께 복사합니다.</p>
+    <p><b>5. 노트</b> — 프로젝트마다 카드가 모입니다. 순서를 바꾸고 메모를 달아 <b>Word로 저장</b>하면 인용마다 Word 각주가 달린 문서가 됩니다.</p>
+    <p><b>6. 각주를 정확하게</b> — 서재에서 문헌의 <b>정보</b>에 저자·연도·학술지와 학술지 첫 쪽 번호를 적어 두면, 각주가 학술지 쪽수(○면)로 만들어집니다.</p>
+    <p><b>7. 오프라인</b> — 한 번 연 뒤에는 인터넷 없이도 열리고 모든 기능이 됩니다. Chrome·Edge에서 설치하면 컴퓨터의 앱처럼 쓸 수 있습니다(설정 참고).</p>
+    <p><b>8. 보관</b> — 모든 내용은 이 컴퓨터의 이 브라우저 안에만 있습니다. 설정의 <b>노트 백업</b>을 가끔 받아 두세요.</p></div>
+    <div class="modal-foot"><button class="btn primary" data-close>닫기</button></div>`);
 }
 
-/* ---------------- projects & chats ---------------- */
+/* ---------------- projects ---------------- */
 async function newProject(title) {
   const p = { id: uid(), title: title || '새 연구 프로젝트', question: '', concepts: '', decided: '', open: '', notes: '', style: '', createdAt: Date.now(), updatedAt: Date.now() };
   S.projects.push(p); await saveProject(p); return p;
 }
-async function newChat() {
-  const c = { id: uid(), projectId: S.project.id, title: '새 대화', messages: [], createdAt: Date.now(), updatedAt: Date.now() };
-  S.chats.push(c); S.chat = c; await saveChat(c); paintSide(); paintThread(); return c;
-}
-function selectProject(id) { S.project = S.projects.find((p) => p.id === id) || S.projects[0]; S.chat = S.chats.filter((c) => c.projectId === S.project.id).sort((a, b) => b.updatedAt - a.updatedAt)[0] || null; DB.put('kv', S.project.id, 'lastProject').catch(() => {}); paintSide(); paintThread(); paintCtx(); }
+function selectProject(id) { S.project = S.projects.find((p) => p.id === id) || S.projects[0]; DB.put('kv', S.project.id, 'lastProject').catch(() => {}); show(S.view === 'read' ? 'notes' : S.view); }
 
 /* ---------------- events ---------------- */
-function closeSide() { const sd = $('#side'); if (sd) sd.classList.remove('open'); const sh = $('.shell'); if (sh) sh.classList.remove('side-open'); }
 document.addEventListener('click', async (e) => {
-  const cite = e.target.closest('sup.cite a');
-  if (cite) { e.preventDefault(); const li = cite.closest('.msg').querySelector(`#cite-${cite.dataset.n}`); if (li) { li.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); li.classList.add('flash'); setTimeout(() => li.classList.remove('flash'), 1400); } return; }
-  const el = e.target.closest('[data-act]'); if (!el) return;
+  const el = e.target.closest('[data-act]'); if (!el) { if (!e.target.closest('#seltool')) selTool(null); return; }
   const act = el.dataset.act;
-  if (act === 'send') send($('#input').value);
-  else if (act === 'stop') { if (S.busy) S.busy.ac.abort(); }
-  else if (act === 'attach') openLibrary(true);
-  else if (act === 'unattach') { S.attach = S.attach.filter((x) => x !== el.dataset.id); paintComposer(); }
-  else if (act === 'flows') openFlows();
-  else if (act === 'flow') useFlow(el.dataset.id);
-  else if (act === 'web') { S.settings.web = !S.settings.web; saveSettings(); paintComposer(); }
-  else if (act === 'library') { closeSide(); openLibrary(false); }
-  else if (act === 'settings') { closeSide(); openSettings(false); }
-  else if (act === 'help') { closeSide(); openHelp(); }
-  else if (act === 'ctx') { S.ctxOpen = !S.ctxOpen; $('.shell').classList.toggle('ctx-open', S.ctxOpen); el.classList.toggle('on', S.ctxOpen); }
-  else if (act === 'menu') { $('#side').classList.toggle('open'); $('.shell').classList.toggle('side-open', $('#side').classList.contains('open')); }
-  else if (act === 'scrim') { $('#side').classList.remove('open'); S.ctxOpen = false; $('.shell').classList.remove('ctx-open', 'side-open'); }
-  else if (act === 'new-chat') { if (S.busy) return; await newChat(); $('#side').classList.remove('open'); $('#input') && $('#input').focus(); }
-  else if (act === 'open-chat') { if (S.busy) return; S.chat = S.chats.find((c) => c.id === el.dataset.id); $('#side').classList.remove('open'); paintSide(); paintThread(); }
-  else if (act === 'new-project') { const v = await formBox('새 연구 프로젝트', [{ label: '프로젝트 이름', value: '' }]); const t = v && v[0].trim(); if (!t) return; const p = await newProject(t); selectProject(p.id); S.ctxOpen = true; paintShell(); }
-  else if (act === 'del-project') { if (S.projects.length < 2) { toast('프로젝트가 하나뿐이면 지울 수 없습니다.'); return; } if (!(await confirmBox(`‘${S.project.title}’ 프로젝트와 그 대화를 모두 지울까요? 되돌릴 수 없습니다.`, '지우기'))) return; for (const c of S.chats.filter((x) => x.projectId === S.project.id)) await DB.del('chats', c.id); S.chats = S.chats.filter((x) => x.projectId !== S.project.id); await DB.del('projects', S.project.id); S.projects = S.projects.filter((p) => p.id !== S.project.id); selectProject(S.projects[0].id); paintShell(); }
-  else if (act === 'copy') { const m = S.chat.messages[+el.dataset.i]; const tmp = document.createElement('div'); tmp.innerHTML = answerParts(m.content).html; try { await navigator.clipboard.writeText(tmp.innerText); toast('복사했습니다.'); } catch (err) { toast('복사하지 못했습니다.'); } }
-  else if (act === 'decide') { const sel = String(window.getSelection() || '').trim(); if (!sel) { toast('답변에서 확정할 문장을 드래그해 선택한 뒤 누르세요.'); return; } S.project.decided = `${S.project.decided ? S.project.decided.trim() + '\n' : ''}- ${sel}`; await saveProject(S.project); paintCtx(); toast('확정 사항에 추가했습니다.'); }
-  else if (act === 'regen') { const last = S.chat.messages[S.chat.messages.length - 1]; if (last && last.role === 'assistant') { S.chat.messages.pop(); await saveChat(S.chat); runTurn(); } }
-  else if (act === 'docx') exportDocx(+el.dataset.i);
-  else if (act === 'export-docx') exportDocx(null);
-  else if (act === 'verify') verifyAnswer(+el.dataset.i);
-  else if (act === 'style-extract') openStyleExtract();
-  else if (act === 'export-chat') { if (!S.chat) { toast('저장할 대화가 없습니다.'); return; } saveFile(`${(S.chat.title || '요AI').replace(/[\\/:*?"<>|]/g, ' ').slice(0, 40)}.md`, chatMarkdown(S.chat), 'text/markdown'); }
-  else if (act === 'close') { try { window.parent.postMessage({ type: 'yoai:close' }, location.origin); } catch (err) { /* ignore */ } }
+  const card = el.closest('.card'), cid = card && card.dataset.id, c = cid && S.cards.find((x) => x.id === cid);
+  const row = el.closest('.doc-row'), did = row && row.dataset.id;
+  switch (act) {
+    case 'go': show(el.dataset.v); break;
+    case 'ai-setup': openAISetup(); break;
+    case 'dig-start': digestAll(); break;
+    case 'dig-stop': DIG.stop = true; AI.stop(); paintStatus(); break;
+    case 'dig-show': if (did) showDigest(did); break;
+    case 'dig-redo': { const d = docOf(el.dataset.id); if (d) { const full = await DB.get('docs', d.id); if (full) { delete full.digest; await DB.put('docs', full); } d.digest = ''; $$('.modal-wrap').forEach((x) => x.remove()); digestAll(); } break; }
+    case 'ask-send': askSend(); break;
+    case 'ask-stop': AI.stop(); break;
+    case 'ask-new': ASK = null; viewAsk(); setTimeout(() => { const t = $('#ask-in'); if (t) t.focus(); }, 30); break;
+    case 'ask-del': if (ASK && await confirmBox('이 대화를 지울까요?', '지우기')) { await DB.del('chats', ASK.id); S.chats = S.chats.filter((x) => x !== ASK); ASK = null; redraw('ask'); } break;
+    case 'ask-docx': askExport(); break;
+    case 'ask-src': { const msgEl = el.closest('.msg.ai'), m = ASK && msgEl && ASK.messages[+msgEl.dataset.i], x = m && m.sources[+el.dataset.n - 1]; if (x && docOf(x.docId)) openDoc(x.docId, x.page, m.terms || []); break; }
+    case 'ask-copy': { const m = ASK && ASK.messages[+el.dataset.i]; if (m) copyText(stripThink(m.text) + '\n\n' + (m.sources || []).map((x, k) => `[${k + 1}] ${footnote(docOf(x.docId), x.page)}`).join('\n'), '답과 출처를 복사했습니다.'); break; }
+    case 'ask-card': { const m = ASK && ASK.messages[+el.dataset.i]; if (m) { const c2 = await addCard('', null, 0); c2.memo = `${stripThink(m.text)}\n\n${(m.sources || []).map((x, k) => `[${k + 1}] ${footnote(docOf(x.docId), x.page)}`).join('\n')}`; await saveCard(c2); } break; }
+    case 'menu': $('#side').classList.toggle('open'); $('.shell').classList.toggle('side-open', $('#side').classList.contains('open')); break;
+    case 'scrim': closeSide(); break;
+    case 'close': try { window.parent.postMessage({ type: 'yoai:close' }, location.origin); } catch (err) { /* ignore */ } break;
+    case 'help': closeSide(); openHelp(); break;
+    case 'settings': closeSide(); openSettings(); break;
+    case 'new-project': { const v = await formBox('새 연구 프로젝트', [{ label: '프로젝트 이름', value: '' }]); if (!v || !v[0].trim()) break; S.project = await newProject(v[0].trim()); DB.put('kv', S.project.id, 'lastProject').catch(() => {}); show('notes'); break; }
+    case 'del-project': {
+      if (S.projects.length < 2) { toast('프로젝트가 하나뿐이라 지울 수 없습니다.'); break; }
+      if (!(await confirmBox(`‘${S.project.title}’ 프로젝트와 그 카드 ${projectCards().length}개를 지울까요? 되돌릴 수 없습니다.`, '지우기'))) break;
+      for (const x of projectCards()) await DB.del('cards', x.id);
+      S.cards = S.cards.filter((x) => x.projectId !== S.project.id); await DB.del('projects', S.project.id);
+      S.projects = S.projects.filter((x) => x.id !== S.project.id); S.project = S.projects[0]; show('notes'); break;
+    }
+    case 'open-hit': { const h = S.hits && S.hits[+el.dataset.i]; if (h) openDoc(h.id, h.page, hlTerms(parseQuery(S.q))); break; }
+    case 'rd-digest': if (S.reader) showDigest(S.reader.id); break;
+    case 'rd-back': show(S.reader && S.reader.from && S.reader.from !== 'read' ? S.reader.from : 'find'); break;
+    case 'rd-prev': goPage(S.reader.page - 1); break;
+    case 'rd-next': goPage(S.reader.page + 1); break;
+    case 'rd-go': goPage(+el.dataset.p); break;
+    case 'rd-mode': S.settings.read = el.dataset.v; saveSettings(); viewRead(); break;
+    case 'rd-card': { const r = S.reader; if (r) await addCard('', r.id, r.page); break; }
+    case 'rd-cite': { const r = S.reader; if (r) copyText(footnote(docOf(r.id), r.page), '이 쪽의 각주를 복사했습니다.'); break; }
+    case 'sel-card': { const t = $('#seltool'), r = S.reader; if (t && r) { await addCard(t.dataset.text, r.id, r.page); selTool(null); window.getSelection().removeAllRanges(); } break; }
+    case 'sel-cite': { const t = $('#seltool'), r = S.reader; if (t && r) { copyText(citeText(t.dataset.text, docOf(r.id), r.page), '인용문과 각주를 복사했습니다.'); selTool(null); } break; }
+    case 'card-new': { const nc = await addCard('', null, 0); viewNotes(); const ta = nc && $(`[data-card-memo="${nc.id}"]`); if (ta) ta.focus(); break; }
+    case 'card-open': if (c) openDoc(c.docId, c.page, []); break;
+    case 'card-cite': if (c) copyText(citeText(c.quote, docOf(c.docId), c.page), '인용문과 각주를 복사했습니다.'); break;
+    case 'card-del': if (c && await confirmBox('이 카드를 지울까요?', '지우기')) { S.cards = S.cards.filter((x) => x.id !== c.id); await DB.del('cards', c.id); redraw('notes'); paintSide(); } break;
+    case 'card-up': case 'card-down': {
+      const list = projectCards(), i = list.indexOf(c), j = act === 'card-up' ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= list.length) break;
+      list.forEach((x, k) => { x.order = k + 1; });
+      [list[i].order, list[j].order] = [list[j].order, list[i].order];
+      await saveCard(list[i]); await saveCard(list[j]); redraw('notes'); break;
+    }
+    case 'notes-docx': notesExport('docx'); break;
+    case 'notes-md': notesExport('md'); break;
+    case 'folder': await connectFolder(); redraw('library'); break;
+    case 'folder-sync': await syncFolder(); break;
+    case 'persist': if (navigator.storage && navigator.storage.persist) { const ok = await navigator.storage.persist(); toast(ok ? '이 컴퓨터에서 요AI의 저장소를 보호합니다.' : '브라우저가 보호 요청을 받지 않았습니다. 요AI를 설치하거나 자주 열면 보호될 수 있습니다.'); paintStore(); } break;
+    case 'doc-open': if (did) openDoc(did, 1, []); break;
+    case 'doc-edit': if (did) editDoc(did); break;
+    case 'doc-del': if (did && await confirmBox(`‘${(docOf(did) || {}).title}’을(를) 서재에서 지울까요? 이 문헌을 가리키는 카드는 남습니다.${(docOf(did) || {}).folder ? ' 연결된 폴더에 파일이 남아 있으면 다음에 폴더를 읽을 때 다시 들어옵니다.' : ''}`, '지우기')) { await removeDoc(did); redraw('library'); paintSide(); } break;
+    case 'arch-open': S.chat = S.chats.find((x) => x.id === el.dataset.id) || null; show('archive'); break;
+    case 'arch-list': S.chat = null; show('archive'); break;
+    case 'arch-docx': archExport('docx'); break;
+    case 'arch-md': archExport('md'); break;
+    case 'arch-del': if (S.chat && await confirmBox('이 대화를 지울까요? 되돌릴 수 없습니다.', '지우기')) { await DB.del('chats', S.chat.id); S.chats = S.chats.filter((x) => x !== S.chat); S.chat = null; show(S.chats.some((x) => !x.local) ? 'archive' : 'find'); } break;
+    default: break;
+  }
 });
-document.addEventListener('change', (e) => {
-  if (e.target.id === 'project-sel') selectProject(e.target.value);
-  if (e.target.id === 'effort') { S.settings.effort = e.target.value; saveSettings(); }
-  if (e.target.id === 'model') { S.settings.model = e.target.value; saveSettings(); paintComposer(); }
-  if (e.target.id === 'tier') { S.settings.tier = e.target.value; saveSettings(); }
-});
-let ctxT = 0;
+let saveT = 0;
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'input') { autoGrow(e.target); if (e.target.value === '/') openFlows(); }
-  const k = e.target.dataset && e.target.dataset.pf;
-  if (k && S.project) { S.project[k] = e.target.value; clearTimeout(ctxT); ctxT = setTimeout(() => { saveProject(S.project); if (k === 'title') paintSide(); }, 400); }
+  const t = e.target;
+  if (t.id === 'q') { S.q = t.value; clearTimeout(findT); findT = setTimeout(runFind, 250); return; }
+  if (t.id === 'rd-q' && S.reader) { S.reader.q = t.value; clearTimeout(docFindT); docFindT = setTimeout(runDocFind, 250); return; }
+  const k = t.dataset && t.dataset.pf;
+  if (k && S.project) { S.project[k] = t.value; clearTimeout(saveT); saveT = setTimeout(() => { saveProject(S.project); if (k === 'title') paintSide(); }, 400); return; }
+  const mid = t.dataset && t.dataset.cardMemo;
+  if (mid) { const c = S.cards.find((x) => x.id === mid); if (c) { c.memo = t.value; clearTimeout(saveT); saveT = setTimeout(() => saveCard(c), 400); } }
 });
+document.addEventListener('change', async (e) => {
+  const t = e.target;
+  if (t.id === 'q-doc') { S.qDoc = t.value; runFind(); }
+  else if (t.id === 'ask-scope') S.askScope = t.value;
+  else if (t.id === 'ask-sel') { ASK = S.chats.find((x) => x.id === t.value) || null; viewAsk(); }
+  else if (t.id === 'project-sel') selectProject(t.value);
+  else if (t.id === 'rd-pg') { const n = parseInt(t.value, 10); if (n) goPage(n); }
+  else if (t.id === 'files') { await addFiles(Array.from(t.files)); t.value = ''; redraw('library'); paintSide(); }
+  else if (t.id === 'folder-in') { const fs = Array.from(t.files); t.value = ''; if (fs.length) await syncFolder(fs); }
+});
+document.addEventListener('dragover', (e) => { const d = e.target.closest && e.target.closest('#drop'); if (d) { e.preventDefault(); d.classList.add('over'); } });
+document.addEventListener('dragleave', (e) => { const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
+document.addEventListener('drop', async (e) => { const d = e.target.closest && e.target.closest('#drop'); if (!d) return; e.preventDefault(); d.classList.remove('over'); await addFiles(Array.from(e.dataTransfer.files)); redraw('library'); paintSide(); });
 document.addEventListener('keydown', (e) => {
-  if (e.target.id === 'input' && e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); send(e.target.value); }
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+  if (e.key === 'Enter' && e.target.id === 'ask-in' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); askSend(); return; }
+  if (e.key === 'Enter' && e.target.id === 'rd-pg') { e.preventDefault(); const n = parseInt(e.target.value, 10); if (n) goPage(n); return; }
+  if (typing || $('.modal-wrap')) return;
+  if (S.view === 'read' && S.reader && e.key === 'ArrowLeft') { e.preventDefault(); if (S.reader.page > 1) goPage(S.reader.page - 1); }
+  else if (S.view === 'read' && S.reader && e.key === 'ArrowRight') { e.preventDefault(); goPage(S.reader.page + 1); }
+  else if (e.key === '/') { e.preventDefault(); if (S.view !== 'find') show('find'); setTimeout(() => { const q = $('#q'); if (q) q.focus(); }, 30); }
 });
+const onSel = () => setTimeout(() => { if (S.view === 'read') selTool(readerSelection()); }, 10);
+document.addEventListener('mouseup', onSel); document.addEventListener('touchend', onSel); document.addEventListener('keyup', (e) => { if (e.shiftKey) onSel(); });
+document.addEventListener('scroll', () => selTool(null), true);
+addEventListener('online', paintNet); addEventListener('offline', paintNet);
+addEventListener('resize', () => { if (S.view === 'read' && S.reader && $('#rd-canvas')) { clearTimeout(saveT); saveT = setTimeout(() => drawPage(S.reader.id, S.reader.page), 200); } });
 window.addEventListener('message', (e) => { if (e.origin !== location.origin || !e.data) return; if (e.data.type === 'yoai:save') { try { e.source.postMessage({ type: 'yoai:saved' }, location.origin); } catch (err) { /* ignore */ } } });
 
 /* ---------------- start ---------------- */
-function keyCard() {
-  const free = FREE_URL.startsWith('https://') ? `<div class="free-box"><b>무료로 쓰기</b><p>claude.ai에 로그인되어 있으면 추가 요금 없이 요AI를 쓸 수 있습니다. 새 탭에서 열립니다. (무료 모드에서는 웹 검색이 빠지고, PDF는 글자를 뽑아 읽습니다.)</p><button class="btn primary" id="free-open">무료 모드로 열기</button></div><p class="or">또는 API 키로 쓰기 — 웹 검색과 PDF 원문 쪽수 인용까지</p>` : '';
-  return `<div class="keycard">${free}<h1>${free ? 'API 모드' : '요AI를 시작하려면 API 키가 필요합니다'}</h1>
-    <ol><li>console.anthropic.com에 로그인해 <b>API Keys</b>에서 키를 만듭니다(결제 수단 등록 필요).</li><li>아래에 붙여 넣습니다. 키는 이 브라우저에만 저장되고 Anthropic API로만 전송됩니다.</li><li>요금은 쓴 만큼 청구됩니다. 답변마다 대략의 비용이 표시됩니다.</li></ol>
-    <input id="k0" type="password" placeholder="sk-ant-…" autocomplete="off"><label style="display:flex;gap:6px;align-items:center;font-size:.8125rem"><input type="checkbox" id="r0" checked> 이 기기에 기억하기</label>
-    <div class="modal-foot"><button class="btn primary" id="k0save">시작하기</button></div></div>`;
-}
 async function start() {
-  await detectFree();
-  try { await DB.open(); S.persistent = true; } catch (e) { S.persistent = false; }
+  try { await DB.open(); S.persistent = true; } catch (e) { S.persistent = false; toast(e.message || '저장소를 열지 못했습니다.'); }
   if (S.persistent) {
     S.settings = { ...DEFAULTS, ...((await DB.get('kv', 'settings')) || {}) };
-    S.projects = (await DB.all('projects')) || []; S.chats = (await DB.all('chats')) || [];
+    S.projects = (await DB.all('projects')) || []; S.chats = (await DB.all('chats')) || []; S.cards = (await DB.all('cards')) || [];
     S.docs = ((await DB.all('docs')) || []).map(docMeta);
   }
   applyTheme();
   if (!S.projects.length) await newProject('기본 프로젝트');
   const last = S.persistent ? await DB.get('kv', 'lastProject') : null;
   S.project = S.projects.find((p) => p.id === last) || S.projects[0];
-  S.chat = S.chats.filter((c) => c.projectId === S.project.id).sort((a, b) => b.updatedAt - a.updatedAt)[0] || null;
-  if (!SAMPLE && !getKey()) {
-    $('#app').innerHTML = keyCard();
-    const fo = $('#free-open'); if (fo) fo.addEventListener('click', () => window.open(FREE_URL, '_blank', 'noopener'));
-    $('#k0save').addEventListener('click', () => { const v = $('#k0').value.trim(); if (!/^sk-ant-/.test(v)) { toast('API 키는 sk-ant- 로 시작합니다.'); return; } setKey(v, $('#r0').checked); paintShell(); });
-    return;
-  }
+  S.view = S.docs.length ? 'ask' : 'library';
   paintShell();
-  if (!S.persistent) toast('이 브라우저에서는 대화가 저장되지 않습니다(비공개 창 등).');
+  if (S.persistent) {
+    try { const h = await DB.get('kv', 'folder'); if (h && h.queryPermission) { S.folder = { name: h.name, handle: h, perm: await h.queryPermission({ mode: 'read' }) }; paintStatus(); if (S.folder.perm === 'granted') setTimeout(() => syncFolder(), 600); } } catch (e) { /* no folder */ }
+    setTimeout(() => indexLibrary(), 900);
+  } else toast('이 브라우저에서는 저장이 되지 않습니다(비공개 창 등).');
 }
 function lockView() {
   const n = window.Door.len('yoai'); let pin = '', fails = 0, busy = false;
-  $('#app').innerHTML = `<div class="lock"><div class="lock-card"><span class="mark" style="width:44px;height:44px;font-size:20px;margin:0 auto">요</span><h1>요AI</h1><p>비밀번호를 입력하세요</p><div class="dots">${'<i></i>'.repeat(n)}</div>
+  $('#app').innerHTML = `<div class="lock"><div class="lock-card"><span class="mark" style="width:44px;height:44px;font-size:17px;margin:0 auto">YO</span><h1>YO아이</h1><p>비밀번호를 입력하세요</p><div class="dots">${'<i></i>'.repeat(n)}</div>
     <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => `<button data-d="${d}">${d}</button>`).join('')}<button class="fn" data-d="clr">지우기</button><button data-d="0">0</button><button class="fn" data-d="del">←</button></div>
     <label style="display:inline-flex;gap:6px;align-items:center;margin-top:12px;font-size:.75rem;color:var(--muted)"><input type="checkbox" id="rm"> 이 기기에서 30일 동안 묻지 않기</label></div></div>`;
   const draw = () => $$('.dots i').forEach((el, i) => el.classList.toggle('on', i < pin.length));
-  const press = (d) => { if (busy) return; if (d === 'del') pin = pin.slice(0, -1); else if (d === 'clr') pin = ''; else if (pin.length < n) pin += d; draw();
-    if (pin.length === n) { busy = true; setTimeout(() => { if (window.Door.check('yoai', pin)) { window.Door.open('yoai', $('#rm').checked); document.removeEventListener('keydown', kd); start(); return; } fails++; pin = ''; draw(); const c = $('.lock-card'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); if (fails >= 5) { setTimeout(() => { busy = false; fails = 0; }, 15000); return; } busy = false; }, 20); } };
+  const press = (d) => {
+    if (busy) return;
+    if (d === 'del') pin = pin.slice(0, -1); else if (d === 'clr') pin = ''; else if (pin.length < n) pin += d;
+    draw();
+    if (pin.length === n) {
+      busy = true;
+      setTimeout(() => {
+        if (window.Door.check('yoai', pin)) { window.Door.open('yoai', $('#rm').checked); document.removeEventListener('keydown', kd); start(); return; }
+        fails++; pin = ''; draw(); const c = $('.lock-card'); c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+        if (fails >= 5) { $('.lock-card p').textContent = '잠시 후 다시 시도하세요'; setTimeout(() => { busy = false; fails = 0; $('.lock-card p').textContent = '비밀번호를 입력하세요'; }, 15000); } else busy = false;
+      }, 30);
+    }
+  };
   $('.pad').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) press(b.dataset.d); });
   const kd = (e) => { if (/^[0-9]$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('del'); };
   document.addEventListener('keydown', kd);
 }
-window.YOAI = { S, send, runTurn, answerParts };
+window.YOAI = { S, AI, searchLib, parseQuery, libLoad, footnote, addFiles, syncFolder, indexLibrary, gatherSources, digestAll, DIG };
 if (window.Door && window.Door.isOpen('yoai')) start(); else lockView();

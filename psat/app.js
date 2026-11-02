@@ -343,7 +343,7 @@
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     arrow: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   };
-  const MARK = '<svg class="brand-mark" viewBox="48 23 54 54" aria-hidden="true"><circle cx="75" cy="50" r="25" fill="#0047A0"/><path d="M54.199,36.132 A25,25 0 0 1 95.801,63.868 A12.5,12.5 0 0 0 75,50 A12.5,12.5 0 0 1 54.199,36.132 Z" fill="#CD2E3A"/></svg>';
+  const MARK = '<svg class="brand-mark" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#0A1426"/><g fill="#F5C46C"><path d="M1.6 8.6 L2.6 2.2 L6.6 5.2 Z"/><path d="M14.4 8.6 L13.4 2.2 L9.4 5.2 Z"/><ellipse cx="8" cy="9.7" rx="6.6" ry="4.9"/></g><g fill="#E5323B"><path transform="translate(5.2 9.6) scale(1.45)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z"/><path transform="translate(10.8 9.6) scale(1.45)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z"/></g></svg>'; // the heart cat's face (no Taegukgi inside 송공)
   function shell(crumb, inner, o = {}) {
     const timer = o.timer ? `<span class="timer${S.settings.timer ? '' : ' hide'}" id="timer" aria-label="경과 시간">00:00</span>` : '';
     return `<header class="top"><div class="top-in">

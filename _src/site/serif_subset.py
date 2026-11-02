@@ -5,7 +5,7 @@ Why: the serif face sets 송공's passages and choices. Served from 0128.kr it n
 offline worker (psat/sw.js) can keep every piece, so a passage looks the same with no connection.
 
 What goes in: every character in psat/*.js and psat/index.html (the curated items, the generators' word lists,
-the screens), plus all 2,350 KS X 1001 Hangul syllables as a margin for memos and future items. Hangul is cut
+the screens) and 요AI's screens, plus all 2,350 KS X 1001 Hangul syllables as a margin for memos and future items. Hangul is cut
 into slices ordered by how often 송공 uses each syllable, so a page downloads only the slices its text needs
 (unicode-range), the way Google Fonts serves Korean. File names carry a content hash, so a changed slice is
 never confused with an old one in any cache.
@@ -45,8 +45,9 @@ def fetch_sources():
 def charset():
     """Characters 송공 can show, with how often each appears in the question banks and generators."""
     freq = {}
-    for f in sorted((ROOT / 'psat').glob('*')):
-        if f.suffix not in ('.js', '.html'):
+    files = sorted((ROOT / 'psat').glob('*')) + [ROOT / 'yoai' / n for n in ('app.js', 'ai.js', 'index.html')]  # 요AI's screens too
+    for f in files:
+        if f.suffix not in ('.js', '.html') or not f.exists():
             continue
         weight = 3 if f.name.startswith(('bank-', 'gen-')) else 1
         for ch in f.read_text():
