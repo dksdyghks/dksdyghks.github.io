@@ -40,9 +40,9 @@ TEACHING = {
     'en': ['Introduction to Law', 'Capstone Design', 'Administrative Law', 'Aviation and Space Law', 'Constitutional Law'],
 }
 EDUCATION = {  # newest first: (school, department, degree)
-    'ko': [('서강대학교', '법학과', '법학박사'), ('서강대학교', '법학과', '법학석사'),
-           ('University of Queensland', '국제관계학과', '정치학석사'),
-           ('연세대학교', '국제관계학과', '정치학사')],
+    'ko': [('서강대학교', None, '법학박사'), ('서강대학교', None, '법학석사'),
+           ('University of Queensland', None, '정치학석사'),
+           ('연세대학교', None, '정치학사')],
     'en': [('Sogang University', None, 'Ph.D. in Law'), ('Sogang University', None, 'Master of Laws'),
            ('The University of Queensland', None, 'Master of International Relations'), ('Yonsei University', None, 'B.A. in Political Science')],
 }
