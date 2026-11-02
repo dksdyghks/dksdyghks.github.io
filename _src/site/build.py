@@ -243,7 +243,7 @@ ROLE_TXT = {'sole': ('단독', 'Sole author'), 'first': ('주저자', 'First aut
 SITE = 'https://0128.kr/'
 HANGUL = re.compile(r'[가-힣]')
 CASE_NO = re.compile(r'\d{2,4}[가-힣]{1,3}\d{3,}')  # Korean court case numbers such as 93다12947, 2017다278187
-DOC_TITLE = {'ko': '안요환', 'en': 'Yohan Ahn'}  # the page is named after its owner; the affiliation is in the description
+DOC_TITLE = {'ko': '0128', 'en': '0128'}  # the page is named after its address (0128.kr); who and what are in the description
 DOC_DESC = {'ko': '안요환 — 공군사관학교 항공우주정책학과. 연구분야: 입법정책, 정치관계법, 행정법, 헌법. 학력, 소속, 강의, 연구논문, 연구과제, 학술대회 발표.',
             'en': 'Yohan Ahn — Republic of Korea Air Force Academy, Department of Aerospace Policy. Research fields: election & political law, legislative policy, public law.'}
 
