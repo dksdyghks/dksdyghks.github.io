@@ -45,14 +45,14 @@
    then a sticky contents rail on desktop (pill bar on smaller screens) beside a single column of white record cards.
    Palette: navy + champagne gold + cool neutrals. Text colours meet WCAG AA on their surfaces. */
 :root {
-  --bg: #F3F4F7;
+  --bg: #F4F2EE;
   --card: #FFFFFF;
   --ink: #0F1A2B;
   --ink-2: #303C4F;
   --muted: #586374;
-  --faint: #6F7A8A;
-  --rule: #E4E8EE;
-  --chip: #F2F4F7;
+  --faint: #636E7D;
+  --rule: #E7E3DB;
+  --chip: #F3F1EC;
 
   --hero: #0A1426;
   --hero-2: #10213D;
@@ -71,7 +71,7 @@
   --gold-wash: #FBF7EE;
   --gold-line: #EBDDBF;
 
-  --shadow: 0 0 0 1px #0F1A2B0D, 0 1px 2px #0F1A2B0A, 0 16px 36px -20px #0F1A2B38;
+  --shadow: 0 0 0 1px #2B23120F, 0 1px 2px #2B23120A, 0 16px 36px -20px #2B231238;
   --hairline: #C9A15A8C;
 
   --f-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
@@ -283,7 +283,8 @@ button { font: inherit; }
   scroll-margin-top: calc(env(safe-area-inset-top, 0px) + var(--nav-h) + 20px);
 }
 .hero { scroll-margin-top: 0; }
-.h { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; font-size: 1.3125rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+.h { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; font-family: var(--f-serif-ko); font-size: 1.375rem; font-weight: 600; letter-spacing: -0.03em; color: var(--ink); }
+#view-en .h { font-family: var(--f-serif-en); font-size: 1.4375rem; letter-spacing: -0.01em; }
 .h::before { content: ""; flex: none; width: 4px; height: 18px; border-radius: 2px; background: var(--mark); }
 
 .ttl { font-size: 1.0625rem; font-weight: 600; line-height: 1.5; letter-spacing: -0.015em; color: var(--ink); }
@@ -377,7 +378,8 @@ button { font: inherit; }
   .main { padding-block: 20px 16px; }
   .stack { gap: 14px; }
   .card { padding: 24px 20px; border-radius: 18px; }
-  .h { font-size: 1.1875rem; margin-bottom: 18px; }
+  .h { font-size: 1.25rem; margin-bottom: 18px; }
+  #view-en .h { font-size: 1.3125rem; }
   .rows > li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .edu > li { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .course-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
