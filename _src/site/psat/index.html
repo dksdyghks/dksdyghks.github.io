@@ -21,11 +21,6 @@
 <meta name="twitter:card" content="summary_large_image">
 <!-- installable: add to the home screen and it opens like an app, also with no connection -->
 <link rel="manifest" href="manifest.webmanifest">
-<script>
-  /* the browser's offer to install can come before the app has loaded; keep it for the 홈 화면에 추가 button */
-  addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__installEvt = e; document.dispatchEvent(new Event('songgong:installable')); });
-  addEventListener('appinstalled', function () { window.__installEvt = null; document.dispatchEvent(new Event('songgong:installed')); });
-</script>
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">

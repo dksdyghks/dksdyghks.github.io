@@ -10,7 +10,7 @@ const VER = new URL(self.location.href).searchParams.get('v') || 'dev';
 const APP = 'yoai-app-' + VER;
 const FONTS = 'yoai-fonts';
 const VENDOR = 'yoai-vendor'; // large third-party code under a fixed versioned name: saved once, kept across versions
-const VENDOR_FILES = ['vendor/web-llm-0.2.87.js'];
+const VENDOR_FILES = ['vendor/web-llm-0.2.87.js', ...['tesseract.esm.min.js', 'worker.min.js', 'core/tesseract-core-lstm.wasm.js', 'core/tesseract-core-simd-lstm.wasm.js', 'core/tesseract-core-relaxedsimd-lstm.wasm.js', 'lang/kor.traineddata.gz', 'lang/eng.traineddata.gz'].map((f) => `vendor/tesseract-7.0.0/${f}`)];
 const WAIT = 4000;
 const ROOT = new URL('./', self.location.href).href;
 // the modules app.js loads (their addresses carry the same version), the model worker, and the install icons

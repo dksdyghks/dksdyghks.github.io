@@ -358,7 +358,7 @@
       <main id="main">${inner}</main>`;
   }
   const app = () => $('#app');
-  const WIDTH = { home: 'w-mid', types: 'w-mid', notes: 'w-mid', stats: 'w-mid', settings: 'w-mid', help: 'w-read', install: 'w-read', setup: 'w-read', setresult: 'w-mid', quiz: 'w-read', explain: 'w-wide' };
+  const WIDTH = { home: 'w-mid', types: 'w-mid', notes: 'w-mid', stats: 'w-mid', settings: 'w-mid', help: 'w-read', setup: 'w-read', setresult: 'w-mid', quiz: 'w-read', explain: 'w-wide' };
   function paint(html, view) {
     S.view = view;
     stopTimer();
@@ -409,7 +409,6 @@
         <button class="link-card" data-act="stats"><span class="t">기록</span><span class="s">과목·유형별 정답률과 시간</span></button>
         <button class="link-card" data-act="settings"><span class="t">설정 · 백업</span><span class="s">${S.persistent ? (S.meta.lastBackup ? `마지막 백업 ${md(dayKey(S.meta.lastBackup))}` : '백업 파일로 기록 보관') : '<b>기록이 저장되지 않는 환경</b>'}</span></button>
       </div>
-      ${installBar()}
       ${S.persistent ? '' : '<div class="notice"><b>이 브라우저에서는 기록이 저장되지 않습니다.</b> 비공개(시크릿) 창이거나 저장 공간이 막혀 있을 수 있습니다. 문제 풀이는 가능하지만 창을 닫으면 기록이 사라집니다.</div>'}
       <p class="notice">처음이라면 <button class="linkish" data-act="help">사용법</button>을 먼저 보세요. 숫자 키 <b>1~3</b>으로 과목을 바로 시작하고, 문제에서는 <b>1~5</b>로 고른 뒤 <b>Enter</b>로 채점합니다. ${EMBED ? '<b>Esc</b>를 누르면 바로 닫힙니다(풀던 문제는 그대로 남습니다).' : ''}</p>`);
     paint(html, 'home');
@@ -722,14 +721,6 @@
         <p class="prose" style="margin:0 0 10px">모든 기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 가끔 백업 파일을 저장해 두세요. 불러오면 지금 기록과 합쳐집니다(같은 풀이는 한 번만 셉니다).</p>
         <div class="tools-row" style="margin-top:0"><button class="btn sm" data-act="help">사용법</button><button class="btn sm" data-act="export">백업 파일 저장</button><label class="btn sm" style="cursor:pointer">백업 불러오기<input type="file" accept="application/json,.json" data-act="import" class="sr"></label><button class="btn sm ghost" data-act="relock">잠금 다시 걸기</button><button class="btn sm ghost" data-act="wipe" style="color:var(--pen)">기록 모두 지우기</button></div>
       </div>
-      <div class="card"><h2>휴대폰 앱처럼 쓰기</h2>
-        <p class="prose" style="margin:0 0 10px">홈 화면에 추가하면 송공 아이콘이 생기고 앱처럼 열립니다. 한 번 연 뒤에는 인터넷이 없어도 풀 수 있습니다.</p>
-        <div class="tools-row" style="margin-top:0">${env().standalone ? '<span class="tag">홈 화면 앱으로 열려 있음</span>' : '<button class="btn sm" data-act="install">홈 화면에 추가</button>'}</div>
-      </div>
-      <div class="card"><h2>다른 사람에게 보내기</h2>
-        <p class="prose" style="margin:0 0 10px">링크를 보내면 다른 사람도 송공을 쓸 수 있습니다. 비밀번호는 따로 알려 주세요. 기록은 사람마다 자기 기기에만 저장되어 서로 보이지 않습니다. 카카오톡에서 받은 링크는 메뉴의 ‘다른 브라우저로 열기’로 Safari나 Chrome에서 열어야 홈 화면에 추가할 수 있습니다.</p>
-        <div class="tools-row" style="margin-top:0"><button class="btn sm" data-act="share">링크 보내기</button></div>
-      </div>
       <div class="card"><h2>문항 안내</h2><div class="prose">
         <p><b>PSAT</b>은 기출을 그대로 싣지 않습니다. 인사혁신처 기출의 발문과 선지 구성을 본떠 새로 만든 문항입니다.</p>
         <ul><li><b>송공 생성</b>: 명제·순서·참거짓 추론, 논증 강화·약화, 표·그래프 해석, 계산, 법조문·일정·규칙 적용, 리그전·자리 배치. 조건과 정답을 프로그램이 직접 계산하고, 정답이 하나뿐인지 모든 경우를 따져 확인한 문항만 나옵니다. 사실상 끝없이 새로 나옵니다.</li>
@@ -753,84 +744,11 @@
         <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
         <h2>기록 보관</h2>
         <p>기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 <b>설정 → 백업 파일 저장</b>으로 파일을 받아 두고, 다른 기기에서 <b>백업 불러오기</b>를 누르면 기록이 합쳐집니다.</p>
-        <h2>휴대폰 앱처럼 쓰기</h2>
-        <p>처음 화면이나 설정의 <b>홈 화면에 추가</b>를 누르면 지금 쓰는 휴대폰과 브라우저에 맞는 방법을 알려 줍니다(바로 추가되는 브라우저도 있습니다). 추가하면 앱처럼 열리고, 한 번 연 뒤에는 인터넷이 없어도 풀 수 있습니다.</p>
-        <h2>다른 사람에게 보내기</h2>
-        <p><b>설정 → 링크 보내기</b>로 주소를 보내고 비밀번호는 따로 알려 주세요. 기록은 사람마다 자기 기기에만 저장되어 서로 보이지 않습니다.</p>
         <h2>문제가 이상할 때</h2>
         <p>해설 화면의 <b>이상한 점 알리기</b>에 적어 두면 <b>기록</b> 화면에 모입니다. ‘내용 복사’로 한꺼번에 전달하면 확인 후 고칩니다.</p>
         <h2>문항 구성</h2>
         <p>PSAT은 기출을 그대로 싣지 않고, 인사혁신처 5급 공채 기출의 발문·선지 양식을 본뜬 문항만 냅니다. 퀴즈·표·법조문 문항은 프로그램이 조건과 정답을 직접 계산하고 정답이 하나뿐인지 모든 경우를 따져 확인한 것만 나오며, 독해·논증은 직접 쓴 문항입니다. 한 번 푼 문제는 다시 나오지 않습니다(복습 제외).</p>
       </div>`), 'help');
-  }
-
-  /* ----- 홈 화면에 추가: one tap where the browser offers it, otherwise the steps for this phone and browser ----- */
-  const env = () => {
-    const ua = navigator.userAgent || '';
-    const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const kakao = /KAKAOTALK/i.test(ua);
-    return {
-      standalone: !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true,
-      ios, android: /Android/i.test(ua), kakao,
-      inapp: kakao || /NAVER\(inapp|Instagram|FBAN|FBAV|FB_IAB|Line\/|DaumApps|everytimeApp|BAND\//i.test(ua),
-      iosOther: ios && /CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua),
-      mobile: ios || /Android|Mobi/i.test(ua),
-      prompt: window.__installEvt || null,
-    };
-  };
-  function installBar() {
-    const ie = env();
-    let off = false; try { off = +localStorage.getItem('songgong.installHint') > Date.now(); } catch (e) { /* ignore */ }
-    if (ie.standalone || off || !(ie.mobile || (ie.prompt && !EMBED))) return '';
-    const sub = ie.prompt && !EMBED ? '누르면 바로 추가됩니다. 앱처럼 열리고 인터넷 없이도 풀 수 있습니다.' : '앱처럼 열리고 인터넷 없이도 풀 수 있습니다. <span class="nw">방법 보기 ›</span>';
-    return `<div class="install-bar"><button class="ib-main" data-act="install"><span class="ib-t">홈 화면에 추가</span><span class="ib-s">${sub}</span></button><button class="ib-x" data-act="install-hide" aria-label="이 안내 닫기" title="30일 동안 숨기기">${ICON.close}</button></div>`;
-  }
-  async function installNow() {
-    const e = window.__installEvt;
-    if (!e) { viewInstall(); return; }
-    window.__installEvt = null; // the browser shows its offer only once per load
-    try {
-      await e.prompt();
-      const c = await e.userChoice;
-      if (c && c.outcome === 'accepted') { toast('홈 화면에 추가했습니다.'); if (S.view === 'home') viewHome(); }
-    } catch (err) { viewInstall(); }
-  }
-  document.addEventListener('songgong:installable', () => {
-    const s = $('.install-bar .ib-s'); if (s && !EMBED) s.textContent = '누르면 바로 추가됩니다. 앱처럼 열리고 인터넷 없이도 풀 수 있습니다.';
-    if (S.view === 'install') viewInstall();
-  });
-  document.addEventListener('songgong:installed', () => { toast('홈 화면에 추가했습니다.'); const bar = $('.install-bar'); if (bar) bar.remove(); });
-  function viewInstall() {
-    const ie = env(), url = new URL('./', location.href).href;
-    const SHARE = '<svg class="ico-inline" viewBox="0 0 24 24" aria-label="공유"><path d="M12 3.5v11M8 7.5l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 10.5H6.5A1.5 1.5 0 0 0 5 12v7a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19v-7a1.5 1.5 0 0 0-1.5-1.5H16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-    let body;
-    if (ie.standalone) body = '<p>지금 홈 화면 앱으로 열려 있습니다. 더 할 일은 없습니다.</p>';
-    else if (EMBED) body = '<p>지금은 홈페이지 안에 송공이 열려 있어, 이대로 추가하면 홈페이지가 추가됩니다. 송공만 따로 연 다음 그 화면에서 <b>홈 화면에 추가</b>를 누르세요.</p><div class="tools-row"><a class="btn primary" href="./" target="_blank" rel="noopener">송공만 따로 열기</a></div>';
-    else if (ie.kakao) body = `<p>카카오톡 안에서 열린 화면에서는 홈 화면에 추가할 수 없습니다. Safari나 Chrome에서 연 다음 이 화면에서 다시 추가하세요.</p><div class="tools-row"><a class="btn primary" href="kakaotalk://web/openExternal?url=${encodeURIComponent(url)}">Safari·Chrome에서 열기</a><button class="btn" data-act="copy-link">링크 복사</button></div><p class="small">버튼이 듣지 않으면 카카오톡 화면의 <b>⋯</b> 메뉴에서 <b>다른 브라우저로 열기</b>를 누르세요.</p>`;
-    else if (ie.inapp) body = '<p>앱 안에서 열린 화면에서는 홈 화면에 추가할 수 없습니다. 메뉴(<b>⋯</b> 또는 <b>⋮</b>)에서 <b>다른 브라우저로 열기</b>(또는 Safari로 열기, Chrome으로 열기)를 누른 다음 다시 추가하세요.</p><div class="tools-row"><button class="btn" data-act="copy-link">링크 복사</button></div>';
-    else if (ie.prompt) body = '<p>이 브라우저에서는 바로 추가할 수 있습니다.</p><div class="tools-row"><button class="btn primary" data-act="install-now">홈 화면에 추가</button></div>';
-    else if (ie.ios) body = `<ol class="howto"><li>${ie.iosOther ? '주소창 오른쪽' : '화면 아래 또는 주소창 옆'}의 <b>공유</b> 버튼(${SHARE})을 누릅니다.${ie.iosOther ? '' : ' 공유 버튼이 보이지 않으면 <b>⋯</b>을 먼저 누르세요.'}</li><li>목록을 위로 밀어 <b>홈 화면에 추가</b>를 누릅니다.</li><li>오른쪽 위의 <b>추가</b>를 누르면 홈 화면에 송공 아이콘이 생깁니다.</li></ol>`;
-    else if (ie.android) body = '<ol class="howto"><li>브라우저 메뉴를 엽니다. Chrome은 오른쪽 위 <b>⋮</b>, 삼성 인터넷은 오른쪽 아래 <b>≡</b>입니다.</li><li><b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 누릅니다. 삼성 인터넷은 <b>현재 페이지 추가</b> → <b>홈 화면</b>입니다.</li><li><b>추가</b>(또는 <b>설치</b>)를 누르면 홈 화면에 송공 아이콘이 생깁니다.</li></ol>';
-    else body = '<p>컴퓨터에서는 Chrome·Edge 주소창 오른쪽의 설치 아이콘을 누르거나, Mac Safari에서 <b>파일</b> → <b>Dock에 추가</b>를 누르면 앱처럼 쓸 수 있습니다. 휴대폰에서는 이 주소를 열고 이 화면에서 추가하세요.</p>';
-    paint(shell('<b>홈 화면에 추가</b>', `
-      <div class="page-h"><h1>홈 화면에 추가</h1></div>
-      <div class="card prose">${body}</div>
-      <div class="card prose"><h2>추가하면</h2><ul>
-        <li>송공 아이콘으로 바로 열리고, 주소창 없이 앱처럼 보입니다.</li>
-        <li>한 번 연 뒤에는 인터넷이 없어도 풀 수 있습니다.</li>
-        <li>${ie.ios ? '아이폰은 홈 화면 앱이 Safari와 기록을 따로 보관합니다. Safari에서 쌓은 기록은 <b>설정 → 백업 파일 저장</b>으로 받아 두었다가 홈 화면 앱에서 <b>백업 불러오기</b>로 옮기세요.' : '기록은 지금 이 브라우저에 쌓인 것을 그대로 씁니다.'}</li>
-        <li>홈 화면 앱에서 비밀번호를 한 번 더 물을 수 있습니다.</li></ul></div>`), 'install');
-  }
-
-  /* ----- 다른 사람에게 보내기: only the link travels; each person's records stay on their own device ----- */
-  async function shareApp() {
-    const url = new URL('./', location.href).href;
-    if (navigator.share) {
-      try { await navigator.share({ title: '송공', text: '5급 공채 PSAT 연습', url }); return; }
-      catch (e) { if (e && e.name === 'AbortError') return; /* otherwise fall through to copying */ }
-    }
-    try { await navigator.clipboard.writeText(url); toast('링크를 복사했습니다. 메신저에 붙여 넣어 보내세요.'); }
-    catch (e) { prompt('이 링크를 복사해 보내세요', url); }
   }
 
   /* ----- backup ----- */
@@ -967,11 +885,6 @@
       case 'set': S.settings[el.dataset.k] = el.dataset.v; saveSettings(); viewSettings(); break;
       case 'toggle': S.settings[el.dataset.k] = !S.settings[el.dataset.k]; saveSettings(); el.setAttribute('aria-checked', S.settings[el.dataset.k] ? 'true' : 'false'); break;
       case 'export': exportBackup(); break;
-      case 'share': shareApp(); break;
-      case 'install': if (env().prompt && !EMBED) installNow(); else viewInstall(); break;
-      case 'install-now': installNow(); break;
-      case 'install-hide': { try { localStorage.setItem('songgong.installHint', String(Date.now() + 30 * 86400000)); } catch (e2) { /* ignore */ } const bar = $('.install-bar'); if (bar) bar.remove(); break; }
-      case 'copy-link': { const u = new URL('./', location.href).href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => toast('링크를 복사했습니다. Safari나 Chrome 주소창에 붙여 넣으세요.'), () => { prompt('이 링크를 복사하세요', u); }); break; }
       case 'wipe': wipe(); break;
       case 'relock': Door.close('songgong'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); break;
       case 'copy-flags': {

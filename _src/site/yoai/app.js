@@ -41,7 +41,7 @@ const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFul
 /* ---------------- documents: kept whole, with the text of every page ---------------- */
 let pdfjsP = null;
 const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js', import.meta.url).href; return m; }); return pdfjsP; };
-const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '' });
+const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, ocr: !!d.ocr, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '' });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
   const pdfjs = await pdfjsLib();
@@ -231,6 +231,81 @@ async function syncFolder(files) {
   indexLibrary();
 }
 
+/* ---------------- 스캔본 글자 읽기(OCR): pages that are only pictures become text, on this computer ----------------
+   Each page is drawn at about 240 dpi and read with Tesseract (Korean and English), all inside this browser; the engine
+   and the language data are served from this site and kept for offline use. Pages that already have text are left as they are. */
+const TESS = new URL('./vendor/tesseract-7.0.0/', import.meta.url).href;
+const OCR = { run: false, stop: false, done: 0, total: 0, doc: '', page: '' };
+let ocrWorker = null, ocrError = null;
+async function ocrEngine() {
+  if (ocrWorker) return ocrWorker;
+  const T = (await import(TESS + 'tesseract.esm.min.js')).default;
+  ocrError = null;
+  ocrWorker = await T.createWorker(['kor', 'eng'], 1, { workerPath: TESS + 'worker.min.js', corePath: TESS + 'core', langPath: TESS + 'lang', gzip: true, cacheMethod: 'none',
+    errorHandler: (e) => { ocrError = e; } }); // a failure inside the engine is reported, never mistaken for an empty page
+  if (ocrError) throw new Error('글자 인식 엔진을 시작하지 못했습니다');
+  return ocrWorker;
+}
+function cleanOcr(t) { // tidy the recognised text; undo the letter-by-letter spacing Korean OCR sometimes produces
+  t = String(t || '').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const spaced = (t.match(/[가-힣] (?=[가-힣])/g) || []).length, hangul = (t.match(/[가-힣]/g) || []).length;
+  if (hangul > 20 && spaced / hangul > 0.45) t = t.replace(/([가-힣]) (?=[가-힣])/g, '$1');
+  return t;
+}
+const scanned = () => S.docs.filter((d) => d.kind === 'pdf' && !d.textOnly && d.blank);
+async function ocrDoc(d) {
+  const full = await DB.get('docs', d.id);
+  if (!full || !full.bytes) throw new Error('원본 PDF가 남아 있지 않습니다');
+  const pdfjs = await pdfjsLib();
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(full.bytes.slice(0)) }).promise;
+  const engine = await ocrEngine();
+  const pages = Array.isArray(full.pages) ? full.pages.slice() : [];
+  const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+  try {
+    for (let i = 1; i <= doc.numPages; i++) {
+      if (OCR.stop) break;
+      if (pages[i - 1] && pages[i - 1].replace(/\s+/g, '').length >= 30) continue;
+      OCR.page = `${i}/${doc.numPages}쪽`; paintStatus();
+      const pg = await doc.getPage(i);
+      const v1 = pg.getViewport({ scale: 1 });
+      const vp = pg.getViewport({ scale: Math.min(3.2, 2000 / Math.max(v1.width, v1.height)) });
+      canvas.width = Math.floor(vp.width); canvas.height = Math.floor(vp.height);
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+      const r = await engine.recognize(canvas);
+      if (ocrError) throw new Error('글자 인식 엔진에 문제가 생겼습니다');
+      pages[i - 1] = cleanOcr(r && r.data && r.data.text);
+    }
+  } finally { doc.destroy(); canvas.width = canvas.height = 0; }
+  full.pages = pages; full.ocr = true;
+  full.chars = pages.join('').replace(/\s+/g, '').length; full.blank = full.chars < 50;
+  delete full.digest;
+  await DB.put('docs', full); Object.assign(d, docMeta(full)); LIB = null;
+}
+async function ocrAll(only) {
+  if (OCR.run) return;
+  const todo = only ? [docOf(only)].filter(Boolean) : scanned();
+  if (!todo.length) { toast('글자를 읽을 스캔본이 없습니다.'); return; }
+  Object.assign(OCR, { run: true, stop: false, done: 0, total: todo.length, doc: '', page: '' }); paintStatus();
+  let ok = 0; const fail = [];
+  try {
+    for (const d of todo) {
+      if (OCR.stop) break;
+      OCR.doc = d.title; OCR.page = ''; paintStatus();
+      try { await ocrDoc(d); if (!d.blank) ok++; else if (!OCR.stop) fail.push(`「${d.title}」: 읽을 수 있는 글자를 찾지 못했습니다(흐리거나 손글씨일 수 있습니다)`); }
+      catch (e) { fail.push(`「${d.title}」: ${e.message || e}`); if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e2) { /* ignore */ } ocrWorker = null; } }
+      OCR.done++; paintStatus();
+    }
+  } finally {
+    const stopped = OCR.stop; Object.assign(OCR, { run: false, stop: false, doc: '', page: '' });
+    if (ocrWorker) { try { await ocrWorker.terminate(); } catch (e) { /* ignore */ } ocrWorker = null; }
+    paintStatus(); paintSide(); redraw('library');
+    if (stopped) toast('글자 읽기를 멈췄습니다. 다시 누르면 남은 쪽부터 이어서 읽습니다.');
+    else if (fail.length) modal(`<h2>글자 읽기 결과</h2><p class="sub">${ok ? `스캔본 ${ok}개의 글자를 읽었습니다. ` : ''}다음 문헌은 읽지 못했습니다.</p><ul class="help">${fail.map((x) => `<li>${esc(x)}</li>`).join('')}</ul><div class="modal-foot"><button class="btn primary" data-close>닫기</button></div>`);
+    else toast(`스캔본 ${ok}개의 글자를 읽었습니다. 이제 찾기와 묻기에 쓰입니다.`);
+  }
+}
+
 /* ---------------- citations in the style of Korean public-law journals: 저자, “제목”, 학술지, 연도, 쪽. ---------------- */
 function where(doc, a, b) {
   b = b || a;
@@ -289,6 +364,7 @@ function paintSide() {
 function statusText() {
   if (S.sync) return `폴더 읽는 중 ${S.sync.done}/${S.sync.total}`;
   if (S.indexing) return `본문 읽는 중 ${S.indexing.done}/${S.indexing.total}`;
+  if (OCR.run) return `글자 읽는 중 ${OCR.done}/${OCR.total}${OCR.doc ? ` · ${OCR.doc} ${OCR.page}` : ''}`;
   if (DIG.run) return `숙지 중 ${DIG.done}/${DIG.total}${DIG.doc ? ` · ${DIG.doc}` : ''}`;
   return '';
 }
@@ -314,7 +390,7 @@ const redraw = (v) => { if (S.view === v) ({ notes: viewNotes, library: viewLibr
 function findStatus() {
   const st = libStats(), t = statusText();
   if (!st.n) return '서재가 비어 있습니다. <button class="linkish" data-act="go" data-v="library">서재</button>에서 PDF 폴더를 고르면 모든 쪽을 찾을 수 있습니다.';
-  return `문헌 ${st.ok}개 · ${st.pages.toLocaleString()}쪽에서 찾습니다${t ? ` · <b>${t}</b>` : ''}${st.blank ? ` · 글자 없는 스캔본 ${st.blank}개 제외` : ''}. 띄어쓰기와 조사는 달라도 찾고, <b>"따옴표"</b>로 묶으면 그 표현 그대로, <b>-낱말</b>은 그 낱말이 없는 쪽만 찾습니다.`;
+  return `문헌 ${st.ok}개 · ${st.pages.toLocaleString()}쪽에서 찾습니다${t ? ` · <b>${t}</b>` : ''}${st.blank ? ` · 글자 없는 스캔본 ${st.blank}개 제외(<button class="linkish" data-act="go" data-v="library">서재에서 글자 읽기</button>)` : ''}. 띄어쓰기와 조사는 달라도 찾고, <b>"따옴표"</b>로 묶으면 그 표현 그대로, <b>-낱말</b>은 그 낱말이 없는 쪽만 찾습니다.`;
 }
 function viewFind() {
   const docs = S.docs.filter((d) => d.indexed && !d.blank).sort((a, b) => a.title.localeCompare(b.title, 'ko'));
@@ -516,7 +592,8 @@ function libStatusHTML() {
     : S.settings.folderName ? `<b>${esc(S.settings.folderName)}</b> · 바뀐 내용을 맞추려면 폴더를 다시 고르세요` : '아직 없음';
   return `<div class="lib-line">연결된 폴더: ${folder}${S.settings.folderAt ? ` · 마지막 확인 ${new Date(S.settings.folderAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}</div>
     <div class="lib-line">문헌 ${st.n}개${st.ok ? ` · ${st.pages.toLocaleString()}쪽 · 본문 ${st.chars >= 10000 ? `약 ${Math.round(st.chars / 10000).toLocaleString()}만` : st.chars.toLocaleString()}자` : ''} · ${fmtSize(st.size)}${t ? ` · <b>${t}</b>` : ''}</div>
-    ${st.blank ? `<div class="lib-line warn">글자를 추출할 수 없는 스캔본 ${st.blank}개는 찾기에서 빠집니다. 문자 인식(OCR)을 한 PDF로 바꾸어 넣어 주세요.</div>` : ''}
+    ${OCR.run ? `<div class="lib-line"><b>스캔본 글자 읽는 중</b> ${OCR.done}/${OCR.total} · 「${esc(OCR.doc)}」 ${esc(OCR.page)} <button class="btn" data-act="ocr-stop">멈추기</button></div>`
+      : scanned().length ? `<div class="lib-line warn">글자가 없는 스캔본 ${scanned().length}개는 아직 찾기와 묻기에서 빠집니다. <button class="btn primary" data-act="ocr-all">글자 읽기(OCR)</button></div><div class="lib-line">글자 읽기는 이 컴퓨터 안에서 쪽마다 몇 초씩 걸립니다(인터넷 필요 없음). 켜 두고 다른 일을 하세요.</div>` : ''}
     <div class="lib-line" id="store-line"></div>`;
 }
 async function paintStore() {
@@ -528,7 +605,7 @@ async function paintStore() {
 }
 function viewLibrary() {
   const rows = S.docs.slice().sort((a, b) => b.addedAt - a.addedAt).map((d) => `<div class="doc-row" data-id="${d.id}">
-      <div><button class="doc-open" data-act="doc-open" title="${esc(d.title)}">${esc(d.title)}</button><div class="m">${esc([d.author, d.year, d.venue].filter(Boolean).join(', ') || '저자·연도 미입력')} · ${d.kind === 'pdf' ? `PDF${d.npages ? ` ${d.npages}쪽` : ''}` : '텍스트'} · ${fmtSize(d.size || 0)}${+d.page1 > 1 ? ` · ${d.page1}면부터` : ''}${d.blank ? ' · <b class="warn">글자 없음</b>' : !d.indexed ? ' · 읽는 중' : ''}${d.folder ? ` · <span title="${esc(d.folder)}">폴더</span>` : ''}${d.digest ? ' · <button class="linkish" data-act="dig-show">AI 요지</button>' : ''}</div></div>
+      <div><button class="doc-open" data-act="doc-open" title="${esc(d.title)}">${esc(d.title)}</button><div class="m">${esc([d.author, d.year, d.venue].filter(Boolean).join(', ') || '저자·연도 미입력')} · ${d.kind === 'pdf' ? `PDF${d.npages ? ` ${d.npages}쪽` : ''}` : '텍스트'} · ${fmtSize(d.size || 0)}${+d.page1 > 1 ? ` · ${d.page1}면부터` : ''}${d.blank ? (d.kind === 'pdf' && !d.textOnly ? ' · <b class="warn">스캔본</b> <button class="linkish" data-act="ocr-one">글자 읽기</button>' : ' · <b class="warn">글자 없음</b>') : !d.indexed ? ' · 읽는 중' : d.ocr ? ' · 글자 인식함' : ''}${d.folder ? ` · <span title="${esc(d.folder)}">폴더</span>` : ''}${d.digest ? ' · <button class="linkish" data-act="dig-show">AI 요지</button>' : ''}</div></div>
       <div class="doc-tools"><button class="btn" data-act="doc-edit">정보</button><button class="btn danger" data-act="doc-del">지우기</button></div></div>`).join('');
   view().innerHTML = `<div class="page">
     <div class="notes-head"><h1>서재</h1></div>
@@ -946,7 +1023,8 @@ function openHelp() {
     <p><b>6. 노트</b> — 프로젝트마다 카드가 모입니다. 순서를 바꾸고 메모를 달아 <b>Word로 저장</b>하면 인용마다 Word 각주가 달린 문서가 됩니다.</p>
     <p><b>7. 각주를 정확하게</b> — 서재에서 문헌의 <b>정보</b>에 저자·연도·학술지와 학술지 첫 쪽 번호를 적어 두면, 각주가 학술지 쪽수(○면)로 만들어집니다.</p>
     <p><b>8. 오프라인</b> — 한 번 연 뒤에는 인터넷 없이도 열리고 모든 기능이 됩니다. Chrome·Edge에서 설치하면 컴퓨터의 앱처럼 쓸 수 있습니다(설정 참고).</p>
-    <p><b>9. 보관</b> — 모든 내용은 이 컴퓨터의 이 브라우저 안에만 있습니다. 설정의 <b>노트 백업</b>을 가끔 받아 두세요.</p></div>
+    <p><b>9. 스캔본</b> — 글자가 없는 스캔본 PDF는 서재에서 <b>글자 읽기(OCR)</b>를 누르면 이 컴퓨터 안에서 쪽마다 글자를 읽어 찾기·묻기에 쓰입니다. 인식이 틀릴 수 있으니 인용할 때는 원문 보기로 확인하세요.</p>
+    <p><b>10. 보관</b> — 모든 내용은 이 컴퓨터의 이 브라우저 안에만 있습니다. 설정의 <b>노트 백업</b>을 가끔 받아 두세요.</p></div>
     <div class="modal-foot"><button class="btn primary" data-close>닫기</button></div>`);
 }
 
@@ -966,6 +1044,9 @@ document.addEventListener('click', async (e) => {
   switch (act) {
     case 'go': show(el.dataset.v); break;
     case 'ai-setup': openAISetup(); break;
+    case 'ocr-all': ocrAll(); break;
+    case 'ocr-one': if (did) ocrAll(did); break;
+    case 'ocr-stop': OCR.stop = true; paintStatus(); break;
     case 'dig-start': digestAll(); break;
     case 'dig-stop': DIG.stop = true; AI.stop(); paintStatus(); break;
     case 'dig-show': if (did) showDigest(did); break;
@@ -1110,5 +1191,5 @@ function lockView() {
   const kd = (e) => { if (/^[0-9]$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('del'); };
   document.addEventListener('keydown', kd);
 }
-window.YOAI = { S, AI, searchLib, parseQuery, libLoad, footnote, addFiles, syncFolder, indexLibrary, gatherSources, digestAll, DIG };
+window.YOAI = { S, AI, OCR, ocrAll, cleanOcr, searchLib, parseQuery, libLoad, footnote, addFiles, syncFolder, indexLibrary, gatherSources, digestAll, DIG };
 if (window.Door && window.Door.isOpen('yoai')) start(); else lockView();
