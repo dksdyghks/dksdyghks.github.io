@@ -1,8 +1,8 @@
 /* 요AI — 연구자의 서재. 선행연구 PDF를 이 컴퓨터 안에 쌓아 두고, 모든 쪽을 찾아 읽고, 인용을 모아 각주 달린 Word로 낸다.
    서버도 인터넷도 쓰지 않는다. 문헌·노트·지난 대화는 이 브라우저의 저장소(IndexedDB)에만 있고, 한 번 연 뒤에는 오프라인에서도 열린다. */
-import { renderMarkdown } from './md.js?v=589573d58d';
-import { buildDocx, DOCX_MIME } from './docx.js?v=589573d58d';
-import { AI, WEB_MODELS, stripThink } from './ai.js?v=589573d58d';
+import { renderMarkdown } from './md.js?v=40c23cc552';
+import { buildDocx, DOCX_MIME } from './docx.js?v=40c23cc552';
+import { AI, WEB_MODELS, stripThink } from './ai.js?v=40c23cc552';
 
 const EMBED = window.parent !== window;
 const $ = (s, el = document) => el.querySelector(s);
@@ -40,7 +40,7 @@ const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFul
 
 /* ---------------- documents: kept whole, with the text of every page ---------------- */
 let pdfjsP = null;
-const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=589573d58d').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=589573d58d', import.meta.url).href; return m; }); return pdfjsP; };
+const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=40c23cc552').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=40c23cc552', import.meta.url).href; return m; }); return pdfjsP; };
 const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, ocr: !!d.ocr, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '' });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
@@ -762,19 +762,43 @@ async function openAISetup() {
       try {
         const ms = await AI.ollamaModels();
         box.innerHTML = ms.length ? `<div class="ai-models">${ms.map((x) => `<div class="ai-model"><div><b>${esc(x.name)}</b><div class="m">${x.size ? (x.size / 1073741824).toFixed(1) + 'GB' : ''}</div></div><span><button class="btn primary" data-ai-use="${esc(x.name)}">쓰기</button></span></div>`).join('')}</div>`
-          : '<p class="sub">Ollama는 연결됐지만 내려받은 모델이 없습니다. 터미널에서 <code>ollama pull exaone3.5:7.8b</code>를 실행한 뒤 다시 확인하세요.</p>';
-      } catch (err) { box.innerHTML = `<p class="lib-line warn">Ollama에 연결하지 못했습니다. Ollama가 실행 중인지, 이 페이지를 허용해 두었는지 확인하세요.</p>${ollamaHowto()}`; }
+          : '<p class="sub">Ollama는 연결됐지만 내려받은 모델이 없습니다. 명령 프롬프트(Windows)나 터미널(Mac)에서 <code>ollama pull exaone3.5:7.8b</code>를 실행한 뒤 다시 확인하세요.</p>';
+      } catch (err) { box.innerHTML = `<p class="lib-line warn">Ollama에 연결하지 못했습니다. Ollama가 켜져 있는지, 아래 2~3단계를 마쳤는지 확인하세요.</p>${ollamaHowto(sup.ok)}`; }
     } else if (use) {
       await AI.useOllama(use.dataset.aiUse); S.settings.ai = { backend: 'ollama', model: use.dataset.aiUse }; saveSettings(); toast(`${use.dataset.aiUse}을(를) 씁니다.`); m.close(); if (S.view === 'ask') viewAsk();
-    } else if (how) { const box = $('#ollama-box', m.el); if (!box.querySelector('.howto')) box.insertAdjacentHTML('beforeend', ollamaHowto()); }
+    } else if (how) { const box = $('#ollama-box', m.el); if (!box.querySelector('.howto')) box.insertAdjacentHTML('beforeend', ollamaHowto(sup.ok)); }
+    const cp = e.target.closest('[data-copy]');
+    if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); toast('복사했습니다. 창에 붙여 넣으세요.'); } catch (err) { toast('복사하지 못했습니다. 글자를 직접 골라 복사하세요.'); } }
   });
 }
-function ollamaHowto() {
-  return `<ol class="howto">
-    <li><b>ollama.com</b>에서 Ollama를 내려받아 설치합니다.</li>
-    <li>터미널(맥) 또는 명령 프롬프트(윈도)에서 모델을 받습니다: <code>ollama pull exaone3.5:7.8b</code> (메모리 16GB 이상이면 <code>exaone3.5:32b</code>도 가능)</li>
-    <li>이 페이지가 Ollama를 쓰도록 허용합니다. 맥: <code>launchctl setenv OLLAMA_ORIGINS "https://0128.kr"</code> · 윈도: 환경 변수 <code>OLLAMA_ORIGINS</code>에 <code>https://0128.kr</code>를 넣습니다. 그다음 Ollama를 껐다가 다시 켭니다.</li>
-    <li>브라우저가 ‘로컬 네트워크 접근’을 물으면 허용합니다. 그리고 <b>Ollama 연결 확인</b>을 누릅니다.</li></ol>`;
+function ollamaHowto(webOk = true) {
+  /* plain steps for the computer in front of the reader first; the other kind folded below */
+  const cmd = (c) => `<span class="cmd"><code>${esc(c)}</code><button class="btn" data-copy="${esc(c)}">복사</button></span>`;
+  const win = `<ol class="howto">
+    <li><b>ollama.com</b>에 들어가 <b>Windows용</b> Ollama를 내려받아 설치합니다.</li>
+    <li>화면 왼쪽 아래 <b>시작</b> 단추를 누르고 ‘명령 프롬프트’를 검색해 엽니다. 검은 창에 아래 두 줄을 한 줄씩 붙여 넣고 Enter를 누릅니다.
+      ${cmd('setx OLLAMA_ORIGINS "https://0128.kr"')}
+      ${cmd('ollama pull exaone3.5:7.8b')}
+      첫째 줄은 Ollama에 ‘0128.kr은 연결해도 된다’고 알려 줍니다. 둘째 줄은 모델(약 5GB)을 내려받습니다. 다 받을 때까지 창을 닫지 마세요.</li>
+    <li>화면 오른쪽 아래(시계 옆) Ollama 아이콘을 오른쪽 단추로 눌러 <b>Quit Ollama</b>를 고릅니다. 그다음 시작 메뉴에서 Ollama를 다시 실행합니다. 설정은 Ollama를 다시 켜야 적용됩니다.</li>
+    <li>이 창에서 <b>Ollama 연결 확인</b>을 누릅니다. 브라우저가 ‘로컬 네트워크의 기기에 접근’을 허용할지 물으면 <b>허용</b>을 누릅니다. 그래도 안 되면 컴퓨터를 한 번 다시 켠 뒤 Ollama를 실행하고 다시 확인합니다.</li></ol>`;
+  const mac = `<ol class="howto">
+    <li><b>ollama.com</b>에 들어가 <b>Mac용</b> Ollama를 내려받아 설치하고 실행합니다.</li>
+    <li><b>응용 프로그램 › 유틸리티 › 터미널</b>을 엽니다. 아래 두 줄을 한 줄씩 붙여 넣고 return을 누릅니다.
+      ${cmd('launchctl setenv OLLAMA_ORIGINS "https://0128.kr"')}
+      ${cmd('ollama pull exaone3.5:7.8b')}
+      첫째 줄은 Ollama에 ‘0128.kr은 연결해도 된다’고 알려 줍니다. 둘째 줄은 모델(약 5GB)을 내려받습니다.</li>
+    <li>화면 오른쪽 위 메뉴 막대의 Ollama 아이콘을 눌러 <b>Quit Ollama</b>를 고른 뒤, Ollama를 다시 실행합니다. 설정은 Ollama를 다시 켜야 적용됩니다.</li>
+    <li>이 창에서 <b>Ollama 연결 확인</b>을 누릅니다. 브라우저가 ‘로컬 네트워크의 기기에 접근’을 허용할지 물으면 <b>허용</b>을 누릅니다.</li>
+    <li>Mac을 껐다 켜면 첫째 줄 설정이 풀립니다. 그때는 터미널에서 첫째 줄만 다시 넣고 Ollama를 다시 실행합니다.</li></ol>`;
+  const isMac = /Mac/i.test(navigator.platform || navigator.userAgent);
+  const [first, firstName, other, otherName] = isMac ? [mac, 'Mac', win, 'Windows'] : [win, 'Windows', mac, 'Mac'];
+  return `<div class="howto-box">
+    <p class="sub">${webOk ? '<b>Ollama는 꼭 필요하지 않습니다.</b> 위의 ‘브라우저 안에서’ 모델은 설치 없이 바로 쓸 수 있습니다. Ollama는 더 큰 모델을 쓰고 싶을 때만 설치합니다.' : '<b>이 컴퓨터에서는 ‘브라우저 안에서’ 방식을 쓸 수 없어서 Ollama가 필요합니다.</b> 한 번만 설정하면 됩니다.'}</p>
+    <p class="sub">Ollama는 보안을 위해 웹페이지가 연결하는 것을 기본으로 막아 둡니다. 아래 순서대로 하면 이 페이지(0128.kr)만 연결할 수 있게 됩니다.</p>
+    <p class="sub"><b>${firstName} 컴퓨터</b></p>${first}
+    <details><summary>${otherName} 컴퓨터라면</summary>${other}</details>
+    <p class="sub">메모리(RAM)가 32GB 이상이면 더 정확한 큰 모델도 쓸 수 있습니다. 둘째 줄 대신 ${cmd('ollama pull exaone3.5:32b')}(약 19GB)를 넣으세요.</p></div>`;
 }
 
 /* ---------------- 숙지: the AI reads each document once and keeps a structured digest ----------------

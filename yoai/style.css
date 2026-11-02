@@ -365,6 +365,12 @@ details.sources ol { margin: 6px 0 0; padding-left: 1.4em; }
 .digest { font-size: .9375rem; max-height: 60vh; overflow: auto; }
 ol.howto { margin: 8px 0 0; padding-left: 1.3em; font-size: .8125rem; line-height: 1.75; color: var(--ink-2); }
 ol.howto li { margin: 4px 0; }
+.howto-box { margin-top: 10px; }
+.howto-box details { margin: 6px 0; font-size: .8125rem; color: var(--ink-2); }
+.howto-box summary { cursor: pointer; font-weight: 600; }
+.cmd { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.cmd code { flex: 1; min-width: 0; padding: 6px 8px; }
+.cmd .btn { flex: none; padding: 4px 10px; font-size: .75rem; }
 @media (max-width: 640px) {
   .find-box { flex-direction: column; }
   .find-box select { max-width: none; padding: 10px; }
