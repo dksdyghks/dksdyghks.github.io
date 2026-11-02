@@ -340,6 +340,7 @@
     notes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>',
     stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V6"/><path d="M17 16v-8"/></svg>',
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-6.5 8 6.5"/><path d="M6.5 9.5V19h11V9.5"/><path d="M10.2 19v-5h3.6v5"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     arrow: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   };
@@ -350,9 +351,10 @@
         <button class="brand" data-act="home" aria-label="송공 처음 화면">${MARK}<span class="brand-name">송공</span></button>
         <div class="crumb">${crumb || ''}</div>
         <div class="tools">${timer}
-          <button class="icon-btn" data-act="notes" title="오답노트 (W)" aria-label="오답노트">${ICON.notes}</button>
-          <button class="icon-btn" data-act="stats" title="기록" aria-label="기록">${ICON.stats}</button>
-          <button class="icon-btn" data-act="settings" title="설정" aria-label="설정">${ICON.gear}</button>
+          <button class="icon-btn lab" data-act="home" title="처음 화면 (풀던 문제는 기록하지 않고 나갑니다)">${ICON.home}<span>홈</span></button>
+          <button class="icon-btn lab" data-act="notes" title="틀린 문제를 모아 다시 풉니다 (W)">${ICON.notes}<span>오답노트</span></button>
+          <button class="icon-btn lab" data-act="stats" title="과목·유형별 정답률, 약한 유형">${ICON.stats}<span>기록</span></button>
+          <button class="icon-btn lab" data-act="settings" title="글자 크기, 시간, 백업">${ICON.gear}<span>설정</span></button>
           ${EMBED ? `<button class="icon-btn" data-act="close" title="닫기 (Esc)" aria-label="닫기">${ICON.close}</button>` : ''}
         </div></div></header>
       <main id="main">${inner}</main>`;
@@ -471,6 +473,7 @@
     paint(shell(crumb, `
       <article class="sheet fade-in" aria-label="문제">${questionHTML(q, { choice: c.choice, no: c.no, review: c.review })}</article>
       <div class="actions">
+        <button class="btn ghost" data-act="home" title="기록하지 않고 처음 화면으로 나갑니다">나가기</button>
         <button class="btn ghost" data-act="skip" title="해설 바로 보기 (오답으로 기록)">모르겠음</button>
         <button class="btn primary grow" data-act="submit" ${c.choice == null ? 'disabled' : ''}>정답 확인 <span class="kbd">Enter</span></button>
       </div>`, { timer: true }), 'quiz');
@@ -680,8 +683,21 @@
     const mx = Math.max(1, ...days.map((k) => (S.daily[k] ? S.daily[k].n : 0)));
     const bars = days.map((k) => { const n = S.daily[k] ? S.daily[k].n : 0; return `<i class="${n ? '' : 'zero'}" style="height:${n ? Math.max(4, (n / mx) * 100) : 2}%" title="${md(k)} · ${n}문항"></i>`; }).join('');
     const subjRows = ORDER.map((k) => { const a = S.agg.subj[k] || { n: 0, ok: 0, ms: 0 }; return `<tr><td>${SUBJ[k].name}</td><td>${a.n.toLocaleString()}</td><td>${a.n ? pct(a.ok, a.n) + '%' : '–'}</td><td>${a.n ? human(a.ms / a.n) : '–'}</td><td>${human(SUBJ[k].pace * 1000)}</td></tr>`; }).join('');
-    const types = Object.entries(S.agg.type).map(([k, a]) => { const [s, ...rest] = k.split('|'); return { s, t: rest.join('|'), a }; }).filter((x) => SUBJ[x.s] && x.a.n >= 3).sort((x, y) => x.a.ok / x.a.n - y.a.ok / y.a.n);
-    const typeRows = types.map((x) => `<tr><td>${SUBJ[x.s].name} · ${esc(typeShort(x.s, x.t))}</td><td>${x.a.n}</td><td>${pct(x.a.ok, x.a.n)}%</td><td>${human(x.a.ms / x.a.n)}</td><td><button class="btn sm" data-act="start" data-subj="${x.s}" data-type="${esc(x.t)}">집중</button></td></tr>`).join('');
+    /* 약점 분석: per subject, the types answered at least 3 times; weak = 정답률 10%p 이상 낮거나 60% 미만, slow = 평균 시간이 권장의 1.3배 이상 */
+    const types = Object.entries(S.agg.type).map(([k, a]) => { const [s, ...rest] = k.split('|'); return { s, t: rest.join('|'), a }; }).filter((x) => SUBJ[x.s] && x.a.n >= 3);
+    const weakBy = {};
+    for (const k of ORDER) {
+      const sa = S.agg.subj[k] || { n: 0, ok: 0 }; const avg = sa.n ? sa.ok / sa.n : 0; const pace = SUBJ[k].pace * 1000;
+      const list = types.filter((x) => x.s === k).map((x) => ({ ...x, acc: x.a.ok / x.a.n, wrong: x.a.n - x.a.ok, avgMs: x.a.ms / x.a.n }));
+      const weak = list.filter((x) => x.acc < 0.6 || x.acc <= avg - 0.1).sort((x, y) => x.acc - y.acc).slice(0, 2);
+      const slow = list.filter((x) => x.avgMs >= pace * 1.3 && !weak.includes(x)).sort((x, y) => y.avgMs - x.avgMs).slice(0, 1);
+      weakBy[k] = { list: list.sort((x, y) => x.acc - y.acc), weak, slow, avg, pace };
+    }
+    const focus = (x) => `<button class="btn sm" data-act="start" data-subj="${x.s}" data-type="${esc(x.t)}">집중 연습</button>`;
+    const weakItems = ORDER.flatMap((k) => [...weakBy[k].weak.map((x) => `<li><div><div class="w-t">${SUBJ[k].name} · ${esc(typeShort(k, x.t))}</div><div class="w-s">정답률 ${pct(x.a.ok, x.a.n)}% (과목 평균 ${Math.round(weakBy[k].avg * 100)}%) · 오답 ${x.wrong}개 / ${x.a.n}문항</div></div>${focus(x)}</li>`),
+      ...weakBy[k].slow.map((x) => `<li><div><div class="w-t">${SUBJ[k].name} · ${esc(typeShort(k, x.t))} <small>시간</small></div><div class="w-s">평균 ${human(x.avgMs)} · 권장 ${human(weakBy[k].pace)}보다 오래 걸림 · 정답률 ${pct(x.a.ok, x.a.n)}%</div></div>${focus(x)}</li>`)]);
+    const weakCard = `<div class="card"><h2>약점 분석</h2>${weakItems.length ? `<p class="subj-meta" style="margin:0 0 8px">정답률이 과목 평균보다 10%p 이상 낮거나 60%에 못 미치는 유형, 권장 시간보다 1.3배 이상 오래 걸리는 유형입니다.</p><ul class="weak">${weakItems.join('')}</ul>` : `<p class="subj-meta" style="margin:0">${types.length ? '지금은 눈에 띄게 약한 유형이 없습니다. 유형마다 고르게 풀고 있습니다.' : '유형마다 3문항 이상 풀면 약한 유형을 찾아 드립니다.'}</p>`}</div>`;
+    const typeRows = ORDER.filter((k) => weakBy[k].list.length).map((k) => `<tr><th colspan="5" class="st-sub">${SUBJ[k].name}</th></tr>` + weakBy[k].list.map((x) => `<tr><td>${esc(typeShort(x.s, x.t))}</td><td>${x.a.n}<small> (오답 ${x.wrong})</small></td><td class="${weakBy[k].weak.includes(x) ? 'bad' : ''}">${pct(x.a.ok, x.a.n)}%</td><td class="${x.avgMs >= weakBy[k].pace * 1.3 ? 'bad' : ''}">${human(x.avgMs)}</td><td><button class="btn sm" data-act="start" data-subj="${x.s}" data-type="${esc(x.t)}">연습</button></td></tr>`).join('')).join('');
     const flags = Array.from(S.items.values()).filter((it) => it.flag && SUBJ[it.subj]);
     paint(shell('<b>기록</b>', `
       <div class="page-h"><h1>기록</h1></div>
@@ -691,9 +707,10 @@
         <div class="stat"><div class="k">연속 학습</div><div class="v">${streak()}<small>일</small></div></div>
         <div class="stat"><div class="k">총 풀이 시간</div><div class="v" style="font-size:1.125rem">${hours(tot.ms)}</div></div>
       </div>
+      ${weakCard}
       <div class="card"><h2>최근 30일</h2><div class="bars" aria-label="최근 30일 하루 풀이 수">${bars}</div><div class="bars-x"><span>${md(days[0])}</span><span>오늘</span></div></div>
       <div class="card"><h2>과목별</h2><table class="st"><thead><tr><th>과목</th><th>풀이</th><th>정답률</th><th>평균 시간</th><th>권장</th></tr></thead><tbody>${subjRows}</tbody></table></div>
-      <div class="card"><h2>유형별 · 정답률 낮은 순</h2>${typeRows ? `<table class="st"><thead><tr><th>유형</th><th>풀이</th><th>정답률</th><th>평균</th><th></th></tr></thead><tbody>${typeRows}</tbody></table>` : '<p class="subj-meta" style="margin:0">유형마다 3문항 이상 풀면 약한 유형이 여기에 나타납니다.</p>'}</div>
+      <div class="card"><h2>과목별 유형 · 정답률 낮은 순</h2>${typeRows ? `<table class="st"><thead><tr><th>유형</th><th>풀이</th><th>정답률</th><th>평균</th><th></th></tr></thead><tbody>${typeRows}</tbody></table>` : '<p class="subj-meta" style="margin:0">유형마다 3문항 이상 풀면 약한 유형이 여기에 나타납니다.</p>'}</div>
       ${(() => { const cs = {}; let tot = 0; for (const it of S.items.values()) if (it.cause && SUBJ[it.subj]) { cs[it.cause] = (cs[it.cause] || 0) + 1; tot++; } return tot ? `<div class="card"><h2>틀린 이유</h2><table class="st"><tbody>${Object.entries(cs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}문항</td><td>${pct(v, tot)}%</td></tr>`).join('')}</tbody></table><p class="subj-meta" style="margin:8px 0 0">해설 화면에서 고른 ‘틀린 이유’를 모은 것입니다. 가장 많은 이유부터 습관을 고치면 점수가 빨리 오릅니다.</p></div>` : ''; })()}
       ${flags.length ? `<div class="card"><h2>이상한 점을 알린 문제 ${flags.length}개</h2><p class="subj-meta" style="margin:0 0 10px">아래 버튼으로 내용을 복사해 전달하면 확인 후 고칩니다.</p><button class="btn sm" data-act="copy-flags">내용 복사</button><ul class="prose" style="margin-top:12px">${flags.map((it) => `<li>${esc(it.qid)} — ${esc(plain(it.flag).slice(0, 120))}</li>`).join('')}</ul></div>` : ''}`), 'stats');
   }
@@ -856,7 +873,7 @@
     const act = el.dataset.act;
     if (el.tagName === 'INPUT') return;
     switch (act) {
-      case 'home': if (S.view === 'quiz' && S.cur) saveCur(); viewHome(); break;
+      case 'home': { const leaving = S.view === 'quiz' && S.cur && S.cur.phase === 'q'; if (S.view === 'quiz' && S.cur) saveCur(); viewHome(); if (leaving) toast('풀던 문제는 기록하지 않았습니다. 처음 화면의 ‘이어서 풀기’로 돌아올 수 있습니다.'); break; }
       case 'notes': viewNotes(); break;
       case 'stats': viewStats(); break;
       case 'settings': viewSettings(); break;
