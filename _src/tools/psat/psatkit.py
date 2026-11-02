@@ -81,3 +81,17 @@ def write(items, REVIEW, out_js, subject, review_md, title, header):
         rows.append(f"| {it['id']} | {c} | {lv} | {tm} | {CIRC[it['answer']]} | {ev} | {wr} | {fast} | 스크립트로 모든 선지 재판정, 정답 유일 | {orig} |")
     open(review_md, 'w', encoding='utf8').write(f'# {title}\n\n' + '\n'.join(rows) + '\n')
     print('wrote', out_js, len(items), 'items and', review_md)
+
+def move(items, iid, to):
+    """Swap the keyed option of a single-answer item with slot `to`, keeping per-option explanations aligned.
+    Refuses (records a failed check) when the explanation cites option numbers other than the final '정답은' line."""
+    it = next(x for x in items if x['id'] == iid); a = it['answer']
+    if a == to: return
+    texts = [blk.get('h', '') for blk in it['explain']] + [x.get('why', '') for blk in it['explain'] for x in blk.get('items', [])]
+    cited = [m for t_ in texts for m in re.findall(r'[①②③④⑤]', re.sub(r'정답은 <b>[①②③④⑤]</b>', '', t_))]
+    check(not cited, f'{iid} move: explanation cites {cited}')
+    o = it['options']; o[a], o[to] = o[to], o[a]
+    for blk in it['explain']:
+        if blk.get('t') == 'ox': its = blk['items']; its[a], its[to] = its[to], its[a]
+        if 'h' in blk: blk['h'] = blk['h'].replace(f'정답은 <b>{CIRC[a]}</b>', f'정답은 <b>{CIRC[to]}</b>')
+    it['answer'] = to
