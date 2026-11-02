@@ -1,8 +1,8 @@
 /* 요AI — 연구자의 서재. 선행연구 PDF를 이 컴퓨터 안에 쌓아 두고, 모든 쪽을 찾아 읽고, 인용을 모아 각주 달린 Word로 낸다.
    서버도 인터넷도 쓰지 않는다. 문헌·노트·지난 대화는 이 브라우저의 저장소(IndexedDB)에만 있고, 한 번 연 뒤에는 오프라인에서도 열린다. */
-import { renderMarkdown } from './md.js?v=24fc910f2b';
-import { buildDocx, DOCX_MIME } from './docx.js?v=24fc910f2b';
-import { AI, WEB_MODELS, stripThink } from './ai.js?v=24fc910f2b';
+import { renderMarkdown } from './md.js?v=90e34118b3';
+import { buildDocx, DOCX_MIME } from './docx.js?v=90e34118b3';
+import { AI, WEB_MODELS, stripThink } from './ai.js?v=90e34118b3';
 
 const EMBED = window.parent !== window;
 const $ = (s, el = document) => el.querySelector(s);
@@ -41,7 +41,7 @@ const kdate = (ts) => { const d = new Date(ts || Date.now()); return `${d.getFul
 
 /* ---------------- documents: kept whole, with the text of every page ---------------- */
 let pdfjsP = null;
-const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=24fc910f2b').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=24fc910f2b', import.meta.url).href; return m; }); return pdfjsP; };
+const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=90e34118b3').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=90e34118b3', import.meta.url).href; return m; }); return pdfjsP; };
 const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.blank != null, chars: d.chars || 0, blank: !!d.blank, textOnly: !!d.textOnly, ocr: !!d.ocr, digest: d.digest ? d.digest.text : '', digestModel: d.digest ? d.digest.model : '', digestMode: d.digest ? d.digest.mode || 'full' : '', hasFacts: !!d.facts, brief: d.facts ? d.facts.brief || '' : '' });
 async function pdfPageCount(bytes) { try { const pdfjs = await pdfjsLib(); const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise; const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
