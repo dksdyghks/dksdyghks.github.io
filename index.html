@@ -134,6 +134,14 @@ a { color: inherit; text-decoration: none; }
 .stmt strong { font-weight: 600; color: #F2D7A6; }
 #view-en .stmt p { font-size: 1rem; line-height: 1.7; }
 
+.br-d { display: none; }
+@media (min-width: 1200px) {
+  .br-d { display: inline; }
+  #view-ko .hero-grid { grid-template-columns: auto minmax(0, 1fr); gap: 56px; }
+  #view-ko .stmt { max-width: none; justify-self: end; }
+  #view-ko .stmt p { font-size: 1.0625rem; }
+}
+
 /* ---------- Sticky bar: section pills + language ---------- */
 .nav {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
@@ -375,7 +383,7 @@ body { margin: 0; }
 <div class="id-text"><h1 class="name sig">안요환</h1><p class="role">공군사관학교 항공우주정책학과</p>
 <div class="fields-block"><span class="fields-label">연구분야</span><ul class="fields"><li>입법정책</li><li>정치관계법</li><li>헌법</li></ul></div></div>
 </div>
-<div class="stmt"><p class="s1">율리우스 폰 키르히만은 입법권자가 세 마디만 고치면 법학서적은 모두 휴지조각이 된다며 법학의 학문적 가치를 비판하였다.</p><p class="s2">그러나 법학이 학문으로서 가치가 있기에 <strong>나의 연구는 입법권자로 하여금 문제의 세 마디를 바로잡도록 할 것이다.</strong></p></div>
+<div class="stmt"><p class="s1">율리우스 폰 키르히만은 입법권자가 세 마디만 고치면 법학서적은 <br class="br-d">모두 휴지조각이 된다며 법학의 학문적 가치를 비판하였다.</p><p class="s2">그러나 법학이 학문으로서 가치가 있기에 <br class="br-d"><strong>나의 연구는 입법권자로 하여금 문제의 세 마디를 바로잡도록 할 것이다.</strong></p></div>
 </div></div></header>
 <nav class="nav" aria-label="목차"><div class="nav-in"><div class="nav-links"><a href="#intro">소개</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></div></div></nav>
 <main class="main"><div class="layout">
@@ -400,7 +408,7 @@ body { margin: 0; }
 <div class="id-text"><h1 class="name sig">Yohan Ahn</h1><p class="role">Republic of Korea Air Force Academy</p>
 <div class="fields-block"><span class="fields-label">Research</span><ul class="fields"><li>Legislative Policy</li><li>Election &amp; Political Law</li><li>Constitutional Law</li></ul></div></div>
 </div>
-<div class="stmt"><p class="s1">Julius von Kirchmann questioned the value of legal scholarship as a science, famously declaring that “three corrective words from the legislator turn whole libraries into waste paper.”</p><p class="s2">Yet legal scholarship does have value as a science, and <strong>my research will lead the legislature to correct the three words in question.</strong></p></div>
+<div class="stmt"><p class="s1">Julius von Kirchmann questioned the value of legal scholarship as a science, famously declaring that “three corrective words from the legislator turn whole libraries into waste paper.”</p><p class="s2">Yet legal scholarship does have value as a science; therefore, <strong>my research will lead the legislature to correct the three words in question.</strong></p></div>
 </div></div></header>
 <nav class="nav" aria-label="Contents"><div class="nav-in"><div class="nav-links"><a href="#en-intro">Introduction</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></div></div></nav>
 <main class="main"><div class="layout">
