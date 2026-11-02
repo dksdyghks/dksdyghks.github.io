@@ -146,4 +146,58 @@ best=min(cost,key=cost.get)
 ok(B['S-B08']['options'][A('S-B08')]==f'{best} 요금제 · {cost[best]:,}원', f'S-B08 costs={cost}')
 for i,o in enumerate(B['S-B08']['options']):
     if i!=A('S-B08'): ok(o!=f'{best} 요금제 · {cost[best]:,}원', f'S-B08 option {i+1} differs from the answer')
+# ---- S-L: 상황판단 법조문 (bank-sit-law.js) ----
+def won(n): return f'{n:,}만 원'
+# S-L02 fines: days run from the day after the deadline to the filing day (inclusive)
+def fine(deadline, filed, self_report, needy):
+    days=(filed-deadline).days; amt=min(F(2)*days, 100)
+    if self_report: amt/=2
+    if needy: amt/=2
+    return int(amt)  # 1만 원 미만 버림
+f1=fine(dt.date(2026,3,31),dt.date(2026,4,23),True,True); f2=fine(dt.date(2026,2,28),dt.date(2026,5,31),False,False)
+ok(B['S-L02']['options'][A('S-L02')]==won(f1+f2) and (f1,f2)==(11,100), f'S-L02 fines={f1},{f2}')
+# S-L03 ordinance: first vote, transfer window, re-vote
+reg=21; v1=(16,9); v2=(18,12)
+passed1 = v1[0]>reg/2 and v1[1]>v1[0]/2
+transfer_ok = (dt.date(2026,9,5)-dt.date(2026,9,1)).days<=5
+veto_ok = (dt.date(2026,9,15)-dt.date(2026,9,5)).days<=20
+confirmed = v2[0]>reg/2 and F(v2[1],v2[0])>=F(2,3)
+st=[not passed1, not transfer_ok, False, confirmed and veto_ok, False]
+ok([i for i,x in enumerate(st) if x]==[A('S-L03')] and passed1, f'S-L03 statements={st}')
+# S-L05 compensation (만 원)
+a=sum([3000,3600,4200])/F(3); b=sum([2100,2400,2700])/F(3)
+months=6 if 6>4 else 4
+comp=a*2 + b/12*months + 30*months
+ok(B['S-L05']['options'][A('S-L05')]==won(int(comp)) and comp.denominator==1, f'S-L05 total={comp}')
+# S-L06 recall: term 2026-07-01..2030-06-30, 300,000 voters
+start,end=dt.date(2026,7,1),dt.date(2030,6,30); N=300000
+def can_request(d,sig):
+    one_year_after_start=dt.date(start.year+1,start.month,start.day)
+    if d<one_year_after_start: return False
+    if dt.date(d.year+1,d.month,d.day)>end: return False  # less than a year left
+    return sig>=N*F(10,100)
+st=[can_request(dt.date(2027,3,1),30000), can_request(dt.date(2028,3,1),25000), 90000<N*F(1,3), 120000>=N*F(1,3) and 60000>F(120000,2), can_request(dt.date(2029,8,1),40000)]
+ok([i for i,x in enumerate(st) if x]==[A('S-L06')] and can_request(dt.date(2028,3,1),30000), f'S-L06 statements={st}')
+# S-L07 allowances: same-day meetings pay once; chair x2; cap 100
+def allow(days,chair,reviews): return min(days*15*(2 if chair else 1)+reviews*5,100)
+tot=allow(5,True,3)+allow(4,False,4)
+ok(B['S-L07']['options'][A('S-L07')]==won(tot), f'S-L07 total={tot}')
+# S-L09 appeal windows: first day excluded; ends on the last day even on Saturday
+disp=dt.date(2026,3,2); end180=disp+dt.timedelta(days=180)
+ok(end180==dt.date(2026,8,29) and end180.weekday()==5, f'S-L09 180-day end={end180} weekday={end180.weekday()}')
+def lawful(known,filed): return filed<=known+dt.timedelta(days=90) and filed<=end180
+J=lawful(dt.date(2026,3,10),dt.date(2026,6,8)); Y=lawful(dt.date(2026,8,20),dt.date(2026,8,28)); Bq=lawful(dt.date(2026,3,5),dt.date(2026,6,4))
+st=[Y, not J, Bq, lawful(dt.date(2026,8,20),dt.date(2026,8,31)), not lawful(dt.date(2026,3,9),dt.date(2026,6,4))]
+ok([i for i,x in enumerate(st) if x]==[A('S-L09')], f'S-L09 甲={J} 乙={Y} 丙={Bq} statements={st}')
+for who,k,want in [('甲',dt.date(2026,3,10),dt.date(2026,6,8)),('乙',dt.date(2026,8,20),dt.date(2026,11,18)),('丙',dt.date(2026,3,5),dt.date(2026,6,3)),('丙@3/9',dt.date(2026,3,9),dt.date(2026,6,7))]:
+    ok(k+dt.timedelta(days=90)==want, f'S-L09 90-day end for {who}={k+dt.timedelta(days=90)}')
+# S-L10 party subsidy (억 원)
+seats={'A':150,'B':120,'C':18,'D':12}; vote={'A':45,'B':35,'C':12,'D':8}; T=F(100)
+neg=[p for p in seats if seats[p]>=20]; other=[p for p in seats if p not in neg and seats[p]>=5]
+share={p:(T*F(50,100)/len(neg) if p in neg else 0)+(T*F(5,100) if p in other else 0) for p in seats}
+rest=T-sum(share.values())
+for p in seats: share[p]+=rest/2*F(seats[p],sum(seats.values()))+rest/2*F(vote[p],sum(vote.values()))
+c=share['C']; eok=int(c); man=int((c-eok)*10000)
+label=f'{eok}억 {man//1000}천만 원' if man else f'{eok}억 원'
+ok(B['S-L10']['options'][A('S-L10')]==label and sum(share.values())==T, f'S-L10 shares={ {k:float(v) for k,v in share.items()} } C={label}')
 print('ALL OK' if ok_all else 'SOMETHING FAILED')
