@@ -899,4 +899,68 @@ kn = [v for v in itertools.product((True, False), repeat=3) if v[0] == (not v[1]
 ok(len(kn) == 1, f'L-S08 {kn}'); pick('L-S08', ', '.join(x for x, t in zip('甲乙丙', kn[0]) if t))
 ok(20000 * 8 // 10 == 16000 and 16000 * 9 // 10 == 14400 and 100 - 14400 * 100 // 20000 == 28 and 20000 * 7 // 10 == 14000, 'L-S09 arithmetic'); pick('L-S09', '㉢을 ‘28%’로 고친다.')
 pick('L-S10', '(나) - (다) - (가) - (라)')
+# ================= S-T / D-T / L-T (independent re-solve) =================
+mins = 145; base1 = 1000 + 500 * -(-(mins - 30) // 10); pick('S-T01', f'{min(base1, 15000) * 20 // 100:,}원')
+by_text('S-T02', list(zip(['건물은 7년', '나무를 심기', '10년 동안 빌린', '연간 대부료가', '건물을 빌린 자가'], [7 <= 5, 25 <= 20, 10 + 10 == 20, 80 > 100, False])))
+q3 = {'甲': ([78, 96, 64, 84], 0), '乙': ([88, 84, 86, 90], 6), '丙': ([90, 90, 78, 78], 1), '丁': ([85, 86, 87, 82], 2), '戊': ([70, 95, 96, 94], 30)}
+fs3 = {k: (F(sum(q) - min(q), 3) - l // 3, q[3]) for k, (q, l) in q3.items()}
+pick('S-T03', ', '.join(sorted(sorted(fs3, key=fs3.get, reverse=True)[:2], key=list(q3).index)))
+cell = {1: (0, 0), 2: (0, 1), 3: (0, 2), 4: (1, 0), 5: (1, 1), 6: (1, 2)}; nb = lambda a, b: abs(cell[a][0] - cell[b][0]) + abs(cell[a][1] - cell[b][1]) == 1
+oo4 = [x for x in (dict(zip('甲乙丙丁戊己', pm)) for pm in itertools.permutations(range(1, 7))) if x['丁'] in (1, 3, 4, 6) and x['戊'] == x['甲'] + 3 and not nb(x['己'], x['丁']) and x['乙'] >= 4 and x['丙'] in (2, 5)]
+combo('S-T04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(x['丙'] == 2 for x in oo4), all(nb(x['己'], x['甲']) for x in oo4), all(nb(x['乙'], x['丁']) for x in oo4), all(imp(x['甲'] == 3, x['乙'] == 4) for x in oo4)]) if t])
+rk5 = [r for r in (dict(zip('甲乙丙丁', pm)) for pm in itertools.permutations(range(1, 5))) if (r['甲'] == 1) + (r['乙'] == 2) == 1 and (r['乙'] == 1) + (r['丁'] == 4) == 1 and (r['丙'] == 2) + (r['甲'] == 3) == 1 and (r['丁'] == 3) + (r['丙'] == 1) == 1]
+ok(len(rk5) == 1, f'S-T05 {rk5}'); pick('S-T05', f"{min(rk5[0], key=rk5[0].get)}, {max(rk5[0], key=rk5[0].get)}")
+pick('S-T06', f"{sum(1 for c in itertools.combinations('ABCDEFG', 3) if set(c) & set('EFG') and not {'A', 'E'} <= set(c))}가지")
+def fin7(d):
+    e = {}
+    for t, pr in [('A', ''), ('B', 'A'), ('C', 'A'), ('D', 'B'), ('E', 'CD'), ('F', 'B')]: e[t] = max([e[x] for x in pr], default=0) + d[t]
+    return max(e.values())
+d7 = {'A': 3, 'B': 2, 'C': 4, 'D': 2, 'E': 3, 'F': 1}
+combo('S-T07', [l for l, t in zip('ㄱㄴㄷㄹ', [fin7(d7) == 10, fin7({**d7, 'F': 4}) == 10, fin7({**d7, 'C': 3}) == 9, fin7({**d7, 'B': 3}) == 11]) if t])
+c8 = {'택시': 2 * (4000 + 58 * 1000 + 3000), '자가용': 8 * 1800 + 6000 + 30000, '공항버스': 4 * 17000}; b8 = min(c8, key=c8.get); pick('S-T08', f'{b8}, {c8[b8]:,}원')
+d9 = _dt.date(2024, 1, 1) + _dt.timedelta(days=59); pick('S-T09', f'{d9.year}년 {d9.month}월 {d9.day}일')
+res = lambda v, val, y: 'x' if v * 4 < 200000 else ('o' if y * 2 > val else 'n')
+combo('S-T10', [l for l, t in zip('ㄱㄴㄷㄹ', [res(48000, 47000, 30000) == 'x', res(60000, 58000, 29000) == 'o', res(50000, 49000, 24600) == 'o', res(80000, 55000, 30000) == 'o']) if t])
+# D-T
+bd, dc, ip = [500, 300, 800, 200, 400], [100, 75, 120, 60, 50], [20, 15, 24, 10, 18]
+ipd_ = [F(a, b) for a, b in zip(ip, dc)]; ipb_ = [F(a, b) for a, b in zip(ip, bd)]; dpb_ = [F(a, b) for a, b in zip(dc, bd)]
+by_text('D-T01', list(zip(['의사 1인당', '병상 1개당 입원환자', '병상 수가 많은', '병상 1개당 의사', '다섯 병원'], [ipd_.index(min(ipd_)) == 4, ipb_.count(max(ipb_)) == 1 and ipb_.index(max(ipb_)) == 1, all((bd[i] > bd[j]) == (dc[i] > dc[j]) for i in range(5) for j in range(5) if i != j), dpb_.index(max(dpb_)) == 3 and dpb_.count(max(dpb_)) == 1, F(sum(ip) * 1000, sum(dc)) >= 220])))
+a24, a25 = [150, 380, 290, 160], [120, 420, 250, 210]; gg = [F(b, a) for a, b in zip(a24, a25)]
+combo('D-T02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(b > a for a, b in zip(a24, a25)) == 2, sum(a25) > sum(a24), gg.index(max(gg)) == 1, F(a25[1], sum(a25)) >= F(2, 5)]) if t])
+u3 = {'A': (500, 4000, 480), 'B': (300, 3000, 300), 'C': (400, 2000, 360), 'D': (200, 2000, 180)}
+cp = {k: F(v[1], v[0]) for k, v in u3.items()}; fl = {k: F(v[2], v[0]) for k, v in u3.items()}
+top = [k for k in u3 if cp[k] == max(cp.values())]; ga3 = max(top, key=fl.get)
+pair = [k for k in u3 if k != ga3 and sum(1 for j in u3 if j != ga3 and j != k and fl[j] == fl[k]) == 1]
+na3 = max(pair, key=lambda k: u3[k][0]); ra3 = min(pair, key=lambda k: u3[k][0]); da3 = ({'A', 'B', 'C', 'D'} - {ga3, na3, ra3}).pop()
+pick('D-T03', ', '.join(f"{c} {dict([(ga3, '가'), (na3, '나'), (da3, '다'), (ra3, '라')])[c]}" for c in 'ABCD'))
+mr, mm4, ww4 = [30, 24, 20], [F(31), F(33), F(34)], [F(57, 2), F(61, 2), F(159, 5)]
+combo('D-T04', [l for l, t in zip('ㄱㄴㄷㄹ', [F(mr[0] - mr[2], mr[0]) >= F(3, 10), (mm4[0] - ww4[0]) < (mm4[1] - ww4[1]) < (mm4[2] - ww4[2]), mr[0] - mr[1] > mr[1] - mr[2], ww4[1] - ww4[0] > ww4[2] - ww4[1]]) if t])
+by_text('D-T05', list(zip(['(나)는', '65세 이상 인구가', '(다)는', '(가)와 (라)의', '네 지역 전체의'], [36 * 100 // 18 > 6 * (200 * 15 // 100), False, 33 * 100 // 150 == 20, 200 * 15 // 100 + 80 * 25 // 100 == 55, F((30 + 36 + 33 + 20) * 100, 630) >= 20])))
+combo('D-T06', [l for l, t in zip('ㄱㄴㄷㄹ', [F(121, 110) == F(11, 10) == F(1331, 1210), False, 108 - 100 == 8, F(1045, 10) >= 110]) if t])
+by_text('D-T07', list(zip(['가 사업부의 매출액은 2025년', '나 사업부의', '다 사업부의', '구성비가 줄어든', '2025년에 전년보다'], [2400 * 45 > 2000 * 50, F(2400 * 30, 2000 * 30) == F(6, 5), F(2400 * 25, 2000 * 20) == F(3, 2), 2400 * 45 < 2000 * 50, max([(2400 * 45 - 2000 * 50, '가'), (2400 * 30 - 2000 * 30, '나'), (2400 * 25 - 2000 * 20, '다')])[1] == '다'])), want=False, what='false options')
+zs = []
+for z in range(0, 13):
+    for y in range(0, 31):
+        x = 30 - y - z
+        if x >= 0 and x + 2 * y + 3 * z == 45: zs.append((x, y, z))
+ok(all(y + 2 * z == 15 for x, y, z in zs), 'D-T08 identity')
+combo('D-T08', [l for l, t in zip('ㄱㄴㄷㄹ', [max(z for _, _, z in zs) <= 7, min(y + z for _, y, z in zs) >= 8, max(x for x, _, _ in zs) <= 20, any(z == 0 for _, _, z in zs)]) if t])
+ok((10 + 7 + 5, 1, 7) in zs, 'D-T08 x = 22 attained (example checked in mk_data_t)')
+pw = {'X': 1000 * 1400, 'Y': 800 * 1500, 'Z': 120000 * 900 // 100}; vv = {'X': 50, 'Y': 40, 'Z': 120}; tt9 = {k: pw[k] * vv[k] for k in pw}
+by_text('D-T09', list(zip(['1인당 지출액을', '총지출액이', 'Y국 관광객의', '100엔이', '세 국적'], [max(pw, key=pw.get) == 'X', max(tt9, key=tt9.get) == 'X', F(tt9['Y'], tt9['X']) >= F(7, 10), 120000 * 1000 // 100 > pw['X'], F(sum(tt9.values()), 210) >= 1200000])))
+s10, e10 = [3000, 2900, 2760, 2640], [200, 200, 184, 176]
+combo('D-T10', [l for l, t in zip('ㄱㄴㄷㄹ', [[F(a, b) for a, b in zip(s10, e10)] == [15, F(29, 2), 15, 15], [round(float(F((s10[i - 1] - s10[i]) * 100, s10[i - 1])), 1) for i in range(1, 4)] == [3.3, 4.8, 4.5], [s10[0] - x for x in s10[1:]] == [100, 240, 340], [x * 100 // 200 for x in e10[1:]] == [100, 92, 88]]) if t])
+# L-T
+vt = list(itertools.product((False, True), repeat=3))
+pr6 = {'민원 처리 기간이 줄어들면': lambda a, b, c: imp(c, b), '인력이 충원되지 않으면': lambda a, b, c: imp(not b, not c), '예산이 늘어나지 않으면': lambda a, b, c: imp(not a, not c), '민원 처리 기간이 줄어들지 않으면': lambda a, b, c: imp(not c, a), '인력이 충원되면': lambda a, b, c: imp(b, c)}
+by_text('L-T06', [(k, all(imp(a, c) for a, b, c in vt if imp(a, b) and f(a, b, c))) for k, f in pr6.items()], what='valid premises')
+m7 = [m for m in itertools.product((0, 1), repeat=5) if (m[0] or m[1]) and imp(m[0], not m[2]) and imp(m[1], m[3]) and imp(not m[2], m[4]) and not (m[3] and m[4])]
+combo('L-T07', [l for l, t in zip('ㄱㄴㄷㄹ', [all(not (m[0] and m[1]) for m in m7), all(sum(m) == 3 for m in m7), all(imp(m[4], m[0]) for m in m7), all(m[3] for m in m7)]) if t])
+cr = []
+for c in itertools.combinations('甲乙丙丁', 2):
+    s_ = {'甲': '乙' in c, '乙': '丙' not in c, '丙': ('甲' in c) != ('丁' in c), '丁': '丁' not in c}
+    if all(s_[p_] == (p_ not in c) for p_ in '甲乙丙丁'): cr.append(c)
+ok(len(cr) == 1, f'L-T08 {cr}'); pick('L-T08', ', '.join(cr[0]))
+ok(F(240, F(120, 60) + F(120, 40)) == 48, 'L-T09 average speed'); pick('L-T09', '㉣을 ‘48km’로 고친다.')
+pick('L-T10', '(나) - (다) - (가) - (라)')
 print('ALL OK' if ok_all else 'SOME FAILED')

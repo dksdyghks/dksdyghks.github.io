@@ -1,8 +1,8 @@
 /* YO아이 — 연구의 뼈대: 연구 질문과 그 변천, 논증 설계도와 점검, 개념, 선행연구 지도와 차별성, 서재 인용망, 심사 대응, 내 연구. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveRead, docOf, docPages, footnote, pageLabel, modal, closeModals, confirmBox, formBox, copyText, download, safeName, libLoad, logEvent } from './core.js?v=d3f8a1dc6f';
-import { citationsIn, titleKey, styleMetrics, bodyOfPages } from './lawtext.js?v=d3f8a1dc6f';
-import { BASE, PORTRAIT, excluded } from './profile.js?v=d3f8a1dc6f';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=d3f8a1dc6f';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveRead, docOf, docPages, footnote, pageLabel, modal, closeModals, confirmBox, formBox, copyText, download, safeName, libLoad, logEvent } from './core.js?v=90681ac51d';
+import { citationsIn, titleKey, styleMetrics, bodyOfPages } from './lawtext.js?v=90681ac51d';
+import { BASE, PORTRAIT, excluded } from './profile.js?v=90681ac51d';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=90681ac51d';
 
 export const STAGES = [['idea', '구상'], ['reading', '선행연구'], ['design', '논증 설계'], ['writing', '집필'], ['submitted', '투고'], ['review', '심사·수정'], ['published', '게재']];
 export const stageName = (k) => (STAGES.find((x) => x[0] === k) || STAGES[0])[1];
