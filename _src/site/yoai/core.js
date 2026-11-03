@@ -351,17 +351,7 @@ export function citer() {
   };
 }
 export const pageLabel = (doc, p) => where(doc, p).ui;
-/* the first pages of a journal article usually show where it was published: offered as suggestions, never filled in silently */
-export function guessMeta(pages) {
-  const t = fixGlyphs((pages || []).slice(0, 2).join('\n')).replace(/[ \t]+/g, ' ');
-  const out = {};
-  const vol = t.match(/[『「]?([가-힣A-Za-z·\s]{2,20}?)[』」]?\s*(제\s*\d+\s*[권집](?:\s*제\s*\d+\s*호)?(?:\s*\(통권\s*제?\s*\d+\s*호\))?|통권\s*제\s*\d+\s*호|\d{4}년\s*제\s*\d+\s*호)/);
-  if (vol) { out.venue = vol[1].replace(/^\s*(국회입법조사처|연구논문)\s*/, '').trim(); out.vol = vol[2].replace(/\s+/g, ' ').replace(/제 (\d)/g, '제$1').trim(); }
-  const y = t.match(/((?:19|20)\d{2})\s*[.년]\s*(\d{1,2})\s*[.월]/); if (y) out.date = `${y[1]}. ${+y[2]}.`;
-  const doi = t.match(/(?:doi\.org\/|DOI\s*:?\s*)(10\.\d{4,9}\/[^\s]+)/i); if (doi) out.doi = doi[1];
-  const pp = t.match(/(?:pp\.?\s*|^|\s)(\d{1,4})\s*[~∼-]\s*\d{1,4}\s*면?/m); if (pp && +pp[1] > 1 && +pp[1] < 3000) out.page1 = pp[1];
-  return out;
-}
+export { guessMeta } from './lawtext.js';
 
 /* ---------------- 창, 파일 ---------------- */
 export function modal(html, onClose) {

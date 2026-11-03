@@ -272,3 +272,92 @@ export function bodyChecks(paras) {
 }
 /* 반론을 다루는 문장이 있는지: 장(章)마다 */
 export const COUNTER_RE = /반대\s?견해|반론|이에 대하여는|이에 대해서는|비판(?:이|하는|적 견해)|견해(?:가|도) (?:있|존재)|다른 견해|이견|그러나 이러한 견해|이와 달리|재반론|이에 대한 반박/;
+
+/* ---------------- 문헌 정보 제안: 학술지 논문의 첫 쪽들에서 ----------------
+   믿을 만한 곳만 본다: 둘째·셋째 쪽 머리(“64 입법과 정책 제13권 제1호”, “明知法學 제24권 제1호 - 20 -”),
+   첫 쪽의 쪽 범위(pp.063~088, 272~293면, - 19 -), 권호 바로 옆의 발행 연월, 저자 줄(안요환*, 안 요 환(Yohan AHN)**), 그 위의 제목.
+   제안일 뿐이며 사용자가 눌러야 들어간다. */
+const HANJA_NUM = (s) => s.replace(/第\s*(\d+)\s*輯/g, '제$1집').replace(/第\s*(\d+)\s*卷/g, '제$1권').replace(/第\s*(\d+)\s*號/g, '제$1호').replace(/通卷\s*第?\s*(\d+)\s*號/g, '통권 제$1호');
+const VOL_SRC = '(?:제\\s?\\d+\\s?[권집](?:\\s?제?\\s?\\d+\\s?호)?(?:\\s?\\(\\s?통권\\s?제?\\s?\\d+\\s?호\\s?\\))?|통권\\s?제?\\s?\\d+\\s?호|제\\s?\\d+\\s?호|\\d+\\s?권\\s?\\d+\\s?호)';
+const tidyVol = (v) => v.replace(/\s+/g, ' ').replace(/제 (\d)/g, '제$1').replace(/(\d) ([권집호])/g, '$1$2').replace(/\( /g, '(').replace(/ \)/g, ')').trim();
+const NOT_NAME = /^(성명|저자|필자|교수|조교수|부교수|명예교수|강사|박사|학생|연구위원|연구관|변호사|판사|검사|교신저자|주저자|공저자|국문초록|국문요지|논문요지|논문요약|초록|요약|목차|주제어|서론|결론|차례|연구논문|특집|기획|논단|판례평석|머리말)$/;
+/* journal names printed in Hanja are offered in Hangul (as they are cited), only when every Hanja is in this short list */
+const HJ = { 法: '법', 學: '학', 硏: '연', 研: '연', 究: '구', 政: '정', 策: '책', 立: '립', 明: '명', 知: '지', 航: '항', 空: '공', 宇: '우', 宙: '주', 會: '회', 誌: '지', 論: '론', 叢: '총', 集: '집', 大: '대', 韓: '한', 國: '국', 公: '공', 私: '사', 刑: '형', 民: '민', 商: '상', 憲: '헌', 行: '행', 社: '사', 科: '과', 院: '원', 報: '보', 評: '평', 刊: '간', 紀: '기', 要: '요', 經: '경', 濟: '제', 人: '인', 文: '문', 比: '비', 較: '교', 際: '제', 境: '경', 環: '환', 勞: '로', 動: '동', 財: '재', 産: '산', 稅: '세', 租: '조', 地: '지', 方: '방', 自: '자', 治: '치', 安: '안', 保: '보', 全: '전', 統: '통', 一: '일', 北: '북', 外: '외', 交: '교', 軍: '군', 事: '사', 防: '방', 警: '경', 察: '찰', 犯: '범', 罪: '죄', 正: '정', 義: '의', 東: '동', 西: '서', 南: '남', 中: '중', 央: '앙', 新: '신', 成: '성', 均: '균', 館: '관', 高: '고', 麗: '려', 延: '연', 世: '세', 梨: '이', 花: '화', 漢: '한', 陽: '양', 慶: '경', 熙: '희', 釜: '부', 山: '산', 江: '강', 原: '원', 忠: '충', 州: '주', 光: '광', 仁: '인', 荷: '하', 檀: '단', 判: '판', 例: '례', 硏究: '연구', 議: '의', 選: '선', 擧: '거', 管: '관', 理: '리', 敎: '교', 育: '육', 史: '사', 哲: '철', 思: '사', 想: '상', 基: '기', 本: '본', 權: '권', 制: '제', 度: '도', 司: '사', 研究: '연구', 實: '실', 務: '무', 情: '정', 報學: '보학', 金: '금', 融: '융', 企: '기', 業: '업', 醫: '의', 生: '생', 命: '명', 倫: '윤', 技: '기', 術: '술', 産業: '산업', 家: '가', 族: '족', 女: '여', 性: '성', 兒: '아', 童: '동', 少: '소', 年: '년', 老: '노', 福: '복', 祉: '지', 歐: '구', 美: '미', 日: '일', 本法: '본법', 獨: '독', 逸: '일', 佛: '불', 英: '영', 亞: '아', 細: '세', 洲: '주' };
+const INITIAL = { 립: '입', 론: '논', 로: '노', 례: '예', 려: '여', 리: '이', 년: '연', 륜: '윤' };
+const hangulVenue = (v) => {
+  v = v.normalize('NFKC');
+  if (!/[一-鿿]/.test(v)) return v;
+  let out = ''; for (const ch of v) { if (/[一-鿿]/.test(ch)) { if (!HJ[ch]) return v; out += HJ[ch]; } else out += ch; }
+  return out.split(/(\s+)/).map((w) => (INITIAL[w[0]] ? INITIAL[w[0]] + w.slice(1) : w)).join('');
+};
+const cleanVenue0 = (v) => String(v || '').replace(/[\u0000-\u001f]/g, '').replace(/[『』「」❙|∣]/g, '').replace(/^(국회입법조사처|연구논문|\(社\)\S+|사단법인\s?\S+)\s*/, '').replace(/\s*연구논문$/, '').trim();
+const cleanVenue = (v) => hangulVenue(cleanVenue0(v)).replace(/․/g, '·');
+const COVER = /저작권 정책|Copyright Policy/;
+export function guessMeta(pages) {
+  // page1 means what YO아이 uses everywhere: the journal page number printed on PDF page 1 (a cover page shifts it)
+  const P = (pages || []).slice(0, 6).map((p) => HANJA_NUM(fixGlyphs(p || '')).replace(/[－−–—]/g, '-').replace(/[ \t\u00a0]+/g, ' ').replace(/www\.earticle\.net/g, '\n'));
+  const out = {}, p1votes = new Map();
+  const vote = (n, w) => { if (n > 0 && n < 5000) p1votes.set(n, (p1votes.get(n) || 0) + w); };
+  // 1. running heads: the printed page number of each following page, and often the journal with its volume
+  for (let i = 1; i < P.length; i++) {
+    const ls = P[i].split('\n').map((l) => l.trim()).filter(Boolean), head = ls.slice(0, 2).join(' ').slice(0, 140); let m;
+    if ((m = head.match(/^[∣|]\s?(\d{1,4})\s?[∣|]/))) vote(+m[1] - i, 3);
+    else if ((m = ls[0] && ls[0].match(/^(?:19|20)\d{2}\.\s?\d{1,2}\.?\s+(\d{1,4})$/))) vote(+m[1] - i, 2);
+    else if ((m = head.match(/^(\d{1,4})\s+[^\s\d.)]/))) vote(+m[1] - i, 2);
+    else if ((m = head.match(/(?:^|\s)-\s?(\d{1,4})\s?-(?:\s|$)/))) vote(+m[1] - i, 2);
+    else if ((m = ls[0] && ls[0].match(/^[가-힣「『][^\n]{3,80}?\s(\d{1,4})$/))) vote(+m[1] - i, 1);
+    const hv = head.replace(/^[∣|]?\s?\d{1,4}\s?[∣|]?\s+/, '').match(new RegExp(`^(\\S.{0,28}?)\\s+(${VOL_SRC})`));
+    if (hv && !out.venue && !/\d/.test(hv[1])) { const v = cleanVenue(hv[1]); if (v.length >= 2) { out.venue = v; out.vol = tidyVol(hv[2]); } }
+  }
+  // 2. the first page: its printed number, or the page range (weaker: a cover page may come first)
+  const flat0 = (P[0] || '').replace(/\n/g, ' ');
+  const pn = (P[0] || '').match(/(?:^|\n)\s*-\s?(\d{1,4})\s?-\s*(?:\n|$)/); if (pn) vote(+pn[1], 3);
+  const r = flat0.match(/pp\.?\s?(\d{1,4})\s?[~∼-]\s?(\d{1,4})/i) || flat0.match(/(\d{1,4})\s?[~∼]\s?(\d{1,4})\s?면/);
+  if (r && +r[2] > +r[1] && !COVER.test(P[0])) vote(+r[1], 2);
+  const best = [...p1votes.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (best && best[1] >= 3) out.page1 = String(best[0]);
+  // 3. journal, volume and date on the first pages (the date near the volume, never a date in the text)
+  const first = P.slice(0, 3).filter((p) => !COVER.test(p)), flat = first.join('\n').replace(/\n/g, ' ');
+  const fv = flat.match(new RegExp(`(?:^|[\\s❙|『「(\\u0002])([가-힣A-Za-z一-鿿·과 ]{2,24}?)\\s*[❙|』」\\u0003]?\\s*(${VOL_SRC}|\\d{4}\\s?년\\s?제\\s?\\d+\\s?호)`));
+  if (fv) {
+    const venue = cleanVenue(fv[1]);
+    if (!out.venue && venue.length >= 2 && !/^(제|통권)/.test(venue)) out.venue = venue;
+    if (!out.vol) out.vol = tidyVol(fv[2]).replace(/^(\d{4})\s?년\s?/, '');
+    // the publisher, only when it is printed right beside the journal (other societies are cited all over a first page)
+    const near = flat.slice(Math.max(0, fv.index - 40), fv.index + fv[0].length + 70).normalize('NFKC');
+    const pubs = [...near.matchAll(/(?:\(社\)|사단법인\s?)?([가-힣一-鿿·․]{2,24}(?:학회|學會|협회|協會|연구소|硏究所|研究所|연구원|조사처|연수원|법제처|출판부))/g)].map((x) => hangulVenue(x[1]).replace(/․/g, '·'));
+    if (pubs.length) out.publisher = pubs.sort((x, y) => y.length - x.length)[0];
+    const after = flat.slice(fv.index + fv[0].length, fv.index + fv[0].length + 40);
+    const d = after.match(/^[^가-힣]{0,4}\(?\s?((?:19|20)\d{2})\s?[.년]\s?(\d{1,2})?/) || after.match(/((?:19|20)\d{2})\s?\.\s?(\d{1,2})\s?\.\s?\d{1,2}\s?\./);
+    const y = (d && d[1]) || (fv[2].match(/^(\d{4})\s?년/) || [])[1];
+    if (y) out.date = d && d[2] && +d[2] >= 1 && +d[2] <= 12 ? `${y}. ${+d[2]}.` : y;
+  }
+  if (!out.date || /^\d{4}$/.test(out.date)) { const d = flat.match(/((?:19|20)\d{2})\s?년\s?(\d{1,2})\s?월\s?(?:\d{1,2}\s?일\s?)?(?:발행|발간)/) || flat.match(/(?:발행|발간)(?:일)?\s*:?\s*((?:19|20)\d{2})\s?[.년]\s?(\d{1,2})/); if (d && +d[2] >= 1 && +d[2] <= 12 && (!out.date || out.date === d[1])) out.date = `${d[1]}. ${+d[2]}.`; }
+  const doi = flat.match(/(?:doi\.org\/|DOI\s*:?\s*)(10\.\d{4,9}\/[^\s,]+)/i); if (doi) out.doi = doi[1].replace(/[.)]+$/, '');
+  // 4. the author line and the title above it
+  const NAME = /^[가-힣]{2,4}$/;
+  const nameOf = (x) => { x = x.replace(/\([^)]*\)/g, '').trim(); if (/^[가-힣](\s[가-힣]){1,3}$/.test(x)) return x.replace(/\s/g, ''); const tok = x.split(/\s+/)[0]; return NAME.test(tok) && !/\s/.test(x.replace(/\s+(공군|서강|고려|연세|서울|대학|교수|조교수|박사|부교수|연구위원)\S*.*$/, '').replace(/\s+\S$/u, '')) ? tok : ''; };
+  for (const page of first) {
+    const lines = page.split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 60);
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i], l = raw.replace(/^\d{1,3}\)\s?/, '').replace(/\*+\s?\d{0,3}\)?/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!l || l.length > 70 || /\d|[.。:]$|다\.?$/.test(l)) continue;
+      const parts = l.split(/\s*(?:[․·・∙ㆍ,]|\band\b)\s*/).filter(Boolean).map(nameOf);
+      if (!parts.length || parts.length > 6 || parts.some((x) => !x || NOT_NAME.test(x))) continue;
+      const marked = /\*/.test(raw) || /\([A-Z][a-z]/.test(raw) || /^[가-힣](\s[가-힣]){1,3}(\s|$)/.test(l) || /[^\s가-힣A-Za-z0-9.,:()\-『』「」“”‘’·․・]/.test(l);
+      if (!marked) continue;
+      out.author = parts.join('·');
+      const above = [];
+      for (let j = i - 1; j >= 0 && above.length < 3; j--) {
+        const t = lines[j];
+        const meta = /DOI|doi\.org|ISSN|https?:|pp\.|^-?\s?\d{1,4}\s?-?$|연구논문|^\(社\)|학회$|Download|Accessed/.test(t) || new RegExp(VOL_SRC).test(t) || /\s\d{1,4}$/.test(t) || /^(?:19|20)\d{2}\s?\./.test(t) || !/[가-힣]{2}/.test(t) || /^[A-Za-z]/.test(t);
+        if (meta) { if (above.length) break; continue; }
+        above.unshift(t);
+      }
+      const title = above.join(' ').replace(/\*+/g, '').replace(/\s?\d+\)$/, '').replace(/\s+/g, ' ').trim();
+      if (title.length >= 6 && title.length <= 160) out.title = title;
+      return out;
+    }
+  }
+  return out;
+}

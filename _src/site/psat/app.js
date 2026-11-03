@@ -120,7 +120,7 @@
   function loadSet() { try { const v = localStorage.getItem(SET_KEY); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
   function saveCur() {
     try {
-      if (S.cur) localStorage.setItem(CUR_KEY, JSON.stringify({ q: S.cur.q, ctx: S.cur.ctx, phase: S.cur.phase, choice: S.cur.choice, ms: S.cur.ms, ok: S.cur.ok, review: S.cur.review, no: S.cur.no }));
+      if (S.cur) localStorage.setItem(CUR_KEY, JSON.stringify({ q: S.cur.q, ctx: S.cur.ctx, phase: S.cur.phase, choice: S.cur.choice, ms: S.cur.ms, ok: S.cur.ok, review: S.cur.review, no: S.cur.no, deferred: !!S.cur.deferred }));
       else localStorage.removeItem(CUR_KEY);
     } catch (e) { /* storage full or blocked: the question is simply not restored */ }
   }
@@ -216,6 +216,11 @@
       return due.length ? { q: due[0].q, review: true } : null;
     }
     if (ctx.mode === 'set' && S.set && Array.isArray(S.set.plan)) { // 세트는 미리 짠 문항 순서대로, 다 쓰면 생성 문항으로 채운다
+      const later = S.set.later || [];
+      if (S.set.results.length + later.length >= S.set.n) { // 새 문항을 다 냈으면 넘긴 문항으로 돌아간다(쓴 시간과 고른 답은 그대로)
+        if (!later.length) return null;
+        const x = later.shift(); saveSet(); return { q: x.q, ms: x.ms, choice: x.choice, no: x.no, deferred: true };
+      }
       while (S.set.plan.length) {
         const id = S.set.plan.shift(); saveSet();
         const q = (P.bank[subj] || []).find((x) => x.id === id);
@@ -473,19 +478,24 @@
       return;
     }
     const d = S.daily[dayKey()];
-    const no = ctx.mode === 'set' && S.set ? S.set.results.length + 1 : ((d && d.s && d.s[got.q.subject]) ? d.s[got.q.subject].n : 0) + 1;
-    S.cur = { q: got.q, ctx, phase: 'q', choice: null, ms: 0, ok: null, review: !!got.review, no };
+    let no;
+    if (ctx.mode === 'set' && S.set) { if (got.no) no = got.no; else { S.set.drawn = (S.set.drawn || S.set.results.length + (S.set.later || []).length) + 1; no = S.set.drawn; saveSet(); } }
+    else no = ((d && d.s && d.s[got.q.subject]) ? d.s[got.q.subject].n : 0) + 1;
+    S.cur = { q: got.q, ctx, phase: 'q', choice: got.choice == null ? null : got.choice, ms: got.ms || 0, ok: null, review: !!got.review, no, deferred: !!got.deferred };
     saveCur();
     viewQuiz();
   }
   function viewQuiz() {
     const c = S.cur, q = c.q;
-    const crumb = c.ctx && c.ctx.mode === 'set' && S.set ? `<b>실전 세트</b> · ${SUBJ[q.subject].name} ${S.set.results.length + 1}/${S.set.n}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}`;
+    const inSet = c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done, later = inSet ? (S.set.later || []).length : 0;
+    const canLater = inSet && (S.set.results.length + later + 1 < S.set.n || later > 0);
+    const crumb = inSet ? `<b>실전 세트</b> · ${SUBJ[q.subject].name} · 푼 문항 ${S.set.results.length}/${S.set.n}${later ? ` · 넘긴 문항 ${later}` : ''}${c.deferred ? ' · <b>넘겼던 문항</b>' : ''}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}`;
     paint(shell(crumb, `
       <article class="sheet fade-in" aria-label="문제">${questionHTML(q, { choice: c.choice, no: c.no, review: c.review })}</article>
       <div class="actions">
         <button class="btn ghost" data-act="home" title="기록하지 않고 처음 화면으로 나갑니다">나가기</button>
-        <button class="btn ghost" data-act="skip" title="해설 바로 보기 (오답으로 기록)">모르겠음</button>
+        ${canLater ? '<button class="btn ghost" data-act="later" title="이 문항을 넘기고, 남은 문항을 다 푼 뒤에 다시 풉니다(쓴 시간과 고른 답은 그대로) · 단축키 L">넘기기</button>' : ''}
+        <button class="btn ghost" data-act="skip" title="${inSet ? '모른다고 표시하고 다음 문항으로 (오답으로 기록)' : '해설 바로 보기 (오답으로 기록)'}">모르겠음</button>
         <button class="btn primary grow" data-act="submit" ${c.choice == null ? 'disabled' : ''}>정답 확인 <span class="kbd">Enter</span></button>
       </div>`, { timer: true }), 'quiz');
     startTimer();
@@ -537,7 +547,7 @@
       });
     }
     if (c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done) {
-      S.set.results.push({ q, choice: c.choice, ok, ms: Math.round(c.ms) }); saveSet();
+      S.set.results.push({ q, choice: c.choice, ok, ms: Math.round(c.ms), no: c.no, deferred: !!c.deferred }); saveSet();
       if (S.set.results.length >= S.set.n) { finishSet(false); return; }
       startSession(c.ctx); return;
     }
@@ -604,6 +614,26 @@
 
   /* ----- 실전 세트 ----- */
   let setPick = { subj: 'lang', n: 10 };
+  /* 세트 기록: 과목마다 최근 점수와, 그 앞의 같은 수 세트와 견준 흐름 */
+  const setsOf = (subj) => (S.meta.sets || []).filter((x) => SUBJ[x.subj] && (!subj || x.subj === subj));
+  function setTrendHTML(subj) {
+    const list = setsOf(subj); if (list.length < 2) return '';
+    const rate = (xs) => Math.round(xs.reduce((a, x) => a + x.ok / x.n, 0) / xs.length * 100);
+    const k = Math.min(5, Math.floor(list.length / 2)), now = list.slice(-k), before = list.slice(-2 * k, -k);
+    const d = rate(now) - rate(before);
+    return `<p class="notice">${SUBJ[subj].name} 최근 ${k}세트 정답률 <b>${rate(now)}%</b> · 그 앞 ${k}세트 ${rate(before)}% (${d > 0 ? '+' : ''}${d}%p)</p>`;
+  }
+  function setHistHTML() {
+    const all = setsOf(''); if (!all.length) return '';
+    const per = ORDER.filter((k) => setsOf(k).length).map((k) => {
+      const xs = setsOf(k), last = xs.slice(-12);
+      const bars = last.map((x) => { const r = Math.round(x.ok / x.n * 100); return `<i style="height:${Math.max(4, r)}%" title="${md(dayKey(x.at))} · ${x.ok}/${x.n} (${r}%)${x.timeUp ? ' · 시간 초과' : ''}"></i>`; }).join('');
+      const best = Math.max(...xs.map((x) => Math.round(x.ok / x.n * 100)));
+      return `<div class="set-hist"><div class="sh-h"><b>${SUBJ[k].name}</b><span>${xs.length}세트 · 최고 ${best}%</span></div><div class="bars sh-bars" aria-label="${SUBJ[k].name} 세트 정답률">${bars}</div></div>`;
+    }).join('');
+    const rows = all.slice(-10).reverse().map((x) => `<tr><td>${md(dayKey(x.at))}</td><td>${SUBJ[x.subj].name}</td><td>${x.ok}/${x.n}</td><td>${Math.round(x.ok / x.n * 100)}%</td><td>${human(x.usedMs)}${x.timeUp ? ' <small class="tag">시간 초과</small>' : ''}</td></tr>`).join('');
+    return `<div class="card" style="margin-top:12px"><h2>세트 기록</h2>${per}<table class="st"><thead><tr><th>날짜</th><th>과목</th><th>점수</th><th>정답률</th><th>시간</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
   function viewSetup() {
     const segS = ORDER.map((k) => `<button class="${setPick.subj === k ? 'on' : ''}" data-act="set-subj" data-v="${k}">${SUBJ[k].name}</button>`).join('');
     const segN = [5, 10, 20, 40].map((n) => `<button class="${setPick.n === n ? 'on' : ''}" data-act="set-n" data-v="${n}">${n}문항</button>`).join('');
@@ -613,9 +643,10 @@
       <div class="card"><div class="set-row"><div class="l">과목</div><div class="seg">${segS}</div></div>
         <div class="set-row"><div class="l">문항 수</div><div class="seg">${segN}</div></div>
         <div class="set-row"><div class="l">제한 시간<small>실제 시험 속도(문항당 ${human(SUBJ[setPick.subj].pace * 1000)})로 계산합니다. 40문항은 실제 시험 한 과목(90분)과 같습니다. 다른 창을 보는 동안은 멈춥니다.</small></div><b style="font-variant-numeric:tabular-nums">${human(lim)}</b></div>
-        <p class="prose" style="margin:8px 0 12px">문항 사이에는 해설을 보여 주지 않고 시험처럼 이어서 풉니다. 끝나면 점수와 문항별 해설을 한꺼번에 봅니다. 틀린 문제는 오답노트에 담깁니다.</p>
+        <p class="prose" style="margin:8px 0 12px">문항 사이에는 해설을 보여 주지 않고 시험처럼 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(L)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다(쓴 시간과 고른 답은 그대로). 끝나면 점수와 문항별 해설을 한꺼번에 봅니다. 틀린 문제는 오답노트에 담깁니다.</p>
         <button class="btn primary" data-act="set-start">시작하기</button></div>
-      ${S.set && S.set.done ? '<button class="item" data-act="set-result" style="margin-top:12px"><span class="t1"><span class="tag">지난 세트</span></span><span class="t2">지난 실전 세트 결과 다시 보기</span></button>' : ''}`), 'setup');
+      ${S.set && S.set.done ? '<button class="item" data-act="set-result" style="margin-top:12px"><span class="t1"><span class="tag">지난 세트</span></span><span class="t2">지난 실전 세트 결과 다시 보기</span></button>' : ''}
+      ${setHistHTML()}`), 'setup');
   }
   /* 실전 세트 문항 구성: 아직 풀지 않은 직접 출제 문항에서 난이도 하 25% · 중 55% · 상 20%를 맞추고,
      같은 난이도 안에서는 유형이 고루 섞이도록 돌아가며 뽑는다. 1지문 2문항은 붙여서 넣는다. 모자라면 생성 문항으로 채운다. */
@@ -635,6 +666,15 @@
     [2, 1, 3].forEach((lv) => take(lv, n - count)); // 어느 난이도가 모자라면 다른 난이도로 채운다
     return shuffle(picked).flat().map((q) => q.id);
   }
+  /* 넘기기: 실제 시험처럼 막히는 문항을 미뤄 두었다가 마지막에 다시 푼다 */
+  function deferSetItem() {
+    const c = S.cur; if (!c || c.phase !== 'q' || !S.set || S.set.done || !c.ctx || c.ctx.mode !== 'set') return;
+    const later = S.set.later || (S.set.later = []);
+    if (!(S.set.results.length + later.length + 1 < S.set.n || later.length)) return;
+    later.push({ q: c.q, ms: Math.round(c.ms), choice: c.choice, no: c.no }); saveSet();
+    toast(`${c.no}번을 넘겼습니다. 남은 문항을 다 푼 뒤에 다시 나옵니다.`);
+    startSession(c.ctx);
+  }
   function startSet() {
     S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false, plan: planSet(setPick.subj, setPick.n) };
     saveSet();
@@ -642,7 +682,13 @@
   }
   function finishSet(timeUp) {
     if (!S.set) { viewHome(); return; }
-    S.set.done = true; S.set.timeUp = !!timeUp; saveSet();
+    S.set.done = true; S.set.timeUp = !!timeUp;
+    if (!S.set.logged) {
+      const r = S.set.results;
+      (S.meta.sets = S.meta.sets || []).push({ at: S.set.at, end: Date.now(), subj: S.set.subj, n: S.set.n, ok: r.filter((x) => x.ok).length, answered: r.length, usedMs: Math.round(Math.min(S.set.usedMs, S.set.limitMs)), limitMs: S.set.limitMs, timeUp: !!timeUp, deferred: r.filter((x) => x.deferred).length });
+      S.meta.sets = S.meta.sets.slice(-300); S.set.logged = true; saveKV('meta');
+    }
+    saveSet();
     S.cur = null; saveCur(); stopTimer();
     if (timeUp) toast('제한 시간이 끝났습니다.');
     viewSetResult();
@@ -650,7 +696,7 @@
   function viewSetResult() {
     const st = S.set; if (!st) { viewHome(); return; }
     const okN = st.results.filter((x) => x.ok).length, used = st.results.reduce((a, x) => a + x.ms, 0);
-    const rows = st.results.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(typeShort(x.q.subject, x.q.type))}</td><td>${x.choice < 0 ? '모름' : x.ok ? '<b style="color:var(--ok)">○</b>' : '<b style="color:var(--pen)">×</b>'}</td><td>${human(x.ms)}</td><td><button class="btn sm" data-act="set-review" data-i="${i}">해설</button></td></tr>`).join('');
+    const rows = st.results.map((x, i) => [x, i]).sort((a, b) => (a[0].no || a[1] + 1) - (b[0].no || b[1] + 1)).map(([x, i]) => `<tr><td>${x.no || i + 1}${x.deferred ? ' <small class="tag">넘김</small>' : ''}</td><td>${esc(typeShort(x.q.subject, x.q.type))}</td><td>${x.choice < 0 ? '모름' : x.ok ? '<b style="color:var(--ok)">○</b>' : '<b style="color:var(--pen)">×</b>'}</td><td>${human(x.ms)}</td><td><button class="btn sm" data-act="set-review" data-i="${i}">해설</button></td></tr>`).join('');
     const miss = st.n - st.results.length;
     paint(shell('<b>실전 세트</b> · 결과', `
       <div class="page-h"><h1>${SUBJ[st.subj].name} 실전 세트 결과</h1><button class="btn primary sm" data-act="setup">새 세트</button></div>
@@ -660,7 +706,9 @@
         <div class="stat"><div class="k">쓴 시간</div><div class="v" style="font-size:1.125rem">${human(used)}</div></div>
         <div class="stat"><div class="k">제한 시간</div><div class="v" style="font-size:1.125rem">${human(st.limitMs)}</div></div>
       </div>
-      ${miss > 0 ? `<p class="notice">시간이 끝나 ${miss}문항은 풀지 못했습니다. 풀지 못한 문항은 점수에서 오답으로 셉니다.</p>` : ''}
+      ${miss > 0 ? `<p class="notice">시간이 끝나 ${miss}문항은 풀지 못했습니다${(st.later || []).length ? `(넘겼다가 돌아오지 못한 문항 ${st.later.length}개 포함)` : ''}. 풀지 못한 문항은 점수에서 오답으로 셉니다.</p>` : ''}
+      ${(() => { const d = st.results.filter((x) => x.deferred); return d.length ? `<p class="notice">넘겼다가 다시 푼 ${d.length}문항 중 ${d.filter((x) => x.ok).length}문항을 맞혔습니다.</p>` : ''; })()}
+      ${setTrendHTML(st.subj)}
       <div class="card"><h2>문항별</h2><table class="st"><thead><tr><th>문항</th><th>유형</th><th>결과</th><th>시간</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="notice">틀린 문제는 오답노트에 담겼고, 1일 뒤부터 복습에 나옵니다.</p>`), 'setresult');
   }
@@ -790,6 +838,8 @@
         <p>틀린 문제는 문제 전체가 오답노트에 자동으로 저장됩니다. 1일 → 3일 → 7일 → 14일 → 30일 뒤에 다시 나오고, 틀리면 다음 날로 돌아갑니다. 다섯 번 연속 맞히면 ‘졸업’합니다. 해설 화면에서 <b>틀린 이유</b>를 골라 두면 나중에 실수 유형을 돌아볼 수 있고, <b>★ 중요</b>(S)와 <b>메모</b>(M)도 함께 보관됩니다.</p>
         <h2>난이도와 유형별 연습</h2>
         <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
+        <h2>실전 세트</h2>
+        <p>처음 화면의 <b>실전 세트</b>에서 과목과 문항 수를 고르면 실제 시험 속도로 제한 시간이 정해지고, 해설 없이 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(<b>L</b>)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다. 끝난 세트는 <b>세트 기록</b>에 쌓여 과목별 점수의 흐름을 볼 수 있습니다.</p>
         <h2>기록 보관</h2>
         <p>기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 <b>설정 → 백업 파일 저장</b>으로 파일을 받아 두고, 다른 기기에서 <b>백업 불러오기</b>를 누르면 기록이 합쳐집니다.</p>
         <h2>문제가 이상할 때</h2>
@@ -823,6 +873,7 @@
       S.agg = { subj: {}, type: {} }; S.daily = {};
       for (const e of merged) addToStats(e);
       for (const h of data.seen || []) S.seen.add(h);
+      if (data.meta && Array.isArray(data.meta.sets)) { const have = new Set((S.meta.sets || []).map((x) => x.at)); S.meta.sets = (S.meta.sets || []).concat(data.meta.sets.filter((x) => x && x.at && !have.has(x.at))).sort((a, b) => a.at - b.at).slice(-300); saveKV('meta'); }
       for (const it of data.items || []) {
         if (!it || !it.qid || !it.q) continue;
         const mine = S.items.get(it.qid);
@@ -914,6 +965,7 @@
       case 'resume': if (S.cur) (S.cur.phase === 'x' ? viewExplain() : viewQuiz()); break;
       case 'submit': submit(false); break;
       case 'skip': submit(true); break;
+      case 'later': deferSetItem(); break;
       case 'next': next(); break;
       case 'star': toggleStar(); break;
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
@@ -970,6 +1022,7 @@
     if (S.view === 'quiz') {
       if (/^[1-5]$/.test(k)) { choose(+k - 1); e.preventDefault(); }
       else if (k === 'Enter') { submit(false); e.preventDefault(); }
+      else if ((k === 'l' || k === 'L') && $('[data-act="later"]')) { deferSetItem(); e.preventDefault(); }
       else if (k === 'Escape') { saveCur(); if (EMBED) closeOverlay(); else viewHome(); }
     } else if (S.view === 'explain') {
       if (k === 'Enter' || k === 'ArrowRight') { if (!e.target.closest('button') || e.target.dataset.act === 'next') { next(); e.preventDefault(); } }

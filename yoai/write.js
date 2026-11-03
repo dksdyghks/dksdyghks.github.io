@@ -2,13 +2,13 @@
    개요의 장·절마다 논증 설계도의 주장과 노트 카드를 배치하고, 본문 초고에 〔카드 n〕을 넣으면 내보낼 때 그 자리가 각주가 된다.
    각주는 박사학위논문의 양식을 따르고, 두 번째부터는 ‘앞의 논문’으로 줄인다.
    원고 점검은 사용자가 고른 원고와 서재만 읽는다. 원고는 저장하지 않으며, 바깥으로 아무것도 보내지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=4a40f1184a';
-import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=4a40f1184a';
-import { readHangul } from './hwp.js?v=4a40f1184a';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=4a40f1184a';
-import { buildDocx, DOCX_MIME } from './docx.js?v=4a40f1184a';
-import { BASE, PORTRAIT, excluded } from './profile.js?v=4a40f1184a';
-import { projCards } from './research.js?v=4a40f1184a';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=d6c7b31956';
+import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=d6c7b31956';
+import { readHangul } from './hwp.js?v=d6c7b31956';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=d6c7b31956';
+import { buildDocx, DOCX_MIME } from './docx.js?v=d6c7b31956';
+import { BASE, PORTRAIT, excluded } from './profile.js?v=d6c7b31956';
+import { projCards } from './research.js?v=d6c7b31956';
 
 const AUTHOR = '안요환';
 const ROMAN = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ'];

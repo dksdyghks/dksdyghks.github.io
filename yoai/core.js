@@ -1,9 +1,9 @@
 /* YO아이 — 바탕: 저장소, 문헌(PDF·한글·텍스트)의 쪽 글자, 찾기, 연결된 폴더, 스캔본 글자 읽기, 각주, 백업.
    서버도 로그인도 없다. 모든 기록은 이 브라우저의 저장소(IndexedDB)에 있고, 사용자가 고른 폴더에만 백업을 쓴다.
    바깥에서 들어오는 정보는 없다: 문헌은 사용자가 넣은 파일뿐이고, 법령·판례 링크는 누를 때만 새 창으로 연다. */
-import { readHangul } from './hwp.js?v=4a40f1184a';
-import { extractFacts, fixGlyphs } from './lawtext.js?v=4a40f1184a';
-import { writeZip, readZip } from './zip.js?v=4a40f1184a';
+import { readHangul } from './hwp.js?v=d6c7b31956';
+import { extractFacts, fixGlyphs } from './lawtext.js?v=d6c7b31956';
+import { writeZip, readZip } from './zip.js?v=d6c7b31956';
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -52,7 +52,7 @@ export function toast(m) { let t = $('.toast'); if (!t) { t = document.createEle
 /* ---------------- 문헌: 쪽마다의 글자를 통째로 보관 ---------------- */
 const PDFJS_VENDOR = new URL('./vendor/pdfjs-4.10.38/', import.meta.url).href;
 let pdfjsP = null;
-export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=4a40f1184a').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=4a40f1184a', import.meta.url).href; return m; }); return pdfjsP; };
+export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=d6c7b31956').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=d6c7b31956', import.meta.url).href; return m; }); return pdfjsP; };
 // Korean journal PDFs often use CID fonts (Adobe-Korea1) whose letters cannot be read without these maps
 export const pdfOpen = async (bytes) => (await pdfjsLib()).getDocument({ data: new Uint8Array(bytes.slice(0)), cMapUrl: PDFJS_VENDOR + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_VENDOR + 'standard_fonts/' }).promise;
 export const TEXT_V = 3; // bump when the way page text is read changes, so every document is read again once
@@ -351,17 +351,7 @@ export function citer() {
   };
 }
 export const pageLabel = (doc, p) => where(doc, p).ui;
-/* the first pages of a journal article usually show where it was published: offered as suggestions, never filled in silently */
-export function guessMeta(pages) {
-  const t = fixGlyphs((pages || []).slice(0, 2).join('\n')).replace(/[ \t]+/g, ' ');
-  const out = {};
-  const vol = t.match(/[『「]?([가-힣A-Za-z·\s]{2,20}?)[』」]?\s*(제\s*\d+\s*[권집](?:\s*제\s*\d+\s*호)?(?:\s*\(통권\s*제?\s*\d+\s*호\))?|통권\s*제\s*\d+\s*호|\d{4}년\s*제\s*\d+\s*호)/);
-  if (vol) { out.venue = vol[1].replace(/^\s*(국회입법조사처|연구논문)\s*/, '').trim(); out.vol = vol[2].replace(/\s+/g, ' ').replace(/제 (\d)/g, '제$1').trim(); }
-  const y = t.match(/((?:19|20)\d{2})\s*[.년]\s*(\d{1,2})\s*[.월]/); if (y) out.date = `${y[1]}. ${+y[2]}.`;
-  const doi = t.match(/(?:doi\.org\/|DOI\s*:?\s*)(10\.\d{4,9}\/[^\s]+)/i); if (doi) out.doi = doi[1];
-  const pp = t.match(/(?:pp\.?\s*|^|\s)(\d{1,4})\s*[~∼-]\s*\d{1,4}\s*면?/m); if (pp && +pp[1] > 1 && +pp[1] < 3000) out.page1 = pp[1];
-  return out;
-}
+export { guessMeta } from './lawtext.js?v=d6c7b31956';
 
 /* ---------------- 창, 파일 ---------------- */
 export function modal(html, onClose) {

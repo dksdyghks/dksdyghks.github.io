@@ -4,13 +4,13 @@
 import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, EMBED, fmtSize, kdate, kdt, toast, applyTheme, saveSettings, saveProject, saveCard, saveIdea, logEvent,
   docMeta, docPages, docOf, addFiles, removeDoc, updateDoc, libLoad, parseQuery, searchLib, indexLibrary, libStats, connectFolder, syncFolder, OCR, scanned, ocrAll,
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
-  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched } from './core.js?v=4a40f1184a';
-import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=4a40f1184a';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=4a40f1184a';
-import { caseCourt, citationsIn } from './lawtext.js?v=4a40f1184a';
-import { excluded, excludeHint } from './profile.js?v=4a40f1184a';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=4a40f1184a';
-import { buildDocx, DOCX_MIME } from './docx.js?v=4a40f1184a';
+  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched } from './core.js?v=d6c7b31956';
+import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=d6c7b31956';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=d6c7b31956';
+import { caseCourt, citationsIn } from './lawtext.js?v=d6c7b31956';
+import { excluded, excludeHint } from './profile.js?v=d6c7b31956';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=d6c7b31956';
+import { buildDocx, DOCX_MIME } from './docx.js?v=d6c7b31956';
 
 /* ---------------- 모양 ---------------- */
 const sv = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -527,7 +527,7 @@ function viewLibrary() {
     </div>
     <label class="drop" id="drop">파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.hwp,.hwpx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
     <p class="sub">문헌의 <b>정보</b>에 종류·학술지·권호·발행기관·첫 쪽 번호를 적으면 각주가 박사학위논문 양식 그대로 만들어집니다. 첫 쪽에서 읽은 제안이 있으면 눌러서 넣을 수 있습니다(저절로 채우지는 않습니다). 내가 쓴 글은 <b>내 글</b>로 표시하세요.</p>
-    <div class="lib-filter"><div class="chips-row">${LIB_FILTERS.map(([k, l]) => `<button class="chip${(S.libF || 'all') === k ? ' on' : ''}" data-act="lib-f" data-v="${k}">${l}</button>`).join('')}</div><label class="sr" for="lib-q">제목·저자로 거르기</label><input id="lib-q" type="search" placeholder="제목·저자로 거르기" value="${esc(S.libQ || '')}" autocomplete="off"><span class="m" id="lib-count"></span></div>
+    <div class="lib-filter"><button class="btn sm" data-act="bulk-meta" title="정보가 빈 문헌의 첫 쪽에서 저자·학술지·권호·쪽을 읽어 제안합니다">정보 제안 한꺼번에</button><div class="chips-row">${LIB_FILTERS.map(([k, l]) => `<button class="chip${(S.libF || 'all') === k ? ' on' : ''}" data-act="lib-f" data-v="${k}">${l}</button>`).join('')}</div><label class="sr" for="lib-q">제목·저자로 거르기</label><input id="lib-q" type="search" placeholder="제목·저자로 거르기" value="${esc(S.libQ || '')}" autocomplete="off"><span class="m" id="lib-count"></span></div>
     <div class="doc-list" id="doc-list"></div></div>`;
   paintDocList(); paintStore();
 }
@@ -535,10 +535,11 @@ async function editDoc(id) {
   const d = docOf(id); if (!d) return;
   const c = d.cite || {};
   let sug = {}; try { const pg = d.indexed && !d.blank ? await docPages(id) : null; if (pg) sug = guessMeta(pg.pages); } catch (e) { /* none */ }
-  const F = [['title', '제목', d.title], ['author', '저자 (공저는 ·로: 홍길동·김철수)', d.author], ['kind', '종류', c.kind || (d.venue ? 'article' : '')], ['venue', '학술지·책·사이트 이름 (편저의 장이면 책 이름)', d.venue], ['vol', '권호 (예: 제50권 제1호, 제74집 통권 제○호)', c.vol], ['publisher', '발행기관·출판사·학위 수여 기관', c.publisher], ['date', '발행 연월 (예: 2024. 3.) 또는 연도', c.date || d.year], ['page1', '첫 쪽 번호 (학술지에 인쇄된 첫 쪽)', d.page1], ['editor', '편자 (편저의 장만)', c.editor], ['url', '주소 (웹 자료)', c.url], ['checked', '확인한 날 (웹 자료, 예: 2025. 10. 7.)', c.checked]];
+  const F = [['title', '제목', d.title], ['author', '저자 (공저는 ·로: 홍길동·김철수)', d.author], ['kind', '종류', c.kind || (d.venue ? 'article' : '')], ['venue', '학술지·책·사이트 이름 (편저의 장이면 책 이름)', d.venue], ['vol', '권호 (예: 제50권 제1호, 제74집 통권 제○호)', c.vol], ['publisher', '발행기관·출판사·학위 수여 기관', c.publisher], ['date', '발행 연월 (예: 2024. 3.) 또는 연도', c.date || d.year], ['page1', 'PDF 1쪽에 인쇄된 학술지 쪽 번호 (앞에 표지가 없으면 논문의 첫 쪽)', d.page1], ['editor', '편자 (편저의 장만)', c.editor], ['url', '주소 (웹 자료)', c.url], ['checked', '확인한 날 (웹 자료, 예: 2025. 10. 7.)', c.checked]];
   const fields = F.map(([k, label, value]) => (k === 'kind' ? { label, type: 'select', value: value || '', options: [['', '(고르기)'], ...CITE_KINDS] } : { label, value: value || '' }));
-  const sugs = Object.entries({ venue: sug.venue, vol: sug.vol, date: sug.date, page1: sug.page1 }).filter(([k, v]) => v && v !== (k === 'venue' ? d.venue : k === 'page1' ? d.page1 : k === 'date' ? (c.date || d.year) : c[k]));
-  const intro = sugs.length ? `<div class="sugs"><span class="m">첫 쪽에서 읽은 제안(누르면 넣음):</span>${sugs.map(([k, v]) => `<button class="chip" data-sug="${k}" data-v="${esc(v)}">${esc({ venue: '학술지', vol: '권호', date: '발행', page1: '첫 쪽' }[k])}: ${esc(v)}</button>`).join('')}</div>` : '';
+  const cur = { title: d.title, author: d.author, venue: d.venue, vol: c.vol, publisher: c.publisher, date: c.date || d.year, page1: d.page1 };
+  const sugs = Object.entries({ title: sug.title, author: sug.author, venue: sug.venue, vol: sug.vol, publisher: sug.publisher, date: sug.date, page1: sug.page1 }).filter(([k, v]) => v && v !== cur[k]);
+  const intro = sugs.length ? `<div class="sugs"><span class="m">첫 쪽에서 읽은 제안(누르면 넣음):</span>${sugs.map(([k, v]) => `<button class="chip" data-sug="${k}" data-v="${esc(v)}">${esc({ title: '제목', author: '저자', venue: '학술지', vol: '권호', publisher: '발행기관', date: '발행', page1: 'PDF 1쪽' }[k])}: ${esc(v)}</button>`).join('')}</div>` : '';
   const v = await formBox('문헌 정보', fields, { intro: intro + '<p class="sub">각주 미리 보기는 저장한 뒤 노트·읽기 화면에서 확인하세요.</p>', onOpen: (m) => {
     $$('[data-sug]', m.el).forEach((b) => b.addEventListener('click', () => { const i = F.findIndex((x) => x[0] === b.dataset.sug); const inp = $('#fb' + i, m.el); if (inp) { inp.value = b.dataset.v; inp.focus(); } b.classList.add('on'); }));
   } });
@@ -553,6 +554,47 @@ async function editDoc(id) {
   toast(`저장했습니다. 각주: ${footnote(d, 1)}`); paintDocList();
 }
 const rowDoc = (el) => { const r = el.closest('.doc-row'); return r ? r.dataset.id : ''; };
+/* 정보 제안 한꺼번에: 비어 있는 칸만, 사용자가 고른 문헌에만 넣는다 */
+async function bulkMeta() {
+  const todo = S.docs.filter((d) => d.kind === 'pdf' && d.indexed && !d.blank && (!d.author || !d.venue || !d.page1));
+  if (!todo.length) { toast('정보가 빈 PDF 문헌이 없습니다.'); return; }
+  toast('첫 쪽들을 읽는 중…');
+  const rows = [];
+  for (const d of todo) {
+    const pg = await docPages(d.id); if (!pg) continue;
+    const g = guessMeta(pg.pages), c = d.cite || {}, fill = {};
+    if (!d.author && g.author) fill.author = g.author;
+    if (!d.venue && g.venue) fill.venue = g.venue;
+    if (!c.vol && g.vol) fill.vol = g.vol;
+    if (!c.date && !d.year && g.date) fill.date = g.date;
+    if (!d.page1 && g.page1) fill.page1 = g.page1;
+    if (!c.publisher && g.publisher) fill.publisher = g.publisher;
+    if (!c.kind && g.venue && g.vol) fill.kind = 'article';
+    if (Object.keys(fill).length) rows.push({ d, fill, title: g.title });
+  }
+  if (!rows.length) { toast('첫 쪽에서 읽어 낸 정보가 없습니다. 정보 버튼으로 직접 적어 주세요.'); return; }
+  const L = { author: '저자', venue: '학술지', vol: '권호', publisher: '발행기관', date: '발행', page1: 'PDF 1쪽', kind: '종류' };
+  const m = modal(`<h2>정보 제안 ${rows.length}편</h2><p class="sub">각 문헌의 첫 쪽들(쪽 머리, 권호, 저자 줄)에서 읽은 것입니다. <b>비어 있는 칸만</b> 채우며, 체크한 문헌에만 넣습니다. 넣은 뒤에도 정보에서 고칠 수 있습니다.</p>
+    <div class="pick">${rows.map((r, i) => `<label class="pick-row"><input type="checkbox" value="${i}" checked><span>${esc(r.d.title)}${r.title && r.title !== r.d.title ? `<small>첫 쪽의 제목: ${esc(r.title)}</small>` : ''}<small>${Object.entries(r.fill).map(([k, v]) => `${L[k]}: ${esc(k === 'kind' ? '학술지 논문' : v)}`).join(' · ')}</small></span></label>`).join('')}</div>
+    <div class="modal-foot"><button class="btn" data-close>취소</button><button class="btn primary" id="bm-ok">체크한 문헌에 넣기</button></div>`);
+  $('#bm-ok', m.el).addEventListener('click', async () => {
+    let n = 0;
+    for (const x of m.el.querySelectorAll('input:checked')) {
+      const r = rows[+x.value], full = await DB.get('docs', r.d.id); if (!full) continue;
+      full.cite = full.cite || {};
+      if (r.fill.author) full.author = r.fill.author;
+      if (r.fill.venue) full.venue = r.fill.venue;
+      if (r.fill.page1) full.page1 = r.fill.page1;
+      if (r.fill.vol) full.cite.vol = r.fill.vol;
+      if (r.fill.publisher) full.cite.publisher = r.fill.publisher;
+      if (r.fill.kind) full.cite.kind = r.fill.kind;
+      if (r.fill.date) { full.cite.date = r.fill.date; full.year = (r.fill.date.match(/(?:19|20)\d{2}/) || [''])[0]; }
+      await DB.put('docs', full); Object.assign(r.d, docMeta(full)); n++;
+    }
+    touched(); m.close(); paintDocList(); toast(`${n}편의 정보를 채웠습니다. 제목은 그대로 두었습니다(바꾸려면 정보에서).`);
+  });
+}
+ACT['bulk-meta'] = () => bulkMeta();
 Object.assign(ACT, {
   'lib-f': (el) => { S.libF = el.dataset.v; $$('[data-act="lib-f"]').forEach((b) => b.classList.toggle('on', b === el)); paintDocList(); },
   'doc-open': (el) => openDoc(rowDoc(el), 1, []),

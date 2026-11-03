@@ -381,3 +381,9 @@ table.st td .btn { min-height: 30px; }
 .st td.bad { color: var(--pen); font-weight: 600; }
 .st th.st-sub { text-align: left; font-weight: 700; padding-top: 12px; color: var(--ink-2); }
 .weak .w-t small { font-weight: 600; color: var(--pen); margin-left: 4px; }
+/* 세트 기록 */
+.set-hist { margin: 0 0 14px; }
+.sh-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: .875rem; margin-bottom: 4px; }
+.sh-h span { font-size: .75rem; color: var(--muted); }
+.bars.sh-bars { height: 56px; }
+.bars.sh-bars i { flex: 0 1 22px; }
