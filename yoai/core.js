@@ -1,9 +1,9 @@
 /* YO아이 — 바탕: 저장소, 문헌(PDF·한글·텍스트)의 쪽 글자, 찾기, 연결된 폴더, 스캔본 글자 읽기, 각주, 백업.
    서버도 로그인도 없다. 모든 기록은 이 브라우저의 저장소(IndexedDB)에 있고, 사용자가 고른 폴더에만 백업을 쓴다.
    바깥에서 들어오는 정보는 없다: 문헌은 사용자가 넣은 파일뿐이고, 법령·판례 링크는 누를 때만 새 창으로 연다. */
-import { readHangul } from './hwp.js?v=11eb2d3f01';
-import { extractFacts, fixGlyphs } from './lawtext.js?v=11eb2d3f01';
-import { writeZip, readZip } from './zip.js?v=11eb2d3f01';
+import { readHangul } from './hwp.js?v=85b1f8f6a6';
+import { extractFacts, fixGlyphs } from './lawtext.js?v=85b1f8f6a6';
+import { writeZip, readZip } from './zip.js?v=85b1f8f6a6';
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -52,11 +52,11 @@ export function toast(m) { let t = $('.toast'); if (!t) { t = document.createEle
 /* ---------------- 문헌: 쪽마다의 글자를 통째로 보관 ---------------- */
 const PDFJS_VENDOR = new URL('./vendor/pdfjs-4.10.38/', import.meta.url).href;
 let pdfjsP = null;
-export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=11eb2d3f01').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=11eb2d3f01', import.meta.url).href; return m; }); return pdfjsP; };
+export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=85b1f8f6a6').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=85b1f8f6a6', import.meta.url).href; return m; }); return pdfjsP; };
 // Korean journal PDFs often use CID fonts (Adobe-Korea1) whose letters cannot be read without these maps
 export const pdfOpen = async (bytes) => (await pdfjsLib()).getDocument({ data: new Uint8Array(bytes.slice(0)), cMapUrl: PDFJS_VENDOR + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_VENDOR + 'standard_fonts/' }).promise;
 export const TEXT_V = 3; // bump when the way page text is read changes, so every document is read again once
-export const docMeta = (d) => ({ isJudg: !!d.isJudg, id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.tv === TEXT_V, blank: !!d.blank, chars: d.chars || 0, textOnly: !!d.textOnly, ocr: !!d.ocr, mine: !!d.mine, exclude: !!d.exclude, cite: d.cite || {}, hasFacts: !!d.facts, nnotes: d.nnotes || 0 });
+export const docMeta = (d) => ({ isJudg: !!d.isJudg, judgSum: d.judgSum || null, id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.tv === TEXT_V, blank: !!d.blank, chars: d.chars || 0, textOnly: !!d.textOnly, ocr: !!d.ocr, mine: !!d.mine, exclude: !!d.exclude, cite: d.cite || {}, hasFacts: !!d.facts, nnotes: d.nnotes || 0 });
 async function pdfPageCount(bytes) { try { const doc = await pdfOpen(bytes); const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
   const doc = await pdfOpen(bytes); const pages = [];
@@ -362,7 +362,7 @@ export function citer() {
   };
 }
 export const pageLabel = (doc, p) => where(doc, p).ui;
-export { guessMeta } from './lawtext.js?v=11eb2d3f01';
+export { guessMeta } from './lawtext.js?v=85b1f8f6a6';
 
 /* ---------------- 창, 파일 ---------------- */
 export function modal(html, onClose) {

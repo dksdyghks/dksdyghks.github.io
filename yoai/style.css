@@ -502,3 +502,8 @@ ul.refs-list li { padding: 2px 0; }
 .jd-issues li .sub { margin: 4px 0 0; }
 .jd-outline li { font-size: .8125rem; line-height: 1.7; }
 @media (max-width: 640px) { .jd-paras li { grid-template-columns: 1fr; } .jd-f { justify-content: flex-start; } }
+.jd-flow { width: 100%; border-collapse: collapse; font-size: .8125rem; line-height: 1.55; }
+.jd-flow th, .jd-flow td { text-align: left; vertical-align: top; padding: 7px 8px; border-bottom: 1px solid var(--rule); }
+.jd-flow th { font-size: .75rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.jd-flow td:first-child { white-space: nowrap; color: var(--ink-2); }
+@media (max-width: 640px) { .jd-flow td:nth-child(4), .jd-flow th:nth-child(4) { display: none; } }

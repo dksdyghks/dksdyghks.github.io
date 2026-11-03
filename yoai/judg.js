@@ -2,12 +2,12 @@
    사실관계 · 소송의 경과 · 판결이유 · 쟁점의 초안으로 펼친다. 사용자가 고친 정리는 그 문헌의 기록(judg)에 남고,
    논문의 ‘대상 판결’ 장 모양(심급 판결은 각주)으로 한글·Word·마크다운으로 내보내거나, 노트 카드·판례 평석 연구로 옮긴다.
    판결문 밖의 정보는 쓰지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, JUDG, $, $$, esc, uid, toast, kdate, saveCard, saveProject, logEvent, docOf, docPages, updateDoc, addFiles, modal, confirmBox, download, safeName, copyText, libLoad } from './core.js?v=11eb2d3f01';
-import { analyzeJudgment, isJudgment, defaultEdit, excerptOf, judgmentItems, OMIT } from './judgment.js?v=11eb2d3f01';
-import { toHwpxBlocks, toDocx, toMd, skeleton, nextCardNo } from './write.js?v=11eb2d3f01';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=11eb2d3f01';
-import { DOCX_MIME } from './docx.js?v=11eb2d3f01';
-import { projCards } from './research.js?v=11eb2d3f01';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, JUDG, $, $$, esc, uid, toast, kdate, saveCard, saveProject, logEvent, docOf, docPages, updateDoc, addFiles, modal, confirmBox, download, safeName, copyText, libLoad } from './core.js?v=85b1f8f6a6';
+import { analyzeJudgment, isJudgment, defaultEdit, excerptOf, judgmentItems, OMIT } from './judgment.js?v=85b1f8f6a6';
+import { toHwpxBlocks, toDocx, toMd, skeleton, nextCardNo } from './write.js?v=85b1f8f6a6';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=85b1f8f6a6';
+import { DOCX_MIME } from './docx.js?v=85b1f8f6a6';
+import { projCards } from './research.js?v=85b1f8f6a6';
 
 const AUTHOR = '안요환';
 let CUR = null; // { id, a, e }
@@ -24,6 +24,8 @@ async function load(id) {
   // 판결문임이 분명하면 문헌 정보에 판례 인용을 넣어 둔다(사용자가 적은 정보는 건드리지 않는다)
   const d = docOf(id), patch = {};
   if (a.ok && !(d.isJudg)) patch.isJudg = true;
+  const sum = a.ok ? { date: a.head.date, court: a.head.court, no: a.head.no, result: a.result, stage: a.stage, issue: (a.issues[0] || {}).text || '' } : null;
+  if (sum && JSON.stringify(full.judgSum || {}) !== JSON.stringify(sum)) patch.judgSum = sum;
   if (a.ok && a.cite && !((full.cite || {}).kind)) { patch.cite = { ...(full.cite || {}), kind: 'case', caseCite: a.cite }; if (!full.year && a.head.date) patch.year = a.head.date.slice(0, 4); }
   if (Object.keys(patch).length) await updateDoc(id, patch);
   return CUR;
@@ -38,13 +40,18 @@ function saveSoon() {
 async function landing() {
   const lib = await libLoad().catch(() => ({ docs: [] }));
   const found = S.docs.filter((d) => d.isJudg || (() => { const x = lib.docs.find((y) => y.id === d.id); return x && x.pages && isJudgment(x.pages); })());
+  // 아직 한 번도 열지 않은 판결문도 결과·첫 쟁점을 채워 둔다(판결문 하나에 수십 ms)
+  for (const d of found.filter((x) => !x.judgSum).slice(0, 60)) {
+    try { const x = lib.docs.find((y) => y.id === d.id); if (!x) continue; const a = analyzeJudgment(x.pages); if (!a.ok) continue; await updateDoc(d.id, { isJudg: true, judgSum: { date: a.head.date, court: a.head.court, no: a.head.no, result: a.result, stage: a.stage, issue: (a.issues[0] || {}).text || '' }, ...(((d.cite || {}).kind) ? {} : { cite: { ...(d.cite || {}), kind: 'case', caseCite: a.cite } }) }); } catch (e) { /* leave it for when it is opened */ }
+  }
+  if (S.view !== 'judg' || S.judg) return;
   UI.view().innerHTML = `<div class="page wide">
     <div class="notes-head"><h1>판결 분석</h1></div>
     <section class="box jd-intro"><p class="prose">판결문을 넣으면 <b>사실관계 · 소송의 경과 · 판결이유 · 쟁점</b>으로 나누어 정리의 초안을 만듭니다. 심급마다 판결은 각주로 달고, 판결이유는 주요 부분을 그대로 발췌하여 생략한 곳에 ${OMIT}를 넣습니다 — 「불법원인급여에 대한 반환 금지 규정의 개선방안 연구」(2021)의 ‘Ⅱ. 대상 판결’과 같은 모양입니다.</p>
       <p class="sub">대법원·하급심 판결서, 헌법재판소 결정문, 종합법률정보의 【판시사항】【이 유】 양식을 읽습니다. PDF·한글·Word·텍스트 모두 됩니다. 판결문 밖의 정보는 넣지 않으며, 찾지 못한 것은 비워 두고 알려 드립니다. 초안은 고쳐 쓰라고 있는 것입니다.</p>
       <div class="tools-row"><label class="btn primary">판결문 파일 넣기<input type="file" id="j-file" accept=".pdf,.hwp,.hwpx,.docx,.txt,application/pdf,text/plain" class="sr"></label><button class="btn" data-act="j-paste">판결문 붙여 넣기</button></div></section>
     <section class="box"><h2 class="bh">서재의 판결문 <small>${found.length}건</small></h2>
-      ${found.length ? `<ul class="jd-list">${found.sort((x, y) => (y.addedAt || 0) - (x.addedAt || 0)).map((d) => `<li><button class="linkish" data-act="j-open" data-id="${d.id}">${esc(((d.cite || {}).caseCite) || d.title)}</button>${(d.cite || {}).caseCite && d.title !== d.cite.caseCite ? ` <span class="sub">${esc(d.title)}</span>` : ''}${JUDG.get(d.id) ? ' <span class="tag">정리함</span>' : ''}</li>`).join('')}</ul>` : '<p class="sub">아직 없습니다. 서재에 넣은 문헌 가운데 주문·이유가 있는 판결문은 여기에 저절로 모입니다.</p>'}</section>
+      ${found.length ? `<div class="tbl"><table class="jd-flow"><thead><tr><th>선고일</th><th>법원 · 사건번호</th><th>결과</th><th>첫 쟁점</th></tr></thead><tbody>${found.map((d) => ({ d, j: d.judgSum || {} })).sort((x, y) => String(x.j.date || '9').localeCompare(String(y.j.date || '9'), 'en', { numeric: true })).map(({ d, j }) => `<tr><td>${esc(j.date || '')}</td><td><button class="linkish" data-act="j-open" data-id="${d.id}">${esc(j.no ? `${j.court} ${j.no}` : ((d.cite || {}).caseCite) || d.title)}</button>${JUDG.get(d.id) ? ' <span class="tag">정리함</span>' : ''}</td><td>${esc(j.result || '')}</td><td>${esc(String((JUDG.get(d.id) && JUDG.get(d.id).edit && JUDG.get(d.id).edit.issues && JUDG.get(d.id).edit.issues[0]) || j.issue || '').slice(0, 70))}</td></tr>`).join('')}</tbody></table></div><p class="sub">선고일 순서입니다. 같은 쟁점의 판결을 나란히 넣으면 판례의 흐름이 보입니다. 결과·쟁점은 한 번 열어 본 판결부터 채워집니다.</p>` : '<p class="sub">아직 없습니다. 서재에 넣은 문헌 가운데 주문·이유가 있는 판결문은 여기에 저절로 모입니다.</p>'}</section>
   </div>`;
 }
 async function takeFile(f) {
