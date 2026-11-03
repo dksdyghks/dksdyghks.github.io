@@ -264,6 +264,7 @@ def view(lang):
         """The badge stays with the last word; a closing parenthetical such as (한국헌법학회 et al.) moves as one piece."""
         text = text.rstrip().replace(' et al.', '\u00a0et\u00a0al.').replace(' 등)', '\u00a0등)').replace(' 외)', '\u00a0외)')
         text = re.sub(r'\b(Vol\.|No\.|통권) ', '\\1\u00a0', text)  # "No. 1", "통권 제24호" never split
+        text = re.sub(r'(제\d+집) 통권', '\\1\u00a0통권', text)  # the journal's own "제74집 통권" stays in one piece
         if text.endswith(')') and '(' in text:
             k = text.rfind('(')
             paren = text[k:]
