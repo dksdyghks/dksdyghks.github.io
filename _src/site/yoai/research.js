@@ -266,7 +266,7 @@ ACT['rv-add'] = async () => {
   if (!v || !v[2].trim()) return;
   const parts = v[2].replace(/\r/g, '').split(/\n\s*\n|\n(?=\s*(?:\d{1,2}\s*[.)]|[①-⑳]|[가-하]\s*[.)]|[-•·]\s))/).map((x) => x.trim()).filter((x) => x.length > 3);
   const round = Math.max(1, parseInt(v[0], 10) || next);
-  for (const c of parts) p.reviews.push({ id: uid(), round, who: v[1].trim(), comment: c, response: '', where: '', done: false });
+  for (const c of parts) p.reviews.push({ id: uid(), round, who: v[1].trim(), comment: c.replace(/^(?:\d{1,2}\s*[.)]|[①-⑳]|[가-하]\s*[.)]|[-•·])\s*/, ''), response: '', where: '', done: false });
   logEvent(p, `${round}차 심사의견 ${parts.length}개를 넣음`); if (p.stage !== 'review' && p.stage !== 'published') p.stage = 'review';
   await saveProject(p); viewReview(); toast(`의견 ${parts.length}개로 나누었습니다.`);
 };

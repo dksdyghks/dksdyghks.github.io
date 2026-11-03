@@ -35,7 +35,10 @@ export const PORTRAIT = {
 export function excludeHint(pages) {
   const t = String((pages || []).slice(0, 2).join(' ')).replace(/\s+/g, ' ');
   if (/군사과학논집|Journal of Military Science/i.test(t)) return '군사과학논집 게재 글';
-  const m = t.slice(0, 3000).match(/[가-힣]{2,4}\s*\*{0,8}\s*[・·∙ㆍ]\s*[가-힣]{2,4}\s*\*{0,8}\s*[・·∙ㆍ]\s*[가-힣]{2,4}(?:\s*\*{0,8}\s*[・·∙ㆍ]\s*[가-힣]{2,4})*/);
-  if (m && /안\s?요\s?환/.test(t.slice(0, 3000))) return `3인 이상 공저(${m[0].replace(/\*+/g, '').replace(/\s+/g, '')})`;
+  // an author line: three or more names joined by ·, one of them 안요환 (‘거부·정지·제한’ in a sentence is not one)
+  for (const m of t.slice(0, 4000).matchAll(/[가-힣]{2,4}(?:\s*\*{0,8}\s*[・·∙ㆍ]\s*[가-힣]{2,4}){2,}/g)) {
+    const names = m[0].split(/\s*\*{0,8}\s*[・·∙ㆍ]\s*/).map((x) => x.replace(/\*+/g, '').trim());
+    if (names.length >= 3 && names.some((x) => /^안\s?요\s?환$/.test(x))) return `3인 이상 공저(${names.join('·')})`;
+  }
   return '';
 }

@@ -4,13 +4,13 @@
 import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, EMBED, fmtSize, kdate, kdt, toast, applyTheme, saveSettings, saveProject, saveCard, saveIdea, logEvent,
   docMeta, docPages, docOf, addFiles, removeDoc, updateDoc, libLoad, parseQuery, searchLib, indexLibrary, libStats, connectFolder, syncFolder, OCR, scanned, ocrAll,
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
-  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched } from './core.js?v=94c49d81dd';
-import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=94c49d81dd';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=94c49d81dd';
-import { caseCourt, citationsIn } from './lawtext.js?v=94c49d81dd';
-import { excluded, excludeHint } from './profile.js?v=94c49d81dd';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=94c49d81dd';
-import { buildDocx, DOCX_MIME } from './docx.js?v=94c49d81dd';
+  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched } from './core.js?v=4a40f1184a';
+import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=4a40f1184a';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=4a40f1184a';
+import { caseCourt, citationsIn } from './lawtext.js?v=4a40f1184a';
+import { excluded, excludeHint } from './profile.js?v=4a40f1184a';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=4a40f1184a';
+import { buildDocx, DOCX_MIME } from './docx.js?v=4a40f1184a';
 
 /* ---------------- 모양 ---------------- */
 const sv = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
