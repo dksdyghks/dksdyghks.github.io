@@ -2,14 +2,14 @@
    개요의 장·절마다 논증 설계도의 주장과 노트 카드를 배치하고, 본문 초고에 〔카드 n〕을 넣으면 내보낼 때 그 자리가 각주가 된다.
    각주는 박사학위논문의 양식을 따르고, 두 번째부터는 ‘앞의 논문’으로 줄인다.
    원고 점검은 사용자가 고른 원고와 서재만 읽는다. 원고는 저장하지 않으며, 바깥으로 아무것도 보내지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=8ea46ba9bc';
-import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=8ea46ba9bc';
-import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=8ea46ba9bc';
-import { readHangul } from './hwp.js?v=8ea46ba9bc';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=8ea46ba9bc';
-import { buildDocx, DOCX_MIME } from './docx.js?v=8ea46ba9bc';
-import { BASE, PORTRAIT, excluded } from './profile.js?v=8ea46ba9bc';
-import { projCards } from './research.js?v=8ea46ba9bc';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=5f314ab709';
+import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=5f314ab709';
+import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=5f314ab709';
+import { readHangul } from './hwp.js?v=5f314ab709';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=5f314ab709';
+import { buildDocx, DOCX_MIME } from './docx.js?v=5f314ab709';
+import { BASE, PORTRAIT, excluded } from './profile.js?v=5f314ab709';
+import { projCards } from './research.js?v=5f314ab709';
 
 const AUTHOR = '안요환';
 const ROMAN = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ'];
@@ -212,8 +212,9 @@ async function draftItems(p, opt) {
   }
   // 참고문헌: the library documents the draft cites
   const citedDocs = [...new Map(items.flatMap((it) => it.refs.filter((r) => r.doc).map((r) => [r.doc.id, r.doc]))).values()];
-  if (opt.refs !== false && citedDocs.length) {
-    const list = buildRefList(citedDocs.map(docCitation), rangeFromLibrary);
+  const refDocs = citedDocs.filter((d) => (d.cite || {}).kind !== 'case');
+  if (opt.refs !== false && refDocs.length) {
+    const list = buildRefList(refDocs.map(docCitation), rangeFromLibrary);
     items.push({ t: 'h1', text: '참고문헌', refs: [] }, ...refBlocks(list).map((b) => ({ t: b.t === 'h1' ? 'h2' : b.t === 'h2' ? 'h3' : 'p', text: b.text, refs: [] })));
   }
   // footnotes in reading order, so the second time a work comes back it is “앞의 논문”
@@ -471,4 +472,5 @@ export const proseOf = (paras) => { // the paragraphs a style measure reads: no 
   for (let i = out.length - 1; i > out.length * 0.5; i--) if (/^\s*[\[<【(]?\s*참\s*고\s*문\s*헌\s*[\]>】)]?\s*$/.test(out[i])) { out.fill('', i); break; }
   return out;
 };
+export { toHwpxBlocks, toDocx, toMd, skeleton };
 export const _test = { linesToParas, keyWords, topSections, draftItems, toMd, runCheck, readManuscript };

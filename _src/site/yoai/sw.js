@@ -15,7 +15,7 @@ const WAIT = 4000;
 const ROOT = new URL('./', self.location.href).href;
 // the modules app.js loads (their addresses carry the same version), the 한글 skeleton, and the install icons
 const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
-  ...['core.js', 'research.js', 'write.js', 'zip.js', 'hwp.js', 'hwpx.js', 'lawtext.js', 'profile.js', 'docx.js', 'pdf.js', 'pdf.worker.js'].map((f) => `${f}?v=${VER}`), 'hwpx-skeleton.hwpx'];
+  ...['core.js', 'research.js', 'write.js', 'zip.js', 'hwp.js', 'hwpx.js', 'lawtext.js', 'profile.js', 'docx.js', 'judgment.js', 'judg.js', 'pdf.js', 'pdf.worker.js'].map((f) => `${f}?v=${VER}`), 'hwpx-skeleton.hwpx'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

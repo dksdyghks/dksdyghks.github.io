@@ -611,7 +611,7 @@ for app in ('psat', 'yoai'):
         elif app == 'yoai' and p.suffix == '.js' and p.name not in ('pdf.js', 'pdf.worker.js', 'sw.js', 'gate.js'):
             # version every module's relative imports, so a returning browser never mixes an old helper with a new one
             # (every module asks for the same address, so they all share one copy of core.js)
-            txt = _re.sub(r"(['\"])\./((?:app|core|research|write|zip|hwp|hwpx|lawtext|profile|docx|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
+            txt = _re.sub(r"(['\"])\./((?:app|core|research|write|zip|hwp|hwpx|lawtext|profile|docx|judgment|judg|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
             (dst / p.name).write_text(txt)
         else:
             shutil.copy2(p, dst / p.name)

@@ -4,13 +4,15 @@
 import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, EMBED, fmtSize, kdate, kdt, toast, applyTheme, saveSettings, saveProject, saveCard, saveIdea, logEvent,
   docMeta, docPages, docOf, addFiles, removeDoc, updateDoc, libLoad, parseQuery, searchLib, indexLibrary, libStats, connectFolder, syncFolder, OCR, scanned, ocrAll,
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
-  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched } from './core.js?v=8ea46ba9bc';
-import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=8ea46ba9bc';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=8ea46ba9bc';
-import { caseCourt, citationsIn } from './lawtext.js?v=8ea46ba9bc';
-import { excluded, excludeHint } from './profile.js?v=8ea46ba9bc';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=8ea46ba9bc';
-import { buildDocx, DOCX_MIME } from './docx.js?v=8ea46ba9bc';
+  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=5f314ab709';
+import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=5f314ab709';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=5f314ab709';
+import { caseCourt, citationsIn } from './lawtext.js?v=5f314ab709';
+import { excluded, excludeHint } from './profile.js?v=5f314ab709';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=5f314ab709';
+import { buildDocx, DOCX_MIME } from './docx.js?v=5f314ab709';
+import { viewJudg, openJudgment } from './judg.js?v=5f314ab709';
+import { isJudgment } from './judgment.js?v=5f314ab709';
 
 /* ---------------- 모양 ---------------- */
 const sv = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -20,6 +22,7 @@ const IC = {
   lib: sv('<path d="M5 4h4v16H5zM10 4h4v16h-4z"/><path d="M15.5 5.5l3.8-1 3 15.5-3.8 1z"/>'),
   find: sv('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
   me: sv('<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>'),
+  judg: sv('<path d="M12 4v16M7 20h10"/><path d="M5 7h14"/><path d="M7 7l-3 6a3 3 0 0 0 6 0z"/><path d="M17 7l-3 6a3 3 0 0 0 6 0z"/>'),
   arg: sv('<rect x="9" y="3.5" width="6" height="4" rx="1"/><rect x="3.5" y="16.5" width="6" height="4" rx="1"/><rect x="14.5" y="16.5" width="6" height="4" rx="1"/><path d="M12 7.5v4.5M6.5 16.5V12h11v4.5"/>'),
   lit: sv('<path d="M4 5.5c2.5-1 5-1 8 1 3-2 5.5-2 8-1v13c-2.5-1-5-1-8 1-3-2-5.5-2-8-1z"/><path d="M12 6.5v13"/>'),
   notes: sv('<path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M9 11h6M9 15h6M14.5 3.5V7H18"/>'),
@@ -32,7 +35,7 @@ const IC = {
   plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   ext: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></svg>',
 };
-const VIEWS = { home: '연구', library: '서재', find: '찾기', read: '읽기', me: '내 연구', arg: '논증 설계도', lit: '선행연구', notes: '노트', write: '집필', check: '원고 점검', review: '심사 대응' };
+const VIEWS = { home: '연구', library: '서재', find: '찾기', read: '읽기', judg: '판결 분석', me: '내 연구', arg: '논증 설계도', lit: '선행연구', notes: '노트', write: '집필', check: '원고 점검', review: '심사 대응' };
 const PROJECT_VIEWS = ['arg', 'lit', 'notes', 'write', 'check', 'review'];
 const view = () => $('#view');
 UI.view = view;
@@ -53,7 +56,7 @@ function paintSide() {
   const nav = (v, ic, label, n) => `<button class="side-btn nav${on(v) ? ' on' : ''}" data-act="go" data-v="${v}"${on(v) ? ' aria-current="page"' : ''}>${ic} ${label}${n ? `<span class="n">${n}</span>` : ''}</button>`;
   const open = p ? p.reviews.filter((r) => !r.done).length : 0;
   el.innerHTML = `<div class="side-top"><span class="mark">YO</span><div class="brand">YO아이<small>연구 보조 도구</small></div></div>
-    <nav class="side-nav" aria-label="전체">${nav('home', IC.home, '연구')}${nav('library', IC.lib, '서재', S.docs.length)}${nav('find', IC.find, '찾기')}${nav('me', IC.me, '내 연구')}</nav>
+    <nav class="side-nav" aria-label="전체">${nav('home', IC.home, '연구')}${nav('library', IC.lib, '서재', S.docs.length)}${nav('find', IC.find, '찾기')}${nav('judg', IC.judg, '판결 분석')}${nav('me', IC.me, '내 연구')}</nav>
     <div class="side-sec"><div class="side-label"><span>지금 연구</span><button class="icon sm" data-act="new-project" title="새 연구" aria-label="새 연구">${IC.plus}</button></div>
       <label class="sr" for="project-sel">지금 연구</label><select id="project-sel">${S.projects.map((x) => `<option value="${x.id}"${p && x.id === p.id ? ' selected' : ''}>${esc(x.title)}</option>`).join('')}</select>
       ${p ? `<div class="side-stage">단계 <b>${esc(stageName(p.stage))}</b>${p.deadline ? ` · 마감 ${dday(p.deadline)}` : ''}</div>` : ''}</div>
@@ -77,7 +80,7 @@ function paintStatus() {
   const l = $('#lib-status'); if (l) l.innerHTML = libStatusHTML();
 }
 function closeSide() { const sd = $('#side'); if (sd) sd.classList.remove('open'); const sh = $('.shell'); if (sh) sh.classList.remove('side-open'); }
-const RENDER = { home: viewHome, library: viewLibrary, find: viewFind, read: viewRead, me: viewMe, arg: viewArg, lit: viewLit, notes: viewNotes, write: viewWrite, check: viewCheck, review: viewReview };
+const RENDER = { home: viewHome, library: viewLibrary, find: viewFind, read: viewRead, judg: viewJudg, me: viewMe, arg: viewArg, lit: viewLit, notes: viewNotes, write: viewWrite, check: viewCheck, review: viewReview };
 function show(v) {
   if (!RENDER[v]) v = 'home';
   S.view = v; closeSide(); selTool(null);
@@ -88,7 +91,7 @@ function show(v) {
   paintSide();
 }
 const redraw = (v) => { if (S.view === v) RENDER[v](); };
-UI.show = show; UI.side = paintSide;
+UI.show = show; UI.side = paintSide; UI.openDoc = (id, p, t) => openDoc(id, p, t); UI.newProject = (t, q) => newProject(t, q);
 UI.refresh = () => { if (S.view === 'library') paintDocList(); else if (S.view === 'read') viewRead(); };
 hooks.status = paintStatus; hooks.side = paintSide;
 hooks.redraw = () => { if (['library', 'home', 'me'].includes(S.view) && !(document.activeElement && document.activeElement.closest && document.activeElement.closest('#view input, #view textarea'))) RENDER[S.view](); };
@@ -304,7 +307,7 @@ async function viewRead() {
     </div>
     <div class="rd-find"><label class="sr" for="rd-q">이 문헌에서 찾기</label><input id="rd-q" type="search" placeholder="이 문헌에서 찾기" autocomplete="off" value="${esc(r.q || '')}"><div id="rd-hits" class="rd-hits"></div></div>
     <div class="rd-body" id="rd-body">${mode === 'pdf' ? '<div class="rd-canvas"><canvas id="rd-canvas" aria-label="원문 쪽"></canvas></div><p class="rd-tip">글을 골라 인용하려면 <b>글자</b> 보기로 바꾸세요.</p>' : `<div class="rd-text" id="rd-text">${pageTextHTML(pg ? pg.pages[r.page - 1] : '', r.terms)}</div><p class="rd-tip">글을 골라 <b>카드에 담기</b>나 <b>인용 복사</b>를 누르세요.</p>`}</div>
-    <div class="rd-foot"><button class="btn" data-act="rd-facts">빠른 파악</button>${S.project ? `<button class="btn${rc ? ' has' : ''}" data-act="rd-read">${rc ? '읽기 카드 ✓' : '읽기 카드'}</button>` : ''}<button class="btn" data-act="rd-card">이 쪽을 노트에</button><button class="btn" data-act="rd-cite">이 쪽 각주 복사</button></div>
+    <div class="rd-foot">${d.isJudg || (pg && isJudgment(pg.pages)) ? '<button class="btn primary" data-act="rd-judg">판결 분석</button>' : ''}<button class="btn" data-act="rd-facts">빠른 파악</button>${S.project ? `<button class="btn${rc ? ' has' : ''}" data-act="rd-read">${rc ? '읽기 카드 ✓' : '읽기 카드'}</button>` : ''}<button class="btn" data-act="rd-card">이 쪽을 노트에</button><button class="btn" data-act="rd-cite">이 쪽 각주 복사</button></div>
   </div>`;
   if (mode === 'pdf') drawPage(d.id, r.page);
   if (r.q) runDocFind();
@@ -397,6 +400,8 @@ Object.assign(ACT, {
   'rd-card': () => { const r = S.reader; if (r) addCard('', r.id, r.page); },
   'rd-cite': () => { const r = S.reader; if (r) copyText(footnote(docOf(r.id), r.page), '이 쪽의 각주를 복사했습니다.'); },
   'rd-facts': () => { if (S.reader) showFacts(S.reader.id); },
+  'rd-judg': () => { if (S.reader) openJudgment(S.reader.id); },
+  'doc-judg': (el) => openJudgment(el.closest('[data-id]').dataset.id),
   'rd-read': () => { if (S.reader) openReadCard(S.reader.id).then(() => {}); },
   'sel-card': async () => { const t = $('#seltool'), r = S.reader; if (t && r) { await addCard(t.dataset.text, r.id, r.page); selTool(null); window.getSelection().removeAllRanges(); } },
   'sel-cite': () => { const t = $('#seltool'), r = S.reader; if (t && r) { copyText(citeText(t.dataset.text, docOf(r.id), r.page), '인용문과 각주를 복사했습니다.'); selTool(null); } },
@@ -533,7 +538,7 @@ function docRow(d) {
   return `<div class="doc-row" data-id="${d.id}">
     <div class="doc-main"><button class="doc-open" data-act="doc-open" title="${esc(d.title)}">${esc(d.title)}</button>
       <div class="m">${docMetaLine(d)}${state}${d.folder ? ` · <span title="${esc(d.folder)}">폴더</span>` : ''}${d.mine ? ` · <b class="tag">내 글</b>${excluded(d) ? ' <span class="tag gray" title="군사과학논집 게재 글이나 3인 이상 공저는 문체 기준과 자기표절 대조에서 뺍니다">기준 제외</span>' : ''}` : ''}</div></div>
-    <div class="doc-tools">${d.indexed && !d.blank ? '<button class="btn sm" data-act="doc-facts">빠른 파악</button>' : ''}${S.project ? `<button class="btn sm${rc ? ' has' : ''}" data-act="doc-read">${rc ? '읽기 카드 ✓' : '읽기 카드'}</button>` : ''}<button class="btn sm${d.mine ? ' has' : ''}" data-act="doc-mine" aria-pressed="${d.mine ? 'true' : 'false'}" title="내가 쓴 글이면 켜세요">내 글</button><button class="btn sm" data-act="doc-edit">정보</button><button class="btn sm danger" data-act="doc-del" aria-label="지우기">지우기</button></div></div>`;
+    <div class="doc-tools">${d.isJudg ? '<button class="btn sm" data-act="doc-judg">판결 분석</button>' : ''}${d.indexed && !d.blank ? '<button class="btn sm" data-act="doc-facts">빠른 파악</button>' : ''}${S.project ? `<button class="btn sm${rc ? ' has' : ''}" data-act="doc-read">${rc ? '읽기 카드 ✓' : '읽기 카드'}</button>` : ''}<button class="btn sm${d.mine ? ' has' : ''}" data-act="doc-mine" aria-pressed="${d.mine ? 'true' : 'false'}" title="내가 쓴 글이면 켜세요">내 글</button><button class="btn sm" data-act="doc-edit">정보</button><button class="btn sm danger" data-act="doc-del" aria-label="지우기">지우기</button></div></div>`;
 }
 function filteredDocs() {
   const f = S.libF || 'all', q = String(S.libQ || '').toLowerCase().replace(/\s+/g, '');
@@ -550,7 +555,7 @@ function viewLibrary() {
       <div id="lib-status">${libStatusHTML()}</div>
       <input type="file" id="folder-in" webkitdirectory multiple class="sr" tabindex="-1">
     </div>
-    <label class="drop" id="drop">파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.hwp,.hwpx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
+    <label class="drop" id="drop">파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
     <p class="sub">문헌의 <b>정보</b>에 종류·학술지·권호·발행기관·첫 쪽 번호를 적으면 각주가 박사학위논문 양식 그대로 만들어집니다. 첫 쪽에서 읽은 제안이 있으면 눌러서 넣을 수 있습니다(저절로 채우지는 않습니다). 내가 쓴 글은 <b>내 글</b>로 표시하세요.</p>
     <div class="lib-filter"><button class="btn sm" data-act="bulk-meta" title="정보가 빈 문헌의 첫 쪽에서 저자·학술지·권호·쪽을 읽어 제안합니다">정보 제안 한꺼번에</button><div class="chips-row">${LIB_FILTERS.map(([k, l]) => `<button class="chip${(S.libF || 'all') === k ? ' on' : ''}" data-act="lib-f" data-v="${k}">${l}</button>`).join('')}</div><label class="sr" for="lib-q">제목·저자로 거르기</label><input id="lib-q" type="search" placeholder="제목·저자로 거르기" value="${esc(S.libQ || '')}" autocomplete="off"><span class="m" id="lib-count"></span></div>
     <div class="doc-list" id="doc-list"></div></div>`;
@@ -720,6 +725,7 @@ function openHelp() {
     <p><b>2. 서재</b> — <b>폴더 고르기</b>로 문헌 폴더를 고르면 PDF·한글·텍스트를 모두 넣고 모든 쪽의 글자를 읽습니다(Chrome·Edge에서는 열 때마다 바뀐 파일을 맞춤). 문헌의 <b>정보</b>에 종류·학술지·권호·발행기관·첫 쪽을 적으면 각주가 정확해집니다. 내가 쓴 글은 <b>내 글</b>로 표시하세요(군사과학논집 게재 글과 3인 이상 공저는 문체 기준과 자기표절 대조에서 늘 뺍니다).</p>
     <p><b>3. 찾기</b> — 서재 전체에서 쪽 단위로 찾습니다. <b>판례 색인</b>은 서재 문헌에 나오는 사건번호를, <b>조문 색인</b>은 법령과 조문을 모아 어느 문헌의 몇 쪽인지 보여 줍니다. 법령 보기는 누를 때만 국가법령정보센터를 엽니다.</p>
     <p><b>4. 읽기</b> — <b>빠른 파악</b>은 목차·초록·서론과 결론의 첫머리·다룬 조문·판례·인용 문헌을 원문에서 그대로 뽑아 보여 줍니다. <b>읽기 카드</b>에는 그 글의 질문·주장·근거·방법·한계와 내 연구와의 관계를 적습니다. 글을 골라 <b>카드에 담기</b>를 누르면 노트 카드가 됩니다.</p>
+    <p><b>판결 분석</b> — 판결문(PDF·한글·Word·텍스트 파일, 또는 붙여 넣은 전문)을 넣으면 <b>사실관계 · 소송의 경과 · 판결이유 · 쟁점</b>으로 나눈 초안을 만듭니다. 소송의 경과는 심급마다 ‘○○법원(원심)은 …’으로 적고 그 심급의 판결을 각주로 달며, 판결이유는 고른 문단을 그대로 잇고 건너뛴 곳에 [･･･]를 넣습니다. 쟁점은 판시사항·이유의 제목·‘~인지 여부’ 문장·‘~에 관한 법리 오해’·당사자의 주장에서 모읍니다. 판결문에 없는 것은 지어내지 않고 비워 둡니다. 고친 정리는 그 판결문의 기록으로 남고, 한글·Word로 내보내거나 노트 카드·판례 평석 연구로 옮길 수 있습니다.</p>
     <p><b>5. 논증 설계도</b> — 연구 질문을 고쳐 쓸 때마다 이전 질문과 이유가 남습니다. 핵심 주장마다 근거·예상 반론·재반론을 세우고, 근거에 카드·쪽·판례·조문을 연결합니다. 점검이 근거 없는 주장, 답하지 않은 반론, 한 문헌에만 기댄 근거, 비어 있는 차별성을 알려 줍니다.</p>
     <p><b>6. 선행연구 지도</b> — 읽기 카드를 동의·반박·보완으로 나눠 보고, 차별성 문장을 실제로 읽은 문헌에 연결합니다. <b>서재 인용망</b>은 서재 문헌들이 함께 인용하는데 서재에 없는 문헌, 곧 꼭 읽어야 할 문헌을 찾아 줍니다.</p>
     <p><b>7. 집필</b> — <b>내 논문 틀로 시작</b>하면 그동안의 논문 흐름으로 개요가 섭니다. 장·절에 주장과 카드를 배치하고 초고에 〔카드 n〕을 넣은 뒤 <b>내보내기</b>를 누르면 한글 파일(.hwpx)이 되고, 각주는 박사학위논문 양식(두 번째부터 ‘앞의 논문’)으로 달립니다.</p>
@@ -790,7 +796,7 @@ async function start() {
     S.settings = { ...DEFAULTS, ...((await DB.get('kv', 'settings')) || {}) };
     S.projects = (await DB.all('projects')) || []; S.chats = (await DB.all('chats')) || []; S.cards = (await DB.all('cards')) || [];
     S.reads = (await DB.all('reads')) || []; S.ideas = (await DB.all('ideas')) || [];
-    S.docs = ((await DB.all('docs')) || []).map(docMeta);
+    const all = (await DB.all('docs')) || []; S.docs = all.map(docMeta); for (const d of all) if (d.judg) JUDG.set(d.id, d.judg);
   }
   applyTheme();
   for (const p of S.projects) if (migrate(p)) await DB.put('projects', p);

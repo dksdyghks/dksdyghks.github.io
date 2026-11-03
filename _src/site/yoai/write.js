@@ -212,8 +212,9 @@ async function draftItems(p, opt) {
   }
   // 참고문헌: the library documents the draft cites
   const citedDocs = [...new Map(items.flatMap((it) => it.refs.filter((r) => r.doc).map((r) => [r.doc.id, r.doc]))).values()];
-  if (opt.refs !== false && citedDocs.length) {
-    const list = buildRefList(citedDocs.map(docCitation), rangeFromLibrary);
+  const refDocs = citedDocs.filter((d) => (d.cite || {}).kind !== 'case');
+  if (opt.refs !== false && refDocs.length) {
+    const list = buildRefList(refDocs.map(docCitation), rangeFromLibrary);
     items.push({ t: 'h1', text: '참고문헌', refs: [] }, ...refBlocks(list).map((b) => ({ t: b.t === 'h1' ? 'h2' : b.t === 'h2' ? 'h3' : 'p', text: b.text, refs: [] })));
   }
   // footnotes in reading order, so the second time a work comes back it is “앞의 논문”
@@ -471,4 +472,5 @@ export const proseOf = (paras) => { // the paragraphs a style measure reads: no 
   for (let i = out.length - 1; i > out.length * 0.5; i--) if (/^\s*[\[<【(]?\s*참\s*고\s*문\s*헌\s*[\]>】)]?\s*$/.test(out[i])) { out.fill('', i); break; }
   return out;
 };
+export { toHwpxBlocks, toDocx, toMd, skeleton };
 export const _test = { linesToParas, keyWords, topSections, draftItems, toMd, runCheck, readManuscript };

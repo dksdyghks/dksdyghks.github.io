@@ -469,3 +469,36 @@ ul.refs-list li { padding: 2px 0; }
   table.st .opt { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ---------------- 판결 분석 ---------------- */
+.jd-intro .prose { margin: 0 0 8px; }
+.jd-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.jd-list li { font-size: .875rem; line-height: 1.6; }
+.jd-kv { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; font-size: .8125rem; line-height: 1.6; }
+.jd-kv li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; }
+.jd-kv .lbl, .jd-head .lbl { display: inline-block; font-size: .75rem; font-weight: 600; color: var(--muted); }
+.jd-order p { margin: 2px 0; font-size: .8125rem; line-height: 1.65; }
+.jd-stage { border-top: 1px solid var(--rule); padding: 12px 0 4px; }
+.jd-stage:first-of-type { border-top: 0; padding-top: 4px; }
+.jd-stage-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.jd-stage-h .sec-t { flex: 1; min-width: 0; }
+.jd-paras { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.jd-paras li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 10px; border-radius: 10px; background: var(--panel); border: 1px solid transparent; }
+.jd-paras li.on { border-color: var(--gold); background: var(--gold-wash); }
+.jd-paras label { display: flex; gap: 8px; align-items: flex-start; font-size: .8125rem; line-height: 1.7; cursor: pointer; }
+.jd-paras label input { margin-top: 5px; flex: none; }
+.jd-f { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; }
+.jd-f b, .jd .f-rule, .jd .f-eval, .jd .f-conc, .jd .f-claim, .jd .f-fact { font-size: .6875rem; font-weight: 700; border-radius: 99px; padding: 1px 7px; white-space: nowrap; background: var(--chip); color: var(--ink-2); }
+.jd .f-rule { background: var(--gold-wash); color: var(--gold-ink); }
+.jd .f-eval { background: #EAF2FB; color: #1E4E86; }
+.jd .f-conc { background: #EAF5EF; color: var(--ok); }
+.jd .f-claim, .jd .f-fact { background: var(--chip); color: var(--muted); }
+:root[data-theme="dark"] .jd .f-eval { background: #13233A; color: #9CC3F0; }
+:root[data-theme="dark"] .jd .f-conc { background: #11261B; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .jd .f-eval { background: #13233A; color: #9CC3F0; } :root:not([data-theme="light"]) .jd .f-conc { background: #11261B; } }
+.jd-issues { margin: 0 0 10px; padding-left: 22px; display: grid; gap: 8px; }
+.jd-issues li textarea { width: 100%; border: 1px solid var(--rule-2); background: var(--panel); border-radius: 10px; padding: 7px 10px; font-size: .875rem; line-height: 1.6; resize: vertical; }
+.jd-issues li .jd-f { margin-top: 4px; justify-content: flex-start; }
+.jd-issues li .sub { margin: 4px 0 0; }
+.jd-outline li { font-size: .8125rem; line-height: 1.7; }
+@media (max-width: 640px) { .jd-paras li { grid-template-columns: 1fr; } .jd-f { justify-content: flex-start; } }

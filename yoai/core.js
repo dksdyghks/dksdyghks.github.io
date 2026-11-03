@@ -1,9 +1,9 @@
 /* YO아이 — 바탕: 저장소, 문헌(PDF·한글·텍스트)의 쪽 글자, 찾기, 연결된 폴더, 스캔본 글자 읽기, 각주, 백업.
    서버도 로그인도 없다. 모든 기록은 이 브라우저의 저장소(IndexedDB)에 있고, 사용자가 고른 폴더에만 백업을 쓴다.
    바깥에서 들어오는 정보는 없다: 문헌은 사용자가 넣은 파일뿐이고, 법령·판례 링크는 누를 때만 새 창으로 연다. */
-import { readHangul } from './hwp.js?v=8ea46ba9bc';
-import { extractFacts, fixGlyphs } from './lawtext.js?v=8ea46ba9bc';
-import { writeZip, readZip } from './zip.js?v=8ea46ba9bc';
+import { readHangul } from './hwp.js?v=5f314ab709';
+import { extractFacts, fixGlyphs } from './lawtext.js?v=5f314ab709';
+import { writeZip, readZip } from './zip.js?v=5f314ab709';
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -52,11 +52,11 @@ export function toast(m) { let t = $('.toast'); if (!t) { t = document.createEle
 /* ---------------- 문헌: 쪽마다의 글자를 통째로 보관 ---------------- */
 const PDFJS_VENDOR = new URL('./vendor/pdfjs-4.10.38/', import.meta.url).href;
 let pdfjsP = null;
-export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=8ea46ba9bc').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=8ea46ba9bc', import.meta.url).href; return m; }); return pdfjsP; };
+export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=5f314ab709').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=5f314ab709', import.meta.url).href; return m; }); return pdfjsP; };
 // Korean journal PDFs often use CID fonts (Adobe-Korea1) whose letters cannot be read without these maps
 export const pdfOpen = async (bytes) => (await pdfjsLib()).getDocument({ data: new Uint8Array(bytes.slice(0)), cMapUrl: PDFJS_VENDOR + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_VENDOR + 'standard_fonts/' }).promise;
 export const TEXT_V = 3; // bump when the way page text is read changes, so every document is read again once
-export const docMeta = (d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.tv === TEXT_V, blank: !!d.blank, chars: d.chars || 0, textOnly: !!d.textOnly, ocr: !!d.ocr, mine: !!d.mine, exclude: !!d.exclude, cite: d.cite || {}, hasFacts: !!d.facts, nnotes: d.nnotes || 0 });
+export const docMeta = (d) => ({ isJudg: !!d.isJudg, id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1 || '', kind: d.kind, size: d.size, npages: d.npages || 0, addedAt: d.addedAt, folder: d.folder || '', sig: d.sig || '', indexed: Array.isArray(d.pages) && d.tv === TEXT_V, blank: !!d.blank, chars: d.chars || 0, textOnly: !!d.textOnly, ocr: !!d.ocr, mine: !!d.mine, exclude: !!d.exclude, cite: d.cite || {}, hasFacts: !!d.facts, nnotes: d.nnotes || 0 });
 async function pdfPageCount(bytes) { try { const doc = await pdfOpen(bytes); const n = doc.numPages; doc.destroy(); return n; } catch (e) { return 0; } }
 async function pdfText(bytes) {
   const doc = await pdfOpen(bytes); const pages = [];
@@ -86,16 +86,26 @@ export async function docPages(id) {
   return { id, pages: d.pages, facts: d.facts };
 }
 export async function docFull(id) { return DB.get('docs', id); }
-const KIND_OF = (name, type) => { const ext = (name.split('.').pop() || '').toLowerCase(); return ext === 'pdf' || type === 'application/pdf' ? 'pdf' : ext === 'hwp' || ext === 'hwpx' ? 'hwp' : ['txt', 'md', 'text'].includes(ext) || (type || '').startsWith('text/') ? 'text' : null; };
+const KIND_OF = (name, type) => { const ext = (name.split('.').pop() || '').toLowerCase(); return ext === 'pdf' || type === 'application/pdf' ? 'pdf' : ext === 'hwp' || ext === 'hwpx' ? 'hwp' : ext === 'docx' ? 'docx' : ['txt', 'md', 'text'].includes(ext) || (type || '').startsWith('text/') ? 'text' : null; };
+/* Word(.docx): 본문 문단과 각주를 글자로 읽는다(서식은 버린다) */
+export async function docxText(bytes) {
+  const z = await readZip(bytes), dec = (n) => (z.get(n) ? new TextDecoder().decode(z.get(n)) : '');
+  const ent = (x) => x.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n)).replace(/&amp;/g, '&');
+  const paras = (xml) => (xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || []).map((p) => ent([...p.replace(/<w:tab\/>/g, '<w:t>\t</w:t>').replace(/<w:br[^>]*\/>/g, '<w:t>\n</w:t>').matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('')).replace(/[ \t]+/g, ' ').trim());
+  const body = dec('word/document.xml'); if (!body) throw new Error('Word 문서가 아닙니다.');
+  const notes = (dec('word/footnotes.xml').match(/<w:footnote [^>]*w:id="(\d+)"[\s\S]*?<\/w:footnote>/g) || []).filter((f) => !/w:type="(separator|continuationSeparator|continuationNotice)"/.test(f)).map((f) => paras(f).join(' ').trim()).filter(Boolean);
+  return paras(body).join('\n') + (notes.length ? '\n[각주]\n' + notes.map((n, i) => `${i + 1}) ${n}`).join('\n') : '');
+}
 export async function addFiles(files, opts = {}) {
   const ids = [];
   for (const f of files) {
     const kind = KIND_OF(f.name, f.type);
-    if (!kind) { if (!opts.quiet) toast(`${f.name}: PDF, 한글(.hwp·.hwpx), 텍스트 파일만 넣을 수 있습니다.`); continue; }
-    const doc = { id: uid(), title: f.name.replace(/\.[^.]+$/, ''), author: '', year: '', venue: '', size: f.size, addedAt: Date.now(), kind, cite: {}, ...(opts.folder ? { folder: opts.folder, sig: opts.sig } : {}), ...(opts.mine ? { mine: true } : {}) };
+    if (!kind) { if (!opts.quiet) toast(`${f.name}: PDF, 한글(.hwp·.hwpx), Word(.docx), 텍스트 파일만 넣을 수 있습니다.`); continue; }
+    const doc = { id: uid(), title: f.name.replace(/\.[^.]+$/, ''), author: '', year: '', venue: '', size: f.size, addedAt: Date.now(), kind: kind === 'docx' ? 'text' : kind, cite: {}, ...(opts.folder ? { folder: opts.folder, sig: opts.sig } : {}), ...(opts.mine ? { mine: true } : {}) };
     try {
       if (kind === 'pdf') { doc.bytes = await f.arrayBuffer(); doc.npages = await pdfPageCount(doc.bytes); }
       else if (kind === 'hwp') { doc.bytes = await f.arrayBuffer(); const r = await readHangul(doc.bytes, f.name); doc.pages = chunkText(r.text); if (r.notes.length) doc.pages.push(...chunkText('[각주]\n' + r.notes.map((n, i) => `${i + 1}) ${n}`).join('\n'))); doc.nnotes = r.notes.length; doc.tv = TEXT_V; doc.npages = doc.pages.length; doc.chars = doc.pages.join('').replace(/\s+/g, '').length; doc.blank = doc.chars < 50; doc.facts = doc.blank ? undefined : extractFacts(doc.pages); }
+      else if (kind === 'docx') doc.text = await docxText(await f.arrayBuffer());
       else doc.text = await f.text();
     } catch (e) { if (!opts.quiet) toast(`${f.name}: ${e.message || '읽지 못했습니다'}`); continue; }
     try { await DB.put('docs', doc); }
@@ -304,7 +314,7 @@ export async function ocrAll(only, done) {
    단행본 저자, 『책』 (출판사, 2026), 122면.
    보고서 저자, “제목”, (발행기관, 2017), 15면.     학위논문 저자, “제목”, (서울대학교 박사학위논문, 2013), 15면.
    다시 인용  저자, 앞의 논문, 375-376면.        쪽은 학술지에 인쇄된 쪽(○면); 첫 쪽을 모르면 PDF 쪽으로 적고 표시한다. */
-export const CITE_KINDS = [['article', '학술지 논문'], ['book', '단행본'], ['report', '연구보고서'], ['thesis', '학위논문'], ['chapter', '단행본의 장(편저)'], ['web', '웹 자료'], ['foreign', '외국 문헌'], ['other', '기타']];
+export const CITE_KINDS = [['article', '학술지 논문'], ['book', '단행본'], ['case', '판결·결정'], ['report', '연구보고서'], ['thesis', '학위논문'], ['chapter', '단행본의 장(편저)'], ['web', '웹 자료'], ['foreign', '외국 문헌'], ['other', '기타']];
 export function where(doc, a, b) {
   b = b || a;
   if (doc && doc.kind !== 'pdf') return { ui: a === b ? `${a}번째 부분` : `${a}–${b}번째 부분`, note: '', known: false };
@@ -320,6 +330,7 @@ export function footnote(doc, page, page2, opts = {}) {
   const a = doc.author || '', t = doc.title || '', y = c.date || doc.year || '';
   const pg = page ? where(doc, page, page2).note : '';
   const tail = pg ? `, ${pg}.` : '.';
+  if (k === 'case') return `${String(c.caseCite || t).replace(/[.。]\s*$/, '')}.`; // 판례는 언제나 온전히: 대법원 1993. 12. 10. 선고 93다12947 판결.
   if (opts.again) return `${a ? a + ', ' : ''}앞의 ${againWord(k)}${opts.short ? ` (${opts.short})` : ''}${tail}`;
   const paren = (...xs) => { const s = xs.filter(Boolean).join(', '); return s ? ` (${s})` : ''; };
   switch (k) {
@@ -342,7 +353,7 @@ export function citer() {
     seenDocs.set(doc.id, doc);
     const k = (doc.cite && doc.cite.kind) || 'article', key = `${doc.author}|${againWord(k)}`;
     if (!byAuthor.has(key)) byAuthor.set(key, new Set()); byAuthor.get(key).add(doc.id);
-    if (!seen.has(doc.id) || !doc.author) { seen.add(doc.id); return footnote(doc, page, page2); }
+    if (!seen.has(doc.id) || !doc.author || k === 'case') { seen.add(doc.id); return footnote(doc, page, page2); }
     // as in the dissertation: “임지봉, 앞의 논문 (2022), 72-73면.” — the year tells two works apart; the short title only when the years are the same too
     const yearOf = (d) => (String((d.cite && d.cite.date) || d.year || '').match(/(?:19|20)\d{2}/) || [''])[0];
     const others = [...byAuthor.get(key)].filter((id) => id !== doc.id).map((id) => seenDocs.get(id)).filter(Boolean);
@@ -351,7 +362,7 @@ export function citer() {
   };
 }
 export const pageLabel = (doc, p) => where(doc, p).ui;
-export { guessMeta } from './lawtext.js?v=8ea46ba9bc';
+export { guessMeta } from './lawtext.js?v=5f314ab709';
 
 /* ---------------- 창, 파일 ---------------- */
 export function modal(html, onClose) {
@@ -398,9 +409,11 @@ export async function pdfDocFor(id) {
 }
 
 /* ---------------- 백업: 고른 폴더에 날마다 자동으로, 또는 파일로 ---------------- */
+/* 판결 분석에서 사용자가 고친 정리(문헌 기록의 judg)는 백업에도 담는다: 시작할 때와 고칠 때 여기에 비춰 둔다 */
+export const JUDG = new Map();
 export function backupData() {
   return { app: 'yoai', v: 3, exportedAt: new Date().toISOString(), settings: { ...S.settings }, projects: S.projects, cards: S.cards, reads: S.reads, ideas: S.ideas, chats: S.chats,
-    docs: S.docs.map((d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1, folder: d.folder, kind: d.kind, mine: d.mine, exclude: d.exclude, cite: d.cite })) };
+    docs: S.docs.map((d) => ({ id: d.id, title: d.title, author: d.author, year: d.year, venue: d.venue, page1: d.page1, folder: d.folder, kind: d.kind, mine: d.mine, exclude: d.exclude, cite: d.cite, ...(JUDG.get(d.id) ? { judg: JUDG.get(d.id) } : {}) })) };
 }
 export const stamp = () => { const d = new Date(), z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}`; };
 let backupBusy = false;
@@ -444,11 +457,12 @@ export async function restoreFrom(file) {
   for (const m of data.docs || []) {
     let doc = docOf(m.id) || (m.folder && S.docs.find((x) => x.folder === m.folder));
     const blob = z && [...z.keys()].find((k) => k.startsWith(`docs/${m.id}.`));
-    if (!doc && blob) { const full = { ...m, size: z.get(blob).length, addedAt: Date.now(), ...(m.kind === 'text' ? { text: new TextDecoder().decode(z.get(blob)) } : { bytes: z.get(blob).buffer.slice(0) }) }; await DB.put('docs', full); S.docs.push(docMeta(full)); n++; continue; }
+    if (!doc && blob) { if (m.judg) { JUDG.set(m.id, m.judg); m.isJudg = true; } const full = { ...m, size: z.get(blob).length, addedAt: Date.now(), ...(m.kind === 'text' ? { text: new TextDecoder().decode(z.get(blob)) } : { bytes: z.get(blob).buffer.slice(0) }) }; await DB.put('docs', full); S.docs.push(docMeta(full)); n++; continue; }
     if (!doc) continue;
     const full = await DB.get('docs', doc.id); if (!full) continue;
     for (const k of ['author', 'year', 'venue', 'page1']) if (!full[k] && m[k]) full[k] = m[k];
     if (m.cite && !Object.keys(full.cite || {}).length) full.cite = m.cite; if (m.mine) full.mine = true; if (m.exclude) full.exclude = true;
+    if (m.judg && !full.judg) { full.judg = m.judg; full.isJudg = true; JUDG.set(full.id, m.judg); }
     await DB.put('docs', full); Object.assign(doc, docMeta(full));
   }
   LIB = null; indexLibrary();
