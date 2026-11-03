@@ -52,6 +52,13 @@ def esc_text(h):  # '<표>' and 'a < b' are text; tags we use are kept
 def write(items, REVIEW, out_js, subject, review_md, title, header):
     check(set(REVIEW) == {it['id'] for it in items}, 'review rows for every item')
     check(len({it['id'] for it in items}) == len(items), 'ids unique')
+    # ids must not already exist in any other bank file (the app silently drops duplicates)
+    import glob, os
+    taken = set()
+    for f in glob.glob(os.path.join(os.path.dirname(out_js), 'bank-*.js')):
+        if os.path.abspath(f) != os.path.abspath(out_js): taken |= set(re.findall(r'''["']?\bid["']?\s*:\s*["']([A-Z]-[^"']+)["']''', open(f, encoding='utf8').read()))
+    clash = sorted(it['id'] for it in items if it['id'] in taken)
+    check(not clash, f'ids already used in another bank file: {clash}')
     for it in items:
         it['lv'] = {'하': 1, '중': 2, '상': 3}[REVIEW[it['id']][1]]
         mm = re.fullmatch(r'(?:(\d+)분)?\s*(?:(\d+)초)?', REVIEW[it['id']][2].strip())

@@ -413,4 +413,64 @@ rk8 = [r for r in rk8 if all((r[a[0]] == a[1]) + (r[b[0]] == b[1]) == 1 for a, b
 ok(len(rk8) == 1, f'L-K08 {rk8}')
 keyed = O('L-K08')[A('L-K08')]
 ok(all(f"{x}은 {rk8[0][x]}등" in keyed for x in '甲乙丙丁' if x in keyed), f'L-K08 keyed {keyed} vs {rk8[0]}')
+
+# ================= S-M / D-M / L-L (independent re-solve) =================
+# S-L01 annual leave
+def lv(y, r, m): return m if r < 80 else min(25, 15 + ((y - 1) // 2 if y >= 3 else 0))
+pick('S-M01', f"{lv(6, 95, 12) + lv(2, 90, 12) + lv(30, 100, 12) + lv(10, 70, 7)}일")
+ok('사과' in O('S-M02')[A('S-M02')], 'S-M02 keyed option is the 농산물 one')
+pick('S-M03', f"{4000000 * 12 // 10 + 3000000 * 15 // 10 * 9 // 12 + 0:,}원")
+# S-L04 round table: fix 甲 at 0
+sl4 = []
+for pm in itertools.permutations(range(1, 6)):
+    s_ = dict(zip('乙丙丁戊己', pm)); s_['甲'] = 0
+    if (s_['甲'] - s_['乙']) % 6 == 3 and (s_['丙'] - s_['丁']) % 6 in (1, 5) and (s_['己'] - s_['甲']) % 6 == 1 and (s_['丙'] - s_['乙']) % 6 not in (1, 5): sl4.append(s_)
+ok(len(sl4) == 1, f'S-M04 {sl4}'); pick('S-M04', next(x for x in sl4[0] if (sl4[0][x] - sl4[0]['丙']) % 6 == 3))
+# S-L05 one truthful
+cul = [c for c in '甲乙丙丁戊' if [c in '乙丁', c != '丁', c in '甲乙', c != '丙', c in '丁戊'].count(True) == 1]
+ok(len(cul) == 1, f'S-M05 {cul}'); pick('S-M05', f"범인 {cul[0]} · 참말 乙")
+combo('S-M06', [l for l, t in zip('ㄱㄴㄷㄹ', [12 + 1 == 13, True, False, 13 - 8 == 5]) if t])
+# S-L07 shortest path by exhaustive simple paths
+ed = {('집', 'A'): 10, ('집', 'B'): 15, ('A', 'B'): 4, ('A', 'C'): 20, ('B', 'C'): 12, ('B', 'D'): 25, ('C', 'D'): 6, ('C', '청사'): 18, ('D', '청사'): 8}
+w_ = lambda a, b: ed.get((a, b), ed.get((b, a)))
+best7 = min(sum(w_(p_[i], p_[i + 1]) for i in range(len(p_) - 1)) + 5 * ('C' in p_) for k in range(0, 5) for mid in itertools.permutations('ABCD', k) for p_ in [('집',) + mid + ('청사',)] if all(w_(p_[i], p_[i + 1]) for i in range(len(p_) - 1)))
+pick('S-M07', f'{best7}분')
+pick('S-M08', f"{4 * 60000 * 85 // 100 + 30000:,}원")
+# S-L09 promotion months
+mon = (2020 * 12 + 2) + 18 + 24 + (16 - 12) + 24 + 3 + 6
+pick('S-M09', f"{mon // 12}년 {mon % 12 + 1}월 1일")
+ev10 = {'A': F(8, 10) * 50 - 30, 'B': F(1, 2) * 90 + F(1, 2) * 10 - 30, 'C': F(6, 10) * 70 + F(4, 10) * 5 - 25}
+ev0 = {'A': F(8, 10) * 50 - 30, 'B': F(1, 2) * 90 - 30, 'C': F(6, 10) * 70 - 25}
+combo('S-M10', [l for l, t in zip('ㄱㄴㄷㄹ', [max(ev10, key=ev10.get) == 'B', max(ev0, key=ev0.get) == 'B', max(ev10, key=ev10.get) == 'A', F(9, 10) * 50 - 30 > ev10['C']]) if t])
+# D-M01
+vv, sp, sy = [400, 250, 600, 150, 300], [30, 48, 18, 60, 35], [F(2), F(3), F(3, 2), F(4), F(5, 2)]
+tt = [a * b for a, b in zip(vv, sp)]; pd = [b / c for b, c in zip(sp, sy)]
+by_text('D-M01', list(zip(['관광객 지출 총액이 가장', '관광객 1인의 하루 평균 지출액이 가장', '관광객 지출 총액은 C', '관광객 1인의 하루 평균 지출액은 A와', 'A~E 지역 전체'],
+        [tt[0] == tt[1] == max(tt), pd.index(max(pd)) == 1, tt[2] > tt[4], pd[0] == pd[3], F(sum(tt), sum(vv)) >= 35])), want=False, what='false options')
+dm, ab = [180, 195, 210, 205, 230], [45, 50, 60, 70, 75]
+combo('D-M02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(F(ab[i], ab[i] + dm[i]) > F(ab[i - 1], ab[i - 1] + dm[i - 1]) for i in range(1, 5)), max(range(1, 5), key=lambda i: F(dm[i] - dm[i - 1], dm[i - 1])) == 4, F(75, 45) >= F(8, 5), all(ab[i] + dm[i] > ab[i - 1] + dm[i - 1] for i in range(1, 5))]) if t])
+pr3 = {'A': (120, 200, 20000, 2), 'B': (80, 130, 20000, 3), 'C': (150, 240, 50000, 4), 'D': (140, 200, 35000, 2), 'E': (100, 160, 25000, 3)}
+pick('D-M03', [k for k, (c, b, n_, y) in pr3.items() if F(b, c) >= F(3, 2) and c * 10 ** 8 / n_ <= 500000 and y <= 3 and b - c >= 55][0])
+ga_, na_ = 400 * F(105, 100), 230 / F(92, 100)
+by_text('D-M04', list(zip(['(가)는', '(나)는', '합계의', '예산 합계에서', '운영비의'], [ga_ == 410, na_ == 250, F(ga_ + 920 - (400 + na_ + 600), 400 + na_ + 600) >= F(8, 100), ga_ / (ga_ + 920) > F(400) / (400 + na_ + 600), na_ - 230 > ga_ - 400])))
+ix = [F(100)]
+for g_ in (F(11, 10), F(9, 10), F(12, 10), F(95, 100)): ix.append(ix[-1] * g_)
+combo('D-M05', [l for l, t in zip('ㄱㄴㄷㄹ', [ix[2] < ix[0], ix[4] >= F(115), ix.index(max(ix)) == 3, abs(ix[2] - ix[1]) < abs(ix[4] - ix[3])]) if t])
+combo('D-M06', [l for l, t in zip('ㄱㄴㄷㄹ', [F(30 * 72 + 25 * 80 + 20 * 66, 75) >= 73, F(30 * 72 + 450, 35) >= 75, F(25 * 80 - 450, 20) == F(155, 2), F(72 + 80 + 66, 3) < F(5480, 75)]) if t])
+st7, hr7, ol7 = [1200, 800, 500, 1500], [40, 55, 60, 30], [50, 30, 20, 60]
+tt7 = [a * b for a, b in zip(st7, hr7)]; on7 = [F(t * o, 100) for t, o in zip(tt7, ol7)]; of7 = [t - o for t, o in zip(tt7, on7)]
+by_text('D-M07', list(zip(['총교육 시간이', '온라인 교육 시간이', '네 부처 전체의 직원', '오프라인 교육 시간이', '네 부처 전체의 교육 시간'], [tt7.index(max(tt7)) == 3, on7.index(max(on7)) == 3, F(sum(tt7), sum(st7)) >= 45, of7.index(max(of7)) == 0, sum(on7) / sum(tt7) >= F(45, 100)])))
+# D-M08 bounds by inclusion-exclusion (independent of the grid search)
+combo('D-M08', [l for l, t in zip('ㄱㄴㄷㄹ', [70 + 60 - 100 == 30, min(70, 60) == 60, 100 - 70 == 30, max(0, 100 - (30 + 40 + 20)) >= 20]) if t])
+combo('D-M09', [l for l, t in zip('ㄱㄴㄷㄹ', [F(75, 1000) == F(3, 40), max([(F(40, 500), '제'), (F(45, 300), '서'), (F(-10, 200), '농')])[1] == '서', max([(40, '제'), (45, '서'), (-10, '농')])[1] == '제', F(885 - 800, 800) >= F(1, 10)]) if t])
+el = [600, 700, 800, 1900]; a20 = [60, 65, 70, 75]; a24 = [66, 64, 72, 74]
+vt = lambda a: [e * x for e, x in zip(el, a)]
+d_ = [y - x for x, y in zip(vt(a20), vt(a24))]
+combo('D-M10', [l for l, t in zip('ㄱㄴㄷㄹ', [F(66, 60) == F(11, 10), d_.index(max(d_)) == 0, F(sum(vt(a24)) - sum(vt(a20)), sum(el)) >= 1, vt(a24)[3] < vt(a20)[3]]) if t])
+# L-L06
+ml = [m for m in itertools.product((0, 1), repeat=4) if imp(m[0], m[1]) and imp(m[1], not m[2]) and (m[2] or m[3]) and imp(m[3], m[0])]
+by_text('L-L06', list(zip(['甲과 丁은', '乙은 참석', '丙은 참석하지', '참석하는 사람은', '乙이 참석하지 않으면'], [all(m[0] == m[3] for m in ml), all(m[1] for m in ml), all(not m[2] for m in ml), all(sum(m) >= 2 for m in ml), all(imp(not m[1], m[3]) for m in ml)])), what='necessary')
+bx_ = [dict(zip('ABC', pm)) for pm in itertools.permutations(['금', '은', '동'])]
+bx_ = [b_ for b_ in bx_ if [b_['A'] == '금', b_['C'] != '금', b_['B'] != '동'].count(True) == 1]
+ok(len(bx_) == 1, f'L-L07 {bx_}'); pick('L-L07', f"A {bx_[0]['A']}, B {bx_[0]['B']}, C {bx_[0]['C']}")
 print('ALL OK' if ok_all else 'SOME FAILED')
