@@ -93,7 +93,8 @@ button { font: inherit; }
 .sub-line { font-size: 0.9375rem; color: var(--muted); }
 .nw { white-space: nowrap; }
 @media (min-width: 761px) { .nwd { white-space: nowrap; } }  /* wider screens: a closing parenthetical stays in one piece */
-@media (max-width: 760px) { .nwm { white-space: nowrap; } }  /* phones: no single short word alone on a title's last line */
+.nwm { white-space: nowrap; }  /* every width: no single short word alone on a title's last line */
+.ttl, .edu-ttl, .sub-line, .meta { text-wrap: pretty; }  /* browsers that can, avoid a lone last word anywhere else too */
 
 /* ---------- Hero ---------- */
 .hero {
@@ -324,6 +325,8 @@ button { font: inherit; }
   font-size: 1rem; font-weight: 700; line-height: 1.35; letter-spacing: -0.015em; color: var(--ink);
   background: var(--card); padding: 12px 14px; border-radius: 10px; box-shadow: 0 1px 2px #0F1A2B0D, inset 0 0 0 1px var(--rule);
 }
+/* English course names are longer: as many columns as keep every name on one line (2 on tablets, 3 on desktop) */
+#view-en .course-list { grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); }
 .course-list .badge { margin-left: 0; color: var(--muted); background: var(--chip); box-shadow: none; }
 
 /* Articles */

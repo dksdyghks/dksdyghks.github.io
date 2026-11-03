@@ -328,7 +328,7 @@ def view(lang):
             h, l = split_last(main)
             short = (len(l) <= 3) if HANGUL.search(l) else (len(l) <= 12)
             h2, prev = widow_pair(h) if (short and h.strip()) else (h, '')
-            if prev and len(prev.strip()) + len(l) <= (10 if HANGUL.search(l) else 24):
+            if prev and len(prev.strip()) + len(l) <= (10 if HANGUL.search(l) else 28):
                 inner = e(h2) + f'<span class="nwm">{e(prev)}<span class="nw">{e(l)}{icon}</span></span>'
             else:
                 inner = e(h) + f'<span class="nw">{e(l)}{icon}</span>'
