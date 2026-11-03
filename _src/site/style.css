@@ -336,6 +336,7 @@ button { font: inherit; }
 .meta { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .meta .jr { color: var(--ink-2); font-weight: 600; }
 .meta .dot { color: var(--faint); margin-left: 8px; }
+.meta .pg { margin-left: 4px; }  /* with the space before it, the same 8px as between the other items */
 
 /* Footer: a quiet copyright line, aligned with the cards */
 .foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 28px 76px; }

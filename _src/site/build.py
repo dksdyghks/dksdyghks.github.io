@@ -316,6 +316,10 @@ def view(lang):
                     h, l = '', h + l
                 else:
                     lead, h = f'<span class="nw">-\u00a0{e(rest[:j])}</span>', rest[j:]
+            if h.strip():  # the last two words travel together, so no subtitle ends on a lone word
+                h2, prev = widow_pair(h) if ' ' in h.strip() else ('', h)
+                if len(prev.strip()) + len(l) <= (16 if HANGUL.search(l) else 28):
+                    h, l = h2, prev + l
             return f'<span class="sub">{lead}{e(h)}<span class="nw">{e(l)}{tail_extra}</span></span>'
 
         sp = '<span class="sp"> </span>'
@@ -423,8 +427,8 @@ def view(lang):
                               else p.replace(' ', '\u00a0') for p in re.split(r'(,\s*|\s*&\s*)', authors))
         kci = KCI_TXT[KCI.get(kj, 'listed')][0 if ko else 1]
         fund_txt = (fund[0] if ko else fund[1]) if fund else None
-        meta = [f'<span class="jr">{e(j)}</span> {glue(v, kci, DOT)}',
-                f'<span class="nw">{e(pg)}{DOT if fund_txt else ""}</span>']
+        # journal, volume and pages share one run of text, so a narrow screen never leaves the page numbers alone on a line
+        meta = [f'<span class="jr">{e(j)}</span> {glue(v, kci, DOT)} <span class="nw pg">{e(pg)}{DOT if fund_txt else ""}</span>']
         if fund_txt:
             meta.append(e(fund_txt))
         items.append(f'<li class="pub"><span class="when">{ym(*date)}</span><div>'
