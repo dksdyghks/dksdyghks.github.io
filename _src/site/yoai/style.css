@@ -303,6 +303,9 @@ table.arts a { color: var(--ink); text-decoration-color: var(--gold); text-under
 .rd-canvas canvas { max-width: 100%; height: auto !important; box-shadow: 0 0 0 1px var(--rule); background: #fff; }
 .rd-text { font-family: var(--f-serif); font-size: 1.0625rem; line-height: 1.95; padding: 6px 10px; user-select: text; }
 .rd-text p { margin: 0 0 .9em; }
+.rd-text p.hd { font-family: var(--f-sans); font-weight: 600; font-size: .9375rem; margin: 1.2em 0 .5em; }
+.rd-text p.rh { font-family: var(--f-sans); font-size: .75rem; color: var(--muted); margin: 0 0 .8em; }
+.rd-text p.fn { font-size: .8125rem; line-height: 1.7; color: var(--ink-2); margin: 0 0 .35em; padding-left: .6em; border-left: 2px solid var(--rule); }
 .rd-tip { margin: 10px 4px 0; font-size: .75rem; color: var(--muted); }
 .rd-foot { display: flex; flex-wrap: wrap; gap: 6px; }
 .seltool { position: fixed; z-index: 60; display: flex; gap: 2px; background: var(--navy); border-radius: 12px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }

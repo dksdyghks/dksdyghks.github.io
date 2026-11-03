@@ -18,7 +18,7 @@ export const CASE_RE = /(?<![\d가-힣])((?:19|20)\d{2}|[89]\d)\s?(헌[가나다
 export const caseCourt = (k) => (/헌[가-아]/.test(k) ? '헌법재판소' : /구합|가합|고합/.test(k) ? '하급심' : '대법원');
 const lines = (pages) => { const L = []; pages.forEach((t, i) => String(t || '').split('\n').forEach((x) => { const v = x.replace(/\s+/g, ' ').trim(); if (v) L.push({ p: i + 1, t: v }); })); return L; };
 /* some journal PDFs carry 『』「」 as other glyphs (뺷…뺸, private-use marks, half-width ｢｣): put them back */
-export const fixGlyphs = (t) => String(t || '').replace(/[뺷\u{F0854}]/gu, '『').replace(/[뺸\u{F0855}]/gu, '』').replace(/｢/g, '「').replace(/｣/g, '」');
+export const fixGlyphs = (t) => String(t || '').replace(/[뺷\u{F0854}]/gu, '『').replace(/[뺸\u{F0855}]/gu, '』').replace(/｢/g, '「').replace(/｣/g, '」').replace(/\u0002(?=[^\u0003\n]{1,40}\u0003)/g, '『').replace(/\u0003/g, '』');
 export const normKey = (s) => String(s || '').toLowerCase().replace(/[^0-9a-z가-힣一-鿿]/g, '');
 const fnv = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; };
 
@@ -314,6 +314,7 @@ export function guessMeta(pages) {
   const pn = (P[0] || '').match(/(?:^|\n)\s*-\s?(\d{1,4})\s?-\s*(?:\n|$)/); if (pn) vote(+pn[1], 3);
   const r = flat0.match(/pp\.?\s?(\d{1,4})\s?[~∼-]\s?(\d{1,4})/i) || flat0.match(/(\d{1,4})\s?[~∼]\s?(\d{1,4})\s?면/);
   if (r && +r[2] > +r[1] && !COVER.test(P[0])) vote(+r[1], 2);
+  if (r && +r[2] > +r[1]) out.pages = `${+r[1]}-${+r[2]}`;
   const best = [...p1votes.entries()].sort((a, b) => b[1] - a[1])[0];
   if (best && best[1] >= 3) out.page1 = String(best[0]);
   // 3. journal, volume and date on the first pages (the date near the volume, never a date in the text)
@@ -360,4 +361,85 @@ export function guessMeta(pages) {
     }
   }
   return out;
+}
+
+/* ---------------- 참고문헌: 각주의 첫 인용에서 만들고, 원고의 참고문헌과 맞춰 본다 ----------------
+   박사학위논문의 참고문헌 양식: Ⅰ. 국내자료(1. 단행본, 2. 학술연구) Ⅱ. 국외자료, 저자·제목 가나다순.
+   항목은 각주의 첫 인용에서 인용한 쪽을 뺀 것이고, 학술지 논문은 논문 전체의 쪽 범위(109-125면)를 붙인다. */
+const RNAME = '(?:[가-힣]{2,5}(?:\\s?외\\s?\\d+\\s?인|\\s?외\\s?공저|\\s?외|\\s?공저|\\s?편저?)?(?:[·ㆍ][가-힣]{2,5}){0,3}(?:\\s?공저|\\s?편저?)?|[가-힣]{2,15}(?:학회|연구원|연구소|위원회|조사처|법원|재판소|정책연구원|출판부|감사원|사법연수원)|[A-Z][A-Za-z.\'\\-]+(?:,?\\s(?:&\\s|of\\s|the\\s|and\\s|for\\s)?[A-Z][A-Za-z.\'\\-]+){0,6}(?:,?\\s(?:et al\\.|&\\s[A-Z][A-Za-z.\'\\-]+(?:\\s[A-Z][A-Za-z.\'\\-]+){0,3}))?)';
+const RX = {
+  article: new RegExp(`(${RNAME}),\\s*“((?:[^”]|”(?!\\s*,))+?)”\\s*,?\\s*『([^』]{1,60})』\\s*([^()『“]{0,60}?)\\s*,?\\s*\\(([^()]{2,80})\\)`, 'g'),
+  book: new RegExp(`(${RNAME}),\\s*『([^』]{1,120})』\\s*\\(([^()]{2,80})\\)`, 'g'),
+  report: new RegExp(`(${RNAME}),\\s*“([^”]{3,220})”\\s*,?\\s*\\(([^()]{2,80}\\d{4}[^()]{0,20})\\)`, 'g'),
+  foreign: new RegExp(`(${RNAME}),\\s*“((?:[^”]|”(?!\\s*,))+?)”\\s*,\\s*([^“”()]{2,160}?)\\s*\\((\\d{4})\\)`, 'g'),
+};
+const sq = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+export function noteCitations(notes) {
+  const out = new Map();
+  (notes || []).forEach((raw, i) => {
+    const n = fixGlyphs(raw).replace(/\s+/g, ' ').replace(/[“"]\s/g, '“').replace(/\s[”"]/g, '”');
+    const taken = [];
+    const add = (c, m) => { if (taken.some(([a, b]) => m.index < b && m.index + m[0].length > a)) return; taken.push([m.index, m.index + m[0].length]); const key = titleKey(c.title); if (key.length < 2) return; const id = normKey(c.author.replace(/\s*(외.*|공저|편저?)$/, '')) + '|' + key; if (!out.has(id)) out.set(id, { ...c, key, note: i + 1, notes: [i + 1] }); else out.get(id).notes.push(i + 1); };
+    for (const m of n.matchAll(RX.article)) add({ kind: 'article', author: sq(m[1]), title: sq(m[2]), venue: sq(m[3]), vol: sq(m[4]).replace(/,$/, ''), paren: sq(m[5]) }, m);
+    for (const m of n.matchAll(RX.book)) add({ kind: /[A-Za-z]{3}/.test(m[1]) && !/[가-힣]/.test(m[2]) ? 'fbook' : 'book', author: sq(m[1]), title: sq(m[2]), paren: sq(m[3]) }, m);
+    for (const m of n.matchAll(RX.report)) add({ kind: 'report', author: sq(m[1]), title: sq(m[2]), paren: sq(m[3]) }, m);
+    for (const m of n.matchAll(RX.foreign)) if (/[A-Za-z]{3}/.test(m[1] + m[2])) add({ kind: 'foreign', author: sq(m[1]), title: sq(m[2]), venue: sq(m[3]).replace(/,?\s*(?:pp?\.\s*[\d\-–, ]+|\d+\s*-\s*\d+)\s*$/i, '').replace(/,$/, ''), year: m[4] }, m);
+  });
+  return [...out.values()];
+}
+const isForeign = (c) => c.kind === 'foreign' || c.kind === 'fbook';
+/* one reference-list entry, in the dissertation's form; range = the article's own page range (e.g. '109-125'), when known */
+export function refEntry(c, range) {
+  if (c.kind === 'book') return `${c.author}, 『${c.title}』 (${c.paren}).`;
+  if (c.kind === 'fbook') return `${c.author}, 『${c.title}』 (${c.paren}).`;
+  if (c.kind === 'report') return `${c.author}, “${c.title}”, (${c.paren}).`;
+  if (c.kind === 'foreign') return `${c.author}, “${c.title}”${c.venue ? `, ${c.venue}` : ''} (${c.year}).`;
+  return `${c.author}, “${c.title}”, 『${c.venue}』${c.vol ? ' ' + c.vol : ''} (${c.paren})${range ? `, ${range}면` : ''}.`;
+}
+const sortKey = (s) => s.replace(/^[“"『「]/, '');
+export function buildRefList(cites, rangeOf = () => '') {
+  const dom = cites.filter((c) => !isForeign(c)), fo = cites.filter(isForeign);
+  const ent = (c) => ({ c, text: refEntry(c, rangeOf(c)) });
+  const by = (a, b) => (sortKey(a.text) < sortKey(b.text) ? -1 : sortKey(a.text) > sortKey(b.text) ? 1 : 0);
+  return { books: dom.filter((c) => c.kind === 'book').map(ent).sort(by), papers: dom.filter((c) => c.kind !== 'book').map(ent).sort(by), foreign: fo.map(ent).sort((a, b) => a.text.localeCompare(b.text, 'en')) };
+}
+/* the manuscript's own reference list: the paragraphs after [참고문헌], until the abstract */
+export function parseRefList(paras) {
+  let i = -1; for (let k = paras.length - 1; k >= 0; k--) if (/^\s*[\[<【(]?\s*참\s*고\s*문\s*헌\s*[\]>】)]?\s*$/.test(paras[k])) { i = k; break; }
+  if (i < 0) return null;
+  const out = [];
+  for (let k = i + 1; k < paras.length; k++) {
+    const t = fixGlyphs(paras[k]).replace(/\s+/g, ' ').trim(); if (!t) continue;
+    if (/^[\[<【]?\s*(abstract|영문\s*초록|국문\s*초록)/i.test(t)) break;
+    if (/^([ⅠⅡⅢⅣ]+|\d{1,2}|[가-하])\s*[.．]\s*\S{1,12}$/.test(t)) continue; // section heads
+    const m = t.match(/[“"]((?:[^”"]|[”"](?!\s*,))+?)[”"]\s*,/) || t.match(/[“"]([^”"]{3,220})[”"]/) || t.match(/『([^』]{1,120})』/);
+    if (m) out.push({ key: titleKey(m[1]), text: t, para: k });
+  }
+  return out;
+}
+
+/* a library document as a citation for the reference list (its 정보 decides the form) */
+export function docCitation(d) {
+  const c = d.cite || {}, k = c.kind || (d.venue ? 'article' : 'other'), date = c.date || d.year || '';
+  const paren = (...xs) => xs.filter(Boolean).join(', ');
+  const base = { author: d.author || '', title: d.title, key: titleKey(d.title), doc: d.id };
+  if (k === 'book') return { ...base, kind: 'book', paren: paren(c.publisher, date) };
+  if (k === 'foreign') return { ...base, kind: 'foreign', venue: d.venue || c.publisher || '', year: (String(date).match(/\d{4}/) || [''])[0] };
+  if (k === 'report' || k === 'thesis' || k === 'web' || k === 'other' || !d.venue) return { ...base, kind: 'report', paren: paren(k === 'thesis' && c.publisher && !/학위논문/.test(c.publisher) ? c.publisher + ' 학위논문' : c.publisher, date) };
+  return { ...base, kind: 'article', venue: d.venue.replace(/^[『「]|[』」]$/g, ''), vol: c.vol || '', paren: paren(c.publisher, date) };
+}
+/* footnotes against the manuscript's own reference list: missing, never cited, years that differ */
+export function compareRefs(cites, listed) {
+  // a work is the same when the titles agree and so do the authors (『헌법강의』 is several people's book)
+  const who = (a) => String(a || '').replace(/\s*(외\s*\d*\s*인?|외\s*공저|공저|편저?|et al\.?)\s*$/i, '').split(/[·ㆍ,&]|\sand\s/)[0].replace(/\s+/g, '').toLowerCase();
+  const lauthor = (t) => who(t.split(/,\s*[“"『]/)[0]);
+  const sameTitle = (a, b) => a === b || (a.length >= 8 && b.length >= 8 && (a.includes(b) || b.includes(a)));
+  const same = (c, x) => sameTitle(c.key, x.key) && (!who(c.author) || !lauthor(x.text) || who(c.author) === lauthor(x.text) || who(c.author).includes(lauthor(x.text)) || lauthor(x.text).includes(who(c.author)));
+  const missing = cites.filter((c) => !listed.some((x) => same(c, x))), uncited = listed.filter((x) => !cites.some((c) => same(c, x))), years = [];
+  for (const c of cites) {
+    const hit = listed.find((x) => same(c, x)); if (!hit) continue;
+    const cy = (String(c.paren || c.year || '').match(/(?:19|20)\d{2}/) || [])[0], ly = ([...hit.text.replace(/[“"][^”"]*[”"]/g, '').matchAll(/\(([^()]*)\)/g)].map((m) => (m[1].match(/(?:19|20)\d{2}/) || [])[0]).filter(Boolean).pop()) || (hit.text.match(/((?:19|20)\d{2})/) || [])[1];
+    if (cy && ly && cy !== ly) years.push({ c, l: hit, cy, ly });
+  }
+  return { missing, uncited, years };
 }

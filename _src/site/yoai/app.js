@@ -312,7 +312,32 @@ async function viewRead() {
 }
 function pageTextHTML(text, terms) {
   if (!text || !text.trim()) return '<p class="sub">이 쪽에서는 글자를 추출하지 못했습니다(스캔본일 수 있습니다). 원문 보기로 확인하거나, 서재에서 글자 읽기(OCR)를 하세요.</p>';
-  return text.split(/\n{2,}|\n(?=\s)/).map((p) => `<p>${highlight(p.replace(/\n/g, ' '), terms || [])}</p>`).join('');
+  return pageParas(text).map((x) => `<p class="${x.k}">${highlight(x.t, terms || [])}</p>`).join('');
+}
+/* a PDF page comes as lines; a paragraph ends where a sentence ends on a short line, headings and footnotes stand alone */
+function pageParas(text) {
+  const lines = String(text).split('\n').map((l) => l.replace(/\s+/g, ' ').trim());
+  const lens = lines.filter((l) => l.length > 20).map((l) => l.length).sort((a, b) => a - b);
+  const full = lens.length ? lens[Math.floor(lens.length * 0.75)] : 60;
+  const HEAD = /^([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]+\s*[.．]|제\s*\d+\s*[장절편](\s|$)|\d{1,2}\.\s|[가-하]\.\s|\(\d{1,2}\)\s|[①-⑳]\s)/;
+  const NOTE = /^\d{1,3}\)\s?\S/;
+  const out = []; let cur = null;
+  const flush = () => { if (cur && cur.t) out.push(cur); cur = null; };
+  let first = true;
+  for (const l of lines) {
+    if (!l) { flush(); continue; }
+    if (/^-?\s?\d{1,4}\s?-?$/.test(l)) continue; // page numbers
+    if (first && l.length <= 60 && (/^\d{1,4}\s+\S/.test(l) || /\S\s\d{1,4}$/.test(l)) && !/[다요]\.$/.test(l)) { first = false; out.push({ k: 'rh', t: l }); continue; } // running head
+    first = false;
+    if (NOTE.test(l) && l.length <= 40 && !/[.다]$/.test(l) && !/선고|『|“|면\.?$/.test(l)) { flush(); out.push({ k: 'hd', t: l }); continue; } // “1) 조사권 발동요건” is a heading
+    if (NOTE.test(l) && (!cur || cur.k !== 'fn')) { flush(); cur = { k: 'fn', t: l }; continue; }
+    if (NOTE.test(l) && cur && cur.k === 'fn') { flush(); cur = { k: 'fn', t: l }; continue; }
+    if (HEAD.test(l) && l.length <= 60 && !/[다요]\.$/.test(l)) { flush(); out.push({ k: 'hd', t: l }); continue; }
+    if (!cur) cur = { k: '', t: l }; else cur.t += ' ' + l;
+    if (cur.k !== 'fn' && /[.?!”’」』)]$/.test(l) && /[다요음]\.[”’)]?$|[.?!]$/.test(l) && l.length < full * 0.8) flush();
+  }
+  flush();
+  return out;
 }
 async function drawPage(id, n) {
   const canvas = $('#rd-canvas'); if (!canvas) return;
@@ -535,11 +560,11 @@ async function editDoc(id) {
   const d = docOf(id); if (!d) return;
   const c = d.cite || {};
   let sug = {}; try { const pg = d.indexed && !d.blank ? await docPages(id) : null; if (pg) sug = guessMeta(pg.pages); } catch (e) { /* none */ }
-  const F = [['title', '제목', d.title], ['author', '저자 (공저는 ·로: 홍길동·김철수)', d.author], ['kind', '종류', c.kind || (d.venue ? 'article' : '')], ['venue', '학술지·책·사이트 이름 (편저의 장이면 책 이름)', d.venue], ['vol', '권호 (예: 제50권 제1호, 제74집 통권 제○호)', c.vol], ['publisher', '발행기관·출판사·학위 수여 기관', c.publisher], ['date', '발행 연월 (예: 2024. 3.) 또는 연도', c.date || d.year], ['page1', 'PDF 1쪽에 인쇄된 학술지 쪽 번호 (앞에 표지가 없으면 논문의 첫 쪽)', d.page1], ['editor', '편자 (편저의 장만)', c.editor], ['url', '주소 (웹 자료)', c.url], ['checked', '확인한 날 (웹 자료, 예: 2025. 10. 7.)', c.checked]];
+  const F = [['title', '제목', d.title], ['author', '저자 (공저는 ·로: 홍길동·김철수)', d.author], ['kind', '종류', c.kind || (d.venue ? 'article' : '')], ['venue', '학술지·책·사이트 이름 (편저의 장이면 책 이름)', d.venue], ['vol', '권호 (예: 제50권 제1호, 제74집 통권 제○호)', c.vol], ['publisher', '발행기관·출판사·학위 수여 기관', c.publisher], ['date', '발행 연월 (예: 2024. 3.) 또는 연도', c.date || d.year], ['page1', 'PDF 1쪽에 인쇄된 학술지 쪽 번호 (앞에 표지가 없으면 논문의 첫 쪽)', d.page1], ['pages', '논문 쪽 범위 (참고문헌용, 예: 219-249)', c.pages], ['editor', '편자 (편저의 장만)', c.editor], ['url', '주소 (웹 자료)', c.url], ['checked', '확인한 날 (웹 자료, 예: 2025. 10. 7.)', c.checked]];
   const fields = F.map(([k, label, value]) => (k === 'kind' ? { label, type: 'select', value: value || '', options: [['', '(고르기)'], ...CITE_KINDS] } : { label, value: value || '' }));
-  const cur = { title: d.title, author: d.author, venue: d.venue, vol: c.vol, publisher: c.publisher, date: c.date || d.year, page1: d.page1 };
-  const sugs = Object.entries({ title: sug.title, author: sug.author, venue: sug.venue, vol: sug.vol, publisher: sug.publisher, date: sug.date, page1: sug.page1 }).filter(([k, v]) => v && v !== cur[k]);
-  const intro = sugs.length ? `<div class="sugs"><span class="m">첫 쪽에서 읽은 제안(누르면 넣음):</span>${sugs.map(([k, v]) => `<button class="chip" data-sug="${k}" data-v="${esc(v)}">${esc({ title: '제목', author: '저자', venue: '학술지', vol: '권호', publisher: '발행기관', date: '발행', page1: 'PDF 1쪽' }[k])}: ${esc(v)}</button>`).join('')}</div>` : '';
+  const cur = { title: d.title, author: d.author, venue: d.venue, vol: c.vol, publisher: c.publisher, date: c.date || d.year, page1: d.page1, pages: c.pages };
+  const sugs = Object.entries({ title: sug.title, author: sug.author, venue: sug.venue, vol: sug.vol, publisher: sug.publisher, date: sug.date, page1: sug.page1, pages: sug.pages }).filter(([k, v]) => v && v !== cur[k]);
+  const intro = sugs.length ? `<div class="sugs"><span class="m">첫 쪽에서 읽은 제안(누르면 넣음):</span>${sugs.map(([k, v]) => `<button class="chip" data-sug="${k}" data-v="${esc(v)}">${esc({ title: '제목', author: '저자', venue: '학술지', vol: '권호', publisher: '발행기관', date: '발행', page1: 'PDF 1쪽', pages: '쪽 범위' }[k])}: ${esc(v)}</button>`).join('')}</div>` : '';
   const v = await formBox('문헌 정보', fields, { intro: intro + '<p class="sub">각주 미리 보기는 저장한 뒤 노트·읽기 화면에서 확인하세요.</p>', onOpen: (m) => {
     $$('[data-sug]', m.el).forEach((b) => b.addEventListener('click', () => { const i = F.findIndex((x) => x[0] === b.dataset.sug); const inp = $('#fb' + i, m.el); if (inp) { inp.value = b.dataset.v; inp.focus(); } b.classList.add('on'); }));
   } });
@@ -549,7 +574,7 @@ async function editDoc(id) {
   full.title = val.title || d.title; full.author = val.author; full.venue = val.venue;
   full.page1 = /^\d+$/.test(val.page1) ? val.page1 : '';
   full.year = (val.date.match(/(?:19|20)\d{2}/) || [''])[0];
-  full.cite = { kind: val.kind, vol: val.vol, publisher: val.publisher, date: val.date, editor: val.editor, url: val.url, checked: val.checked };
+  full.cite = { kind: val.kind, vol: val.vol, publisher: val.publisher, date: val.date, pages: /^\d+\s*[-–~]\s*\d+$/.test(val.pages) ? val.pages.replace(/\s*[–~]\s*|\s*-\s*/, '-') : '', editor: val.editor, url: val.url, checked: val.checked };
   await DB.put('docs', full); Object.assign(d, docMeta(full)); touched();
   toast(`저장했습니다. 각주: ${footnote(d, 1)}`); paintDocList();
 }
@@ -569,11 +594,12 @@ async function bulkMeta() {
     if (!c.date && !d.year && g.date) fill.date = g.date;
     if (!d.page1 && g.page1) fill.page1 = g.page1;
     if (!c.publisher && g.publisher) fill.publisher = g.publisher;
+    if (!c.pages && g.pages) fill.pages = g.pages;
     if (!c.kind && g.venue && g.vol) fill.kind = 'article';
     if (Object.keys(fill).length) rows.push({ d, fill, title: g.title });
   }
   if (!rows.length) { toast('첫 쪽에서 읽어 낸 정보가 없습니다. 정보 버튼으로 직접 적어 주세요.'); return; }
-  const L = { author: '저자', venue: '학술지', vol: '권호', publisher: '발행기관', date: '발행', page1: 'PDF 1쪽', kind: '종류' };
+  const L = { author: '저자', venue: '학술지', vol: '권호', publisher: '발행기관', date: '발행', page1: 'PDF 1쪽', pages: '쪽 범위', kind: '종류' };
   const m = modal(`<h2>정보 제안 ${rows.length}편</h2><p class="sub">각 문헌의 첫 쪽들(쪽 머리, 권호, 저자 줄)에서 읽은 것입니다. <b>비어 있는 칸만</b> 채우며, 체크한 문헌에만 넣습니다. 넣은 뒤에도 정보에서 고칠 수 있습니다.</p>
     <div class="pick">${rows.map((r, i) => `<label class="pick-row"><input type="checkbox" value="${i}" checked><span>${esc(r.d.title)}${r.title && r.title !== r.d.title ? `<small>첫 쪽의 제목: ${esc(r.title)}</small>` : ''}<small>${Object.entries(r.fill).map(([k, v]) => `${L[k]}: ${esc(k === 'kind' ? '학술지 논문' : v)}`).join(' · ')}</small></span></label>`).join('')}</div>
     <div class="modal-foot"><button class="btn" data-close>취소</button><button class="btn primary" id="bm-ok">체크한 문헌에 넣기</button></div>`);
@@ -587,6 +613,7 @@ async function bulkMeta() {
       if (r.fill.page1) full.page1 = r.fill.page1;
       if (r.fill.vol) full.cite.vol = r.fill.vol;
       if (r.fill.publisher) full.cite.publisher = r.fill.publisher;
+      if (r.fill.pages) full.cite.pages = r.fill.pages;
       if (r.fill.kind) full.cite.kind = r.fill.kind;
       if (r.fill.date) { full.cite.date = r.fill.date; full.year = (r.fill.date.match(/(?:19|20)\d{2}/) || [''])[0]; }
       await DB.put('docs', full); Object.assign(r.d, docMeta(full)); n++;
