@@ -5,6 +5,7 @@ import json, re, sys
 from fractions import Fraction as F
 
 CIRC = '①②③④⑤'
+MOVED = {}   # id -> [(from, to), ...] swaps made by move(); write() applies the same swaps to option numbers cited in the review row
 O, XX = '옳다', '옳지 않다'
 T, NT = '반드시 참이다', '반드시 참이라고 할 수 없다'
 Y, NY = '필요하다', '필요하지 않다'
@@ -79,6 +80,9 @@ def write(items, REVIEW, out_js, subject, review_md, title, header):
             if blk.get('t') == 'ox' and len(blk['items']) == len(it['options']):
                 oks = [i for i, x in enumerate(blk['items']) if x['ok']]; nos = [i for i, x in enumerate(blk['items']) if not x['ok']]
                 check(oks == [it['answer']] or nos == [it['answer']], f"{it['id']} ox verdicts {oks}/{nos} do not single out answer {it['answer']}")
+        for a_, b_ in MOVED.get(it['id'], []):
+            sw = {CIRC[a_]: CIRC[b_], CIRC[b_]: CIRC[a_]}
+            REVIEW[it['id']] = tuple(''.join(sw.get(ch, ch) for ch in f_) for f_ in REVIEW[it['id']])
         # the explanation's closing line must name the keyed answer
         named = [m for blk in it['explain'] if blk.get('t') == 'p' for m in re.findall(r'정답은 <b>([①②③④⑤])</b>', blk['h'])]
         check(named and all(CIRC.index(m) == it['answer'] for m in named), f"{it['id']} explanation names {named}, key {CIRC[it['answer']]}")
@@ -109,4 +113,4 @@ def move(items, iid, to):
     for blk in it['explain']:
         if blk.get('t') == 'ox': its = blk['items']; its[a], its[to] = its[to], its[a]
         if 'h' in blk: blk['h'] = blk['h'].replace(f'정답은 <b>{CIRC[a]}</b>', f'정답은 <b>{CIRC[to]}</b>')
-    it['answer'] = to
+    it['answer'] = to; MOVED.setdefault(iid, []).append((a, to))
