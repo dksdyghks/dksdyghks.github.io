@@ -142,6 +142,7 @@
     }
     S.cur = loadCur();
     S.set = loadSet();
+    S.mock = loadMock();
   }
 
   /* ---------------- statistics ---------------- */
@@ -376,7 +377,7 @@
       <main id="main">${inner}</main>`;
   }
   const app = () => $('#app');
-  const WIDTH = { home: 'w-mid', types: 'w-mid', notes: 'w-mid', stats: 'w-mid', settings: 'w-mid', help: 'w-read', setup: 'w-read', setresult: 'w-mid', quiz: 'w-read', explain: 'w-wide' };
+  const WIDTH = { home: 'w-mid', types: 'w-mid', notes: 'w-mid', stats: 'w-mid', settings: 'w-mid', help: 'w-read', setup: 'w-read', setresult: 'w-mid', quiz: 'w-read', explain: 'w-wide', mock: 'w-wide', mockresult: 'w-mid', mocksetup: 'w-read' };
   function paint(html, view) {
     S.view = view;
     stopTimer();
@@ -423,6 +424,7 @@
       <div class="subjects">${cards}</div>
       <div class="row-links">
         <button class="link-card" data-act="notes"><span class="t">오답노트 ${due.length ? `<span class="due">오늘 복습 ${due.length}</span>` : ''}</span><span class="s">${nItems ? `${nItems}문항 보관 중` : '틀린 문제가 자동으로 모입니다'}</span></button>
+        <button class="link-card" data-act="mock"><span class="t">모의고사 ${S.mock && !S.mock.done ? '<span class="due">풀던 회차</span>' : ''}</span><span class="s">7급·5급 실제 형식, 답안지로 오가며</span></button>
         <button class="link-card" data-act="setup"><span class="t">실전 세트</span><span class="s">5~40문항을 시험 속도로</span></button>
         <button class="link-card" data-act="stats"><span class="t">기록</span><span class="s">과목·유형별 정답률과 시간</span></button>
         <button class="link-card" data-act="settings"><span class="t">설정 · 백업</span><span class="s">${S.persistent ? (S.meta.lastBackup ? `마지막 백업 ${md(dayKey(S.meta.lastBackup))}` : '백업 파일로 기록 보관') : '<b>기록이 저장되지 않는 환경</b>'}</span></button>
@@ -507,35 +509,28 @@
     const s = $('[data-act="submit"]'); if (s) s.disabled = false;
     saveCur();
   }
-  function submit(skip) {
-    const c = S.cur; if (!c || c.phase !== 'q') return;
-    if (!skip && c.choice == null) return;
-    if (skip) c.choice = -1;
-    stopTimer();
-    const q = c.q, ok = c.choice === q.answer;
-    c.ok = ok; c.phase = 'x';
-    const at = Date.now();
-    const e = { qid: q.id, h: seenKey(q), subj: q.subject, type: q.type, ok, choice: c.choice, ans: q.answer, ms: Math.round(c.ms), at, mode: c.review ? 'review' : (c.ctx && c.ctx.mode === 'note' ? 'note' : 'new') };
+  /* one answer into the record: statistics, seen, level, 오답노트(복습 일정) */
+  function recordAnswer(q, choice, ms, mode, isReview) {
+    const ok = choice === q.answer, at = Date.now();
+    const e = { qid: q.id, h: seenKey(q), subj: q.subject, type: q.type, ok, choice, ans: q.answer, ms: Math.round(ms), at, mode };
     addToStats(e);
     S.seen.add(e.h);
     let lvMsg = '';
-    if (q.src === 'gen' && q.lv && S.settings.level === 'auto' && !c.review) {
+    if (q.src === 'gen' && q.lv && S.settings.level === 'auto' && !isReview) {
       const key = q.subject + '|' + q.type, st = S.lv[key] || (S.lv[key] = { lv: 2, recent: [] });
       st.recent.push(ok); if (st.recent.length > 6) st.recent.shift();
       const good = st.recent.filter(Boolean).length;
       if (st.recent.length >= 5 && good >= 5 && st.lv < 3) { st.lv++; st.recent = []; lvMsg = `이 유형의 난이도를 ‘${P.LEVELS[st.lv]}’${P.pp(P.LEVELS[st.lv], '으로/로')} 올립니다.`; }
       else if (st.recent.length >= 5 && good <= 2 && st.lv > 1) { st.lv--; st.recent = []; lvMsg = `이 유형의 난이도를 ‘${P.LEVELS[st.lv]}’${P.pp(P.LEVELS[st.lv], '으로/로')} 낮춥니다.`; }
     }
-    c.lvMsg = lvMsg;
     let rec = S.items.get(q.id);
     if (rec || !ok) {
       rec = rec || { qid: q.id, subj: q.subject, type: q.type, addedAt: at, wrong: 0, right: 0, box: 0, due: null, star: false, memo: '', flag: '' };
-      rec.q = q; rec.lastAt = at; rec.lastOk = ok; rec.lastChoice = c.choice;
+      rec.q = q; rec.lastAt = at; rec.lastOk = ok; rec.lastChoice = choice;
       if (ok) rec.right++; else rec.wrong++;
       if (rec.wrong > 0) srUpdate(rec, ok);
       S.items.set(q.id, rec);
     }
-    saveCur();
     if (S.persistent) {
       persist(async () => {
         await DB.add('log', e);
@@ -546,6 +541,17 @@
         await DB.put('kv', S.lv, 'lv');
       });
     }
+    return { ok, lvMsg };
+  }
+  function submit(skip) {
+    const c = S.cur; if (!c || c.phase !== 'q') return;
+    if (!skip && c.choice == null) return;
+    if (skip) c.choice = -1;
+    stopTimer();
+    const q = c.q;
+    const { ok, lvMsg } = recordAnswer(q, c.choice, c.ms, c.review ? 'review' : (c.ctx && c.ctx.mode === 'note' ? 'note' : 'new'), c.review);
+    c.ok = ok; c.phase = 'x'; c.lvMsg = lvMsg;
+    saveCur();
     if (c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done) {
       S.set.results.push({ q, choice: c.choice, ok, ms: Math.round(c.ms), no: c.no, deferred: !!c.deferred }); saveSet();
       if (S.set.results.length >= S.set.n) { finishSet(false); return; }
@@ -589,7 +595,7 @@
       </div>
       <div class="actions ${wide ? '' : 'narrow'}">
         <button class="btn" data-act="home">그만 풀기</button>
-        <button class="btn primary grow" data-act="next">${c.ctx && c.ctx.mode === 'note' ? '오답노트로' : c.ctx && c.ctx.mode === 'setreview' ? '세트 결과로' : '다음 문제'} <span class="kbd">Enter</span></button>
+        <button class="btn primary grow" data-act="next">${c.ctx && c.ctx.mode === 'note' ? '오답노트로' : c.ctx && c.ctx.mode === 'setreview' ? '세트 결과로' : c.ctx && c.ctx.mode === 'mockreview' ? '모의고사 결과로' : '다음 문제'} <span class="kbd">Enter</span></button>
       </div>`), 'explain');
   }
   function ensureRec(q) {
@@ -609,7 +615,154 @@
     const ctx = S.cur.ctx || { subj: S.cur.q.subject, mode: 'new' };
     if (ctx.mode === 'note') { S.cur = null; saveCur(); viewNotes(); return; }
     if (ctx.mode === 'setreview') { S.cur = null; saveCur(); viewSetResult(); return; }
+    if (ctx.mode === 'mockreview') { S.cur = null; saveCur(); viewMockResult(); return; }
     startSession(ctx);
+  }
+
+
+  /* ================= 모의고사: 실제 시험 형식의 한 회분, 답안지로 오가며 풀고 한꺼번에 채점 ================= */
+  const MOCK_KEY = 'songgong.mock';
+  const MOCKS = {
+    p5l: { name: '5급 PSAT 언어논리', note: '40문항 · 90분', parts: [['lang', 40]], min: 90 },
+    p5d: { name: '5급 PSAT 자료해석', note: '40문항 · 90분', parts: [['data', 40]], min: 90 },
+    p5s: { name: '5급 PSAT 상황판단', note: '40문항 · 90분', parts: [['sit', 40]], min: 90 },
+    h5l: { name: '5급 언어논리 하프', note: '20문항 · 45분 (점심·쉬는 시간용, 시험과 같은 속도)', parts: [['lang', 20]], min: 45 },
+    h5d: { name: '5급 자료해석 하프', note: '20문항 · 45분 (점심·쉬는 시간용, 시험과 같은 속도)', parts: [['data', 20]], min: 45 },
+    h5s: { name: '5급 상황판단 하프', note: '20문항 · 45분 (점심·쉬는 시간용, 시험과 같은 속도)', parts: [['sit', 20]], min: 45 },
+    p7a: { name: '7급 PSAT 1교시', note: '언어논리 25문항 · 상황판단 25문항 · 120분', parts: [['lang', 25], ['sit', 25]], min: 120 },
+    p7b: { name: '7급 PSAT 2교시', note: '자료해석 25문항 · 60분', parts: [['data', 25]], min: 60 },
+  };
+  function saveMock() { try { if (S.mock) localStorage.setItem(MOCK_KEY, JSON.stringify(S.mock)); else localStorage.removeItem(MOCK_KEY); } catch (e) { /* ignore */ } }
+  function loadMock() { try { const v = localStorage.getItem(MOCK_KEY); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+  function composeMock(kind) {
+    const items = [];
+    for (const [subj, n] of MOCKS[kind].parts) {
+      const qs = [], keys = new Set();
+      for (const id of planSet(subj, n)) { const q = (P.bank[subj] || []).find((x) => x.id === id); if (q && qs.length < n) { const c = bankCopy(q, subj); qs.push(c); keys.add(seenKey(c)); } }
+      for (let guard = 0; qs.length < n && guard < 400; guard++) { const g = fromGenerator(subj, ''); if (g && !keys.has(seenKey(g)) && !isHidden(seenKey(g))) { keys.add(seenKey(g)); qs.push(g); } }
+      qs.forEach((q) => items.push({ q, subj, choice: null, flag: false, ms: 0 }));
+    }
+    return items;
+  }
+  function startMock(kind) {
+    const items = composeMock(kind);
+    if (!items.length) { toast('낼 문항이 없습니다.'); return; }
+    S.mock = { kind, items, i: 0, usedMs: 0, limitMs: MOCKS[kind].min * 60000, at: Date.now(), done: false };
+    saveMock(); viewMock();
+  }
+  const mockAnswered = (m) => m.items.filter((x) => x.choice != null).length;
+  function omrHTML(m) {
+    let html = `<div class="omr-h"><b>답안지</b><span>${mockAnswered(m)}/${m.items.length} 답함</span><button class="btn ghost sm omr-close" data-act="mk-sheet">닫기</button></div>`, last = '';
+    m.items.forEach((x, k) => {
+      if (x.subj !== last) { if (last) html += '</div>'; html += `<div class="omr-sub">${SUBJ[x.subj].name}</div><div class="omr-grid">`; last = x.subj; }
+      html += `<button class="omr-c${k === m.i ? ' cur' : ''}${x.choice != null ? ' ans' : ''}${x.flag ? ' flag' : ''}" data-act="mk-go" data-i="${k}" aria-label="${k + 1}번${x.choice != null ? `, ${x.choice + 1}번 고름` : ', 안 품'}${x.flag ? ', 체크' : ''}"><span class="n">${k + 1}</span><span class="a">${x.choice != null ? '①②③④⑤'[x.choice] : ''}</span></button>`;
+    });
+    return html + '</div><button class="btn primary omr-submit" data-act="mk-submit">답안 제출</button><p class="omr-note">답을 고르면 답안지에 표시됩니다. 제출 전까지 언제든 바꿀 수 있고, 같은 답을 한 번 더 누르면 지워집니다. 빨간 점은 체크한 문항입니다.<span class="kbd-hint"><br>1~5 답 · ←/→ 이동 · F 체크</span></p>';
+  }
+  function viewMock() {
+    const m = S.mock; if (!m) { viewMockSetup(); return; }
+    if (m.done) { viewMockResult(); return; }
+    const it = m.items[m.i], total = m.items.length;
+    const crumb = `<b>모의고사</b> · ${MOCKS[m.kind].name} · ${SUBJ[it.subj].name} ${m.i + 1}/${total}`;
+    paint(shell(crumb, `<div class="mock">
+      <div class="mock-q"><article class="sheet fade-in" aria-label="문제">${questionHTML(it.q, { choice: it.choice, no: m.i + 1 })}</article>
+        <div class="actions">
+          <button class="btn ghost" data-act="mk-prev" ${m.i === 0 ? 'disabled' : ''} aria-label="이전 문항">‹ 이전</button>
+          <button class="btn ghost${it.flag ? ' on' : ''}" data-act="mk-flag" aria-pressed="${it.flag ? 'true' : 'false'}" title="다시 볼 문항으로 표시 (F)">${it.flag ? '체크 해제' : '체크'}</button>
+          <button class="btn ghost mk-sheet" data-act="mk-sheet">답안지 ${mockAnswered(m)}/${total}</button>
+          ${m.i < total - 1 ? '<button class="btn primary grow" data-act="mk-next">다음 ›</button>' : '<button class="btn primary grow" data-act="mk-submit">답안 제출</button>'}
+        </div></div>
+      <aside class="omr" id="omr" aria-label="답안지">${omrHTML(m)}</aside></div>`, { timer: true }), 'mock');
+    startMockTimer();
+  }
+  let mockTick = 0, mockLast = 0, mockSave = 0;
+  function startMockTimer() {
+    stopMockTimer(); mockLast = performance.now();
+    mockTick = setInterval(() => {
+      const now = performance.now(), m = S.mock;
+      if (!m || m.done || S.view !== 'mock') { stopMockTimer(); return; }
+      if (!document.hidden) { const dt = now - mockLast; m.usedMs += dt; m.items[m.i].ms += dt; if (m.usedMs >= m.limitMs) { mockLast = now; finishMock(true); return; } }
+      mockLast = now; drawMockTimer();
+      if (++mockSave % 20 === 0) saveMock();
+    }, 250);
+    drawMockTimer();
+  }
+  function stopMockTimer() { if (mockTick) clearInterval(mockTick); mockTick = 0; }
+  function drawMockTimer() {
+    const el = $('#timer'), m = S.mock; if (!el || !m) return;
+    const left = Math.max(0, m.limitMs - m.usedMs);
+    el.classList.remove('hide'); el.textContent = '남은 ' + clock(left); el.classList.toggle('over', left < 5 * 60000); el.classList.toggle('paused', document.hidden);
+  }
+  function mockGo(k) { const m = S.mock; if (!m || m.done || k < 0 || k >= m.items.length) return; m.i = k; saveMock(); viewMock(); const o = $('#omr'); if (o) o.classList.remove('open'); }
+  function mockChoose(i) {
+    const m = S.mock; if (!m || m.done) return;
+    const it = m.items[m.i]; it.choice = it.choice === i ? null : i; saveMock();
+    $$('.opt').forEach((b) => { const on = +b.dataset.i === it.choice; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    const o = $('#omr'); if (o) { const open = o.classList.contains('open'); o.innerHTML = omrHTML(m); o.classList.toggle('open', open); }
+    const sb = $('.mk-sheet'); if (sb) sb.textContent = `답안지 ${mockAnswered(m)}/${m.items.length}`;
+  }
+  function mockFlag() { const m = S.mock; if (!m || m.done) return; const it = m.items[m.i]; it.flag = !it.flag; saveMock(); viewMock(); }
+  function mockSubmitAsk() {
+    const m = S.mock; if (!m || m.done) return;
+    const blank = m.items.length - mockAnswered(m), flags = m.items.filter((x) => x.flag).length;
+    const msg = `${blank ? `안 푼 문항 ${blank}개` : '모든 문항에 답했습니다'}${flags ? `, 체크한 문항 ${flags}개` : ''}. 남은 시간 ${clock(Math.max(0, m.limitMs - m.usedMs))}. 답안을 제출하고 채점할까요?`;
+    if (window.confirm(msg)) finishMock(false);
+  }
+  function finishMock(timeUp) {
+    const m = S.mock; if (!m || m.done) return;
+    stopMockTimer();
+    m.done = true; m.timeUp = !!timeUp; m.end = Date.now();
+    for (const it of m.items) { const r = recordAnswer(it.q, it.choice == null ? -1 : it.choice, it.ms, 'mock', false); it.ok = r.ok; }
+    const per = {}; for (const it of m.items) { const a = per[it.subj] || (per[it.subj] = { n: 0, ok: 0 }); a.n++; if (it.ok) a.ok++; }
+    (S.meta.mocks = S.meta.mocks || []).push({ at: m.at, end: m.end, kind: m.kind, per, usedMs: Math.round(Math.min(m.usedMs, m.limitMs)), limitMs: m.limitMs, timeUp: !!timeUp, blank: m.items.filter((x) => x.choice == null).length });
+    S.meta.mocks = S.meta.mocks.slice(-200); saveKV('meta'); saveMock();
+    if (timeUp) toast('시험 시간이 끝나 답안을 제출했습니다.');
+    viewMockResult();
+  }
+  const score100 = (ok, n) => (n ? Math.round((ok / n) * 1000) / 10 : 0);
+  function viewMockResult() {
+    const m = S.mock; if (!m || !m.done) { viewMockSetup(); return; }
+    const subs = [...new Set(m.items.map((x) => x.subj))];
+    const stat = (xs) => ({ n: xs.length, ok: xs.filter((x) => x.ok).length });
+    const tot = stat(m.items), pace = (x) => paceOf(x.q) * 1000;
+    const slow = m.items.filter((x) => x.ms > pace(x)), luck = m.items.filter((x) => x.flag && x.ok), blank = m.items.filter((x) => x.choice == null);
+    const types = {}; m.items.forEach((x) => { const k = x.subj + '|' + x.q.type; const a = types[k] || (types[k] = { subj: x.subj, type: x.q.type, n: 0, ok: 0, ms: 0 }); a.n++; a.ms += x.ms; if (x.ok) a.ok++; });
+    const typeRows = Object.values(types).sort((a, b) => a.ok / a.n - b.ok / b.n).map((a) => `<tr><td>${SUBJ[a.subj].name} · ${esc(typeShort(a.subj, a.type))}</td><td>${a.ok}/${a.n}</td><td>${pct(a.ok, a.n)}%</td><td>${human(a.ms / a.n)}</td></tr>`).join('');
+    const rows = m.items.map((x, k) => `<tr class="${x.ok ? '' : 'wrong'}"><td>${k + 1}${x.flag ? ' <small class="tag">체크</small>' : ''}</td><td>${esc(typeShort(x.subj, x.q.type))}</td><td>${x.choice == null ? '–' : x.choice + 1}</td><td>${x.q.answer + 1}</td><td>${x.ok ? '<b style="color:var(--ok)">○</b>' : '<b style="color:var(--pen)">×</b>'}</td><td class="${x.ms > pace(x) ? 'slowt' : ''}">${human(x.ms)}</td><td><button class="btn sm" data-act="mk-review" data-i="${k}">해설</button></td></tr>`).join('');
+    const hist = (S.meta.mocks || []).filter((x) => x.kind === m.kind);
+    const histHTML = hist.length > 1 ? `<div class="card"><h2>같은 시험의 지난 기록</h2><table class="st"><thead><tr><th>날짜</th>${subs.map((k) => `<th>${SUBJ[k].name}</th>`).join('')}<th>시간</th></tr></thead><tbody>${hist.slice(-8).reverse().map((h) => `<tr><td>${md(dayKey(h.at))}</td>${subs.map((k) => `<td>${h.per[k] ? score100(h.per[k].ok, h.per[k].n) + '점' : '–'}</td>`).join('')}<td>${human(h.usedMs)}${h.timeUp ? ' <small class="tag">시간 종료</small>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '';
+    paint(shell('<b>모의고사</b> · 결과', `
+      <div class="page-h"><h1>${MOCKS[m.kind].name} 결과</h1><button class="btn primary sm" data-act="mock">새 모의고사</button></div>
+      <div class="stat-grid">
+        ${subs.map((k) => { const a = stat(m.items.filter((x) => x.subj === k)); return `<div class="stat"><div class="k">${SUBJ[k].name}</div><div class="v">${score100(a.ok, a.n)}<small>점 · ${a.ok}/${a.n}</small></div></div>`; }).join('')}
+        ${subs.length > 1 ? `<div class="stat"><div class="k">평균</div><div class="v">${score100(tot.ok, tot.n)}<small>점</small></div></div>` : ''}
+        <div class="stat"><div class="k">쓴 시간</div><div class="v" style="font-size:1.125rem">${human(Math.min(m.usedMs, m.limitMs))}<small> / ${human(m.limitMs)}</small></div></div>
+      </div>
+      <p class="notice">점수는 문항마다 같은 배점(100점 만점)으로 환산했습니다.${blank.length ? ` 안 푼 문항 ${blank.length}개는 오답으로 셉니다.` : ''}${m.timeUp ? ' 시험 시간이 끝나 자동으로 제출했습니다.' : ''}</p>
+      <div class="card"><h2>다시 볼 문항</h2><ul class="mk-list">
+        <li><b>체크했는데 맞힌 문항 ${luck.length}개</b> — 확신 없이 맞힌 문항입니다. 해설로 근거를 확인하세요.${luck.length ? ` ${luck.map((x) => `<button class="linkish" data-act="mk-review" data-i="${m.items.indexOf(x)}">${m.items.indexOf(x) + 1}번</button>`).join(' ')}` : ''}</li>
+        <li><b>권장 시간을 넘긴 문항 ${slow.length}개</b> (그중 오답 ${slow.filter((x) => !x.ok).length}개) — 시험장에서는 넘기고 돌아올 문항입니다.${slow.length ? ` ${slow.map((x) => `<button class="linkish" data-act="mk-review" data-i="${m.items.indexOf(x)}">${m.items.indexOf(x) + 1}번</button>`).join(' ')}` : ''}</li>
+        <li><b>틀린 문항 ${tot.n - tot.ok}개</b>는 오답노트에 담겼고 1일 뒤부터 복습에 나옵니다.</li></ul></div>
+      <div class="card"><h2>유형별</h2><table class="st"><thead><tr><th>유형</th><th>맞힘</th><th>정답률</th><th>평균 시간</th></tr></thead><tbody>${typeRows}</tbody></table></div>
+      <div class="card"><h2>문항별</h2><table class="st mk-rows"><thead><tr><th>문항</th><th>유형</th><th>내 답</th><th>정답</th><th></th><th>시간</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${histHTML}`), 'mockresult');
+  }
+  function reviewMockItem(k) {
+    const x = S.mock && S.mock.items[k]; if (!x) return;
+    S.cur = { q: x.q, ctx: { subj: x.subj, mode: 'mockreview' }, phase: 'x', choice: x.choice == null ? -1 : x.choice, ms: x.ms, ok: x.ok, review: false, no: k + 1 };
+    viewExplain();
+  }
+  function viewMockSetup() {
+    const going = S.mock && !S.mock.done;
+    const left = (subj) => (P.bank[subj] || []).filter((q) => !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id)).length;
+    const cards = Object.entries(MOCKS).map(([k, x]) => `<button class="item mk-kind" data-act="mk-start" data-k="${k}"><span class="t1"><b>${x.name}</b></span><span class="t2">${x.note}</span><span class="t2 sub">${x.parts.map(([s2]) => `${SUBJ[s2].name} 송공 출제 문항 중 아직 안 푼 것 ${left(s2)}개`).join(' · ')}</span></button>`).join('');
+    const hist = (S.meta.mocks || []).slice(-10).reverse();
+    paint(shell('<b>모의고사</b>', `
+      <div class="page-h"><h1>모의고사</h1></div>
+      ${going ? `<div class="card mk-going"><b>풀던 모의고사가 있습니다</b> · ${MOCKS[S.mock.kind].name} · ${mockAnswered(S.mock)}/${S.mock.items.length}문항 답함 · 남은 시간 ${clock(Math.max(0, S.mock.limitMs - S.mock.usedMs))}<div class="actions" style="margin-top:10px"><button class="btn primary" data-act="mk-resume">이어서 풀기</button><button class="btn ghost" data-act="mk-quit">버리기</button></div></div>` : ''}
+      <p class="prose">실제 시험과 같은 문항 수와 시간으로 한 회분을 풉니다. 화면을 끄거나 다른 앱으로 가면 시간이 멈추고, 나중에 그 자리에서 이어서 풉니다. 답안지에서 아무 문항으로나 오가고, 막히는 문항은 <b>체크</b>해 두었다가 돌아옵니다. 답은 제출하기 전까지 바꿀 수 있고, 제출하면 한꺼번에 채점합니다. 송공 출제 문항(난이도 기본 25%·실전 55%·심화 20%, 유형 고르게)을 먼저 쓰고, 모자라면 생성 문항으로 채웁니다.</p>
+      <div class="mk-kinds">${cards}</div>
+      ${hist.length ? `<div class="card" style="margin-top:12px"><h2>모의고사 기록</h2><table class="st"><thead><tr><th>날짜</th><th>시험</th><th>점수</th><th>시간</th></tr></thead><tbody>${hist.map((h) => `<tr><td>${md(dayKey(h.at))}</td><td>${MOCKS[h.kind] ? MOCKS[h.kind].name : h.kind}</td><td>${Object.entries(h.per).map(([k, a]) => `${SUBJ[k] ? SUBJ[k].name : k} ${score100(a.ok, a.n)}`).join(' · ')}</td><td>${human(h.usedMs)}</td></tr>`).join('')}</tbody></table></div>` : ''}`), 'mocksetup');
   }
 
   /* ----- 실전 세트 ----- */
@@ -840,6 +993,8 @@
         <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
         <h2>실전 세트</h2>
         <p>처음 화면의 <b>실전 세트</b>에서 과목과 문항 수를 고르면 실제 시험 속도로 제한 시간이 정해지고, 해설 없이 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(<b>L</b>)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다. 끝난 세트는 <b>세트 기록</b>에 쌓여 과목별 점수의 흐름을 볼 수 있습니다.</p>
+        <h2>모의고사</h2>
+        <p>처음 화면의 <b>모의고사</b>에서 7급 PSAT(1교시 언어논리·상황판단 50문항 120분, 2교시 자료해석 25문항 60분)이나 5급 PSAT(과목별 40문항 90분)을 고릅니다. 답안지에서 아무 문항으로나 오가고(←/→), 답(1~5)은 제출 전까지 바꿀 수 있으며, 다시 볼 문항은 <b>체크</b>(F)합니다. 제출하면 100점 환산 점수, 유형별 정답률, 체크했는데 맞힌 문항, 시간을 넘긴 문항을 보여 줍니다.</p>
         <h2>기록 보관</h2>
         <p>기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 <b>설정 → 백업 파일 저장</b>으로 파일을 받아 두고, 다른 기기에서 <b>백업 불러오기</b>를 누르면 기록이 합쳐집니다.</p>
         <h2>문제가 이상할 때</h2>
@@ -873,6 +1028,7 @@
       S.agg = { subj: {}, type: {} }; S.daily = {};
       for (const e of merged) addToStats(e);
       for (const h of data.seen || []) S.seen.add(h);
+      if (data.meta && Array.isArray(data.meta.mocks)) { const have = new Set((S.meta.mocks || []).map((x) => x.at)); S.meta.mocks = (S.meta.mocks || []).concat(data.meta.mocks.filter((x) => x && x.at && !have.has(x.at))).sort((a, b) => a.at - b.at).slice(-200); saveKV('meta'); }
       if (data.meta && Array.isArray(data.meta.sets)) { const have = new Set((S.meta.sets || []).map((x) => x.at)); S.meta.sets = (S.meta.sets || []).concat(data.meta.sets.filter((x) => x && x.at && !have.has(x.at))).sort((a, b) => a.at - b.at).slice(-300); saveKV('meta'); }
       for (const it of data.items || []) {
         if (!it || !it.qid || !it.q) continue;
@@ -951,11 +1107,13 @@
   document.addEventListener('click', (e) => {
     const opt = e.target.closest('.opt');
     if (opt && S.view === 'quiz') { choose(+opt.dataset.i); return; }
+    if (opt && S.view === 'mock') { mockChoose(+opt.dataset.i); return; }
     const el = e.target.closest('[data-act]'); if (!el) return;
     const act = el.dataset.act;
     if (el.tagName === 'INPUT') return;
     switch (act) {
-      case 'home': { const leaving = S.view === 'quiz' && S.cur && S.cur.phase === 'q'; if (S.view === 'quiz' && S.cur) saveCur(); viewHome(); if (leaving) toast('풀던 문제는 기록하지 않았습니다. 처음 화면의 ‘이어서 풀기’로 돌아올 수 있습니다.'); break; }
+      case 'home': { if (S.view === 'mock') { saveMock(); stopMockTimer(); toast('모의고사는 그대로 두었습니다. 모의고사에서 이어서 풀 수 있습니다.'); }
+        const leaving = S.view === 'quiz' && S.cur && S.cur.phase === 'q'; if (S.view === 'quiz' && S.cur) saveCur(); viewHome(); if (leaving) toast('풀던 문제는 기록하지 않았습니다. 처음 화면의 ‘이어서 풀기’로 돌아올 수 있습니다.'); break; }
       case 'notes': viewNotes(); break;
       case 'stats': viewStats(); break;
       case 'settings': viewSettings(); break;
@@ -966,6 +1124,17 @@
       case 'submit': submit(false); break;
       case 'skip': submit(true); break;
       case 'later': deferSetItem(); break;
+      case 'mock': viewMockSetup(); break;
+      case 'mk-start': if (!S.mock || S.mock.done || window.confirm('풀던 모의고사를 버리고 새로 시작할까요?')) startMock(el.dataset.k); break;
+      case 'mk-resume': viewMock(); break;
+      case 'mk-quit': if (window.confirm('풀던 모의고사를 버릴까요? 기록에 남지 않습니다.')) { S.mock = null; saveMock(); viewMockSetup(); } break;
+      case 'mk-prev': mockGo(S.mock.i - 1); break;
+      case 'mk-next': mockGo(S.mock.i + 1); break;
+      case 'mk-go': mockGo(+el.dataset.i); break;
+      case 'mk-flag': mockFlag(); break;
+      case 'mk-sheet': { const o = $('#omr'); if (o) o.classList.toggle('open'); break; }
+      case 'mk-submit': mockSubmitAsk(); break;
+      case 'mk-review': reviewMockItem(+el.dataset.i); break;
       case 'next': next(); break;
       case 'star': toggleStar(); break;
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
@@ -1019,6 +1188,13 @@
     if (typing) { if (e.key === 'Escape') e.target.blur(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key;
+    if (S.view === 'mock') {
+      if (/^[1-5]$/.test(k)) { mockChoose(+k - 1); e.preventDefault(); }
+      else if (k === 'ArrowRight' || k === 'Enter') { mockGo(S.mock.i + 1); e.preventDefault(); }
+      else if (k === 'ArrowLeft') { mockGo(S.mock.i - 1); e.preventDefault(); }
+      else if (k === 'f' || k === 'F') { mockFlag(); e.preventDefault(); }
+      return;
+    }
     if (S.view === 'quiz') {
       if (/^[1-5]$/.test(k)) { choose(+k - 1); e.preventDefault(); }
       else if (k === 'Enter') { submit(false); e.preventDefault(); }
@@ -1037,8 +1213,8 @@
     } else if (k === 'Escape') viewHome();
   });
   window.addEventListener('scroll', () => { const t = $('.top'); if (t) t.classList.toggle('scrolled', window.scrollY > 4); }, { passive: true });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) saveCur(); drawTimer(); });
-  window.addEventListener('pagehide', saveCur);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { saveCur(); saveMock(); } drawTimer(); drawMockTimer(); });
+  window.addEventListener('pagehide', () => { saveCur(); saveMock(); });
 
   /* ---------------- start ---------------- */
   let started = false;
@@ -1063,7 +1239,7 @@
     if (choice == null) viewQuiz(); else { S.cur.choice = choice; submit(choice < 0); }
     return true;
   }
-  window.SONGGONG = { S, nextQuestion, startSession, submit, choose, viewHome, DB, showGen, showBank };
+  window.SONGGONG = { startMock, finishMock, viewMock, S, nextQuestion, startSession, submit, choose, viewHome, DB, showGen, showBank };
   try { const v = localStorage.getItem('songgong.settings'); if (v) { S.settings = { ...DEFAULTS, ...JSON.parse(v) }; applySettings(); } } catch (e) { /* ignore */ }
   if (Door.isOpen('songgong')) start(); else viewLock();
 })();
