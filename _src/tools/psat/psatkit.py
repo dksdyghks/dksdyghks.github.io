@@ -74,6 +74,11 @@ def write(items, REVIEW, out_js, subject, review_md, title, header):
             if blk.get('t') == 'table':
                 blk['rows'] = [[esc_text(str(c)) for c in r] for r in blk['rows']]
                 if 'note' in blk: blk['note'] = esc_text(blk['note'])
+        # a per-option verdict block (ox) must single out the keyed option: it is the only True (pick-the-right-one) or the only False (pick-the-wrong-one)
+        for blk in it['explain']:
+            if blk.get('t') == 'ox' and len(blk['items']) == len(it['options']):
+                oks = [i for i, x in enumerate(blk['items']) if x['ok']]; nos = [i for i, x in enumerate(blk['items']) if not x['ok']]
+                check(oks == [it['answer']] or nos == [it['answer']], f"{it['id']} ox verdicts {oks}/{nos} do not single out answer {it['answer']}")
         # the explanation's closing line must name the keyed answer
         named = [m for blk in it['explain'] if blk.get('t') == 'p' for m in re.findall(r'정답은 <b>([①②③④⑤])</b>', blk['h'])]
         check(named and all(CIRC.index(m) == it['answer'] for m in named), f"{it['id']} explanation names {named}, key {CIRC[it['answer']]}")
