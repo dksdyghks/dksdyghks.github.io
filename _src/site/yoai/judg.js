@@ -132,11 +132,25 @@ export async function viewJudg() {
       ${a.opinions.map((o) => `<details class="peek"><summary>${esc(o.who)}의 ${esc(o.kind)}</summary>${o.text.split('\n').map((x) => `<p>${esc(x)}</p>`).join('')}</details>`).join('')}
       ${a.judges.length ? `<p class="sub">관여 법관: ${esc(a.judges.join(', '))}</p>` : ''}</section>
 
+    <section class="box"><h2 class="bh">이 판결을 다룬 서재 문헌 <small>평석·선행연구를 찾을 때</small></h2><div id="j-citing"><p class="sub">서재를 찾는 중…</p></div></section>
     <section class="box"><h2 class="bh">옮기기</h2><div class="tools-row">
       <button class="btn primary" data-act="j-export">한글·Word로 내보내기</button><button class="btn" data-act="j-copy">글자로 복사</button>
       ${S.project ? `<button class="btn" data-act="j-cards">‘${esc(S.project.title.slice(0, 16))}’ 노트로 보내기</button>` : ''}<button class="btn" data-act="j-project">판례 평석 연구로 만들기</button></div>
       <p class="sub">노트로 보내면 고른 판결이유 문단이 카드가 되어 집필에서 〔카드 n〕으로 쓸 때 “${esc(a.cite || '판결')}.”로 각주가 됩니다.</p></section>
   </div>`;
+  paintCiting(c);
+}
+async function paintCiting(c) {
+  const box = () => $('#j-citing');
+  const m = String(c.a.head.no || '').match(/^(\d+)(\D+?)(\d+)$/);
+  if (!m) { if (box()) box().innerHTML = '<p class="sub">사건번호를 읽지 못해 찾을 수 없습니다.</p>'; return; }
+  const re = new RegExp(`(?<![\\d가-힣])${m[1]}\\s?${m[2]}\\s?${m[3]}(?!\\d)`);
+  const lib = await libLoad().catch(() => ({ docs: [] }));
+  const hits = [];
+  for (const x of lib.docs) { if (x.id === c.id) continue; const ps = []; x.pages.forEach((t, i) => { if (re.test(t)) ps.push(i + 1); }); if (ps.length) hits.push({ d: docOf(x.id), ps }); }
+  const el = box(); if (!el || !CUR || CUR.id !== c.id) return;
+  el.innerHTML = hits.length ? `<ul class="plain jd-cite-list">${hits.filter((h) => h.d).sort((a, b) => b.ps.length - a.ps.length).map((h) => `<li><b>${esc(h.d.title)}</b>${h.d.author ? ` <span class="sub">${esc(h.d.author)}${h.d.year ? `, ${esc(h.d.year)}` : ''}</span>` : ''}${h.d.isJudg ? ' <span class="tag gray">판결문</span>' : ''} <span class="jd-f">${h.ps.slice(0, 8).map((p) => `<button class="pg-chip" data-act="open-at" data-id="${h.d.id}" data-p="${p}">${h.d.kind === 'pdf' ? `${p}쪽` : `${p}번째`}</button>`).join('')}${h.ps.length > 8 ? ` 외 ${h.ps.length - 8}곳` : ''}</span></li>`).join('')}</ul><p class="sub">사건번호 ${esc(c.a.head.no)}가 나오는 쪽입니다. 누르면 그 쪽이 열립니다.</p>`
+    : `<p class="sub">서재의 다른 문헌에는 사건번호 ${esc(c.a.head.no)}가 나오지 않습니다. 평석·관련 논문을 서재에 넣으면 여기에 모입니다.</p>`;
 }
 const libHas = (no) => S.docs.some((d) => d.isJudg && (d.cite || {}).caseCite && d.cite.caseCite.includes(no));
 

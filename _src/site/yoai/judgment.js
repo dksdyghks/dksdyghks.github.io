@@ -92,6 +92,8 @@ function parasOf(L) {
     if (!t) { flush(); continue; }
     const im = t.match(INLINE_SEC);
     if (im && secKey(im[1])) { flush(); const k = secKey(im[1]); if (k.key === 'order' || k.key === 'reasons') inHead = false; if (k.key === 'full') inHead = true; out.push({ t: `【${nospace(im[1])}】`, p: x.p }); if (im[2]) cur = { t: im[2], p: x.p }; continue; }
+    // ‘원심판결 … 선고 92나36689’ 다음 줄의 ‘판결’은 머리말이 아니라 그 인용의 끝이다
+    if (cur && /^(판결|결정)$/.test(nospace(t)) && /선고\s*\S+$|자\s*\S+$|\d$/.test(cur.t)) { cur.t += ' ' + nospace(t); cur.last = t.length; continue; }
     if (cur && isBreakLine(t, inHead) && (!MARK_RE.test(t) || ENDS.test(cur.t) || (cur.last || 0) < full * 0.75 || /[:：]$/.test(cur.t))) flush();
     if (secKey(t) || /^(판결|결정)$/.test(nospace(t))) { flush(); const k = secKey(t); if (k && (k.key === 'order' || k.key === 'reasons')) inHead = false; if (k && k.key === 'full') inHead = true; out.push({ t: nospace(t).replace(/[【】\[\]]/g, ''), p: x.p, label: true }); continue; }
     // 줄을 이을 때: 다음 줄이 닫는 부호나 ‘(’로 시작하면(‘상당하다(대법원 …’) 띄우지 않는다
@@ -140,6 +142,7 @@ function parseHead(paras, upto) {
     if (/^(제\s?\d+\s?(민사|형사|행정|가사)?\s?부|제\s?\d+\s?(민사|형사|행정|가사)?\s?(부|과)|전원합의체|전원재판부|제\s?\d+\s?지정재판부|[가-힣]+\s?(민사|형사|행정)\s?(제?\d+)?\s?부)\s*(\(.*\))?$/.test(t) && t.length <= 30) H.bench = nospace(t).replace(/\(.*\)/, '');
     if (/^(판결|결정)$/.test(nospace(t))) H.kind = nospace(t);
     // 종합법률정보 첫 줄: 대법원 2019. 3. 28. 선고 2016두43176 판결 [감독명령처분취소]
+    if (H.no && !H.name && x.i < 5 && /^[\[〔]([^\]〕]{2,60})[\]〕]$/.test(t)) H.name = t.slice(1, -1).trim();
     if (!H.no && x.i < 4) { const c = parseCite(t); if (c && c.no && c.raw.length >= t.length - 40 && !/^【/.test(t)) { Object.assign(H, { court: c.court, date: c.date, no: c.no, kind: c.kind || H.kind }); if (c.bench) H.bench = c.bench; const nm = t.match(/[\[〔(]([^\]〕)]{2,60})[\]〕)]\s*$/); if (nm) H.name = sp(nm[1]); } }
     const f = t.match(FIELD_RE);
     if (f) {

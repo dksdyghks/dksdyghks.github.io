@@ -33,6 +33,9 @@ const CARD_MARK = /〔\s*카드\s*(\d+)\s*〕/g;
 
 /* ---------------- 판례 각주: 선고일은 서재 문헌에 적힌 것을 읽는다(없으면 ○로 비워 둔다) ---------------- */
 export function caseCite(key, lib) {
+  // 서재에 그 사건의 판결문이 있으면 판결문 자체에서 읽은 인용이 가장 정확하다
+  const own = S.docs.find((d) => d.isJudg && (d.cite || {}).caseCite && new RegExp(`(^|\\s)${String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(d.cite.caseCite));
+  if (own) return { text: `${own.cite.caseCite}.`, date: (own.cite.caseCite.match(/\d{4}\. \d{1,2}\. \d{1,2}\./) || [''])[0], from: 1, seen: 1, own: true };
   const m = String(key).match(/^(\d{2,4})(\D+?)(\d+)$/); const court = caseCourt(key);
   const counts = new Map(); let whole = 0, seen = 0;
   if (m && lib) {

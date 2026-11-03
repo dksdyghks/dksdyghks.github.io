@@ -4,15 +4,15 @@
 import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, EMBED, fmtSize, kdate, kdt, toast, applyTheme, saveSettings, saveProject, saveCard, saveIdea, logEvent,
   docMeta, docPages, docOf, addFiles, removeDoc, updateDoc, libLoad, parseQuery, searchLib, indexLibrary, libStats, connectFolder, syncFolder, OCR, scanned, ocrAll,
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
-  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=5f314ab709';
-import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=5f314ab709';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=5f314ab709';
-import { caseCourt, citationsIn } from './lawtext.js?v=5f314ab709';
-import { excluded, excludeHint } from './profile.js?v=5f314ab709';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=5f314ab709';
-import { buildDocx, DOCX_MIME } from './docx.js?v=5f314ab709';
-import { viewJudg, openJudgment } from './judg.js?v=5f314ab709';
-import { isJudgment } from './judgment.js?v=5f314ab709';
+  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=11eb2d3f01';
+import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=11eb2d3f01';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=11eb2d3f01';
+import { caseCourt, citationsIn } from './lawtext.js?v=11eb2d3f01';
+import { excluded, excludeHint } from './profile.js?v=11eb2d3f01';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=11eb2d3f01';
+import { buildDocx, DOCX_MIME } from './docx.js?v=11eb2d3f01';
+import { viewJudg, openJudgment } from './judg.js?v=11eb2d3f01';
+import { isJudgment } from './judgment.js?v=11eb2d3f01';
 
 /* ---------------- 모양 ---------------- */
 const sv = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -260,12 +260,14 @@ const artNum = (a) => { const m = a.match(/제(\d+)조(?:의(\d+))?/); return m 
 const LAW_ALIAS = { 헌법: '대한민국헌법' };
 const lawUrl = (name, art) => `https://www.law.go.kr/${encodeURI(`법령/${LAW_ALIAS[name] || name}${art ? `/${art}` : ''}`)}`;
 const pagesHTML = (docs, max = 6) => docs.map((x) => { const d = docOf(x.id); if (!d) return ''; return `<span class="ix-doc"><span class="t" title="${esc(d.title)}">${d.mine ? '<b class="tag">내 글</b> ' : ''}${esc(d.author ? `${d.author}, ` : '')}${esc(d.title.length > 28 ? d.title.slice(0, 28) + '…' : d.title)}</span>${x.pages.slice(0, max).map((p) => `<button class="pg-chip" data-act="open-at" data-id="${d.id}" data-p="${p}" title="${esc(where(d, p).ui)}">${d.kind === 'pdf' ? p : `${p}부분`}</button>`).join('')}${x.pages.length > max ? `<span class="m">외 ${x.pages.length - max}곳</span>` : ''}</span>`; }).join('');
+/* 서재에 그 사건의 판결문이 있으면(판결 분석에서 읽은 인용으로 가린다) */
+const judgDocOf = (key) => S.docs.find((d) => d.isJudg && new RegExp(`(^|\\s)${String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test((d.cite || {}).caseCite || '')) || null;
 async function paintIndex(tab) {
   const idx = await buildIndex(), box = $('#idx'); if (!box || S.view !== 'find') return;
   const q = String(S.idxQ || '').replace(/\s+/g, '').toLowerCase();
   if (tab === 'case') {
     const list = idx.cases.filter((c) => !q || `${c.key}${c.court}`.toLowerCase().includes(q));
-    box.innerHTML = list.length ? `<p class="find-count">사건 ${list.length}건${list.length > 200 ? ' 가운데 많이 다룬 200건' : ''}</p><ul class="ix">${list.slice(0, 200).map((c) => `<li><div class="ix-h"><b>${esc(c.key)}</b><span class="m">${esc(c.court)} · 문헌 ${c.docs.length}편 · ${c.n}회</span><button class="btn sm" data-act="case-copy" data-k="${esc(c.key)}">각주 복사</button></div><div class="ix-docs">${pagesHTML(c.docs)}</div></li>`).join('')}</ul>` : `<p class="find-none">${idx.cases.length ? '맞는 사건번호가 없습니다.' : '서재 문헌에서 사건번호를 찾지 못했습니다.'}</p>`;
+    box.innerHTML = list.length ? `<p class="find-count">사건 ${list.length}건${list.length > 200 ? ' 가운데 많이 다룬 200건' : ''}</p><ul class="ix">${list.slice(0, 200).map((c) => `<li><div class="ix-h"><b>${esc(c.key)}</b><span class="m">${esc(c.court)} · 문헌 ${c.docs.length}편 · ${c.n}회</span><button class="btn sm" data-act="case-copy" data-k="${esc(c.key)}">각주 복사</button>${judgDocOf(c.key) ? `<button class="btn sm primary" data-act="j-open" data-id="${judgDocOf(c.key).id}">판결 분석</button>` : ''}</div><div class="ix-docs">${pagesHTML(c.docs)}</div></li>`).join('')}</ul>` : `<p class="find-none">${idx.cases.length ? '맞는 사건번호가 없습니다.' : '서재 문헌에서 사건번호를 찾지 못했습니다.'}</p>`;
   } else {
     const list = idx.laws.filter((l) => !q || l.name.replace(/\s+/g, '').toLowerCase().includes(q));
     box.innerHTML = list.length ? `<p class="find-count">법령 ${list.length}개${list.length > 150 ? ' 가운데 많이 다룬 150개' : ''}</p><ul class="ix">${list.slice(0, 150).map((l) => { const arts = [...l.arts.values()].sort((a, b) => artNum(a.art) - artNum(b.art)); return `<li><details${q && list.length < 6 ? ' open' : ''}><summary class="ix-h"><b>${esc(l.name)}</b><span class="m">문헌 ${l.docs.size}편 · ${l.n}회${arts.length ? ` · 조문 ${arts.length}개` : ''}</span><a class="btn sm" href="${lawUrl(l.name)}" target="_blank" rel="noopener noreferrer">법령 보기 ${IC.ext}</a></summary>
