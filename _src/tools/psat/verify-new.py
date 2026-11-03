@@ -473,4 +473,82 @@ by_text('L-L06', list(zip(['甲과 丁은', '乙은 참석', '丙은 참석하�
 bx_ = [dict(zip('ABC', pm)) for pm in itertools.permutations(['금', '은', '동'])]
 bx_ = [b_ for b_ in bx_ if [b_['A'] == '금', b_['C'] != '금', b_['B'] != '동'].count(True) == 1]
 ok(len(bx_) == 1, f'L-L07 {bx_}'); pick('L-L07', f"A {bx_[0]['A']}, B {bx_[0]['B']}, C {bx_[0]['C']}")
+
+# ================= S-N / D-N / L-M (independent re-solve) =================
+import math as _m
+fee = 1000 + 500 * _m.ceil((205 - 30) / 10); pick('S-N01', f"{min(fee, 15000) // 2:,}원")
+ok('100분의 30' in O('S-N02')[A('S-N02')] or '3명을 넘을 수 없다' in O('S-N02')[A('S-N02')], 'S-N02 keyed option is the 30% cap one')
+cd = {'甲': (90, 70), '乙': (80, 85), '丙': (100, 59), '丁': (85, 80), '戊': (82, 82)}
+rk = sorted([k for k in cd if cd[k][1] >= 60], key=lambda k: (-(6 * cd[k][0] + 4 * cd[k][1]), -cd[k][1]))[:2]
+pick('S-N03', ', '.join(sorted(rk, key=list(cd).index)))
+fl = [dict(zip('甲乙丙丁戊', pm)) for pm in itertools.permutations(range(1, 6))]
+fl = [f for f in fl if f['甲'] > f['乙'] and abs(f['丙'] - f['丁']) == 2 and 1 < f['戊'] < 5 and abs(f['乙'] - f['戊']) != 1 and f['丁'] < f['甲']]
+combo('S-N04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(f['甲'] == 5 for f in fl), all(f['戊'] == 3 for f in fl), all(f['乙'] != 1 or f['戊'] == 3 for f in fl), all(f['丙'] > f['丁'] or f['乙'] == 2 for f in fl)]) if t])
+sol5 = [v for v in itertools.product((1, 0), repeat=4) if all(bool(s) == bool(x) for s, x in zip([v.count(0) == 1, v.count(0) == 2, v.count(0) == 3, v.count(0) >= 1], v))]
+ok(len(sol5) == 1, f'S-N05 {sol5}'); pick('S-N05', ', '.join(x for x, t in zip('甲乙丙丁', sol5[0]) if t))
+d6 = _dt.date(2026, 3, 1) + _dt.timedelta(days=_m.lcm(6, 8, 10)); pick('S-N06', f'{d6.year}년 {d6.month}월 {d6.day}일')
+pj = {'A': (30, 40), 'B': (25, 35), 'C': (20, 22), 'D': (15, 20), 'E': (35, 45), 'F': (10, 12)}
+bst = max(sum(pj[k][1] for k in sb) for r in range(7) for sb in itertools.combinations(pj, r) if sum(pj[k][0] for k in sb) <= 100 and not {'A', 'B'} <= set(sb) and ('C' not in sb or 'D' in sb))
+pick('S-N07', f'{bst}점')
+def bill(k):
+    b = 1000 if k <= 200 else 2000 if k <= 400 else 4000
+    return b + sum(100 if u <= 200 else 200 if u <= 400 else 300 for u in range(1, k + 1))
+pick('S-N08', f'{bill(350) + bill(450):,}원')
+VAL = {'●': 1, '▲': 5, '■': 10, '◆': 50, '★': 100}
+def rd(sv):
+    t = 0
+    for i, c in enumerate(sv):
+        nx = sv[i + 1] if i + 1 < len(sv) else None
+        if nx and (c + nx) in ('●▲', '●■', '■◆', '■★'): t -= VAL[c]
+        else: t += VAL[c]
+    return t
+vv9 = [rd(o) for o in O('S-N09')]
+ok(len(set(vv9)) == 5, f'S-N09 values {vv9}'); only('S-N09', [v == max(vv9) for v in vv9], 'max')
+vt = {'갑당': 4300, '을당': 3100, '병당': 1700, '정당': 900}
+qs = sorted(((F(v, d), k) for k, v in vt.items() for d in range(1, 9)), reverse=True)
+dh7 = {k: sum(1 for q, kk in qs[:7] if kk == k) for k in vt}; dh8 = {k: sum(1 for q, kk in qs[:8] if kk == k) for k in vt}
+qt = {k: F(7 * v, 10000) for k, v in vt.items()}; hr = {k: int(q) for k, q in qt.items()}
+for k in sorted(vt, key=lambda k: -(qt[k] - int(qt[k])))[:7 - sum(hr.values())]: hr[k] += 1
+combo('S-N10', [l for l, t in zip('ㄱㄴㄷㄹ', [hr['정당'] == 1, dh7['갑당'] == 4, [k for k in vt if hr[k] == dh7[k]] == ['을당', '병당'], dh8['정당'] >= 1]) if t])
+# D-N
+rv, ow = [10000, 8000, 5000, 12000, 4000], [5600, 2400, 2250, 4200, 2000]
+idr = [F(o, r) for o, r in zip(ow, rv)]
+by_text('D-N01', list(zip(['재정자립도가 가장', '자체수입이 많은', '의존재원이', 'A~E 지역 전체', 'E의 재정자립도'], [idr.index(max(idr)) == 0, all((ow[i] > ow[j]) == (idr[i] > idr[j]) for i in range(5) for j in range(5) if i != j),
+        [r - o for r, o in zip(rv, ow)].index(max(r - o for r, o in zip(rv, ow))) == 1, F(sum(ow), sum(rv)) >= F(45, 100), idr[4] >= idr[2] * F(6, 5)])))
+ml, fm = [58, 88, 92, 89, 72], [62, 68, 66, 68, 50]
+combo('D-N02', [l for l, t in zip('ㄱㄴㄷㄹ', [[m - f for m, f in zip(ml, fm)].index(max(m - f for m, f in zip(ml, fm))) == 2, any(f > m for m, f in zip(ml, fm)), fm[2] < fm[1] and fm[2] < fm[3], sum(ml) >= 400]) if t])
+cp = {'A': (500, 50, 250), 'B': (800, 40, 320), 'C': (300, 45, 100), 'D': (600, 72, 400)}
+ms = [pm for pm in itertools.permutations('ABCD') if max(cp, key=lambda k: F(cp[k][1], cp[k][0])) == pm[1] and F(cp[pm[0]][0], cp[pm[0]][2]) > F(cp[pm[3]][0], cp[pm[3]][2]) and cp[pm[3]][2] < cp[pm[2]][2]]
+ok(len(ms) == 1, f'D-N03 {ms}'); pick('D-N03', ', '.join(f"{c} {'가나다라'[ms[0].index(c)]}" for c in 'ABCD'))
+combo('D-N04', ['ㄱ', 'ㄴ'])
+combo('D-N05', [l for l, t in zip('ㄱㄴㄷㄹ', [F(150 * 100, 120) == 125, F(18, 132) == F(18, 100), True, F(150, 120) == F(13, 10)]) if t])
+pt = 4 * 3 + F(7, 2) * 2 + 3 * 3 + F(5, 2) + F(9, 2) * 2
+combo('D-N06', [l for l, t in zip('ㄱㄴㄷㄹ', [pt / 11 >= F(7, 2), (pt - F(5, 2) + 4) / 11 >= F(37, 10), pt / 11 < F(35, 10), (pt + 12) / 14 < F(37, 10) and (pt + F(27, 2)) / 14 >= F(37, 10)]) if t])
+pr7 = {'P': (264, 110, 120), 'Q': (252, 90, 140), 'R': (231, 105, 110), 'S': (234, 130, 90)}
+b23 = {k: F(a * 10000, b * c) for k, (a, b, c) in pr7.items()}; b24 = {k: F(a * 100, c) for k, (a, b, c) in pr7.items()}
+by_text('D-N07', list(zip(['2023년 판매량이 가장', '2023년 판매량은 네', '2023년 대비 2025년 판매량 증가율이 가장', '2024년 판매량이', '2023년 대비 2025년 판매량 증가율은 Q'],
+        [len(set(b23.values())) > 1 and max(b23, key=b23.get) == 'P', len(set(b23.values())) == 1, max(pr7, key=lambda k: pr7[k][0] / b23[k]) == 'Q', max(b24, key=b24.get) == 'R', pr7['Q'][0] / b23['Q'] > pr7['P'][0] / b23['P']])))
+inr = [(k, n_) for n_ in range(1, 61) for k in range(n_ + 1) if F(3565, 10000) <= F(k, n_) < F(3575, 10000)]
+combo('D-N08', [l for l, t in zip('ㄱㄴㄷㄹ', [any(n_ == 14 for k, n_ in inr), [x for x in inr if x[1] <= 20] == [(5, 14)], (10, 28) in inr, all(n_ % 2 for k, n_ in inr)]) if t])
+q9 = {'X': (400, 800, 440, 836), 'Y': (250, 1000, 230, 1012), 'Z': (100, 650, 130, 806)}
+by_text('D-N09', list(zip(['수출 물량이', '수출 단가가', '수출 금액의', '세 품목 전체', 'X의 수출 단가'], [[k for k, v in q9.items() if v[2] < v[0]] == ['Y'], [k for k, v in q9.items() if F(v[3], v[2]) > F(v[1], v[0])] == ['Y'],
+        max(q9, key=lambda k: F(q9[k][3], q9[k][1])) == 'Z', F(sum(v[3] for v in q9.values()), sum(v[2] for v in q9.values())) < F(sum(v[1] for v in q9.values()), sum(v[0] for v in q9.values())), F(836, 440) / F(800, 400) == F(19, 20)])), want=False, what='false options')
+combo('D-N10', [l for l, t in zip('ㄱㄴㄷㄹ', [F(161, 100) < F(11, 10) ** 5, F(294, 200) >= F(27, 25) ** 5, F(75, 50) >= F(11, 10) ** 5, F(161, 100) > F(294, 200)]) if t])
+# L-M
+def mods6():
+    for bits in itertools.product((0, 1), repeat=8):
+        ex = [t for t, b in zip(itertools.product((0, 1), repeat=3), bits) if b]
+        if any(e and x for e, x, g in ex): yield ex
+W = list(mods6())
+ent = lambda c: all(any(e and not g for e, x, g in ex) for ex in W if c(ex)) and any(c(ex) for ex in W)
+by_text('L-M06', list(zip(['외부 전문가는 아무도', '공무원은 모두', '외부 전문가 가운데', '평가위원이 아닌', '공무원 가운데'], [ent(lambda ex: not any(x and g for e, x, g in ex)), ent(lambda ex: all(x for e, x, g in ex if g)), ent(lambda ex: any(x and not g for e, x, g in ex)),
+        ent(lambda ex: all(g for e, x, g in ex if not e)), ent(lambda ex: any(g and not e for e, x, g in ex))])), what='valid premises')
+mm = [m for m in itertools.product((0, 1), repeat=5) if (m[0] or m[1]) and not (m[0] and m[2]) and imp(m[3], m[2]) and imp(m[1], m[3]) and imp(m[4], m[2])]
+combo('L-M07', [l for l, t in zip('ㄱㄴㄷㄹ', [all(m[0] + m[1] == 1 for m in mm), all(imp(m[2], m[1]) for m in mm), all(imp(m[1], m[4]) for m in mm), all(imp(m[0], sum(m) == 1) for m in mm)]) if t])
+lr = []
+for v in itertools.product((1, 0), repeat=4):
+    if v.count(0) != 2: continue
+    t = dict(zip('甲乙丙丁', v))
+    if [not t['丙'], t['甲'] and t['丙'], (not t['甲']) != (not t['丁']), not t['丙']] == [bool(x) for x in v]: lr.append(', '.join(x for x in '甲乙丙丁' if not t[x]))
+ok(len(lr) == 1, f'L-M08 {lr}'); pick('L-M08', lr[0])
 print('ALL OK' if ok_all else 'SOME FAILED')
