@@ -32,8 +32,8 @@ EPIGRAPH_CITE = {
 STATEMENT = {
     'ko': ('율리우스 폰 키르히만은 입법권자가 세\u00a0마디만 고치면 법학서적은 \n모두 휴지조각이 된다며 법학의 학문적 가치를 비판하였다.',
            '그러나 법학이 학문으로서 가치가 있기에 ', '나의 연구는 입법권자로 하여금 문제의 세\u00a0마디를 바로잡도록 할 것이라\u00a0믿는다.'),
-    'en': ('Julius von Kirchmann questioned the value of legal scholarship as a science: \n“three corrective words by the legislator \rturn whole legal libraries into waste paper.”',
-           'Yet legal scholarship does have value as a science; therefore, ', 'I believe my research will lead the legislature to correct the three words in\u00a0question.'),
+    'en': ('Julius von\u00a0Kirchmann once dismissed the scientific worth of jurisprudence: \n“Three corrective words by the legislator, \rand entire libraries become waste\u00a0paper.”',
+           'Yet precisely because jurisprudence has worth as a science, ', 'I believe my research will lead the\u00a0legislator to set those three words\u00a0right.'),
 }
 TEACHING = {
     'ko': ['법학개론', '융합캡스톤', '행정법', '항공우주법', '헌법과 민주시민'],

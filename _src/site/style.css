@@ -178,6 +178,10 @@ button { font: inherit; }
 @media (min-width: 700px) { .stmt strong { display: block; text-wrap: balance; } }
 .br-d, .br-t, .br-w { display: none; }
 #view-ko .br-t { display: inline; }
+/* English on every width: the quote starts on its own line, the closing sentence stands alone in balanced lines (as in Korean) */
+#view-en .br-d, #view-en .br-w { display: inline; }
+#view-en .stmt strong { display: block; text-wrap: balance; }
+#view-en .stmt p { text-wrap: balance; }
 @media (min-width: 700px) {
   .br-d, .br-t { display: inline; }
   #view-ko .stmt { max-width: none; }
