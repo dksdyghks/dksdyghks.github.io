@@ -1,0 +1,4 @@
+hwpx-skeleton.hwpx is the empty Hancom document template distributed with python-hwpx
+(https://github.com/airmang/python-hwpx), Copyright 2025-2026 airmang, licensed under the
+Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0). It is used unmodified;
+YO아이 adds its own paragraphs, styles and footnotes when it writes a document.

@@ -1,11 +1,11 @@
-/* Two hidden doors on the homepage. Three quick presses on the Taegukgi open 송공; three on the gold sentence open 요AI.
+/* Two hidden doors on the homepage. Three quick presses on the Taegukgi open 송공; three on the gold sentence open YO아이.
    Each asks its own PIN (stored only as an iterated, salted SHA-256 digest), then the app opens as its own page.
    One or two presses do nothing at all, so a stray click never shows a password box. */
 (function () {
   'use strict';
   var DOORS = {
     songgong: { len: 6, salt: 'sg-0128-7f3a9c', n: 4000, h: 'b883ddfa1079c250e8a6485c3fe1295b20a943727b649f01faffca22f75a87e6', path: 'psat/', title: '송공' },
-    yoai: { len: 4, salt: 'yo-0128-2b81e4', n: 4000, h: 'aa950d867c05a6cf9d5a21a2f673a843e7e0b6e6e5a4615536e4b134309ed7dd', path: 'yoai/', title: '요AI' }
+    yoai: { len: 4, salt: 'yo-0128-2b81e4', n: 4000, h: 'aa950d867c05a6cf9d5a21a2f673a843e7e0b6e6e5a4615536e4b134309ed7dd', path: 'yoai/', title: 'YO아이' }
   };
   var ORIGIN = 'https://0128.kr/';
   var onSite = /(^|\.)0128\.kr$|github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);

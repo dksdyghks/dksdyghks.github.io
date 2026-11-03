@@ -1,4 +1,4 @@
-/* The door to 요AI: a short PIN, stored only as an iterated, salted SHA-256 digest.
+/* The door to YO아이: a short PIN, stored only as an iterated, salted SHA-256 digest.
    This keeps passers-by out of a static site; it is not strong security (a short PIN can be guessed offline). */
 (function (G) {
   'use strict';

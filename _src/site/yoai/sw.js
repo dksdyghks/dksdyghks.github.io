@@ -1,5 +1,5 @@
-/* 요AI service worker: once 요AI has been opened online, it also opens and works with no connection
-   (the library, notes and the AI all live on this computer).
+/* YO아이 service worker: once YO아이 has been opened online, it also opens and works with no connection
+   (the library and every record live on this computer).
    - App files go to the network first, so a new version shows up as soon as the phone is online. The saved copy
      answers only when the network fails, stalls for WAIT ms, or the server errs. Each version's files are saved
      together at install (all or nothing), so an offline start never mixes files from two versions.
@@ -10,12 +10,12 @@ const VER = new URL(self.location.href).searchParams.get('v') || 'dev';
 const APP = 'yoai-app-' + VER;
 const FONTS = 'yoai-fonts';
 const VENDOR = 'yoai-vendor'; // large third-party code under a fixed versioned name: saved once, kept across versions
-const VENDOR_FILES = ['vendor/web-llm-0.2.87.js', ...['tesseract.esm.min.js', 'worker.min.js', 'core/tesseract-core-lstm.wasm.js', 'core/tesseract-core-simd-lstm.wasm.js', 'core/tesseract-core-relaxedsimd-lstm.wasm.js', 'lang/kor.traineddata.gz', 'lang/eng.traineddata.gz'].map((f) => `vendor/tesseract-7.0.0/${f}`)];
+const VENDOR_FILES = [...['tesseract.esm.min.js', 'worker.min.js', 'core/tesseract-core-lstm.wasm.js', 'core/tesseract-core-simd-lstm.wasm.js', 'core/tesseract-core-relaxedsimd-lstm.wasm.js', 'lang/kor.traineddata.gz', 'lang/eng.traineddata.gz'].map((f) => `vendor/tesseract-7.0.0/${f}`)];
 const WAIT = 4000;
 const ROOT = new URL('./', self.location.href).href;
-// the modules app.js loads (their addresses carry the same version), the model worker, and the install icons
-const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'llm-worker.js',
-  ...['md.js', 'docx.js', 'ai.js', 'pdf.js', 'pdf.worker.js'].map((f) => `${f}?v=${VER}`)];
+// the modules app.js loads (their addresses carry the same version), the 한글 skeleton, and the install icons
+const EXTRA = ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png',
+  ...['core.js', 'research.js', 'write.js', 'zip.js', 'hwp.js', 'hwpx.js', 'lawtext.js', 'profile.js', 'docx.js', 'pdf.js', 'pdf.worker.js'].map((f) => `${f}?v=${VER}`), 'hwpx-skeleton.hwpx'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -62,7 +62,7 @@ async function saved(name, key) { return (await caches.open(name)).match(key, { 
 async function app(event) {
   const req = event.request;
   const nav = req.mode === 'navigate';
-  const key = nav ? ROOT : req; // every address inside 송공 opens the same page
+  const key = nav ? ROOT : req; // every address inside YO아이 opens the same page
   // the page itself is always checked with the server (a tiny "not modified" when nothing changed), so a new version
   // appears on the first launch after it is published, not when the browser's own 10-minute copy runs out
   const net = fetch(nav ? new Request(req, { cache: 'no-cache' }) : req);
@@ -136,5 +136,6 @@ async function saveVendor() {
   const cache = await caches.open(VENDOR);
   const want = VENDOR_FILES.map((f) => new URL(f, ROOT).href);
   for (const u of want) if (!(await cache.match(u, { ignoreVary: true }))) { const r = await fetch(u); if (r.ok) await cache.put(u, r); }
-  for (const req of await cache.keys()) if (!want.includes(req.url)) await cache.delete(req);
+  // the PDF character maps are saved as Korean PDFs ask for them; they stay too
+  for (const req of await cache.keys()) if (!want.includes(req.url) && !req.url.startsWith(ROOT + 'vendor/pdfjs-')) await cache.delete(req);
 }

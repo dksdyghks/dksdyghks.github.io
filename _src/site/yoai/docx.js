@@ -1,4 +1,4 @@
-/* 요AI — Word(.docx) 내보내기. 마크다운 답변을 OOXML로 바꾸고, 출처 표시 〔cN〕를 Word 각주로 단다.
+/* YO아이 — Word(.docx) 내보내기. 마크다운을 OOXML로 바꾸고, 출처 표시 〔cN〕를 Word 각주로 단다.
    외부 라이브러리 없이 ZIP(무압축)을 직접 만든다. A4, 바탕체, 쪽 번호. */
 const enc = new TextEncoder();
 const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
@@ -203,7 +203,7 @@ const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 export function buildDocx(spec) {
   const when = spec.when || new Date();
   const ctx = { links: new Map(), foot: [], notes: [] };
-  let body = para(run(spec.title || '요AI'), { style: 'Title' });
+  let body = para(run(spec.title || 'YO아이'), { style: 'Title' });
   if (spec.subtitle) body += para(run(spec.subtitle), { style: 'Subtitle' });
   for (const s of spec.sections || []) {
     ctx.notes = s.notes || [];
@@ -216,8 +216,8 @@ export function buildDocx(spec) {
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${PR}"><Relationship Id="rIdSt" Type="${RT}/styles" Target="styles.xml"/><Relationship Id="rIdSe" Type="${RT}/settings" Target="settings.xml"/><Relationship Id="rIdFn" Type="${RT}/footnotes" Target="footnotes.xml"/><Relationship Id="rIdFt" Type="${RT}/footer" Target="footer1.xml"/>${[...ctx.links].map(([url, id]) => `<Relationship Id="${id}" Type="${RT}/hyperlink" Target="${x(url)}" TargetMode="External"/>`).join('')}</Relationships>`;
   const types = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`;
   const root = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="${PR}"><Relationship Id="rId1" Type="${RT}/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="${PR}/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="${RT}/extended-properties" Target="docProps/app.xml"/></Relationships>`;
-  const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(spec.title || '')}</dc:title><dc:creator>${x(spec.creator || '요AI')}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${iso(when)}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${iso(when)}</dcterms:modified></cp:coreProperties>`;
-  const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>요AI</Application></Properties>`;
+  const core = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${x(spec.title || '')}</dc:title><dc:creator>${x(spec.creator || 'YO아이')}</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${iso(when)}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${iso(when)}</dcterms:modified></cp:coreProperties>`;
+  const app = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>YO아이</Application></Properties>`;
   return zip([
     { name: '[Content_Types].xml', data: types },
     { name: '_rels/.rels', data: root },

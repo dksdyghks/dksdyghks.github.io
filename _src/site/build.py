@@ -580,7 +580,7 @@ NOT_FOUND = f"""<!doctype html>
 """
 Path('/home/user/dksdyghks.github.io/404.html').write_text(NOT_FOUND)
 
-# the two apps behind the doors (송공: psat/, 요AI: yoai/) — each folder stands alone
+# the two apps behind the doors (송공: psat/, YO아이: yoai/) — each folder stands alone
 import hashlib, shutil
 try:  # 송공's passage face, cut to the letters 송공 shows: rebuilt only when those letters change
     import serif_subset
@@ -601,16 +601,17 @@ for app in ('psat', 'yoai'):
     if dst.exists():
         shutil.rmtree(dst)
     dst.mkdir(parents=True)
-    files = sorted(p for p in src.iterdir() if p.is_file() and p.suffix in ('.js', '.css', '.html', '.svg', '.png', '.json', '.webmanifest'))
+    files = sorted(p for p in src.iterdir() if p.is_file() and p.suffix in ('.js', '.css', '.html', '.svg', '.png', '.json', '.webmanifest', '.hwpx', '.txt'))
     shared = [Path('/home/user/yohan-ahn/fonts/noto-serif-kr/noto-serif-kr.css')]  # the serif face both apps use is part of each
     ver = hashlib.sha256(b''.join(p.read_bytes() for p in files + [f for f in shared if f.exists()])).hexdigest()[:10]
     import re as _re
     for p in files:
         if p.suffix == '.html':
             (dst / p.name).write_text(p.read_text().replace('__V__', ver))
-        elif app == 'yoai' and p.name == 'app.js':
-            # version the module's own relative imports too, so a returning browser never mixes an old helper with a new app.js
-            txt = _re.sub(r"(['\"])\./((?:docx|md|ai|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
+        elif app == 'yoai' and p.suffix == '.js' and p.name not in ('pdf.js', 'pdf.worker.js', 'sw.js', 'gate.js'):
+            # version every module's relative imports, so a returning browser never mixes an old helper with a new one
+            # (every module asks for the same address, so they all share one copy of core.js)
+            txt = _re.sub(r"(['\"])\./((?:app|core|research|write|zip|hwp|hwpx|lawtext|profile|docx|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
             (dst / p.name).write_text(txt)
         else:
             shutil.copy2(p, dst / p.name)
