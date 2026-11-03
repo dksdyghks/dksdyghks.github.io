@@ -437,6 +437,10 @@ for it in items:
 if fails:
     print('CHECKS FAILED — nothing written:'); [print(' -', f) for f in fails]; sys.exit(1)
 for it in items: it['lv'] = {'하': 1, '중': 2, '상': 3}[REVIEW[it['id']][1]]
+import re as _re
+for it in items:
+    _m = _re.fullmatch(r'(?:(\d+)분)?\s*(?:(\d+)초)?', REVIEW[it['id']][2].strip()); it['sec'] = int(_m.group(1) or 0) * 60 + int(_m.group(2) or 0)
+
 pos = [it['answer'] for it in items]
 print('answers', pos, 'distribution', [pos.count(i) for i in range(5)])
 js = ('/* 송공 — 자료해석 정예 문항(직접 출제). 이 파일은 _src/tools/psat/mk_data_c.py가 만든다: 모든 보기·선지의 참거짓과\n'

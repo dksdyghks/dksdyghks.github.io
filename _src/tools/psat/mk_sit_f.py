@@ -231,7 +231,7 @@ items.append({
 pw = [d for d in itertools.permutations(range(1, 10), 4) if d[0] % 2 == 0 and d[1] == d[0] + d[2] and d[3] % 2 == 1 and sum(d) == 21]
 check(len(pw) == 7, f'S-F11 {pw}')
 items.append({
- 'id': 'S-F11', 'type': '상황판단 · 경우의 수', 'stem': '다음 글을 근거로 판단할 때, 甲의 비밀번호로 가능한 것은 모두 몇 개인가?',
+ 'id': 'S-F11', 'type': '상황판단 · 수리 추론', 'stem': '다음 글을 근거로 판단할 때, 甲의 비밀번호로 가능한 것은 모두 몇 개인가?',
  'body': [passage('<p>甲의 비밀번호는 네 자리 수이며 다음 조건을 모두 만족한다.</p><ul class="cond"><li>각 자리의 숫자는 1~9 가운데 하나이고, 네 숫자는 모두 서로 다르다.</li><li>첫째 자리 숫자는 짝수이다.</li><li>둘째 자리 숫자는 첫째 자리 숫자와 셋째 자리 숫자를 더한 값이다.</li><li>넷째 자리 숫자는 홀수이다.</li><li>네 숫자를 모두 더하면 21이다.</li></ul>')],
  'options': ['6개', '7개', '8개', '9개', '10개'], 'answer': 1,
  'explain': [

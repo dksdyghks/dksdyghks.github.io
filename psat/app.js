@@ -12,8 +12,8 @@
   const pad = (n) => String(n).padStart(2, '0');
   const SUBJ = {
     lang: { name: '언어논리', pace: 135, bankP: 0.62, key: '1', hint: '독해 · 논증 · 형식논리' },
-    data: { name: '자료해석', pace: 135, bankP: 0.4, key: '2', hint: '표 해석 · 매칭 · 계산' },
-    sit: { name: '상황판단', pace: 135, bankP: 0.4, key: '3', hint: '법조문 · 규칙 적용 · 퀴즈' },
+    data: { name: '자료해석', pace: 135, bankP: 0.7, key: '2', hint: '표 해석 · 매칭 · 계산' },
+    sit: { name: '상황판단', pace: 135, bankP: 0.7, key: '3', hint: '법조문 · 규칙 적용 · 퀴즈' },
   };
   const ORDER = ['lang', 'data', 'sit'];
   const INTERVALS = [1, 3, 7, 14, 30];
@@ -41,6 +41,7 @@
   const snippet = (q) => { for (const b of q.body || []) { const t = b.t === 'table' ? `〈${b.caption || '표'}〉 ${(b.head || []).join(' · ')}` : b.t === 'box' ? (b.items || []).join(' ') : b.h; const p = plain(t || ''); if (p) return p.length > 90 ? p.slice(0, 90) + '…' : p; } return ''; };
   const isHidden = (key) => (S.settings.hidden || []).includes(key);
   const seenKey = (q) => (q.src === 'gen' ? 'h:' + cyrb53(JSON.stringify([q.stem, q.body, q.options])) : 'id:' + q.id);
+  const paceOf = (q) => (q && q.sec) || SUBJ[q.subject].pace; // 직접 출제 문항은 검수표의 예상 풀이 시간, 그 밖에는 과목 기준 속도
   const typeShort = (subj, type) => String(type || '').replace((SUBJ[subj] ? SUBJ[subj].name : '') + ' · ', '');
   let toastTimer = 0;
   function toast(msg) {
@@ -213,6 +214,15 @@
     if (ctx.mode === 'review') {
       const due = dueItems(subj).filter((it) => !type || it.type === type);
       return due.length ? { q: due[0].q, review: true } : null;
+    }
+    if (ctx.mode === 'set' && S.set && Array.isArray(S.set.plan)) { // 세트는 미리 짠 문항 순서대로, 다 쓰면 생성 문항으로 채운다
+      while (S.set.plan.length) {
+        const id = S.set.plan.shift(); saveSet();
+        const q = (P.bank[subj] || []).find((x) => x.id === id);
+        if (q && !isHidden('id:' + q.id)) return { q: bankCopy(q, subj) };
+      }
+      for (let i = 0; i < 8; i++) { const g = fromGenerator(subj, ''); if (!g) break; if (!isHidden(seenKey(g))) return { q: g }; }
+      const b = fromBank(subj, ''); return b ? { q: b } : null;
     }
     while (S.queue.length) {
       const e = S.queue.shift(); saveKV('queue');
@@ -451,7 +461,7 @@
       el.textContent = '남은 ' + clock(left); el.classList.toggle('over', left < 60000); el.classList.toggle('paused', document.hidden); return;
     }
     el.textContent = clock(S.cur.ms);
-    el.classList.toggle('over', S.cur.ms / 1000 > SUBJ[S.cur.q.subject].pace);
+    el.classList.toggle('over', S.cur.ms / 1000 > paceOf(S.cur.q));
     el.classList.toggle('paused', document.hidden);
   }
   function startSession(ctx) {
@@ -543,7 +553,7 @@
     const wide = window.matchMedia('(min-width: 1180px)').matches;
     const chosen = c.choice >= 0 ? `고른 답 <b>${c.choice + 1}번</b> · ` : '';
     const title = c.choice < 0 ? '해설을 먼저 봤습니다' : c.ok ? '정답입니다' : '오답입니다';
-    const sub = `${chosen}정답 <b>${q.answer + 1}번</b> · ${human(c.ms)}${c.ms / 1000 > SUBJ[q.subject].pace ? ` (권장 ${human(SUBJ[q.subject].pace * 1000)})` : ''}${!c.ok ? ' · 오답노트에 담았습니다' : ''}`;
+    const sub = `${chosen}정답 <b>${q.answer + 1}번</b> · ${human(c.ms)}${c.ms / 1000 > paceOf(q) ? ` (권장 ${human(paceOf(q) * 1000)})` : ''}${!c.ok ? ' · 오답노트에 담았습니다' : ''}`;
     const src = q.exam ? `출처 <b>${esc(q.exam)}</b>` : q.src === 'bank' ? '출처 <b>송공 출제</b> · 기출의 발문·선지 양식을 본뜬 창작 문항' : '출처 <b>송공 생성</b> · 조건과 정답을 프로그램이 계산하고 검증한 문항';
     const crumb = `<b>${SUBJ[q.subject].name}</b> · 해설`;
     paint(shell(crumb, `
@@ -607,8 +617,26 @@
         <button class="btn primary" data-act="set-start">시작하기</button></div>
       ${S.set && S.set.done ? '<button class="item" data-act="set-result" style="margin-top:12px"><span class="t1"><span class="tag">지난 세트</span></span><span class="t2">지난 실전 세트 결과 다시 보기</span></button>' : ''}`), 'setup');
   }
+  /* 실전 세트 문항 구성: 아직 풀지 않은 직접 출제 문항에서 난이도 하 25% · 중 55% · 상 20%를 맞추고,
+     같은 난이도 안에서는 유형이 고루 섞이도록 돌아가며 뽑는다. 1지문 2문항은 붙여서 넣는다. 모자라면 생성 문항으로 채운다. */
+  function planSet(subj, n) {
+    const all = P.bank[subj] || [], shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const unitOf = (q) => (q.set ? all.filter((x) => x.set === q.set).sort((a, b) => a.setNo - b.setNo) : [q]);
+    const pool = all.filter((q) => !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id));
+    const byLv = { 1: [], 2: [], 3: [] }; pool.forEach((q) => byLv[q.lv || 2].push(q));
+    const want = { 1: Math.round(n * 0.25), 2: Math.round(n * 0.55) }; want[3] = Math.max(0, n - want[1] - want[2]);
+    const picked = [], used = new Set(); let count = 0;
+    const take = (lv, k) => { // 같은 난이도 안에서 유형을 돌아가며
+      const groups = {}; shuffle(byLv[lv].slice()).forEach((q) => (groups[q.type] = groups[q.type] || []).push(q));
+      const keys = shuffle(Object.keys(groups)); let got = 0, moved = true;
+      while (got < k && count < n && moved) { moved = false; for (const t of keys) { if (got >= k || count >= n) break; const q = groups[t].shift(); if (!q) continue; if (used.has(q.id)) continue; const u = unitOf(q); if (count + u.length > n) continue; u.forEach((x) => used.add(x.id)); picked.push(u); count += u.length; got += u.length; moved = true; } }
+    };
+    [1, 2, 3].forEach((lv) => take(lv, want[lv]));
+    [2, 1, 3].forEach((lv) => take(lv, n - count)); // 어느 난이도가 모자라면 다른 난이도로 채운다
+    return shuffle(picked).flat().map((q) => q.id);
+  }
   function startSet() {
-    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false };
+    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false, plan: planSet(setPick.subj, setPick.n) };
     saveSet();
     startSession({ subj: setPick.subj, type: '', mode: 'set' });
   }

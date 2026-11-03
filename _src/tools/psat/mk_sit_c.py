@@ -389,6 +389,7 @@ def esc_text(h):
     return re.sub(r'(?<![a-z"\'/0-9])>', '&gt;', h)
 for it in items:
     it['lv'] = {'하': 1, '중': 2, '상': 3}[REVIEW[it['id']][1]]
+    _m = __import__('re').fullmatch(r'(?:(\d+)분)?\s*(?:(\d+)초)?', REVIEW[it['id']][2].strip()); it['sec'] = int(_m.group(1) or 0) * 60 + int(_m.group(2) or 0)
     for blk in it['explain']:
         if 'h' in blk: blk['h'] = esc_text(blk['h'])
         for x in blk.get('items', []):

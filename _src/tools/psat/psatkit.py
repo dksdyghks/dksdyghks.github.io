@@ -54,6 +54,9 @@ def write(items, REVIEW, out_js, subject, review_md, title, header):
     check(len({it['id'] for it in items}) == len(items), 'ids unique')
     for it in items:
         it['lv'] = {'하': 1, '중': 2, '상': 3}[REVIEW[it['id']][1]]
+        mm = re.fullmatch(r'(?:(\d+)분)?\s*(?:(\d+)초)?', REVIEW[it['id']][2].strip())
+        check(mm and (mm.group(1) or mm.group(2)), f"{it['id']} expected time {REVIEW[it['id']][2]}")
+        if mm: it['sec'] = int(mm.group(1) or 0) * 60 + int(mm.group(2) or 0)
         for k in ('answer',): check(0 <= it[k] < len(it['options']), f"{it['id']} answer index")
         check(len(it['options']) == 5 and len(set(it['options'])) == 5, f"{it['id']} five distinct options")
         for blk in it['explain']:
