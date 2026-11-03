@@ -18,6 +18,12 @@ for (const [subj, items] of Object.entries(P.bank)) for (const q of items) {
     if (odd !== 1) fail(q, 'answer is not the unique odd one out in ox: ' + okv.join(','));
     const verd = b.items.map((x) => x.v); if (verd.filter((v) => v === verd[q.answer]).length !== 1) fail(q, 'answer verdict text not unique: ' + verd[q.answer]);
   }
+  // every block a renderer turns into text must hold text: a nested block would show as [object Object]
+  for (const blk of [...q.body, ...q.explain]) {
+    if (blk.t === 'box' && (blk.items || []).some((x) => typeof x !== 'string')) fail(q, 'box item is not text');
+    if ((blk.t === 'p' || blk.t === 'passage' || blk.t === 'law' || blk.t === 'h') && typeof blk.h !== 'string') fail(q, blk.t + ' without text');
+    if (blk.t === 'table' && (blk.rows || []).some((r) => r.some((c) => typeof c === 'object' && c !== null))) fail(q, 'table cell is not text');
+  }
   const boxB = q.body.find((b) => b.t === 'box' && b.title === '보기');
   if (/<보기>/.test(q.stem) && !boxB) fail(q, 'stem mentions <보기> but no 보기 box');
   if (boxB && bxs.length) {
