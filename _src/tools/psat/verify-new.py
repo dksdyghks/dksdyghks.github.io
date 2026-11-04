@@ -1690,4 +1690,74 @@ for bits in itertools.product((0, 1), repeat=16):
     e = [t for t, b_ in zip(t16, bits) if b_]
     if all(ex or g for w, ex, g, t in e if w) and not any(w and g for w, ex, g, t in e) and any(ex and not w for w, ex, g, t in e) and all(not ex for w, ex, g, t in e if t): m16.append(e)
 combo('L-AF04', [l for l, tt in zip('ㄱㄴㄷㄹ', [all(all(ex for w, ex, g, t in e if w) for e in m16), all(not any(t and w for w, ex, g, t in e) for e in m16), all(all(w for w, ex, g, t in e if ex) for e in m16), all(any(g and ex for w, ex, g, t in e) for e in m16)]) if tt])
+# ================= S-AG / D-AG / L-AG (5급 실전, independent re-solve from the rendered options) =================
+def rent_sub(age, mil, single, dep, rent, prev):
+    if age < 19 or age > 34 + min(mil, 3): return 0
+    if dep > 5000: return 0
+    if rent > 60 and rent * 1000 + dep * 5 > 70 * 1000: return 0
+    m = min(F(rent, 2), 25 if single else 20)
+    return m * (12 - prev)
+s_ag01 = rent_sub(26, 0, 0, 1000, 50, 0) + rent_sub(31, 0, 1, 600, 66, 0) + rent_sub(36, 2, 0, 2000, 36, 0) + rent_sub(29, 0, 0, 3000, 40, 5) + rent_sub(28, 0, 0, 4000, 62, 0)
+pick('S-AG01', f'{int(s_ag01):,}만 원')
+sw = [(1, 1, 0, 0, 0), (0, 1, 1, 1, 0), (0, 0, 0, 1, 1), (1, 0, 1, 0, 1)]; st0 = (0, 1, 0, 0, 1)
+def press(st, ks):
+    st = list(st)
+    for k in ks: st = [a ^ b for a, b in zip(st, sw[k])]
+    return tuple(st)
+seqs = [q for n_ in range(0, 7) for q in itertools.product(range(4), repeat=n_)]
+reach_ = {}
+for q in seqs: reach_.setdefault(press(st0, q), len(q))
+reach3 = {press(st0, q) for q in seqs if 1 not in q}
+combo('S-AG02', [l for l, t in zip('ㄱㄴㄷㄹ', [reach_[(1, 1, 1, 1, 1)] == 2, press(st0, [0, 1, 2, 3]) == st0, (0, 0, 0, 0, 0) in reach_, (0, 0, 1, 0, 0) not in reach3]) if t])
+pick('S-AG03', '처리 기간을 늘린 청원기관도 청원을 접수한 날부터 90일 이내에는 처리 결과를 청원인에게 알려야 한다.')
+def base_fare(d):
+    f_ = 1400; x = 10
+    while x < d and x < 50: f_ += 100; x += 5
+    x = 50
+    while x < d: f_ += 100; x += 8
+    return f_
+rides_ = [(480, 500, 'b1', 6), (515, 545, 's2', 14), (730, 745, 'b5', 4), (780, 790, 'b7', 3), (1080, 1140, 's2', 46), (1160, 1185, 'b1', 12), (1200, 1210, 'b1', 2)]
+paid = 0; chain = []
+for i, (bo, al, rt, km) in enumerate(rides_):
+    if i and bo - rides_[i - 1][1] <= 30 and rt != rides_[i - 1][2]: chain.append(km)
+    else: chain = [km]; grp = 0
+    due = max(0, base_fare(sum(chain)) - grp); grp += due; paid += due
+pick('S-AG04', f'{paid:,}원')
+cand = {'A': ('재정', 'm', 'X', 93), 'B': ('기술', 'f', 'Z', 90), 'C': ('법률', 'f', 'X', 80), 'D': ('재정', 'm', 'Y', 89), 'E': ('법률', 'm', 'X', 88), 'F': ('재정', 'm', 'Z', 86), 'G': ('기술', 'f', 'Z', 85)}
+feas = [s for s in itertools.combinations('ABCDEFG', 4) if {cand[x][0] for x in s} == {'법률', '재정', '기술'} and [cand[x][1] for x in s].count('f') == 2 and [cand[x][2] for x in s].count('X') <= 1 and not {'B', 'E'} <= set(s)]
+sc_ = sorted((sum(cand[x][3] for x in s), s) for s in feas)
+ok(sc_[-1][0] > sc_[-2][0], 'S-AG05 unique optimum'); pick('S-AG05', ', '.join(sc_[-1][1]))
+pop_ = [250, 120, 80, 300, 50]; doc_ = [5500, 2160, 1280, 7200, 600]; bed_ = [30000, 15600, 12000, 33000, 9000]
+avg_ = F(sum(doc_), 10 * sum(pop_)); dk = [F(d, 10 * p_) for d, p_ in zip(doc_, pop_)]; bk = [F(b, 10 * p_) for b, p_ in zip(bed_, pop_)]
+s_ = [avg_ > 2, sum(x > avg_ for x in dk) == 3, dk.index(max(dk)) == 3, bk.index(max(bk)) == dk.index(min(dk)), F(bed_[2], doc_[2]) > F(bed_[1], doc_[1])]
+only('D-AG01', [not x for x in s_], 'false statements')
+ex_, fx_ = [500, 560, 540, 600, 650], [1150, 1250, 1300, 1250, 1400]; wv = [a * b for a, b in zip(ex_, fx_)]
+gwv = [F(wv[i], wv[i - 1]) for i in range(1, 5)]; gdv = [F(ex_[i], ex_[i - 1]) for i in range(1, 5)]
+combo('D-AG02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(wv[i] > wv[i - 1] for i in range(1, 5) if ex_[i] < ex_[i - 1]), gwv.index(max(gwv)) == 3, wv[4] * 10 >= 16 * wv[0], [i for i in range(4) if gdv[i] > gwv[i]] == [2]]) if t])
+ct = {'A': (420, 60, 5200), 'B': (900, 150, 9000), 'C': (300, 40, 3300), 'D': (650, 200, 8450), 'E': (500, 90, 6000)}
+mt = [m for m in itertools.permutations('ABCDE') if m[0] == max(ct, key=lambda k: F(ct[k][0], ct[k][1])) and m[1] == max(ct, key=lambda k: F(ct[k][2], ct[k][0])) and ct[m[2]][1] > ct[m[3]][1] and ct[m[3]][0] > ct[m[4]][0]]
+ok(len(mt) == 1, f'D-AG03 {mt}'); pick('D-AG03', ', '.join(mt[0]))
+emp_ = {'A': 600 - 30, 'B': 800 * 60 // 100, 'C': 450 - 45, 'D': 500 * 62 // 100}
+lab_ = {'A': 600, 'B': emp_['B'] + 20, 'C': 450, 'D': 320}; p15 = {'A': 1000, 'B': 800, 'C': F(emp_['C'] * 100, 54), 'D': 500}
+une_ = {k: lab_[k] - emp_[k] for k in lab_}; erv = {k: F(emp_[k], p15[k]) for k in lab_}; urv = {k: F(une_[k], lab_[k]) for k in lab_}; lpv = {k: F(lab_[k], p15[k]) for k in lab_}
+by_text('D-AG04', list(zip(['경제활동참가율이', '네 지역 전체의', '고용률이 가장', '취업자 수는', 'C의 15세'], [max(lpv, key=lpv.get) == 'B', sum(une_.values()) * 100 >= 6 * sum(lab_.values()), max(erv, key=erv.get) == min(urv, key=urv.get), emp_['B'] * 10 >= 12 * emp_['C'], p15['C'] * 10 >= 8 * p15['A']])))
+wt_, ix_ = [30, 25, 15, 30], [106, 103, 96, 102]
+cv = [F((x - 100) * w, 100) for x, w in zip(ix_, wt_)]; tv_ = 100 + sum(cv)
+combo('D-AG05', [l for l, t in zip('ㄱㄴㄷㄹ', [tv_ >= F(1026, 10), cv.index(max(cv)) == 0, cv[1] * 2 >= 3 * cv[3], ix_[0] - 100 >= 2 * (tv_ - 100)]) if t])
+pick('L-AG01', '부모 가운데 한 명이 O형인 B형인 사람의 유전자형은 BO이다.')
+def phen(a, b):
+    s = {a, b} - {'O'}
+    return ''.join(sorted(s)) or 'O'
+geno = [(a, b) for a in 'ABO' for b in 'ABO' if a <= b or True]
+fa_ = [g for g in itertools.product('ABO', repeat=2) if phen(*g) == 'A']; mo_ = [g for g in itertools.product('ABO', repeat=2) if phen(*g) == 'B']
+cons_ = {(''.join(sorted(f_)), ''.join(sorted(m_))) for f_ in fa_ for m_ in mo_ if any(phen(x, y) == 'O' for x in f_ for y in m_)}
+f0, m0 = next(iter(cons_)); kidsv = [phen(x, y) for x in f0 for y in m0]
+ab_kid = any(phen(x, y) == 'AB' for x in 'OO' for y in 'AB')
+combo('L-AG02', [l for l, t in zip('ㄱㄴㄷㄹ', [cons_ == {('AO', 'BO')}, F(kidsv.count('AB'), 4) == F(1, 4), ab_kid, set(kidsv) == {'A', 'B', 'AB', 'O'}]) if t])
+combo('L-AG03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AG05', ['ㄱ', 'ㄷ'])
+pk = []
+for s in itertools.combinations('ABCDEF', 3):
+    S_ = set(s)
+    if imp('A' in S_, 'B' in S_) and len(S_ & {'C', 'D'}) == 1 and imp('B' in S_, 'D' not in S_) and imp('E' not in S_, 'A' in S_) and imp('F' in S_, 'C' not in S_): pk.append(S_)
+by_text('L-AG04', list(zip(['B와 C는', 'E는 반드시', 'A를 선정하지', 'D를 선정하면', '선정될 수 있는'], [all(('B' in x) == ('C' in x) for x in pk), all('E' in x for x in pk), all(imp('A' not in x, 'F' in x) for x in pk), all(imp('D' in x, 'B' in x) for x in pk), len(pk) == 2])))
 print('ALL OK' if ok_all else 'SOME FAILED')
