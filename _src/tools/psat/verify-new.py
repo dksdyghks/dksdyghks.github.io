@@ -1023,4 +1023,111 @@ m8 = [m for m in itertools.product((0, 1), repeat=6) if imp(m[0], m[1]) and (m[2
 combo('L-U08', [l for l, t in zip('ㄱㄴㄷㄹ', [all(m[2] == m[5] for m in m8), all(sum(m) in (2, 4) for m in m8), all(imp(not m[1], m[3]) for m in m8), all(m[0] == m[3] for m in m8)]) if t])
 bx9 = [x for x in 'ABCD' if (x in 'BC') + (x != 'A') + (x == 'D') + (x != 'B') == 2]
 ok(len(bx9) == 1, f'L-U09 {bx9}'); pick('L-U09', f'{bx9[0]} 상자')
+# ================= S-V / D-V / L-V (independent re-solve from the rendered options) =================
+# S-V01 expected gain minus fee
+eg = {'A': 50, 'B': F(6, 10) * 100 - 5, 'C': F(3, 10) * 200 + F(7, 10) * 20 - 20}
+bk = max(eg, key=eg.get); pick('S-V01', f'{bk}안, {int(eg[bk])}만 원')
+# S-V02 race order
+rk = [dict(zip('甲乙丙丁戊', pm)) for pm in itertools.permutations(range(1, 6))]
+rk = [r for r in rk if r['甲'] < r['乙'] and r['丙'] - r['甲'] == 1 and r['戊'] > r['乙'] and r['乙'] != 3]
+combo('S-V02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(r['乙'] == 4 for r in rk), all(r['甲'] == 1 for r in rk), all(imp(r['丁'] == 1, r['丙'] == 3) for r in rk), all(r['丙'] < r['丁'] for r in rk)]) if t])
+# S-V03 routes S→T within 4 hours
+rt3 = {'SAT': (1 + 3, 3 + 2), 'SACT': (1 + 2 + 1, 3 + 2 + 1), 'SBT': (2 + 3, 1 + 3), 'SBCT': (2 + 1 + 1, 1 + 4 + 1)}
+cand = sorted((c, k) for k, (h, c) in rt3.items() if h <= 4); ok(cand[0][0] < cand[1][0], 'S-V03 unique cheapest')
+pick('S-V03', f"{' → '.join(cand[0][1])}, {cand[0][0]}만 원")
+# S-V04 jobs (duration, deadline, pay): earliest-deadline order is optimal for feasibility of a set
+jb = {'A': (2, 3, 50), 'B': (1, 2, 30), 'C': (3, 5, 60), 'D': (2, 5, 40)}
+def edf(s):
+    t = 0
+    for j in sorted(s, key=lambda k: jb[k][1]):
+        t += jb[j][0]
+        if t > jb[j][1]: return False
+    return True
+pick('S-V04', f"{max(sum(jb[j][2] for j in s) for r in range(5) for s in itertools.combinations(jb, r) if edf(s))}만 원")
+# S-V05 subject/day
+sv5 = []
+for sp in itertools.permutations('국영수과'):
+    for dp in itertools.permutations('월화수목'):
+        m = dict(zip('ABCD', zip(sp, dp))); bysub = {s: d for s, d in m.values()}; byday = {d: p_ for p_, (s, d) in m.items()}
+        if m['A'][0] != '수' and byday['수'] in 'AC' and bysub['국'] == '월' and '월화수목'.index(bysub['영']) < '월화수목'.index(bysub['수']) and m['A'][1] == '목': sv5.append(m)
+combo('S-V05', [l for l, t in zip('ㄱㄴㄷㄹ', [all(m['A'][0] == '과' for m in sv5), all(imp(m['D'][1] == '월', m['D'][0] == '국') for m in sv5), all(m['B'][0] == '국' for m in sv5), all(m['B'][1] == '화' for m in sv5)]) if t])
+# S-V06 moving-in report: deadline excludes the first day
+dl6 = _dt.date(2026, 3, 2) + _dt.timedelta(days=14)
+fee6 = lambda d: 0 if d <= dl6 else (10000 if (d - dl6).days < 30 else 20000 if (d - dl6).days < 90 else 50000)
+ok((fee6(_dt.date(2026, 3, 16)), fee6(_dt.date(2026, 3, 20)), fee6(_dt.date(2026, 6, 20))) == (0, 10000, 50000), 'S-V06 fees')
+pick('S-V06', '甲이 2026년 3월 16일에 신고하면 과태료를 내지 않는다.')
+# S-V07 spouse 1.5 shares, 丁's share split by 戊·己
+pick('S-V07', f'{int(F(18) / (F(3, 2) + 3) / 2)}억 원')
+# S-V08 water bill
+u = 34; pick('S-V08', f'{3000 + 20 * 500 + 10 * 800 + (u - 30) * 1200 + u * 300:,}원')
+# S-V09 approver ladder
+def ap9(d, c, abroad):
+    lv_ = 0 if (d <= 3 and c <= 50) else (1 if (d <= 7 and c <= 200) else 2)
+    return ['과장', '국장', '실장'][min(2, lv_ + abroad)]
+combo('S-V09', [l for l, t in zip('ㄱㄴㄷㄹ', [ap9(2, 60, 0) == '과장', ap9(3, 40, 1) == '국장', ap9(8, 100, 0) == '실장', ap9(5, 150, 1) == '실장']) if t])
+# S-V10 printing
+q10 = {'X': 20000 + 2000 * 100, 'Y': 1000 * 150 + 1000 * 80, 'Z': 2000 * 120 * 9 // 10}
+pick('S-V10', f'{min(q10, key=q10.get)}, {min(q10.values()):,}원')
+# D-V01 chained growth
+def chain(b, rs):
+    v = [F(b)]
+    for r in rs: v.append(v[-1] * (1 + F(r, 100)))
+    return v
+a1, b1, c1 = chain(200, [10, 20, -25]), chain(250, [20, -10, 10]), chain(100, [50, 20, -10])
+combo('D-V01', [l for l, t in zip('ㄱㄴㄷㄹ', [a1[3] < a1[0], b1[2] > max(a1[2], c1[2]), (a1[3] + b1[3] + c1[3]) * 10 >= 12 * (a1[0] + b1[0] + c1[0]), a1[2] - a1[1] > c1[1] - c1[0]]) if t])
+# D-V02 weighted scores
+sc = {'A': (80, 70, 90), 'B': (90, 60, 70), 'C': (70, 90, 80), 'D': (75, 80, 85)}
+ws = lambda w: {k: sum(F(x) * y for x, y in zip(w, v)) for k, v in sc.items()}
+s0, s1 = ws((F(1, 2), F(3, 10), F(1, 5))), ws((F(1, 2), F(2, 5), F(1, 10)))
+by_text('D-V02', list(zip(['종합 점수가 가장 높은', '전문성 점수가', '소통 가중치를', 'A와 B의', '종합 점수가 78점'], [max(s0, key=s0.get) == 'D', max(sc, key=lambda k: sc[k][0]) == max(s0, key=s0.get), max(s1, key=s1.get) == 'C', s0['A'] - s0['B'] == 3, sum(v >= 78 for v in s0.values()) == 2])))
+# D-V03 unit price
+g3 = {'A': (200, 400, 250, 450), 'B': (50, 300, 40, 260), 'C': (400, 200, 500, 300), 'D': (100, 500, 120, 540)}
+u3 = {k: (F(b, a), F(d, c)) for k, (a, b, c, d) in g3.items()}
+dsum = sum(d - b for a, b, c, d in g3.values())
+combo('D-V03', [l for l, t in zip('ㄱㄴㄷ', [[k for k in u3 if u3[k][1] < u3[k][0]] == ['A'], u3['C'][1] * u3['B'][0] > u3['B'][1] * u3['C'][0], F(300 - 200, dsum) >= F(3, 5)]) if t] + (['ㄹ'] if 50 * u3['B'][1] < 300 else []))
+# D-V04 subsidy
+s4 = {'A': (30, 1000, 750), 'B': (8, 500, 440), 'C': (45, 800, 660), 'D': (60, 2000, 1200), 'E': (12, 300, 240), 'F': (10, 200, 170)}
+tot = sum(min(1000, n * 50) for n, a, b in s4.values() if (n < 50 and (a - b) * 5 >= a) or (n < 10 and (a - b) * 10 >= a))
+pick('D-V04', f'{tot:,}만 원')
+# D-V05 elderly
+r5 = {'A': (200, 180, 15, 25), 'B': (300, 330, 10, 14), 'C': (150, 150, 20, 30), 'D': (100, 120, 12, 15)}
+e15 = {k: F(a * c, 100) for k, (a, b, c, d) in r5.items()}; e25 = {k: F(b * d, 100) for k, (a, b, c, d) in r5.items()}
+by_text('D-V05', list(zip(['2025년 65세 이상 인구가 가장', '2015년 65세 이상', '2015년 대비', '2025년 네 지역', 'D의 65세'], [max(e25, key=e25.get) == 'B', len({e15['A'], e15['B'], e15['C']}) == 1, max(e25, key=lambda k: e25[k] / e15[k]) == 'B', sum(e25.values()) * 5 >= sum(v[1] for v in r5.values()), (e25['D'] - e15['D']) * 10 == (e25['A'] - e15['A']) * 4])), want=False, what='false options')
+# D-V06 export shares
+ex = {k: (500 * a // 100, 600 * b // 100) for k, (a, b) in {'반도체': (40, 45), '자동차': (30, 25), '선박': (20, 20), '기타': (10, 10)}.items()}
+combo('D-V06', [l for l, t in zip('ㄱㄴㄷㄹ', [ex['자동차'][1] < ex['자동차'][0], F(ex['반도체'][1] - ex['반도체'][0], 100) == F(7, 10), F(ex['선박'][1], ex['선박'][0]) == F(ex['기타'][1], ex['기타'][0]), ex['반도체'][1] * 10 >= ex['반도체'][0] * 13]) if t])
+# D-V07 waste = area × density × per-capita
+w7 = {k: F(a * d) * F(w) for k, (a, d, w) in {'A': (50, 2000, '1.35'), 'B': (80, 1500, '0.9'), 'C': (120, 900, '1.1'), 'D': (30, 3000, '1.45'), 'E': (200, 400, '1.6')}.items()}
+pick('D-V07', f'가장 많은 지역 {max(w7, key=w7.get)}, 가장 적은 지역 {min(w7, key=w7.get)}')
+# D-V08 monthly price chain
+pc = chain(10000, [10, -10, 20, -20, 5]); inc8 = [pc[i + 1] - pc[i] for i in range(5)]
+by_text('D-V08', list(zip(['3월 가격은', '1~6월 중', '6월 가격은', '5월 가격은', '2~6월 중'], [pc[2] == pc[0], pc.index(max(pc)) == 3, pc[5] > pc[0], pc[4] > pc[2], inc8.index(max(inc8)) == 0])))
+# D-V09 Simpson
+pas = {('A', 'm'): 400 * 50 // 100, ('A', 'f'): 100 * 60 // 100, ('B', 'm'): 100 * 20 // 100, ('B', 'f'): 400 * 25 // 100}
+fm = pas[('A', 'f')] + pas[('B', 'f')]; mm = pas[('A', 'm')] + pas[('B', 'm')]
+combo('D-V09', [l for l, t in zip('ㄱㄴㄷㄹ', [60 > 50 and 25 > 20, F(mm, 500) > F(fm, 500), F(fm, fm + mm) >= F(2, 5), 2 * (pas[('B', 'm')] + pas[('B', 'f')]) >= pas[('A', 'm')] + pas[('A', 'f')]]) if t])
+# D-V10 exchange rates
+c24 = {'X': 1000 * 1300, 'Y': 100000 * 9, 'Z': 800 * 1450}; c25 = {'X': 1000 * 1400, 'Y': 100000 * F(17, 2), 'Z': 800 * 1500}
+combo('D-V10', [l for l, t in zip('ㄱㄴㄷㄹ', [max(c25, key=c25.get) == 'Z', F(c25['X'], c24['X']) > F(c25['Z'], c24['Z']), sum(c25.values()) - sum(c24.values()) >= 100000, 110000 * F(17, 2) > c24['Y']]) if t])
+# L-V
+pick('L-V01', '측정값을 보정해야 하는 까닭은 대기 중 탄소-14의 비율이 시대마다 달랐기 때문이다.')
+hl = lambda frac: {F(1, 4): 2, F(1, 8): 3}[frac] * 5730
+combo('L-V02', [l for l, t in zip('ㄱㄴㄷㄹ', [hl(F(1, 4)) == 11460, hl(F(1, 8)) > hl(F(1, 4)), False, F(hl(F(1, 8)), hl(F(1, 4))) == F(3, 2)]) if t])
+pick('L-V04', '우리는 출장 날짜를 다음 주 화요일로 잡았다.'); pick('L-V05', '(라)')
+asg = [dict(zip('甲乙丙丁戊', xs)) for xs in itertools.product('기인예', repeat=5) if sorted(xs) == sorted('기기인인예')]
+asg = [a for a in asg if a['丙'] == '인' and imp(a['丁'] == '기', a['戊'] == '예') and a['甲'] != '기']
+combo('L-V07', [l for l, t in zip('ㄱㄴㄷㄹ', [all(a['乙'] == '기' for a in asg), all(imp(a['甲'] == '인', a['丁'] == '기') for a in asg), all(imp(a['戊'] != '기', a['甲'] == '인') for a in asg), all(a['丁'] != a['戊'] for a in asg)]) if t])
+# L-V08: the keyed premise must make the conclusion valid over all 2^16 type-existence models; every other option must fail
+ty8 = list(itertools.product((0, 1), repeat=4))   # (위원, 주민, 자가용, 회원)
+pr8 = {'지역 주민 가운데 환경 단체 회원이 아닌 사람이 있다.': lambda e: any(t[1] and not t[3] for t in e), '자가용이 있는 사람은 모두 환경 단체 회원이다.': lambda e: all(t[3] for t in e if t[2]),
+       '환경 단체 회원 가운데 공원 관리 위원이 있다.': lambda e: any(t[3] and t[0] for t in e), '공원 관리 위원 가운데 환경 단체 회원이 아닌 사람이 있다.': lambda e: any(t[0] and not t[3] for t in e),
+       '환경 단체 회원 가운데 자가용이 있는 사람이 있다.': lambda e: any(t[3] and t[2] for t in e)}
+def val8(f):
+    for bits in itertools.product((0, 1), repeat=16):
+        e = [t for t, b_ in zip(ty8, bits) if b_]
+        if all(t[1] for t in e if t[0]) and not any(t[1] and t[2] for t in e) and f(e) and not any(t[3] and not t[2] for t in e): return False
+    return True
+by_text('L-V08', [(k, val8(f)) for k, f in pr8.items()])
+def no9(dept, y, n, sec, keep): return ('S' if sec else '') + {'기획': 'PL', '인사': 'HR', '예산': 'BG'}[dept] + '-' + str(y)[2:] + '-' + str(n).zfill(3) + ('L' if keep >= 10 else '')
+combo('L-V09', [l for l, t in zip('ㄱㄴㄷㄹ', [no9('기획', 2024, 12, 0, 3) == 'PL-24-12', no9('예산', 2025, 1, 1, 10) == 'SBG-25-001L', no9('인사', 2025, 5, 0, 5) == 'HR-25-005', no9('기획', 2026, 1, 0, 3) == 'PL-26-141']) if t])
 print('ALL OK' if ok_all else 'SOME FAILED')
