@@ -1130,4 +1130,95 @@ def val8(f):
 by_text('L-V08', [(k, val8(f)) for k, f in pr8.items()])
 def no9(dept, y, n, sec, keep): return ('S' if sec else '') + {'기획': 'PL', '인사': 'HR', '예산': 'BG'}[dept] + '-' + str(y)[2:] + '-' + str(n).zfill(3) + ('L' if keep >= 10 else '')
 combo('L-V09', [l for l, t in zip('ㄱㄴㄷㄹ', [no9('기획', 2024, 12, 0, 3) == 'PL-24-12', no9('예산', 2025, 1, 1, 10) == 'SBG-25-001L', no9('인사', 2025, 5, 0, 5) == 'HR-25-005', no9('기획', 2026, 1, 0, 3) == 'PL-26-141']) if t])
+# ================= S-W / D-W / L-W (independent re-solve from the rendered options) =================
+# S-W01 fuel cost for 600 km
+fc = {'A': F(600) / F(25, 2) * 1700, 'B': F(600 * 6, 100) * 1600, 'C': F(600, 8) * 1000, 'D': F(600 * 5, 100) * 1700}
+pick('S-W01', f'{min(fc, key=fc.get)}, {int(min(fc.values())):,}원')
+# S-W02 via UTC
+arr = _dt.datetime(2026, 3, 10, 22) - _dt.timedelta(hours=9) + _dt.timedelta(hours=19) + _dt.timedelta(hours=1)
+pick('S-W02', f'{arr.month}월 {arr.day}일 ' + ('오전' if arr.hour < 12 else '오후') + f' {arr.hour % 12 or 12}시')
+# S-W03 knapsack with exclusion
+pj = {'A': (4, 8), 'B': (3, 5), 'C': (5, 9), 'D': (2, 3), 'E': (6, 10)}
+pick('S-W03', f"{max(sum(pj[k][1] for k in s) for r in range(6) for s in itertools.combinations(pj, r) if sum(pj[k][0] for k in s) <= 10 and not {'A', 'C'} <= set(s))}점")
+# S-W04 travel allowance (만 원)
+pick('S-W04', f'{1 + 2 * 3 + 10 + min(9, 7) + 6 + 2}만 원')
+# S-W05 expected costs
+ec = {'none': F(3000, 100), 'A': 25 + F(100, 100), 'B': 15 + F(1000, 100)}
+ec2 = {'none': F(6000, 100), 'A': 25 + F(200, 100), 'B': 15 + F(2000, 100)}
+by_text('S-W05', list(zip(['기대 비용이 가장', '보험에 가입하지', 'B에 가입할', '화재가 날 확률이', '화재가 나면'], [min(ec, key=ec.get) == 'A', ec['none'] == 30, ec['B'] == 15, min(ec2, key=ec2.get) == 'B', 25 + 100 == 100])))
+# S-W06 league (points 7, 4, 4, 1)
+lg = []
+for out in itertools.product((3, 1, 0), repeat=6):
+    pts = {t: 0 for t in 'ABCD'}
+    for (a, b), o in zip(itertools.combinations('ABCD', 2), out):
+        pts[a] += o; pts[b] += {3: 0, 1: 1, 0: 3}[o]
+    if pts == {'A': 7, 'B': 4, 'C': 4, 'D': 1}: lg.append(dict(zip(itertools.combinations('ABCD', 2), out)))
+combo('S-W06', [l for l, t in zip('ㄱㄴㄷㄹ', [all(g[('A', 'C')] == 3 for g in lg), all(imp(g[('B', 'C')] == 0, g[('A', 'B')] == 1) for g in lg), all(g[('B', 'C')] == 1 for g in lg), all(list(g.values()).count(1) == 2 for g in lg)]) if t])
+# S-W07 three voting methods
+bal = ['ABCD'] * 3 + ['BCDA'] * 2 + ['CBDA'] * 2
+fp = lambda bs: {c: sum(b[0] == c for b in bs) for c in 'ABCD'}
+bd = {c: sum(3 - b.index(c) for b in bal) for c in 'ABCD'}
+cw = [c for c in 'ABCD' if all(sum(b.index(c) < b.index(d) for b in bal) > len(bal) / 2 for d in 'ABCD' if d != c)]
+f1 = fp(bal); f2 = fp(['ABCD'] * 3 + ['BCDA'] * 2 + ['BCDA'] + ['CBDA'])
+combo('S-W07', [l for l, t in zip('ㄱㄴㄷㄹ', [[c for c in f1 if f1[c] == max(f1.values())] == ['A'], sorted(bd, key=bd.get)[-2] == 'C', cw == ['B'], [c for c in f2 if f2[c] == max(f2.values())] == ['B']]) if t])
+# S-W08 working days (no holidays in Nov 2026)
+wd = [d for d in (_dt.date(2026, 11, 4) + _dt.timedelta(days=i) for i in range(1, 40)) if d.weekday() < 5]
+by_text('S-W08', list(zip(['甲의 민원은', '연장하지 않는다면', '처리 기간을 연장하면', '처리 기간은 부득이한', '처리 기간을 연장할 때'], [wd[6] == _dt.date(2026, 11, 11), wd[6] == _dt.date(2026, 11, 13), wd[13] == _dt.date(2026, 11, 20), False, False])))
+# S-W09 check digit
+pick('S-W09', str([x for x in range(10) if (10 - (3 * (5 + x + 0) + 2 + 4 + 9) % 10) % 10 == 9][0]))
+# S-W10 meeting-room passes per day
+def best_day(h): return min(2 * a + 6 * b + 10 * c for a in range(10) for b in range(4) for c in range(2) if a + 4 * b + 9 * c >= h)
+pick('S-W10', f'{sum(best_day(h) for h in (3, 5, 9, 2))}만 원')
+# D-W01 labour productivity
+pr1 = {'A': (F(600, 20), F(660, 20)), 'B': (F(400, 16), F(450, 15)), 'C': (F(900, 25), F(864, 24))}
+combo('D-W01', [l for l, t in zip('ㄱㄴㄷㄹ', [max(pr1, key=lambda k: pr1[k][1]) == 'C', max(pr1, key=lambda k: pr1[k][1] / pr1[k][0]) == 'B', pr1['C'][1] < pr1['C'][0], F(1974, 59) >= F(1900, 61) * F(11, 10)]) if t])
+# D-W02 whole-percent annual rates
+rate = lambda a, b, n: [r for r in range(101) if F(100 + r, 100) ** n == F(b, a)][0]
+an = {'A': rate(400, 484, 2), 'B': rate(1000, 1331, 3), 'C': rate(250, 360, 2), 'D': rate(500, 864, 3), 'E': rate(300, 345, 1)}
+tg = {'A': F(484, 400), 'B': F(1331, 1000), 'C': F(360, 250), 'D': F(864, 500), 'E': F(345, 300)}
+by_text('D-W02', list(zip(['출시 연도 대비', '연평균 증가율은 A와', '연평균 증가율은 D가', '연평균 증가율이 15%', 'E의 연평균'], [max(tg, key=tg.get) == 'C', an['A'] == an['B'], an['D'] > an['C'], sum(v > 15 for v in an.values()) == 3, an['E'] < an['A']])))
+# D-W03 imports
+im = {'A': (20, 5), 'B': (50, 3), 'C': (30, 4)}
+combo('D-W03', [l for l, t in zip('ㄱㄴㄷㄹ', [max(im, key=lambda k: im[k][0] * im[k][1]) == 'B', F(sum(q * u for q, u in im.values()), 100) >= 4, 20 * (5 - 3) == 40, 30 * F(4 * 125, 100) == 50 * 3]) if t])
+# D-W04 spending shares
+sp = lambda tot, s: F(tot * s, 100)
+by_text('D-W04', list(zip(['식료품 지출액은', '주거 지출의', '5분위의 교육 지출액은 1분위', '3분위의 식료품', '5분위의 교육 지출액은 식료품'], [sp(600, 15) == 2 * sp(150, 30), sp(150, 25) < sp(300, 18) < sp(600, 10), sp(600, 15) == 12 * sp(150, 5), sp(300, 20) >= F(3, 2) * sp(150, 30), sp(600, 15) == sp(600, 15)])), want=False, what='false options')
+# D-W05 city selection
+ct = {'A': (50, 35, 22, 4), 'B': (80, 28, 18, 6), 'C': (30, 25, 25, 7), 'D': (70, 30, 20, 5), 'E': (45, 20, 30, 3), 'F': (60, 29, 19, 4.5)}
+pick('D-W05', max((k for k, v in ct.items() if (v[1] < 30) + (v[2] >= 20) + (v[3] < 5) >= 2), key=lambda k: ct[k][0]))
+# D-W06 price index
+combo('D-W06', [l for l, t in zip('ㄱㄴㄷㄹ', [F(130, 125) == F(21, 20), F(121, 110) == F(1331, 1210), F(988, 10) < 100, F(1331, 1100) - 1 >= 2 * (F(130, 120) - 1)]) if t])
+# D-W07 supplier scores
+def sc7(pb, w=(F(2, 5), F(2, 5), F(1, 5))):
+    pr = {'A': 800, 'B': pb, 'C': 1600}; lo = min(pr.values()); q = {'A': (70, 90), 'B': (90, 80), 'C': (100, 100)}
+    return {k: w[0] * 100 * F(lo, pr[k]) + w[1] * q[k][0] + w[2] * q[k][1] for k in pr}
+s7, s7b, s7w = sc7(1000), sc7(900), sc7(1000, (F(3, 10), F(1, 2), F(1, 5)))
+by_text('D-W07', list(zip(['품질 점수가', 'B의 입찰 가격이', '가격 가중치를', 'C의 종합', 'A와 B의'], [max(s7, key=s7.get) == 'C', max(s7b, key=s7b.get) == 'B', max(s7w, key=s7w.get) == 'A', s7['C'] == 85, s7['A'] - s7['B'] == 4])))
+# D-W08 employment shares
+wf, mf, yf = (800, 2200 * 42 // 100), (1200, 2200 - 2200 * 42 // 100), (400, 2200 * 18 // 100)
+combo('D-W08', [l for l, t in zip('ㄱㄴㄷㄹ', [yf[1] > yf[0], F(wf[1] - wf[0], 200) >= F(3, 5), mf[1] < mf[0], F(wf[1], wf[0]) - 1 >= 2 * (F(mf[1], mf[0]) - 1)]) if t])
+# D-W09 overlap bounds by the classic formulas (independent of the brute force in the script)
+combo('D-W09', [l for l, t in zip('ㄱㄴㄷㄹ', [max(0, 24 + 18 - 40) >= 2, max(0, 24 + 18 + 30 - 2 * 40) >= 1, min(24, 30) == 24, max(0, 18 + 30 - 40) >= 10]) if t])
+# D-W10 defence spending
+kk = {'A': (50, 30, F(5, 2)), 'B': (100, 10, 3), 'C': (20, 50, 2), 'D': (80, 20, F(9, 5))}
+ml = {k: p_ * g * r for k, (p_, g, r) in kk.items()}; pcm = {k: g * r for k, (p_, g, r) in kk.items()}; gd = {k: p_ * g for k, (p_, g, r) in kk.items()}
+combo('D-W10', [l for l, t in zip('ㄱㄴㄷㄹ', [max(ml, key=ml.get) == 'A', max(pcm, key=pcm.get) == 'C', max(gd, key=gd.get) == max(ml, key=ml.get), ml['B'] * 2 == ml['C'] * 3]) if t])
+# L-W
+pick('L-W01', '차순위가 밀봉 입찰에서 물건을 산 사람이 내는 돈은 자신이 써 낸 값보다 많을 수 없다.')
+def sp2(b): o = sorted(b.items(), key=lambda x: -x[1]); return o[0][0], o[1][1]
+bb = {'甲': 100, '乙': 120, '丙': 80, '丁': 95}
+combo('L-W02', [l for l, t in zip('ㄱㄴㄷㄹ', [sp2(bb) == ('乙', 100), 90 < sp2(bb)[1], sp2(dict(bb, 乙=90)) == ('甲', 100), max(bb.values()) == 120]) if t])
+t4 = list(itertools.product((0, 1), repeat=4)); mm3 = []
+for bits in itertools.product((0, 1), repeat=16):
+    e = [t for t, b_ in zip(t4, bits) if b_]
+    if all(h for k_, h, n_, tr in e if k_) and not any(h and n_ for k_, h, n_, tr in e) and any(n_ and tr for k_, h, n_, tr in e) and all(k_ or n_ for k_, h, n_, tr in e if tr): mm3.append(e)
+combo('L-W03', [l for l, t in zip('ㄱㄴㄷㄹ', [all(any(k_ and tr for k_, h, n_, tr in e) for e in mm3), all(all(k_ for k_, h, n_, tr in e if tr and h) for e in mm3), all(all(n_ for k_, h, n_, tr in e if tr) for e in mm3), all(any(tr and not h for k_, h, n_, tr in e) for e in mm3)]) if t])
+m4 = [m for m in itertools.product((0, 1), repeat=5) if imp(m[0], m[1]) and m[2] + m[3] == 1 and imp(m[1], not m[3]) and imp(not m[4], m[0]) and imp(m[2], not m[4])]
+by_text('L-W04', list(zip(['A를 채택하면', 'B를 채택하지', '채택하는 정책은', 'E를 채택하면', 'D를 채택하면'], [all(imp(m[0], not m[4]) for m in m4), all(imp(not m[1], m[2]) for m in m4), all(sum(m) == 3 for m in m4), all(imp(m[4], m[2]) for m in m4), all(imp(m[3], m[0]) for m in m4)])))
+pick('L-W06', '㉤: 도달할')
+num7 = lambda d, left: (d // 20) * 2 + (1 if left else 2)
+combo('L-W07', [l for l, t in zip('ㄱㄴㄷㄹ', [num7(130, True) == 13, num7(95, False) == 10 and 10 % 2 == 0, all(num7(d, True) == 21 for d in range(200, 220)) and num7(199, True) != 21 and num7(220, True) != 21, min(b - a for a in range(0, 1000) for b in range(a, 1000) if num7(b, True) - num7(a, True) == 20) >= 200]) if t])
+fl = [(f, d) for f in itertools.permutations(range(1, 5)) for d in itertools.permutations(['기획', '인사', '재무', '홍보'])
+      if f[d.index('기획')] == 3 and f[0] > f[1] and d[2] != '홍보' and f[2] != 1 and f[d.index('인사')] == f[d.index('재무')] + 1 and f[3] == 2]
+ok(len(fl) == 1, f'L-W08 {fl}'); pick('L-W08', f'{fl[0][0][0]}층, {fl[0][1][0]}')
 print('ALL OK' if ok_all else 'SOME FAILED')
