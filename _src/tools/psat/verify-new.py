@@ -1462,4 +1462,44 @@ for c in '甲乙丙丁戊':
     lies[c] = [k for k, v in st.items() if not v]
 two = [(c, v) for c, v in lies.items() if len(v) == 2]
 ok(len(two) == 1, f'L-AA04 {two}'); pick('L-AA04', f'범인 {two[0][0]}, 거짓을 말한 사람 {two[0][1][0]}·{two[0][1][1]}')
+# ================= S-AB / D-AB / L-AB (5급 실전, independent re-solve from the rendered options) =================
+wk = [6, 6, 6] + [3] * 10 + [F(5, 2)] * 3
+h_wk = min(sum(min(x, 4) for x in wk), 57); h_wk = h_wk.__floor__() if hasattr(h_wk, '__floor__') else int(h_wk)
+pick('S-AB01', f'{int(h_wk) * 12000 + sum(min(x, 8) for x in [10, 10]) * 18000:,}원')
+def clue(g, s): return (sum(a == b for a, b in zip(g, s)), sum(a in s for a in g) - sum(a == b for a, b in zip(g, s)))
+codes = [''.join(p_) for p_ in itertools.permutations('0123456789', 3) if clue('351', p_) == (1, 1) and clue('589', p_) == (0, 2) and clue('946', p_) == (0, 1)]
+ok(len(codes) == 1, f'S-AB02 {codes}'); pick('S-AB02', codes[0])
+ev_day = _dt.date(2026, 5, 20)
+def okd(d, n): return d <= ev_day - _dt.timedelta(days=(7 if n < 300 else 14))
+apps = {'A': (_dt.date(2026, 5, 5), 450), 'B': (_dt.date(2026, 5, 8), 250), 'C': (_dt.date(2026, 5, 5), 280)}
+win = sorted((d, -n, k) for k, (d, n) in apps.items() if okd(d, n))[0][2]
+fee = lambda n: 100000 + -(-max(0, n - 100) // 100) * 20000
+by_text('S-AB03', list(zip(['B는 신청 기한을', 'C가 허가를', 'A가 허가를 받는다면', 'B가 허가를 받는다면', 'A가 5월 7일에'], [not okd(*apps['B']), win == 'C', fee(450) == 180000, 0 == 130000, okd(_dt.date(2026, 5, 7), 450)])))
+avail = {'甲': '월화목금', '乙': '화수목', '丙': '월화금', '丁': '화목금', '戊': '월수목', '己': '화목'}
+def mday(av):
+    c = [(-sum(d in v for v in av.values()), i, d) for i, d in enumerate('월화수목금') if d in av['甲'] and sum(d in v for v in av.values()) >= 4]
+    return min(c)[2] if c else None
+combo('S-AB04', [l for l, t in zip('ㄱㄴㄷㄹ', [mday(avail) == '화', mday(dict(avail, 甲='월화수목금')) != mday(avail), mday(dict(avail, 己='목')) == '목', sum(1 for d in avail['甲'] if sum(d in v for v in avail.values()) >= 5) == 2]) if t])
+ag = [(a, b, c) for a, b, c in itertools.combinations(range(30, 0, -1), 3) if a + b + c == 30 and a * b * c == 960]
+ok(len(ag) == 1, f'S-AB05 {ag}'); A_, B_, C_ = ag[0]
+combo('S-AB05', [l for l, t in zip('ㄱㄴㄷㄹ', [A_ == 12, C_ == 9, A_ + C_ == 2 * B_, (A_ - 4) * (B_ - 4) * (C_ - 4) < 200]) if t])
+one_ = [670, 720, 750, 780, 810]; all_ = [2100, 2150, 2180, 2210, 2250]
+st = [all(one_[i + 1] * all_[i] > one_[i] * all_[i + 1] for i in range(4)) and one_[4] * 100 == 36 * all_[4], (one_[4] - one_[0]) * all_[0] >= 4 * (all_[4] - all_[0]) * one_[0], 810 * 33 >= 25000, 810 * 3 >= 2400, [one_[i + 1] - one_[i] for i in range(4)] == [50, 30, 30, 30]]
+only('D-AB01', [not x for x in st], 'false statements')
+b2 = {2024: 26, 2025: 30}; s2 = {'b': (35, 30), 'a': (25, 25), 'd': (40, 45)}
+vv = {k: (b2[2024] * x, b2[2025] * y) for k, (x, y) in s2.items()}       # ×100
+combo('D-AB02', [l for l, t in zip('ㄱㄴㄷㄹ', [vv['b'][1] < vv['b'][0], vv['d'][1] * 100 >= vv['d'][0] * 125, [2022, 2023, 2024, 2025] and sum(1 for a, b in zip([27, 30, 31, 26], [30, 31, 26, 30]) if b < a) == 1, vv['a'][1] - vv['a'][0] >= 150]) if t])
+cy = {'A': (145, 1300, 980, 600), 'B': (120, 1450, 330, 500), 'C': (152, 1100, 340, 770), 'D': (131, 1250, 250, 880), 'E': (160, 1500, 150, 500)}
+mc = [m for m in itertools.permutations('ABCDE') if m[4] == max(cy, key=lambda k: cy[k][0]) and m[0] == max(cy, key=lambda k: F(cy[k][2], cy[k][3])) and cy[m[2]][3] > cy[m[3]][3] and cy[m[1]][0] < cy[m[3]][0]]
+ok(len(mc) == 1, f'D-AB03 {mc}'); pick('D-AB03', ', '.join(mc[0]))
+pr24 = {'A': F(330 * 100, 110), 'B': 500, 'C': 400, 'D': F(260 * 100, 130)}; pr25 = {'A': 330, 'B': 500 * 80 // 100, 'C': 480, 'D': 260}
+vl = {k: pr25[k] * u for k, u in {'A': 50, 'B': 80, 'C': 40, 'D': 100}.items()}
+by_text('D-AB04', list(zip(['(가)는', '2024년 생산량이', '2025년 생산액이', '네 품목', '2025년 D의'], [pr24['A'] == 2 * pr24['D'], max(pr24, key=pr24.get) == 'C', max(vl, key=vl.get) == 'B', sum(pr25.values()) * 10 >= sum(pr24.values()) * 11, vl['D'] * 2 >= vl['C'] * 3])))
+tt = [200, 220, 250]; sh5 = {'m': (50, 46, 42), 's': (30, 32, 34), 'c': (12, 12, 14), 'o': (8, 10, 10)}
+v5x = {k: [t * x for t, x in zip(tt, v)] for k, v in sh5.items()}     # ×100
+combo('D-AB05', [l for l, t in zip('ㄱㄴㄷㄹ', [v5x['m'][0] < v5x['m'][1] < v5x['m'][2], v5x['s'][2] * 10 >= v5x['s'][0] * 14, max(v5x, key=lambda k: v5x[k][2] - v5x[k][1]) == 'c', v5x['o'][1] == v5x['o'][2]]) if t])
+pick('L-AB01', '공동 자원을 오래 유지한 공동체들에서는 규칙을 따라야 하는 사람들이 규칙을 만드는 데 참여하였다.')
+combo('L-AB02', ['ㄱ', 'ㄴ']); combo('L-AB03', ['ㄱ', 'ㄴ']); combo('L-AB05', ['ㄱ', 'ㄴ', 'ㄹ'])
+seat = [o for o in itertools.permutations('甲乙丙丁戊己') if o.index('甲') in (0, 5) and abs(o.index('乙') - o.index('丙')) == 1 and o.index('丁') > o.index('戊') and o.index('己') == 2 and abs(o.index('乙') - o.index('甲')) != 1 and o.index('戊') != 1]
+combo('L-AB04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(o[5] == '甲' for o in seat), all(o[4] == '丁' for o in seat), all(imp(o[0] == '戊', o[4] == '丙') for o in seat), all(abs(o.index('乙') - o.index('丁')) != 1 for o in seat)]) if t])
 print('ALL OK' if ok_all else 'SOME FAILED')
