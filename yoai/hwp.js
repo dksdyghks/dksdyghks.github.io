@@ -1,6 +1,6 @@
 /* 한글 문서 읽기: .hwp(한글 5.0 이진 형식)와 .hwpx(개방형 XML)에서 본문 문단과 각주를 나누어 꺼낸다.
    readHangul(bytes, name) → { paras: [문단], notes: [각주 본문], text } */
-import { readZip, inflateRaw } from './zip.js?v=104ac3c537';
+import { readZip, inflateRaw } from './zip.js?v=54c477d665';
 
 /* ---- .hwp: OLE 복합 문서 → BodyText/Section* → (raw deflate) → 레코드 ---- */
 function cfb(b) {

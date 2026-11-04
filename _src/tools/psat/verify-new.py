@@ -1502,4 +1502,51 @@ pick('L-AB01', '공동 자원을 오래 유지한 공동체들에서는 규칙�
 combo('L-AB02', ['ㄱ', 'ㄴ']); combo('L-AB03', ['ㄱ', 'ㄴ']); combo('L-AB05', ['ㄱ', 'ㄴ', 'ㄹ'])
 seat = [o for o in itertools.permutations('甲乙丙丁戊己') if o.index('甲') in (0, 5) and abs(o.index('乙') - o.index('丙')) == 1 and o.index('丁') > o.index('戊') and o.index('己') == 2 and abs(o.index('乙') - o.index('甲')) != 1 and o.index('戊') != 1]
 combo('L-AB04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(o[5] == '甲' for o in seat), all(o[4] == '丁' for o in seat), all(imp(o[0] == '戊', o[4] == '丙') for o in seat), all(abs(o.index('乙') - o.index('丁')) != 1 for o in seat)]) if t])
+# ================= S-AC / D-AC / L-AC (5급 실전, independent re-solve from the rendered options) =================
+def sch(tier, fresh, cr, gpa10, fee, other):
+    amt = {1: 350, 2: 260, 3: 170}[tier]
+    if not fresh and (cr < 12 or gpa10 < (25 if tier == 1 else 30)): return 0
+    return min(amt, fee - other)
+pick('S-AC01', f"{sch(1, 0, 15, 27, 400, 0) + sch(2, 0, 12, 32, 300, 100) + sch(3, 0, 11, 38, 450, 0) + sch(2, 1, 0, 0, 350, 0) + sch(3, 0, 15, 29, 380, 0)}만 원")
+mn = {0: 0}
+for a in range(1, 301): mn[a] = 1 + min(mn[a - c] for c in (1, 40, 60, 100) if c <= a)
+def gr(a):
+    k = 0
+    for c in (100, 60, 40, 1): k += a // c; a %= c
+    return k
+top = [a for a in range(1, 200) if mn[a] == max(mn[b] for b in range(1, 200))]
+combo('S-AC02', [l for l, t in zip('ㄱㄴㄷㄹ', [mn[120] == 2, gr(160) == mn[160], top == [199], gr(180) - mn[180] == 19]) if t])
+d0 = _dt.timedelta
+lastp, filed = _dt.date(2026, 4, 20), _dt.date(2026, 7, 15)
+by_text('S-AC03', list(zip(['甲의 신청은', '조정위원회가 기간을 연장하지', '조정위원회가 8월 25일', '乙이 9월 12일', '甲이 수락하였으므로'], [filed > lastp + d0(90) or False, filed + d0(30) == _dt.date(2026, 8, 14), _dt.date(2026, 8, 25) > filed + d0(45), False, False])))
+def walk(rest, b0):
+    for s in range(3 * 3600):
+        m = F(s, 60); a = 80 * min(m, 20) + 80 * max(0, m - (30 if rest else 20)); b = 70 * max(0, m - b0)
+        if a + b >= 4500: return m, a
+m1, a1 = walk(True, 10); m2, _ = walk(False, 10); m3, a3 = walk(True, 0)
+combo('S-AC04', [l for l, t in zip('ㄱㄴㄷㄹ', [m1 == 40, a1 == 2400, m2 < 35, a3 <= 2000]) if t])
+g = 6 * 6; k = 16 - 1; tot = g + k + 1
+rd = len(bin(16)) - 3   # 16강 토너먼트의 라운드 수
+combo('S-AC05', [l for l, t in zip('ㄱㄴㄷㄹ', [g == 36, tot == 52, (4 - 1) + rd == 8, (4 - 1) + (rd - 1) == 6]) if t])
+# D-AC
+e0, e1 = 600 + 100 + 25 + 15, 560 + 110 + 22 + 12
+st = [(e0 - e1) * 100 >= 5 * e0, [k for k, (a, b) in {'에너지': (600, 560), '산업 공정': (100, 110), '농업': (25, 22), '폐기물': (15, 12)}.items() if b > a] == ['산업 공정'], 560 * 100 >= 75 * e1, e0 * 1000 == 148 * 5000 and e1 * 100 <= 14 * 5100, F(3, 15) > F(3, 25)]
+only('D-AC01', [not x for x in st], 'false statements')
+px = [400, 450, 500, 520, 560]; sh = {'r': (30, 36), 'b': (50, 42), 'a': (5, 10), 's': (15, 12)}
+grw = [F(px[i + 1], px[i]) for i in range(4)]
+combo('D-AC02', [l for l, t in zip('ㄱㄴㄷㄹ', [560 * 42 < 400 * 50, 560 * 10 * 2 >= 400 * 5 * 5, grw.index(max(grw)) == 0, 560 * 36 > 400 * 50]) if t])
+kk = {'A': (1200, 180, 300, 1995), 'B': (800, 64, 160, 2005), 'C': (2000, 200, 500, 1988), 'D': (600, 84, 200, 2010), 'E': (1500, 150, 250, 1999)}
+mk = [m for m in itertools.permutations('ABCDE') if m[0] == max(kk, key=lambda x: F(kk[x][1], kk[x][0])) and m[4] == min(kk, key=lambda x: F(kk[x][0], kk[x][2])) and kk[m[3]][3] < kk[m[2]][3] and kk[m[1]][1] > kk[m[3]][1]]
+ok(len(mk) == 1, f'D-AC03 {mk}'); pick('D-AC03', ', '.join(mk[0]))
+pop = {'A': 120, 'B': F(4200, 30), 'C': 80, 'D': 200, 'E': F(1300, 26)}; doc = {'A': 3000, 'B': 4200, 'C': 80 * 18, 'D': 4400, 'E': 1300}
+sp = {k: doc[k] * r / 100 for k, r in {'A': 80, 'B': 75, 'C': 90, 'D': 85, 'E': 70}.items()}
+by_text('D-AC04', list(zip(['인구 1천 명당', '전문의 수가', '다섯 지역 전체의', 'C의 전문의', '(나)는'], [max(doc, key=lambda k: F(doc[k], pop[k])) == max(pop, key=pop.get), max(sp, key=sp.get) == 'D', sum(doc.values()) * 2 >= 5 * 10 * sum(pop.values()), sp['C'] * 2 >= 3 * sp['E'], pop['B'] >= 3 * pop['E']])))
+A_ = {y: 5 * i for y, i in zip((2022, 2023, 2024, 2025), (120, 130, 140, 150))}; B_ = {y: 8 * i for y, i in zip((2022, 2023, 2024, 2025), (105, 110, 100, 120))}
+gp = {y: abs(A_[y] - B_[y]) for y in A_}
+combo('D-AC05', [l for l, t in zip('ㄱㄴㄷㄹ', [B_[2025] > A_[2025], A_[2024] * B_[2023] > B_[2024] * A_[2023], min(gp, key=gp.get) == 2024, A_[2023] - A_[2022] == 2 * (B_[2023] - B_[2022])]) if t])
+# L-AC
+pick('L-AC01', '실험에서 파랑을 두 개의 기본 색 이름으로 나누는 언어의 사용자들은 이름의 경계를 사이에 둔 두 색을 더 빨리 구별하였다.')
+combo('L-AC02', ['ㄱ', 'ㄷ']); combo('L-AC03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AC05', ['ㄱ', 'ㄴ'])
+mm = [x for x in itertools.product((0, 1), repeat=6) if (x[0] or x[1]) and imp(x[0], not x[2]) and imp(x[1], x[3]) and imp(not x[2], x[4]) and x[3] != x[4] and imp(x[5], x[0] and x[1])]
+by_text('L-AC04', list(zip(['A와 B를 함께', 'F는', '선정하는 사업은', 'C를 선정하지', 'D를 선정하면'], [any(x[0] and x[1] for x in mm), all(not x[5] for x in mm), all(sum(x) == 3 for x in mm), all(imp(not x[2], x[1]) for x in mm), all(imp(x[3], x[0]) for x in mm)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
