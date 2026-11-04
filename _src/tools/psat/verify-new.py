@@ -1549,4 +1549,50 @@ pick('L-AC01', '실험에서 파랑을 두 개의 기본 색 이름으로 나누
 combo('L-AC02', ['ㄱ', 'ㄷ']); combo('L-AC03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AC05', ['ㄱ', 'ㄴ'])
 mm = [x for x in itertools.product((0, 1), repeat=6) if (x[0] or x[1]) and imp(x[0], not x[2]) and imp(x[1], x[3]) and imp(not x[2], x[4]) and x[3] != x[4] and imp(x[5], x[0] and x[1])]
 by_text('L-AC04', list(zip(['A와 B를 함께', 'F는', '선정하는 사업은', 'C를 선정하지', 'D를 선정하면'], [any(x[0] and x[1] for x in mm), all(not x[5] for x in mm), all(sum(x) == 3 for x in mm), all(imp(not x[2], x[1]) for x in mm), all(imp(x[3], x[0]) for x in mm)])))
+# ================= S-AD / D-AD / L-AD (5급 실전, independent re-solve from the rendered options) =================
+hh = [(1, 120, 0, 3), (4, 140, 0, 5), (3, 160, 0, 2), (2, 100, 1, 1), (5, 130, 0, 10)]
+pick('S-AD01', f"{sum(([40, 60, 80][n - 1] if n < 4 else 100) + 30 * s for n, i, s, t in hh if i <= 150 and t <= 9)}만 원")
+def mm(start):
+    dist = {start: 0}; fr = [start]
+    while fr:
+        nx = []
+        for s in fr:
+            for i in range(4):
+                t = s[:i] + ''.join('O' if c == 'X' else 'X' for c in s[i:i + 2]) + s[i + 2:]
+                if t not in dist: dist[t] = dist[s] + 1; nx.append(t)
+        fr = nx
+    return dist.get('OOOOO')
+evs = [''.join(p_) for p_ in itertools.product('OX', repeat=5) if p_.count('X') % 2 == 0]
+combo('S-AD02', [l for l, t in zip('ㄱㄴㄷㄹ', [mm('XOXXO') is None, mm('XOOXO') == 3, max(mm(s) for s in evs) <= 3, True]) if t])
+d3 = _dt.date
+by_text('S-AD03', list(zip(['甲은 포장을', '乙은 7일', '丙은 상품을', '丙의 청약', '사업자가 甲에게서'], [d3(2026, 3, 6) > d3(2026, 3, 9), False, d3(2026, 5, 10) > d3(2026, 6, 1) or d3(2026, 5, 10) > d3(2026, 4, 20) + _dt.timedelta(days=30), d3(2026, 5, 10) <= d3(2026, 6, 1) and d3(2026, 5, 10) <= d3(2026, 4, 20) + _dt.timedelta(days=30), 5 <= 3])))
+ml = [31, 30, 31, 30, 31, 30, 31, 30, 31, 30, 31, 29]
+cum = [sum(ml[:i]) for i in range(12)]
+combo('S-AD04', [l for l, t in zip('ㄱㄴㄷㄹ', [cum[1] % 7 == 3, sum((c + 12) % 7 == 4 for c in cum) == 3, sum(ml) % 7 == 1, (sum(ml) - 1) % 7 == 0]) if t])
+it5 = {'A': (4, 3, 9), 'B': (3, 4, 8), 'C': (5, 2, 10), 'D': (2, 3, 5), 'E': (6, 5, 13), 'F': (1, 4, 4)}
+pick('S-AD05', f"{max(sum(it5[k][2] for k in s) for r in range(7) for s in itertools.combinations(it5, r) if sum(it5[k][0] for k in s) <= 12 and sum(it5[k][1] for k in s) <= 10)}점")
+yy = {('24', 'm'): (4000, 1800, 200), ('24', 'f'): (3800, 1710, 190), ('25', 'm'): (3900, 1794, 156), ('25', 'f'): (3700, 1739, 161)}
+er = {k: F(e, p_) for k, (p_, e, u) in yy.items()}; ur = {k: F(u, e + u) for k, (p_, e, u) in yy.items()}
+s1 = [all(yy[('25', g)][0] < yy[('24', g)][0] and er[('25', g)] > er[('24', g)] for g in 'mf'), er[('25', 'f')] > er[('25', 'm')], all((ur[('24', g)] - ur[('25', g)]) * 100 >= 2 for g in 'mf'), yy[('25', 'm')][1] + yy[('25', 'f')][1] > yy[('24', 'm')][1] + yy[('24', 'f')][1], 156 * 100 <= 80 * 200]
+only('D-AD01', [not x for x in s1], 'false statements')
+r25, nm = [20, 35, 60, 90, 70, 210], [25, 30, 55, 80, 100, 150]
+rt = [F(a, b) for a, b in zip(r25, nm)]
+combo('D-AD02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(r25) > sum(nm), rt.index(max(rt)) == 5, sum(a < b for a, b in zip(r25, nm)) == 3, sum(r25[:5]) < sum(nm[:5])]) if t])
+kz = {'A': (50, 500, 3500, 18), 'B': (30, 900, 2800, 28), 'C': (80, 400, 4200, 12), 'D': (20, 300, 3000, 22), 'E': (40, 1000, 3200, 25)}
+mz = [m for m in itertools.permutations('ABCDE') if m[0] == max(kz, key=lambda k: kz[k][3]) and m[1] == max(kz, key=lambda k: F(kz[k][0], kz[k][1])) and kz[m[2]][2] > kz[m[3]][2] and kz[m[3]][1] > kz[m[4]][1]]
+ok(len(mz) == 1, f'D-AD03 {mz}'); pick('D-AD03', ', '.join(mz[0]))
+ex, im = {'A': 500, 'B': 300 - 40, 'C': 700, 'D': 350}, {'A': 500 - 80, 'B': 300, 'C': 650, 'D': 350 - 30}
+bal = {k: ex[k] - im[k] for k in ex}; e24 = {'A': 400, 'B': 260, 'C': 580, 'D': 350}
+by_text('D-AD04', list(zip(['2025년 무역수지', '2025년 수출액의', '2025년 네 나라', '2025년 B에', '(라)는'], [max(bal, key=bal.get) == 'C', max(ex, key=lambda k: F(ex[k], e24[k])) == 'A', sum(im.values()) > sum(ex.values()), ex['B'] < e24['B'], im['D'] > im['A']])))
+gz = {'s': (1000, 1120), 'd': (400, 420), 'c': (300, 345), 'h': (250, 255), 'o': (50, 60)}
+T0, T1 = sum(a for a, b in gz.values()), sum(b for a, b in gz.values())
+combo('D-AD05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(gz, key=lambda k: F(gz[k][1], gz[k][0])) == max(gz, key=lambda k: gz[k][1] - gz[k][0]), gz['s'][1] * 2 > T1, (gz['c'][1] - gz['c'][0]) >= 2 * (gz['d'][1] - gz['d'][0]), sum(b - a for a, b in gz.values() if b * T0 > a * T1) * 100 >= 85 * (T1 - T0)]) if t])
+pick('L-AD01', '머그잔 실험에서 참가자를 무작위로 나눈 것은 두 집단의 머그잔에 대한 취향이 평균적으로 같았다고 볼 근거가 된다.')
+combo('L-AD02', ['ㄱ', 'ㄴ']); combo('L-AD03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AD05', ['ㄱ', 'ㄴ', 'ㄹ'])
+pas = []
+for bits in itertools.product((0, 1), repeat=5):
+    g = dict(zip('甲乙丙丁戊', bits))
+    st = {'甲': g['乙'] == 1, '乙': g['丙'] + g['丁'] == 1, '丙': g['甲'] == 0, '丁': g['戊'] == 1, '戊': g['丙'] == 1}
+    if all(st[k] == bool(g[k]) for k in g): pas.append(', '.join(k for k in '甲乙丙丁戊' if g[k]))
+ok(len(pas) == 1, f'L-AD04 {pas}'); pick('L-AD04', pas[0])
 print('ALL OK' if ok_all else 'SOME FAILED')
