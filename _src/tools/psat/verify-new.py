@@ -1822,4 +1822,54 @@ for a, b, c in itertools.product(two, repeat=3):
     if set().union(*al) != set(langs) or al[0] & al[1] or any('zh' in x and 'ja' not in x for x in al) or 'en' in al[2] or sum('fr' in x for x in al) != 1: continue
     asg.append(al)
 by_text('L-AH04', list(zip(['甲은 영어를', '乙은 일본어를', '일본어를 할 수', '영어를 할 수', '丙은 중국어를'], [all('en' in x[0] for x in asg), all('ja' in x[1] for x in asg), all(sum('ja' in y for y in x) == 1 for x in asg), all([i for i in range(3) if 'en' in x[i]] != [i for i in range(3) if 'fr' in x[i]] for x in asg), all('zh' in x[2] for x in asg)])))
+# ================= S-AI / D-AI / L-AI (5급 실전, independent re-solve from the rendered options) =================
+def mrefund(kind, months_used, extra_days):
+    u = months_used + (1 if extra_days else 0)
+    if kind == 'sick': return 60 - F(60, 12) * u
+    fee = {'self': 6, 'pre': 3, 'agency': 0}[kind]
+    return max(0, 60 - 6 * u - fee)
+s_ai01 = mrefund('self', 4, 10) + mrefund('pre', 0, 0) + mrefund('agency', 3, 0) + mrefund('sick', 2, 0) + mrefund('self', 8, 0)
+pick('S-AI01', f'{int(s_ai01):,}만 원')
+def mv(pos, r):
+    q = pos + r
+    while q > 12: q = 12 - (q - 12)
+    return {3: 9, 7: 1, 11: 4}.get(q, q)
+fin = [mv(mv(0, a), b) for a in range(1, 7) for b in range(1, 7)]
+cc = {k: fin.count(k) for k in set(fin)}
+combo('S-AI02', [l for l, t in zip('ㄱㄴㄷㄹ', [fin.count(12) == 2, F(fin.count(1), 36) >= F(1, 6), all(mv(mv(0, 3), b) >= 8 for b in range(1, 7)), sorted(k for k in cc if cc[k] == max(cc.values())) == [4, 9]]) if t])
+pick('S-AI03', '사무 처리가 끝난 날부터 2년이 지난 사항에 대해서도 감사를 청구할 수 있다.')
+bx_ = [w for w in itertools.product(range(1, 11), repeat=5) if len(set(w)) == 5 and w[0] + w[1] == w[2] + w[3] and w[4] > max(w[:4]) and w[0] == w[1] + 3 and w[2] + w[3] + w[4] == 20]
+combo('S-AI04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(w[0] == 7 for w in bx_), all(sum(w) == 31 for w in bx_), all(w[2] > w[1] for w in bx_), all(w.index(min(w)) in (2, 3) for w in bx_)]) if t])
+need_ = [2, 4, 3, 5, 4, 2]; mn = None
+for a, b, c, d in itertools.product(range(9), repeat=4):
+    on_ = [a, a + b, a + b + c, b + c + d, c + d, d]
+    if all(x >= y for x, y in zip(on_, need_)): mn = a + b + c + d if mn is None else min(mn, a + b + c + d)
+pick('S-AI05', f'{mn}명')
+fi = {'A': (120, 126, 600, 630), 'B': (80, 88, 480, 484), 'C': (60, 57, 300, 285), 'D': (40, 46, 160, 207), 'E': (30, 33, 120, 165)}
+s_ = [sum(v[1] for v in fi.values()) * 100 >= 107 * sum(v[0] for v in fi.values()), max(fi, key=lambda k: F(fi[k][1], fi[k][0])) == 'D', max(fi, key=lambda k: F(fi[k][3], fi[k][2])) == 'E', max(fi, key=lambda k: F(fi[k][3], fi[k][1])) == 'B', [k for k, v in fi.items() if v[1] < v[0] and v[3] < v[2]] == ['C']]
+only('D-AI01', [not x for x in s_], 'false statements')
+p15 = [5000 * s // 100 for s in (14, 73, 13)]; p25 = [5100 * s // 100 for s in (11, 69, 20)]
+combo('D-AI02', [l for l, t in zip('ㄱㄴㄷㄹ', [p25[2] * 2 >= 3 * p15[2], p25[1] < p15[1], F(p25[2] * 100, p25[1]) - F(p15[2] * 100, p15[1]) >= 10, (p15[0] - p25[0]) * 10 >= 4 * (p25[2] - p15[2])]) if t])
+rt_ = {'A': (300, 54, 45), 'B': (500, 90, 63), 'C': (200, 40, 34), 'D': (400, 64, 48), 'E': (250, 50, 41)}
+mm = [m for m in itertools.permutations('ABCDE') if m[0] == max(rt_, key=lambda k: F(rt_[k][2], rt_[k][1])) and m[1] == min(rt_, key=lambda k: F(rt_[k][2], rt_[k][0])) and rt_[m[2]][0] > rt_[m[3]][0] and rt_[m[4]][2] > rt_[m[2]][2]]
+ok(len(mm) == 1, f'D-AI03 {mm}'); pick('D-AI03', ', '.join(mm[0]))
+bud = {'A': 200, 'B': F(135 * 100, 90), 'C': 400, 'D': 250}; exe = {'A': 200 * 85 // 100, 'B': 135, 'C': 300, 'D': 250 * 92 // 100}; car = {'A': 20, 'B': 10, 'C': 60, 'D': 8}
+uns = {k: bud[k] - exe[k] - car[k] for k in bud}; rate = {k: F(exe[k], bud[k]) for k in bud}
+by_text('D-AI04', list(zip(['집행률이 가장 높은', '네 사업 전체의', '불용액이 이월액보다', 'B의 예산은', 'C의 불용액은'], [max(rate, key=rate.get) == min(uns, key=uns.get), sum(exe.values()) * 10 >= 8 * sum(bud.values()), sum(uns[k] > car[k] for k in bud) == 2, bud['B'] * 10 >= 8 * bud['A'], uns['C'] * 10 >= 6 * sum(uns.values())])))
+def series(q1, gs):
+    out = [F(q1)]
+    for g in gs: out.append(out[-1] * F(100 + g, 100))
+    return out
+qa, qb, qc = series(200, [10, -5, 20]), series(150, [20, 10, -10]), series(120, [25, 20, 10])
+combo('D-AI05', [l for l, t in zip('ㄱㄴㄷㄹ', [qa[3] > max(qb[3], qc[3]), sum(qc) > sum(qb), qc[3] * 10 >= 16 * qc[0], qb[3] > qc[3]]) if t])
+pick('L-AI01', '수요량이 가격에 전혀 반응하지 않는 상품에 세금을 매기면, 판매자가 손에 쥐는 가격은 세금을 매기기 전과 같다.')
+eq0 = [p_ for p_ in range(0, 51) if 100 - 2 * p_ == 3 * p_ - 50]; eq1 = [p_ for p_ in range(0, 51) if 100 - 2 * p_ == 3 * (p_ - 10) - 50]
+eq1c = [p_ for p_ in range(0, 51) if 100 - 2 * (p_ + 10) == 3 * p_ - 50]      # tax on buyers: seller price p_, buyer pays p_ + 10
+combo('L-AI02', [l for l, t in zip('ㄱㄴㄷㄹ', [eq1 == [36], (eq0[0] - (eq1[0] - 10)) > (eq1[0] - eq0[0]), (100 - 2 * eq0[0]) - (100 - 2 * eq1[0]) == 10, (eq1c[0] + 10) - eq0[0] == 4]) if t])
+combo('L-AI03', ['ㄴ', 'ㄷ']); combo('L-AI05', ['ㄴ', 'ㄷ'])
+cases_ = []
+for cl in itertools.product('rbw', repeat=5):
+    A_, B_, C_, D_, E_ = cl
+    if cl.count('r') == 2 and A_ != B_ and imp(C_ == 'r', D_ == 'b') and E_ != 'w' and cl.count('b') > cl.count('w') and B_ == D_: cases_.append(cl)
+by_text('L-AI04', list(zip(['A에 흰', 'E에 빨간', 'B에 흰', '파란 공이 든', 'C에 흰'], [all(c_[0] != 'w' for c_ in cases_), all(c_[4] != 'r' for c_ in cases_), all(c_[1] != 'w' for c_ in cases_), all(c_.count('b') != 3 for c_ in cases_), all(c_[2] != 'w' for c_ in cases_)])), what='always-false options')
 print('ALL OK' if ok_all else 'SOME FAILED')
