@@ -421,3 +421,9 @@ td.slowt { color: var(--pen); }
   .mk-sheet, .omr-close { display: none; }
 }
 @media (pointer: coarse) { .kbd-hint { display: none; } }
+/* 하루 목표 */
+.goal { margin: 10px 0 6px; max-width: 420px; }
+.goal-t { display: flex; justify-content: space-between; gap: 12px; font-size: .8125rem; color: var(--ink-2); margin-bottom: 5px; }
+.goal-t .ok { color: var(--ok); }
+.goal .acc-bar { height: 6px; }
+.goal .acc-bar i { background: var(--gold); }

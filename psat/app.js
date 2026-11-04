@@ -17,7 +17,7 @@
   };
   const ORDER = ['lang', 'data', 'sit'];
   const INTERVALS = [1, 3, 7, 14, 30];
-  const DEFAULTS = { theme: 'auto', size: 'm', face: 'serif', timer: true, mixReview: true, level: 'auto' };
+  const DEFAULTS = { theme: 'auto', size: 'm', face: 'serif', timer: true, mixReview: true, level: 'auto', goal: '0' };
   const CAUSES = ['계산 실수', '조건을 놓침', '개념·법리 부족', '시간 부족', '기타'];
 
   /* ---------------- small utilities ---------------- */
@@ -227,7 +227,8 @@
         const q = (P.bank[subj] || []).find((x) => x.id === id);
         if (q && !isHidden('id:' + q.id)) return { q: bankCopy(q, subj) };
       }
-      for (let i = 0; i < 8; i++) { const g = fromGenerator(subj, ''); if (!g) break; if (!isHidden(seenKey(g))) return { q: g }; }
+      const gt = S.set.genTypes || []; // 약점 위주 세트: 생성 유형 가운데 약한 유형을 돌아가며
+      for (let i = 0; i < 8; i++) { const t = gt.length ? gt[(S.set.gi = ((S.set.gi || 0) + 1)) % gt.length] : ''; const g = fromGenerator(subj, t) || (t ? fromGenerator(subj, '') : null); if (!g) break; if (!isHidden(seenKey(g))) { saveSet(); return { q: g }; } }
       const b = fromBank(subj, ''); return b ? { q: b } : null;
     }
     while (S.queue.length) {
@@ -418,6 +419,7 @@
     const html = shell('', `
       <section class="hello">
         <h1>${now.getMonth() + 1}월 ${now.getDate()}일 ${WD[now.getDay()]}요일</h1>
+        ${+S.settings.goal ? `<div class="goal" role="progressbar" aria-label="오늘 목표" aria-valuemin="0" aria-valuemax="${+S.settings.goal}" aria-valuenow="${Math.min(d.n, +S.settings.goal)}"><div class="goal-t"><span>오늘 목표 <b>${Math.min(d.n, +S.settings.goal)}</b> / ${+S.settings.goal}문항</span><span>${d.n >= +S.settings.goal ? '<b class="ok">달성</b>' : `${+S.settings.goal - d.n}문항 남음`}</span></div><div class="acc-bar"><i style="width:${Math.min(100, Math.round(d.n * 100 / +S.settings.goal))}%"></i></div></div>` : ''}
         <div class="today"><span>오늘 <b>${d.n}</b>문항</span><span>정답률 <b>${d.n ? pct(d.ok, d.n) + '%' : '–'}</b></span><span>연속 <b>${streak()}</b>일</span></div>
       </section>
       ${resume}
@@ -587,6 +589,7 @@
             <button class="btn sm${rec && rec.memo ? ' on' : ''}" data-act="memo">메모 <span class="kbd">M</span></button>
             <button class="btn sm${rec && rec.flag ? ' on' : ''}" data-act="flag">이상한 점 알리기</button>
             <button class="btn sm" data-act="hide-q" title="이 문제를 다시는 내지 않습니다. 설정에서 되살릴 수 있습니다">이 문제 지우기</button>
+            ${c.ctx && ['new', 'review', 'note', 'setreview', 'mockreview'].includes(c.ctx.mode) && !(c.ctx.once) ? `<button class="btn sm${c.ok ? '' : ' primary'}" data-act="same-type" title="이 유형의 새 문제를 한 문제 더 풀고, 끝나면 하던 곳으로 돌아갑니다">같은 유형 한 문제 더 <span class="kbd">T</span></button>` : ''}
           </div>
           <div class="memo-wrap hide" style="margin-top:10px"><label class="sr" for="memo">메모</label><textarea id="memo" class="memo" placeholder="풀이 요령, 실수한 이유 등을 적어 두세요. 오답노트에 함께 보관됩니다.">${esc(rec ? rec.memo : '')}</textarea></div>
           <div class="flag-wrap hide" style="margin-top:10px"><label class="sr" for="flag">알릴 내용</label><textarea id="flag" class="memo" placeholder="문제·정답·해설에서 이상한 점을 적어 주세요. 기록 화면에서 모아 볼 수 있습니다.">${esc(rec ? rec.flag : '')}</textarea></div>
@@ -610,9 +613,16 @@
     const b = $('[data-act="star"]'); if (b) { b.classList.toggle('on', rec.star); b.setAttribute('aria-pressed', rec.star ? 'true' : 'false'); }
     toast(rec.star ? '중요 문제로 표시했습니다.' : '중요 표시를 해제했습니다.');
   }
+  /* 해설을 본 뒤 같은 유형의 새 문제를 하나 더: 끝나면 하던 곳(과목 풀이·오답노트·세트 결과 등)으로 돌아간다 */
+  function sameType() {
+    const c = S.cur; if (!c || c.phase !== 'x') return;
+    const back = c.ctx || { subj: c.q.subject, mode: 'new' };
+    startSession({ subj: c.q.subject, type: c.q.type, mode: 'new', once: back });
+  }
   function next() {
     if (!S.cur) { viewHome(); return; }
     const ctx = S.cur.ctx || { subj: S.cur.q.subject, mode: 'new' };
+    if (ctx.once) { const o = ctx.once; S.cur.ctx = o; if (['note', 'setreview', 'mockreview'].includes(o.mode)) { next(); return; } startSession(o); return; }
     if (ctx.mode === 'note') { S.cur = null; saveCur(); viewNotes(); return; }
     if (ctx.mode === 'setreview') { S.cur = null; saveCur(); viewSetResult(); return; }
     if (ctx.mode === 'mockreview') { S.cur = null; saveCur(); viewMockResult(); return; }
@@ -766,7 +776,12 @@
   }
 
   /* ----- 실전 세트 ----- */
-  let setPick = { subj: 'lang', n: 10 };
+  let setPick = { subj: 'lang', n: 10, focus: 'even' };
+  /* 약한 유형: 3문항 이상 푼 유형 가운데 정답률이 60% 미만이거나 과목 평균보다 10%p 이상 낮은 것(기록 화면의 약점 분석과 같은 기준) */
+  function weakTypesOf(subj) {
+    const sa = S.agg.subj[subj] || { n: 0, ok: 0 }; const avg = sa.n ? sa.ok / sa.n : 0;
+    return Object.entries(S.agg.type).filter(([k, a]) => k.startsWith(subj + '|') && a.n >= 3 && (a.ok / a.n < 0.6 || a.ok / a.n <= avg - 0.1)).sort((x, y) => x[1].ok / x[1].n - y[1].ok / y[1].n).map(([k]) => k.slice(subj.length + 1));
+  }
   /* 세트 기록: 과목마다 최근 점수와, 그 앞의 같은 수 세트와 견준 흐름 */
   const setsOf = (subj) => (S.meta.sets || []).filter((x) => SUBJ[x.subj] && (!subj || x.subj === subj));
   function setTrendHTML(subj) {
@@ -791,10 +806,13 @@
     const segS = ORDER.map((k) => `<button class="${setPick.subj === k ? 'on' : ''}" data-act="set-subj" data-v="${k}">${SUBJ[k].name}</button>`).join('');
     const segN = [5, 10, 20, 40].map((n) => `<button class="${setPick.n === n ? 'on' : ''}" data-act="set-n" data-v="${n}">${n}문항</button>`).join('');
     const lim = setPick.n * SUBJ[setPick.subj].pace * 1000;
+    const weak = weakTypesOf(setPick.subj), weakLeft = weak.reduce((t, x) => t + bankLeft(setPick.subj, x), 0);
+    if (setPick.focus === 'weak' && !weak.length) setPick.focus = 'even';
     paint(shell('<b>실전 세트</b>', `
       <div class="page-h"><h1>실전 세트</h1></div>
       <div class="card"><div class="set-row"><div class="l">과목</div><div class="seg">${segS}</div></div>
         <div class="set-row"><div class="l">문항 수</div><div class="seg">${segN}</div></div>
+        <div class="set-row"><div class="l">구성<small>${weak.length ? `약점 위주: 정답률이 낮은 ${weak.length}개 유형(${weak.slice(0, 3).map((x) => esc(typeShort(setPick.subj, x))).join(', ')}${weak.length > 3 ? ' …' : ''})에서 남은 직접 출제 문항 ${weakLeft}개를 먼저 넣고, 모자라면 다른 유형으로 채웁니다` : '유형마다 3문항 이상 풀면 정답률이 낮은 유형 위주로도 짤 수 있습니다'}</small></div><div class="seg"><button class="${setPick.focus !== 'weak' ? 'on' : ''}" data-act="set-focus" data-v="even">고르게</button><button class="${setPick.focus === 'weak' ? 'on' : ''}" data-act="set-focus" data-v="weak" ${weak.length ? '' : 'disabled'}>약점 위주</button></div></div>
         <div class="set-row"><div class="l">제한 시간<small>실제 시험 속도(문항당 ${human(SUBJ[setPick.subj].pace * 1000)})로 계산합니다. 40문항은 실제 시험 한 과목(90분)과 같습니다. 다른 창을 보는 동안은 멈춥니다.</small></div><b style="font-variant-numeric:tabular-nums">${human(lim)}</b></div>
         <p class="prose" style="margin:8px 0 12px">문항 사이에는 해설을 보여 주지 않고 시험처럼 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(L)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다(쓴 시간과 고른 답은 그대로). 끝나면 점수와 문항별 해설을 한꺼번에 봅니다. 틀린 문제는 오답노트에 담깁니다.</p>
         <button class="btn primary" data-act="set-start">시작하기</button></div>
@@ -803,9 +821,16 @@
   }
   /* 실전 세트 문항 구성: 아직 풀지 않은 직접 출제 문항에서 난이도 하 25% · 중 55% · 상 20%를 맞추고,
      같은 난이도 안에서는 유형이 고루 섞이도록 돌아가며 뽑는다. 1지문 2문항은 붙여서 넣는다. 모자라면 생성 문항으로 채운다. */
-  function planSet(subj, n) {
-    const all = P.bank[subj] || [], shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-    const unitOf = (q) => (q.set ? all.filter((x) => x.set === q.set).sort((a, b) => a.setNo - b.setNo) : [q]);
+  function planSet(subj, n, focus) {
+    const all0 = P.bank[subj] || [];
+    if (focus && focus.length) { // 약점 위주: 약한 유형의 문항으로 먼저 짜고, 남는 자리는 고르게 채운다
+      const first = planSet(subj, n, null, all0.filter((q) => focus.includes(q.type)));
+      if (first.length >= n) return first;
+      const rest = planSet(subj, n - first.length, null, all0.filter((q) => !first.includes(q.id) && !(q.set && all0.some((x) => x.set === q.set && first.includes(x.id)))));
+      return first.concat(rest);
+    }
+    const all = arguments[3] || all0, shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const unitOf = (q) => (q.set ? all0.filter((x) => x.set === q.set).sort((a, b) => a.setNo - b.setNo) : [q]); // 1지문 2문항은 유형이 달라도 함께
     const pool = all.filter((q) => !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id));
     const byLv = { 1: [], 2: [], 3: [] }; pool.forEach((q) => byLv[q.lv || 2].push(q));
     const want = { 1: Math.round(n * 0.25), 2: Math.round(n * 0.55) }; want[3] = Math.max(0, n - want[1] - want[2]);
@@ -829,7 +854,15 @@
     startSession(c.ctx);
   }
   function startSet() {
-    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false, plan: planSet(setPick.subj, setPick.n) };
+    const focus = setPick.focus === 'weak' ? weakTypesOf(setPick.subj) : null;
+    let plan = planSet(setPick.subj, setPick.n, focus), genTypes = [];
+    if (focus) { // 약한 유형이 생성 유형이면, 문항의 70%가 약한 유형이 되도록 뒤쪽 자리를 생성 문항에 내준다
+      genTypes = focus.filter((t) => (P.gens[setPick.subj] || []).some((g) => g.label === t));
+      const bankWeak = plan.filter((id) => { const q = (P.bank[setPick.subj] || []).find((x) => x.id === id); return q && focus.includes(q.type); }).length;
+      const room = Math.max(0, Math.round(setPick.n * 0.7) - bankWeak);
+      if (genTypes.length && room) plan = plan.slice(0, Math.max(bankWeak, plan.length - room));
+    }
+    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false, plan, focus: focus ? 'weak' : 'even', genTypes };
     saveSet();
     startSession({ subj: setPick.subj, type: '', mode: 'set' });
   }
@@ -927,7 +960,8 @@
     const focus = (x) => `<button class="btn sm" data-act="start" data-subj="${x.s}" data-type="${esc(x.t)}">집중 연습</button>`;
     const weakItems = ORDER.flatMap((k) => [...weakBy[k].weak.map((x) => `<li><div><div class="w-t">${SUBJ[k].name} · ${esc(typeShort(k, x.t))}</div><div class="w-s">정답률 ${pct(x.a.ok, x.a.n)}% (과목 평균 ${Math.round(weakBy[k].avg * 100)}%) · 오답 ${x.wrong}개 / ${x.a.n}문항</div></div>${focus(x)}</li>`),
       ...weakBy[k].slow.map((x) => `<li><div><div class="w-t">${SUBJ[k].name} · ${esc(typeShort(k, x.t))} <small>시간</small></div><div class="w-s">평균 ${human(x.avgMs)} · 권장 ${human(weakBy[k].pace)}보다 오래 걸림 · 정답률 ${pct(x.a.ok, x.a.n)}%</div></div>${focus(x)}</li>`)]);
-    const weakCard = `<div class="card"><h2>약점 분석</h2>${weakItems.length ? `<p class="subj-meta" style="margin:0 0 8px">정답률이 과목 평균보다 10%p 이상 낮거나 60%에 못 미치는 유형, 권장 시간보다 1.3배 이상 오래 걸리는 유형입니다.</p><ul class="weak">${weakItems.join('')}</ul>` : `<p class="subj-meta" style="margin:0">${types.length ? '지금은 눈에 띄게 약한 유형이 없습니다. 유형마다 고르게 풀고 있습니다.' : '유형마다 3문항 이상 풀면 약한 유형을 찾아 드립니다.'}</p>`}</div>`;
+    const weakSets = ORDER.filter((k) => weakBy[k].weak.length).map((k) => `<button class="btn sm" data-act="setup-weak" data-subj="${k}">${SUBJ[k].name} 약점 세트</button>`).join('');
+    const weakCard = `<div class="card"><h2>약점 분석</h2>${weakSets ? `<div class="tools-row" style="margin:0 0 10px">${weakSets}</div>` : ''}${weakItems.length ? `<p class="subj-meta" style="margin:0 0 8px">정답률이 과목 평균보다 10%p 이상 낮거나 60%에 못 미치는 유형, 권장 시간보다 1.3배 이상 오래 걸리는 유형입니다.</p><ul class="weak">${weakItems.join('')}</ul>` : `<p class="subj-meta" style="margin:0">${types.length ? '지금은 눈에 띄게 약한 유형이 없습니다. 유형마다 고르게 풀고 있습니다.' : '유형마다 3문항 이상 풀면 약한 유형을 찾아 드립니다.'}</p>`}</div>`;
     const typeRows = ORDER.filter((k) => weakBy[k].list.length).map((k) => `<tr><th colspan="5" class="st-sub">${SUBJ[k].name}</th></tr>` + weakBy[k].list.map((x) => `<tr><td>${esc(typeShort(x.s, x.t))}</td><td>${x.a.n}<small> (오답 ${x.wrong})</small></td><td class="${weakBy[k].weak.includes(x) ? 'bad' : ''}">${pct(x.a.ok, x.a.n)}%</td><td class="${x.avgMs >= weakBy[k].pace * 1.3 ? 'bad' : ''}">${human(x.avgMs)}</td><td><button class="btn sm" data-act="start" data-subj="${x.s}" data-type="${esc(x.t)}">연습</button></td></tr>`).join('')).join('');
     const flags = Array.from(S.items.values()).filter((it) => it.flag && SUBJ[it.subj]);
     paint(shell('<b>기록</b>', `
@@ -965,6 +999,7 @@
       <div class="card"><h2>풀이</h2>
         <div class="set-row"><div class="l">타이머 표시<small>권장 시간을 넘기면 빨갛게 바뀝니다. 다른 창을 보는 동안은 멈춥니다</small></div>${sw('timer', S.settings.timer)}</div>
         <div class="set-row"><div class="l">복습 문제 섞기<small>과목 풀이 중에 복습할 때가 된 오답이 가끔 나옵니다</small></div>${sw('mixReview', S.settings.mixReview)}</div>
+        <div class="set-row"><div class="l">하루 목표<small>첫 화면에 오늘 푼 문항 수와 목표까지 남은 수를 보여 줍니다</small></div>${seg('goal', String(S.settings.goal || '0'), [['0', '없음'], ['20', '20문항'], ['40', '40문항'], ['60', '60문항'], ['100', '100문항']])}</div>
       </div>
       <div class="card"><h2>기록 보관</h2>
         <p class="prose" style="margin:0 0 10px">모든 기록은 이 브라우저 안에만 저장됩니다. 다른 기기로 옮기거나 만일에 대비하려면 가끔 백업 파일을 저장해 두세요. 불러오면 지금 기록과 합쳐집니다(같은 풀이는 한 번만 셉니다).</p>
@@ -989,10 +1024,13 @@
         <p>해설은 출발점 → 경우 나누기 → 확정 순서로 사람이 푸는 방식대로 적었고, 선지마다 근거와 판정을 붙였습니다. 빨간 동그라미가 정답, 빗금이 고른 오답입니다. 넓은 화면에서는 왼쪽에 문제, 오른쪽에 해설이 나란히 보입니다.</p>
         <h2>오답노트와 복습</h2>
         <p>틀린 문제는 문제 전체가 오답노트에 자동으로 저장됩니다. 1일 → 3일 → 7일 → 14일 → 30일 뒤에 다시 나오고, 틀리면 다음 날로 돌아갑니다. 다섯 번 연속 맞히면 ‘졸업’합니다. 해설 화면에서 <b>틀린 이유</b>를 골라 두면 나중에 실수 유형을 돌아볼 수 있고, <b>★ 중요</b>(S)와 <b>메모</b>(M)도 함께 보관됩니다.</p>
+        <h2>같은 유형 한 문제 더</h2>
+        <p>해설 화면의 <b>같은 유형 한 문제 더</b>(<b>T</b>)를 누르면 방금 푼 문제와 같은 유형의 새 문제가 하나 나오고, 다 풀면 하던 곳(과목 풀이·오답노트·세트 결과)으로 돌아갑니다. 틀린 직후 같은 유형을 한 번 더 풀면 실수한 지점이 오래 남습니다.</p>
         <h2>난이도와 유형별 연습</h2>
         <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
         <h2>실전 세트</h2>
         <p>처음 화면의 <b>실전 세트</b>에서 과목과 문항 수를 고르면 실제 시험 속도로 제한 시간이 정해지고, 해설 없이 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(<b>L</b>)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다. 끝난 세트는 <b>세트 기록</b>에 쌓여 과목별 점수의 흐름을 볼 수 있습니다.</p>
+        <p>구성을 <b>약점 위주</b>로 고르면 기록 화면의 약점 분석과 같은 기준(3문항 이상 푼 유형 가운데 정답률 60% 미만이거나 과목 평균보다 10%p 이상 낮은 유형)으로 약한 유형의 문항을 먼저 넣습니다. 설정에서 <b>하루 목표</b>를 정하면 첫 화면에 남은 문항 수가 보입니다.</p>
         <h2>모의고사</h2>
         <p>처음 화면의 <b>모의고사</b>에서 7급 PSAT(1교시 언어논리·상황판단 50문항 120분, 2교시 자료해석 25문항 60분)이나 5급 PSAT(과목별 40문항 90분)을 고릅니다. 답안지에서 아무 문항으로나 오가고(←/→), 답(1~5)은 제출 전까지 바꿀 수 있으며, 다시 볼 문항은 <b>체크</b>(F)합니다. 제출하면 100점 환산 점수, 유형별 정답률, 체크했는데 맞힌 문항, 시간을 넘긴 문항을 보여 줍니다.</p>
         <h2>기록 보관</h2>
@@ -1136,6 +1174,7 @@
       case 'mk-submit': mockSubmitAsk(); break;
       case 'mk-review': reviewMockItem(+el.dataset.i); break;
       case 'next': next(); break;
+      case 'same-type': sameType(); break;
       case 'star': toggleStar(); break;
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
       case 'help': viewHelp(); break;
@@ -1153,6 +1192,8 @@
       case 'setup': viewSetup(); break;
       case 'set-subj': setPick.subj = el.dataset.v; viewSetup(); break;
       case 'set-n': setPick.n = +el.dataset.v; viewSetup(); break;
+      case 'set-focus': setPick.focus = el.dataset.v; viewSetup(); break;
+      case 'setup-weak': setPick.subj = el.dataset.subj; setPick.focus = 'weak'; viewSetup(); break;
       case 'set-start': startSet(); break;
       case 'set-result': viewSetResult(); break;
       case 'set-review': reviewSetItem(+el.dataset.i); break;
@@ -1201,6 +1242,7 @@
       else if ((k === 'l' || k === 'L') && $('[data-act="later"]')) { deferSetItem(); e.preventDefault(); }
       else if (k === 'Escape') { saveCur(); if (EMBED) closeOverlay(); else viewHome(); }
     } else if (S.view === 'explain') {
+      if ((k === 't' || k === 'T') && $('[data-act="same-type"]')) { sameType(); e.preventDefault(); return; }
       if (k === 'Enter' || k === 'ArrowRight') { if (!e.target.closest('button') || e.target.dataset.act === 'next') { next(); e.preventDefault(); } }
       else if (k === 's' || k === 'S') toggleStar();
       else if (k === 'm' || k === 'M') { const w = $('.memo-wrap'); w.classList.remove('hide'); $('#memo').focus(); e.preventDefault(); }
