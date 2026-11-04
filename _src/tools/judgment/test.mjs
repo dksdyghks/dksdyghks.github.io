@@ -1,7 +1,7 @@
 // 판결문 분석기(yoai/judgment.js) 회귀 시험. 표본 판결문(가상의 당사자 ○○○)을 두 꼴로 읽는다:
 // 붙여 넣은 글(문단마다 한 줄)과 PDF처럼 40자에서 줄이 꺾이고 쪽 번호·머리글이 붙은 글. 두 꼴의 결과가 같아야 하고, 아래 기대값과 맞아야 한다.
 // 실행: node _src/tools/judgment/test.mjs   (판결문 밖의 정보를 지어내는 일이 없도록, 초안 문장은 판결문 속 문장과 대조한다)
-import { analyzeJudgment, isJudgment, defaultEdit, judgmentItems, excerptOf } from '../../site/yoai/judgment.js';
+import { analyzeJudgment, isJudgment, defaultEdit, judgmentItems, excerptOf, linkJudgments } from '../../site/yoai/judgment.js';
 import fs from 'fs'; import { execFileSync } from 'child_process';
 const dir = new URL('./fixtures/', import.meta.url).pathname;
 let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
@@ -43,6 +43,16 @@ for (const [name, x] of Object.entries(E)) {
   const items = judgmentItems(a, defaultEdit(a));
   ok(items[0].text.includes(a.cite), `${name}: export heading`);
   const ex = excerptOf(a.reasons, a.key); ok(!a.key.length || (ex.startsWith('“') && ex.endsWith('”')), `${name}: excerpt quotes`);
+}
+// 심급 연결: 대법원 판결 + 서재의 원심(항소심)·제1심 판결 → 제1심 인용(원심 판결문 머리에서), 제1심 결과, 제1심 기초사실
+{
+  const rd = (n) => analyzeJudgment([fs.readFileSync(dir + n + '.txt', 'utf8')]);
+  const top = rd('sc_from_appeal'), mid = rd('appeal_civil'), low = rd('lower_civil');
+  const e = defaultEdit(top, linkJudgments(top, [{ id: 'm', a: mid }, { id: 'l', a: low }]));
+  ok(e.stages[0].citeText === '서울중앙지방법원 2024. 6. 20. 선고 2023가합51234 판결' && e.stages[0].text === '서울중앙지방법원은 원고의 청구를 일부 인용하였다.', `link: first instance ${JSON.stringify(e.stages[0])}`);
+  ok(e.facts.startsWith('가. 원고는 건설업을 영위하는 회사이고'), 'link: facts from the first-instance judgment');
+  const lone = defaultEdit(top, linkJudgments(top, [{ id: 'l', a: low }]));
+  ok(!lone.stages[0].citeText && !lone.facts, 'link: without the appeal judgment nothing is guessed');
 }
 // 판결문이 아닌 글(논문 표본)은 판결문으로 보지 않는다
 ok(!isJudgment(['국문초록\n이 논문은 선거관리위원회의 독립성을 다룬다.\nⅠ. 서론\n1. 문제의 제기']), 'an article read as a judgment');

@@ -2,12 +2,12 @@
    사실관계 · 소송의 경과 · 판결이유 · 쟁점의 초안으로 펼친다. 사용자가 고친 정리는 그 문헌의 기록(judg)에 남고,
    논문의 ‘대상 판결’ 장 모양(심급 판결은 각주)으로 한글·Word·마크다운으로 내보내거나, 노트 카드·판례 평석 연구로 옮긴다.
    판결문 밖의 정보는 쓰지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, JUDG, $, $$, esc, uid, toast, kdate, saveCard, saveProject, logEvent, docOf, docPages, updateDoc, addFiles, modal, confirmBox, download, safeName, copyText, libLoad } from './core.js?v=90681ac51d';
-import { analyzeJudgment, isJudgment, defaultEdit, excerptOf, judgmentItems, OMIT } from './judgment.js?v=90681ac51d';
-import { toHwpxBlocks, toDocx, toMd, skeleton, nextCardNo } from './write.js?v=90681ac51d';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=90681ac51d';
-import { DOCX_MIME } from './docx.js?v=90681ac51d';
-import { projCards } from './research.js?v=90681ac51d';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, JUDG, $, $$, esc, uid, toast, kdate, saveCard, saveProject, logEvent, docOf, docPages, updateDoc, addFiles, modal, confirmBox, download, safeName, copyText, libLoad } from './core.js?v=15c7ac45ea';
+import { analyzeJudgment, isJudgment, defaultEdit, excerptOf, judgmentItems, linkJudgments, OMIT } from './judgment.js?v=15c7ac45ea';
+import { toHwpxBlocks, toDocx, toMd, skeleton, nextCardNo } from './write.js?v=15c7ac45ea';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=15c7ac45ea';
+import { DOCX_MIME } from './docx.js?v=15c7ac45ea';
+import { projCards } from './research.js?v=15c7ac45ea';
 
 const AUTHOR = '안요환';
 let CUR = null; // { id, a, e }
@@ -19,8 +19,9 @@ async function load(id) {
   const a = analyzeJudgment(pg.pages);
   const full = await DB.get('docs', id);
   const saved = full && full.judg && full.judg.edit;
-  const e = saved ? { ...defaultEdit(a), ...saved } : defaultEdit(a);
-  CUR = { id, a, e, saved: !!saved };
+  const link = a.ok ? linkJudgments(a, await relatedJudgments(a, id)) : { stages: {}, facts: null, docs: [] };
+  const e = saved ? { ...defaultEdit(a, link), ...saved } : defaultEdit(a, link);
+  CUR = { id, a, e, saved: !!saved, link };
   // 판결문임이 분명하면 문헌 정보에 판례 인용을 넣어 둔다(사용자가 적은 정보는 건드리지 않는다)
   const d = docOf(id), patch = {};
   if (a.ok && !(d.isJudg)) patch.isJudg = true;
@@ -30,6 +31,30 @@ async function load(id) {
   if (Object.keys(patch).length) await updateDoc(id, patch);
   return CUR;
 }
+/* 서재에서 같은 사건의 다른 심급 판결문을 찾는다: 사건번호로만 잇는다(원심판결·제1심판결 → 그 판결문 머리의 아래 심급까지 두 단계) */
+async function relatedJudgments(a, id) {
+  const lib = await libLoad().catch(() => ({ docs: [] }));
+  let want = [...new Set(a.stages.filter((s) => !s.me && s.cite && s.cite.no).map((s) => s.cite.no))];
+  const others = [], seen = new Set([id]);
+  for (let round = 0; round < 2 && want.length; round++) {
+    const next = new Set();
+    for (const x of lib.docs) {
+      if (seen.has(x.id)) continue;
+      const head = x.pages.slice(0, 2).join(' ').replace(/\s+/g, '');
+      if (!want.some((no) => head.includes(no)) || !isJudgment(x.pages)) continue;
+      const a2 = analyzeJudgment(x.pages); if (!a2.ok || !want.includes(a2.head.no)) continue;
+      seen.add(x.id); others.push({ id: x.id, a: a2 });
+      for (const t of a2.stages) if (!t.me && t.cite && t.cite.no) next.add(t.cite.no);
+    }
+    want = [...next];
+  }
+  return others;
+}
+const saidOf = (c, i) => {
+  const st = c.e.stages[i] || {}, own = c.a.stages[i] && c.a.stages[i].me === !!st.me ? c.a.stages[i].said || [] : [];
+  const l = (c.link && c.link.stages[i]) || { sugg: [] };
+  return [...own.map((x) => ({ ...x, from: '' })), ...l.sugg.map((x) => ({ s: x.s, p: 0, from: x.from, docId: x.docId }))];
+};
 let saveT = 0;
 function saveSoon() {
   const c = CUR; if (!c) return; clearTimeout(saveT);
@@ -87,13 +112,14 @@ export async function viewJudg() {
   const parties = H.parties.filter((x) => !x.only).map((x) => `<li><span class="lbl">${esc(x.label)}</span><span>${esc(x.name)}</span></li>`).join('');
   const warn = !a.ok ? `<div class="banner"><span>이 문헌에서 판결문의 짜임(사건번호·주문·이유)을 찾지 못했습니다. 판결문이 맞다면 스캔본일 수 있으니 서재에서 글자 읽기(OCR)를 먼저 하세요.</span></div>` : '';
   const stageBox = (s, i) => {
-    const src = { ...(a.stages[i] && a.stages[i].me === !!s.me ? a.stages[i] : { said: [] }), me: !!s.me };
+    const src = { said: saidOf(c, i), me: !!s.me }, ln = (c.link && c.link.stages[i]) || null;
     return `<div class="jd-stage" data-si="${i}">
       <div class="jd-stage-h"><span class="sec-n">${'가나다라마바사'[i] || i + 1}.</span><label class="sr" for="js-t-${i}">심급</label><input id="js-t-${i}" class="sec-t" data-js-title="${i}" value="${esc(s.title)}">${src.me ? '<span class="tag">대상 판결</span>' : ''}</div>
       <label class="field"><span>${src.me ? '대상 판결' : '이 심급의 판결'} <small>${src.me ? '— 내보내면 제목에 들어갑니다' : '— 내보내면 이 문단 끝에 각주로 답니다'}</small></span><input data-js-cite="${i}" value="${esc(s.citeText || '')}" placeholder="${src.me ? '' : '예: 서울지방법원 1990. 5. 24. 선고 89가합51667 판결 (판결문에 없으면 비워 두거나 직접 적으세요)'}"></label>
       <label class="field"><span>정리</span><textarea data-js-text="${i}" rows="${Math.min(8, Math.max(2, Math.ceil((s.text || '').length / 70)))}" placeholder="${src.me ? '' : '이 심급이 무엇을 어떻게 판단했는지'}">${esc(s.text || '')}</textarea></label>
-      ${src.said && src.said.length ? `<details class="peek"><summary>판결문이 이 심급에 관해 쓴 문장 ${src.said.length}개 — 눌러서 정리에 덧붙이기</summary>${src.said.map((x, k) => `<p><button class="linkish" data-act="j-said" data-i="${i}" data-k="${k}">＋</button> ${esc(x.s)} ${pageBtn(x.p)}</p>`).join('')}</details>` : ''}
-      ${!src.me && !s.citeText ? `<p class="sub">판결문에 ${esc(s.title)} 판결의 법원·선고일·사건번호가 적혀 있지 않습니다. ${esc(s.title)} 판결문을 함께 넣어 분석하면 확인할 수 있습니다.</p>` : ''}
+      ${ln && ln.docId ? `<p class="sub jd-link">서재에 이 심급의 판결문이 있습니다: <button class="linkish" data-act="j-open" data-id="${ln.docId}">${esc(ln.docCite)}</button>${ln.citeText && !s.citeText ? ` · <button class="linkish" data-act="j-link-cite" data-i="${i}">인용 넣기</button>` : ''}</p>` : ln && ln.citeText && !s.citeText ? `<p class="sub jd-link">서재의 다른 심급 판결문에 이 심급의 판결이 적혀 있습니다: ${esc(ln.citeText)} · <button class="linkish" data-act="j-link-cite" data-i="${i}">인용 넣기</button></p>` : ''}
+      ${src.said && src.said.length ? `<details class="peek"${s.text ? '' : ' open'}><summary>판결문들이 이 심급에 관해 쓴 문장 ${src.said.length}개 — 눌러서 정리에 덧붙이기</summary>${src.said.map((x, k) => `<p><button class="linkish" data-act="j-said" data-i="${i}" data-k="${k}">＋</button> ${esc(x.s)} ${x.from ? `<span class="tag gray">${esc(x.from)}</span>` : pageBtn(x.p)}</p>`).join('')}</details>` : ''}
+      ${!src.me && !s.citeText && !(ln && ln.citeText) ? `<p class="sub">판결문에 ${esc(s.title)} 판결의 법원·선고일·사건번호가 적혀 있지 않습니다. ${esc(s.title)} 판결문을 함께 넣어 분석하면 확인할 수 있습니다.</p>` : ''}
     </div>`;
   };
   const rp = a.reasons.map((x, k) => `<li class="${e.picked.includes(k) ? 'on' : ''}"><label><input type="checkbox" data-jp="${k}"${e.picked.includes(k) ? ' checked' : ''}> <span class="t">${esc(x.t)}</span></label><span class="jd-f">${x.flags.map((f) => `<b class="${FLAG_CLS[f] || ''}">${f}</b>`).join('')}${pageBtn(x.p)}</span></li>`).join('');
@@ -110,7 +136,7 @@ export async function viewJudg() {
       <p class="sub" id="j-saved">${c.saved ? '고친 내용이 저장되어 있습니다' : '아래 초안을 고치면 이 판결문의 기록으로 저장됩니다'} · <button class="linkish" data-act="j-reset">초안으로 되돌리기</button></p></section>
 
     <section class="box"><h2 class="bh">1. 사실관계 <small>${a.factsFrom ? `판결문의 ‘${esc(a.factsFrom.slice(0, 40))}’에서` : '판결문에서 따로 적은 부분을 찾지 못함'}</small></h2>
-      ${a.facts.length ? '' : '<p class="sub">판결문이 사실관계를 따로 적지 않았습니다(대법원 판결에서 흔합니다). 원심판결 이유를 인용한 부분이나 하급심 판결문의 ‘기초사실’을 보고 적으세요.</p>'}
+      ${a.facts.length ? '' : c.link.facts ? `<p class="sub jd-link">이 판결문은 사실관계를 따로 적지 않아, 서재의 <button class="linkish" data-act="j-open" data-id="${c.link.facts.docId}">${esc(c.link.facts.from)}</button>의 기초사실을 ${String(e.facts).includes(c.link.facts.text.slice(0, 30)) ? '가져왔습니다' : `가져올 수 있습니다 · <button class="linkish" data-act="j-link-facts">가져오기</button>`}.</p>` : '<p class="sub">판결문이 사실관계를 따로 적지 않았습니다(대법원 판결에서 흔합니다). 원심판결 이유를 인용한 부분이나 하급심 판결문의 ‘기초사실’을 보고 적으세요. 하급심 판결문을 서재에 넣으면 사건번호로 이어 붙여 기초사실·심급별 결과를 채웁니다.</p>'}
       <label class="field"><span class="sr">사실관계</span><textarea data-je="facts" rows="${Math.min(16, Math.max(4, Math.ceil(e.facts.length / 80)))}" placeholder="당사자와 분쟁에 이르게 된 경위, 청구의 내용">${esc(e.facts)}</textarea></label>
       ${a.evidence.length ? `<p class="sub">인정근거(내보내기에는 넣지 않음): ${esc(a.evidence.join(' / ').slice(0, 300))}</p>` : ''}
       ${a.facts.length ? `<p class="sub">판결문의 ‘원고’·‘피고’를 그대로 옮겼습니다. 논문에서는 당사자를 처음 적을 때 ‘원고(서울특별시)’처럼 밝혀 두면 읽기 쉽습니다.</p>` : ''}</section>
@@ -180,7 +206,9 @@ ON_CHANGE.push((t) => {
   saveSoon(); return true;
 });
 ACT['j-excerpt'] = () => { const c = CUR; if (!c) return; c.e.excerpt = excerptOf(c.a.reasons, c.e.picked); c.e.excerptEdited = false; saveSoon(); viewJudg(); };
-ACT['j-said'] = (el) => { const c = CUR; if (!c) return; const i = +el.dataset.i, s = c.a.stages[i].said[+el.dataset.k]; if (!s) return; const st = c.e.stages[i]; st.text = [st.text, s.s].filter((x) => String(x || '').trim()).join('\n'); saveSoon(); const ta = $(`[data-js-text="${i}"]`); if (ta) ta.value = st.text; };
+ACT['j-link-cite'] = (el) => { const c = CUR; if (!c) return; const i = +el.dataset.i, l = c.link.stages[i]; if (!l || !l.citeText) return; c.e.stages[i].citeText = l.citeText; saveSoon(); viewJudg(); };
+ACT['j-link-facts'] = () => { const c = CUR; if (!c || !c.link.facts) return; c.e.facts = [c.e.facts, c.link.facts.text].filter((x) => String(x || '').trim()).join('\n'); saveSoon(); viewJudg(); };
+ACT['j-said'] = (el) => { const c = CUR; if (!c) return; const i = +el.dataset.i, s = saidOf(c, i)[+el.dataset.k]; if (!s) return; const st = c.e.stages[i]; st.text = [st.text, s.s].filter((x) => String(x || '').trim()).join('\n'); saveSoon(); const ta = $(`[data-js-text="${i}"]`); if (ta) ta.value = st.text; };
 ACT['j-stage-add'] = () => { const c = CUR; if (!c) return; c.e.stages.push({ title: '환송 후 판결', text: '', citeText: '', me: false }); saveSoon(); viewJudg(); };
 ACT['j-issue-add'] = () => { const c = CUR; if (!c) return; c.e.issues.push(''); saveSoon(); viewJudg().then(() => { const t = $$('[data-ji]').pop(); if (t) t.focus(); }); };
 ACT['j-issue-del'] = (el) => { const c = CUR; if (!c) return; c.e.issues.splice(+el.dataset.i, 1); saveSoon(); viewJudg(); };
@@ -231,7 +259,7 @@ ACT['j-cards'] = async () => {
 /* 판례 평석: 서론 · 대상 판결(사실관계·소송의 경과·판결이유) · 쟁점별 검토 · 결론 */
 ACT['j-project'] = async () => {
   const c = CUR; if (!c || !UI.newProject) return;
-  if (!(await confirmBox(`‘${c.a.cite || docOf(c.id).title}’ 평석을 새 연구로 만들까요? 개요(서론 · 대상 판결 · 쟁점의 검토 · 결론)를 세우고 정리한 내용을 초고로, 고른 판결이유를 노트 카드로 넣습니다.`, '만들기'))) return;
+  if (!(await confirmBox(`‘${c.a.cite || docOf(c.id).title}’ 평석을 새 연구로 만들까요? 개요(서론 · 대상 판결 · 쟁점의 검토 · 결론)를 세우고 정리한 내용을 초고로, 고른 판결이유를 노트 카드로, 쟁점마다 논증 설계도의 주장 자리(근거에 대상 판결의 판단)를 넣습니다.`, '만들기'))) return;
   const iss = c.e.issues.map((x) => String(x || '').trim()).filter(Boolean);
   const p = await UI.newProject(`${c.a.cite || docOf(c.id).title} 평석`, `대상 판결(${c.a.cite || docOf(c.id).title})의 판단은 타당한가${iss[0] ? ` — ${iss[0]}` : ''}?`);
   const made = await cardsFor(p);
@@ -249,6 +277,13 @@ ACT['j-project'] = async () => {
     ...iss.map((x) => sec(2, x.length > 60 ? x.slice(0, 60) + '…' : x)),
     sec(1, '결론', '', '“이상에서 … 그 결과 …를 확인하였다”, 입법론·후속연구'),
   ];
+  // 논증 설계도: 쟁점마다 핵심 주장 자리를 만들고, 대상 판결의 판단(판결문이 그 쟁점에 답한 문장)을 근거 자리에 판결문과 이어 둔다
+  iss.forEach((x, k) => {
+    const claim = { id: uid(), parent: null, kind: 'claim', text: `[쟁점 ${k + 1}] ${x} — 대상 판결의 판단에 대한 사견을 한 문장으로`, refs: [], order: k + 1 };
+    const src = c.a.issues.find((y) => y.text === x);
+    const ans = src && src.verdict ? src.verdict.replace(/^(받아들임|배척|원심 잘못)\s·\s/, '') : '';
+    p.arg.push(claim, { id: uid(), parent: claim.id, kind: 'ground', text: ans ? `대상 판결의 판단: ${ans}` : '대상 판결의 판단(판결이유에서 이 쟁점에 답한 부분)', refs: [{ t: 'doc', id: c.id, page: src && src.p ? src.p : 0 }], order: 1 });
+  });
   logEvent(p, `판결 분석에서 평석 연구를 만듦: ${c.a.cite || ''}`); await saveProject(p);
   toast(`‘${p.title}’ 연구를 만들었습니다. 집필에서 이어 쓰세요.`);
   S.project = p; UI.show('write');

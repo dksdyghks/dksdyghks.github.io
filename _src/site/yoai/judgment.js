@@ -565,8 +565,8 @@ export function stageTitle(s) {
   if (s.me) return s.stage.replace(/\(대상 (판결|결정)\)/, '').trim() || s.stage;
   return s.stage === '제2심(원심)' ? '제2심' : s.stage === '환송판결' ? '환송판결' : s.stage;
 }
-export function defaultEdit(a) {
-  return {
+export function defaultEdit(a, link) {
+  const e = {
     facts: a.facts.map((x) => x.t).join('\n'),
     stages: a.stages.map((s) => ({ title: stageTitle(s), text: s.draft || '', citeText: s.citeText, me: s.me })),
     excerpt: excerptOf(a.reasons, a.key),
@@ -574,5 +574,53 @@ export function defaultEdit(a) {
     lead: a.stage === '상고심' ? '대법원의 판결이유 중 주요부분을 발췌하여 그대로 인용한다.' : '판결이유 중 주요부분을 발췌하여 그대로 인용한다.',
     issues: a.issues.map((x) => x.text),
   };
+  if (link) applyLink(e, link);
+  return e;
+}
+/* ================= 심급 연결: 서재에 같은 사건의 다른 심급 판결문이 있으면 =================
+   a: 지금 분석하는 판결, others: [{ id, a }] 서재의 다른 판결문(분석 결과).
+   사건번호로 이어 붙인다: 대상 판결의 머리(원심판결·제1심판결)와 본문 인용, 그리고 이어진 판결문의 머리에 적힌 그 아래 심급까지.
+   이어진 판결문에서 가져오는 것은 그 판결문이 스스로에 관해 적은 것(인용, 주문에 따른 결과 문장, 기초사실)뿐이다. */
+export function linkJudgments(a, others) {
+  const byNo = new Map(); for (const o of others || []) if (o && o.a && o.a.ok && o.a.head.no && o.a.head.no !== a.head.no) byNo.set(o.a.head.no, o);
+  const out = { stages: {}, facts: null, docs: [] };
+  const stageKey = (st) => (/제1심/.test(st) ? '제1심' : /원심|제2심|항소심/.test(st) ? '원심' : st);
+  // 이어진 판결문들이 아래 심급에 관해 알려 주는 인용(예: 원심 판결문 머리의 ‘제1심판결’)
+  const known = {}; // stageKey -> cite
+  for (const s of a.stages) if (!s.me && s.cite && s.cite.no) known[stageKey(s.stage)] = s.cite;
+  // 이어진 판결문의 머리에 적힌 그 아래 심급(예: 원심 판결문의 ‘제1심판결’)도 알려진 인용으로 더한다(두 단계까지)
+  for (let round = 0; round < 2; round++) for (const c of Object.values(known)) {
+    const o = byNo.get(c.no); if (!o) continue;
+    for (const t of o.a.stages) if (!t.me && t.cite && t.cite.no && !known[stageKey(t.stage)]) known[stageKey(t.stage)] = t.cite;
+  }
+  a.stages.forEach((s, i) => {
+    if (s.me) return;
+    const k = stageKey(s.stage), cite = (s.cite && s.cite.no) ? s.cite : known[k];
+    const o = cite ? byNo.get(cite.no) : null;
+    const sugg = [];
+    if (o) { const me = o.a.stages.find((t) => t.me); if (me && me.draft) sugg.push({ s: me.draft, from: o.a.cite, docId: o.id }); }
+    // 원심 판결문이 제1심에 관해 적은 문장
+    for (const x of byNo.values()) {
+      if (o && x === o) continue;
+      const t = x.a.stages.find((y) => !y.me && stageKey(y.stage) === k && (!cite || !y.cite || y.cite.no === cite.no));
+      if (t && t.draft) sugg.push({ s: t.draft, from: x.a.cite, docId: x.id });
+    }
+    if (cite || sugg.length) out.stages[i] = { cite: !(s.cite && s.cite.no) && cite ? { court: cite.court, date: cite.date, no: cite.no, bench: cite.bench || '', kind: cite.kind || '' } : null, citeText: !(s.cite && s.cite.no) && cite ? citeText(cite) : '', docId: o ? o.id : '', docCite: o ? o.a.cite : '', sugg };
+    if (o && !out.docs.includes(o.id)) out.docs.push(o.id);
+  });
+  if (!a.facts.length) {
+    const order = Object.values(out.stages).map((x) => x.docId).filter(Boolean);
+    for (const id of order) { const o = [...byNo.values()].find((x) => x.id === id); if (o && o.a.facts.length) { out.facts = { text: o.a.facts.map((x) => x.t).join('\n'), from: o.a.cite, docId: o.id }; break; } }
+  }
+  return out;
+}
+export function applyLink(e, link) {
+  for (const [i, l] of Object.entries(link.stages || {})) {
+    const st = e.stages[+i]; if (!st) continue;
+    if (!st.citeText && l.citeText) st.citeText = l.citeText;
+    if (!String(st.text || '').trim() && l.sugg[0]) st.text = l.sugg[0].s;
+  }
+  if (!String(e.facts || '').trim() && link.facts) e.facts = link.facts.text;
+  return e;
 }
 export const _test = { linesOf, parasOf, outlineOf, markOf, parseHead, sentences, outcomeOf, partKind, lawsIn, citesIn, parseCite, fullCourt, stageOf };
