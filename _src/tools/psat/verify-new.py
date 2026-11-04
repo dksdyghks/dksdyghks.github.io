@@ -1647,4 +1647,47 @@ combo('L-AE03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AE05', ['ㄱ', 'ㄴ', 'ㄷ'])
 tt = [dict(zip('국영수사과', pm)) for pm in itertools.permutations(range(1, 6))]
 tt = [p_ for p_ in tt if p_['수'] < p_['영'] and p_['국'] in (1, 5) and abs(p_['사'] - p_['과']) != 1 and p_['영'] != 3 and p_['과'] == p_['수'] + 1]
 by_text('L-AE04', list(zip(['영어는', '수학은', '국어는', '사회가', '과학은'], [all(p_['영'] in (4, 5) for p_ in tt), all(p_['수'] == 2 for p_ in tt), all(p_['국'] == 1 for p_ in tt), all(imp(p_['사'] == 1, p_['영'] == 5) for p_ in tt), all(p_['과'] == 3 for p_ in tt)])))
+# ================= S-AF / D-AF / L-AF (5급 실전, independent re-solve from the rendered options) =================
+def birth(orders, fa, mo, applied):
+    if applied > 12 or max(fa, mo) < 6: return 0
+    return sum({1: 100, 2: 200}.get(o, 300) for o in orders)
+pick('S-AF01', f"{birth([1], 8, 8, 6) + birth([2, 3], 24, 24, 2) + birth([3], 3, 12, 5) + birth([2], 2, 2, 3) + birth([1], 36, 36, 14):,}만 원")
+outs = []
+for res in itertools.product((3, 1, 0), repeat=4):
+    pt = {'A': 7, 'B': 6, 'C': 4, 'D': 1}
+    for (x, y), r in zip([('A', 'B'), ('A', 'C'), ('B', 'D'), ('C', 'D')], res):
+        pt[x] += r; pt[y] += {3: 0, 1: 1, 0: 3}[r]
+    outs.append((res, pt))
+sole = lambda pt, t: all(pt[t] > v for k, v in pt.items() if k != t)
+combo('S-AF02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(sole(pt, 'A') for r, pt in outs if r[0] == 3 and r[1] == 3), not any(pt['C'] == max(pt.values()) for r, pt in outs), not any(pt['D'] == max(pt.values()) for r, pt in outs), all(r[0] == 0 for r, pt in outs if sole(pt, 'B'))]) if t])
+pick('S-AF03', '열람이 다른 사람의 재산상 이익을 부당하게 침해할 우려가 있으면 공공기관은 열람을 거절할 수 있다.')
+ovl = [F(720 * k, 11) for k in range(30) if F(720 * k, 11) < 1440]
+in34 = [m for m in ovl if 180 <= m < 240]
+combo('S-AF04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(in34) == 1, 196 < in34[0] < 197, len(ovl) == 24, abs(0 - 90) == 90]) if t])
+mx = {'甲': (8, 5, 9, 8), '乙': (3, 9, 8, 3), '丙': (6, 9, 8, 9), '丁': (4, 6, 4, 6)}
+pick('S-AF05', f"{min(sum(mx[p_][t] for p_, t in zip('甲乙丙丁', pm)) for pm in itertools.permutations(range(4)) if pm[3] != 2)}시간")
+ev = {'A': (120, 150, 30), 'B': (80, 100, 25), 'C': (60, 84, 14), 'D': (40, 46, 10)}
+s_ = [sum(b for a, b, c in ev.values()) * 100 >= 125 * sum(a for a, b, c in ev.values()), max(ev, key=lambda k: F(ev[k][1], ev[k][0])) == 'C', max(ev, key=lambda k: F(ev[k][1], ev[k][2])) == 'C', sum(b for a, b, c in ev.values()) >= 5 * sum(c for a, b, c in ev.values()), 150 - 120 == 5 * (46 - 40)]
+only('D-AF01', [not x for x in s_], 'false statements')
+vs, pr = [40, 45, 50, 60], [20000, 18000, 17000, 15000]
+rv = [a * b for a, b in zip(vs, pr)]; dr = [F(pr[i] - pr[i + 1], pr[i]) for i in range(3)]
+combo('D-AF02', [l for l, t in zip('ㄱㄴㄷㄹ', [rv.index(max(rv)) == vs.index(max(vs)), rv[0] < rv[1] < rv[2] < rv[3], rv[3] * 100 >= rv[0] * 115, dr.index(max(dr)) == 2]) if t])
+gd = {'A': (1000, 1050), 'B': (800, 880), 'C': (1500, 1530), 'D': (600, 690), 'E': (1200, 1272)}
+mg = [m for m in itertools.permutations('ABCDE') if m[0] == max(gd, key=lambda k: F(gd[k][1], gd[k][0])) and m[1] == max(gd, key=lambda k: gd[k][1]) and F(gd[m[2]][1], gd[m[2]][0]) > F(gd[m[3]][1], gd[m[3]][0]) and gd[m[2]][1] > gd[m[4]][1]]
+ok(len(mg) == 1, f'D-AF03 {mg}'); pick('D-AF03', ', '.join(mg[0]))
+en = {'A': (500, 500 * 4 // 10, 4), 'B': (150 * 2, 150, 5), 'C': (800, 160, 2), 'D': (200, 200 * 6 // 10, 6)}; pv = {'A': 180, 'B': 160, 'C': 150, 'D': 100}
+by_text('D-AF04', list(zip(['에너지 원단위가', '2025년 에너지 소비량이', '네 산업', '(나)는', '2025년 에너지 소비량의'], [max(en, key=lambda k: F(en[k][1], en[k][0])) == max(en, key=lambda k: en[k][1]), sorted(k for k in en if en[k][1] < pv[k]) == ['B'], sum(v[1] for v in en.values()) * 10 >= 4 * sum(v[0] for v in en.values()), en['B'][0] >= 3 * en['D'][1], max(en, key=lambda k: F(en[k][1], pv[k])) == 'C'])))
+i24 = {k: 5000 * s // 100 for k, s in {'w': 60, 'b': 25, 't': 15}.items()}; i25 = {k: F(5400 * s, 100) for k, s in {'w': 62, 'b': 20, 't': 18}.items()}
+combo('D-AF05', [l for l, t in zip('ㄱㄴㄷㄹ', [i25['b'] < i24['b'], i25['t'] / i24['t'] - 1 >= 2 * (i25['w'] / i24['w'] - 1), i25['w'] - i24['w'] > 400, i25['w'] * 2 >= 3 * (i25['b'] + i25['t'])]) if t])
+pick('L-AF01', '협상 비용이 거의 없다면 권리를 누구에게 주든 협상으로 같은 생산량에 이른다는 주장이 있다.')
+mg2 = [10, 8, 6, 4, 2]
+qn = max(q for q in range(6) if all(m > 0 for m in mg2[:q])); qt = max(q for q in range(6) if all(m > 5 for m in mg2[:q]))
+qb = max(range(6), key=lambda q: sum(mg2[:q]) - 5 * q)
+combo('L-AF02', [l for l, t in zip('ㄱㄴㄷ', [qn == 5, qt == 3, qb == 0]) if t])
+combo('L-AF03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AF05', ['ㄱ', 'ㄴ', 'ㄹ'])
+t16 = list(itertools.product((0, 1), repeat=4)); m16 = []
+for bits in itertools.product((0, 1), repeat=16):
+    e = [t for t, b_ in zip(t16, bits) if b_]
+    if all(ex or g for w, ex, g, t in e if w) and not any(w and g for w, ex, g, t in e) and any(ex and not w for w, ex, g, t in e) and all(not ex for w, ex, g, t in e if t): m16.append(e)
+combo('L-AF04', [l for l, tt in zip('ㄱㄴㄷㄹ', [all(all(ex for w, ex, g, t in e if w) for e in m16), all(not any(t and w for w, ex, g, t in e) for e in m16), all(all(w for w, ex, g, t in e if ex) for e in m16), all(any(g and ex for w, ex, g, t in e) for e in m16)]) if tt])
 print('ALL OK' if ok_all else 'SOME FAILED')

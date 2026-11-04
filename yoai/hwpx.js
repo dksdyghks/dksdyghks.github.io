@@ -3,7 +3,7 @@
    buildHwpx(skeletonBytes, { title, author, blocks }) → Uint8Array
    blocks: [{ t: 'title'|'subtitle'|'h1'|'h2'|'h3'|'p'|'quote'|'small', text, notes? }]
      text 안의 〔n:k〕 자리에 notes[k]가 각주로 들어간다. 표시가 없으면 notes는 문단 끝에 차례로 붙는다. */
-import { readZip, writeZip } from './zip.js?v=59a8ebbfc7';
+import { readZip, writeZip } from './zip.js?v=97bfb46a48';
 
 const X = (s) => String(s == null ? '' : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 // the extra character and paragraph shapes YO아이 adds to the skeleton's header (ids follow the skeleton's own 0–6 and 0–19)
