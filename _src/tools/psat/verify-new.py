@@ -1760,4 +1760,66 @@ for s in itertools.combinations('ABCDEF', 3):
     S_ = set(s)
     if imp('A' in S_, 'B' in S_) and len(S_ & {'C', 'D'}) == 1 and imp('B' in S_, 'D' not in S_) and imp('E' not in S_, 'A' in S_) and imp('F' in S_, 'C' not in S_): pk.append(S_)
 by_text('L-AG04', list(zip(['B와 C는', 'E는 반드시', 'A를 선정하지', 'D를 선정하면', '선정될 수 있는'], [all(('B' in x) == ('C' in x) for x in pk), all('E' in x for x in pk), all(imp('A' not in x, 'F' in x) for x in pk), all(imp('D' in x, 'B' in x) for x in pk), len(pk) == 2])))
+# ================= S-AH / D-AH / L-AH (5급 실전, independent re-solve from the rendered options) =================
+def crop(amt, dmg, pest, clean):
+    eff = dmg - pest
+    own = 10 if clean else 20
+    if eff <= own: return 0
+    return min(F(amt * (eff - own), 100), F(amt * 60, 100))
+s_ah01 = crop(2000, 50, 0, 0) + crop(1000, 15, 0, 1) + crop(3000, 40, 10, 0) + crop(1500, 30, 30, 0) + crop(2500, 85, 0, 0)
+pick('S-AH01', f'{int(s_ah01):,}만 원')
+lose = set([0])
+for n_ in range(1, 25):
+    if not any(n_ - k >= 0 and (n_ - k) in lose for k in (1, 3, 4)): lose.add(n_)
+good10 = [k for k in (1, 3, 4) if (10 - k) in lose]
+combo('S-AH02', [l for l, t in zip('ㄱㄴㄷㄹ', [7 in lose, good10 == [3], len([x for x in lose if 1 <= x <= 20]) == 6, 2 in lose]) if t])
+pick('S-AH03', '태풍으로 도로를 점용하지 못한 기간에 대해서는 점용료를 면제받을 수 있다.')
+import datetime as _dtm
+days = [_dtm.date(2027, 3, d) for d in range(1, 32)]      # 2027-03-01 is a Monday
+ok(days[0].weekday() == 0, 'S-AH04 calendar Monday')
+def on(cyc, i, d): return d.weekday() != 6 and i % sum(cyc) < cyc[0]
+cy = [(2, 1), (3, 2), (1, 1)]
+aw = [d.day for i, d in enumerate(days) if all(on(c, i, d) for c in cy)]
+ar = [d.day for i, d in enumerate(days) if d.weekday() != 6 and not any(on(c, i, d) for c in cy)]
+combo('S-AH04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(aw) == 6, len(ar) == 2, not on(cy[0], 30, days[30]), sum(on(cy[0], i, d) for i, d in enumerate(days)) >= 20]) if t])
+rq = {'A': (9, 11, 'g', 25), 'B': (10, 13, 'e', 20), 'C': (11, 12, 'b', 40), 'D': (12, 15, 'g', 50), 'E': (13, 14, 'j', 30), 'F': (14, 17, 'e', 45), 'G': (15, 18, 'b', 55)}
+bestv = []
+for mask in range(128):
+    s = [k for i, k in enumerate('ABCDEFG') if mask >> i & 1]
+    hours = [h for k in s for h in range(rq[k][0], rq[k][1])]
+    if len(hours) != len(set(hours)) or len(hours) > 6 or len({rq[k][2] for k in s}) != len(s): continue
+    bestv.append((sum(rq[k][3] for k in s), s))
+bestv.sort()
+ok(bestv[-1][0] > bestv[-2][0], 'S-AH05 unique optimum'); pick('S-AH05', ', '.join(bestv[-1][1]))
+tv = {'A': (3000, 3600, 900), 'B': (1200, 1500, 1500), 'C': (800, 760, 2000), 'D': (500, 650, 1200), 'E': (400, 600, 1800)}
+tsp = {k: b * c for k, (a, b, c) in tv.items()}
+s_ = [sum(b for a, b, c in tv.values()) * 10 >= 12 * sum(a for a, b, c in tv.values()), max(tv, key=lambda k: F(tv[k][1], tv[k][0])) == 'E', [k for k, (a, b, c) in tv.items() if b < a] == ['C'], max(tsp, key=tsp.get) == 'A', tsp[max(tv, key=lambda k: tv[k][2])] * 5 >= sum(tsp.values())]
+only('D-AH01', [not x for x in s_], 'false statements')
+g4, g5, uc = [200, 150, 180, 70], [170, 160, 185, 105], [120, 160, 60, 110]
+cs = [a * b for a, b in zip(g5, uc)]
+combo('D-AH02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(g5) > sum(g4), F(105, sum(g5)) - F(70, sum(g4)) >= F(1, 20), cs.index(max(cs)) == 0, cs[2] < cs[3]]) if t])
+rv = {'A': (120, 78, 340), 'B': (80, 60, 510), 'C': (200, 110, 450), 'D': (60, 36, 280), 'E': (150, 102, 390)}
+mr = [m for m in itertools.permutations('ABCDE') if m[0] == min(rv, key=lambda k: F(rv[k][1], rv[k][0])) and m[1] == max(rv, key=lambda k: rv[k][2]) and F(rv[m[2]][1], rv[m[2]][0]) > F(rv[m[3]][1], rv[m[3]][0]) and rv[m[4]][1] > rv[m[2]][1]]
+ok(len(mr) == 1, f'D-AH03 {mr}'); pick('D-AH03', ', '.join(mr[0]))
+popB = F(2400 - 3000, -1); birC = 4800 + F(1, 2) * 800; deaD = 2000 + F(5, 2) * 400
+pp = {'A': 500, 'B': popB, 'C': 800, 'D': 400}; bb = {'A': 3000, 'B': 2400, 'C': birC, 'D': 2000}; dd = {'A': 2500, 'B': 3000, 'C': 4800, 'D': deaD}
+nrv = {k: F(bb[k] - dd[k], pp[k]) for k in pp}
+by_text('D-AH04', list(zip(['자연증가율이 음', '조출생률이 가장', '네 지역 전체의', '사망자 수는', 'C의 출생아'], [sum(pp[k] for k in pp if nrv[k] < 0) > 1000, max(pp, key=lambda k: F(bb[k], pp[k])) == 'A', sum(bb.values()) > sum(dd.values()), dd['D'] == dd['B'], bb['C'] * 10 >= 18 * bb['A']])))
+w0 = [40000 * s // 100 for s in (30, 25, 45)]; w1 = [46000 * s // 100 for s in (20, 24, 56)]
+combo('D-AH05', [l for l, t in zip('ㄱㄴㄷㄹ', [w1[0] * 10 <= 8 * w0[0], 24 < 25 and w1[1] > w0[1], (w1[2] - w0[2]) * 2 >= 3 * 6000, w1[2] * 2 >= 3 * w0[2]]) if t])
+pick('L-AH01', '다른 조건이 같다면 세율이 높아질수록 승수는 작아진다.')
+def chain(c, t, m):
+    tot_, x = F(0), F(1)
+    for _ in range(60): tot_ += x; x *= c * (1 - t) - m
+    return tot_
+m_none = 1 / (1 - F(8, 10)); m_tax = 1 / (1 - F(8, 10) * F(3, 4)); m_both = 1 / (1 - (F(8, 10) * F(3, 4) - F(2, 10))); m_09 = 1 / (1 - (F(9, 10) * F(3, 4) - F(2, 10)))
+ok(abs(chain(F(8, 10), F(1, 4), F(2, 10)) - m_both) < F(1, 10 ** 6), 'L-AH02 geometric series matches closed form')
+combo('L-AH02', [l for l, t in zip('ㄱㄴㄷㄹ', [120 * m_none == 600, 120 * m_tax * 2 == 120 * m_none, 120 * m_both == 200, m_09 >= 2]) if t])
+combo('L-AH03', ['ㄱ', 'ㄷ']); combo('L-AH05', ['ㄱ'])
+langs = ['en', 'zh', 'ja', 'fr']; two = list(itertools.combinations(langs, 2)); asg = []
+for a, b, c in itertools.product(two, repeat=3):
+    al = [set(a), set(b), set(c)]
+    if set().union(*al) != set(langs) or al[0] & al[1] or any('zh' in x and 'ja' not in x for x in al) or 'en' in al[2] or sum('fr' in x for x in al) != 1: continue
+    asg.append(al)
+by_text('L-AH04', list(zip(['甲은 영어를', '乙은 일본어를', '일본어를 할 수', '영어를 할 수', '丙은 중국어를'], [all('en' in x[0] for x in asg), all('ja' in x[1] for x in asg), all(sum('ja' in y for y in x) == 1 for x in asg), all([i for i in range(3) if 'en' in x[i]] != [i for i in range(3) if 'fr' in x[i]] for x in asg), all('zh' in x[2] for x in asg)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
