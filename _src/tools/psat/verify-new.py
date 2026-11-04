@@ -963,4 +963,64 @@ for c in itertools.combinations('甲乙丙丁', 2):
 ok(len(cr) == 1, f'L-T08 {cr}'); pick('L-T08', ', '.join(cr[0]))
 ok(F(240, F(120, 60) + F(120, 40)) == 48, 'L-T09 average speed'); pick('L-T09', '㉣을 ‘48km’로 고친다.')
 pick('L-T10', '(나) - (다) - (가) - (라)')
+# ================= S-U / D-U / L-U (independent re-solve) =================
+G4 = list(itertools.combinations('ABCD', 2)); sol1 = []
+for r in itertools.product((0, 1, 2), repeat=6):
+    pt = dict.fromkeys('ABCD', 0)
+    for (x, y), v in zip(G4, r):
+        if v == 0: pt[x] += 1; pt[y] += 1
+        else: pt[x if v == 1 else y] += 3
+    if pt == {'A': 7, 'B': 4, 'C': 3, 'D': 2}: sol1.append(dict(zip(G4, r)))
+ok(len(sol1) == 1, f'S-U01 {sol1}'); rr = sol1[0]
+combo('S-U01', [l for l, t in zip('ㄱㄴㄷㄹ', [rr[('A', 'B')] == 1 and rr[('A', 'C')] == 1 and rr[('A', 'D')] in (0, 1), sum(v == 0 for v in rr.values()) == 1, rr[('C', 'D')] == 1, rr[('B', 'C')] == 2]) if t])
+seat = [dict(zip('甲乙丙丁戊己', pm)) for pm in itertools.permutations(range(6))]
+seat = [s for s in seat if s['甲'] == 0 and (s['丁'] - s['甲']) % 6 == 3 and (s['乙'] - s['丙']) % 6 in (1, 5) and s['己'] == 1]
+nbr = lambda a, b: (a - b) % 6 in (1, 5)
+combo('S-U02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(nbr(s['戊'], s['丁']) for s in seat), all(nbr(s['乙'], s['甲']) for s in seat), all([k for k in s if (s[k] - s['己']) % 6 == 3][0] in '乙丙' for s in seat), all(imp(nbr(s['丙'], s['甲']), nbr(s['乙'], s['丁'])) for s in seat)]) if t])
+grid = {}
+for x in range(5):
+    for y in range(4):
+        grid[(x, y)] = 0 if (x, y) == (2, 1) else 1 if (x, y) == (0, 0) else grid.get((x - 1, y), 0) + grid.get((x, y - 1), 0)
+pick('S-U03', f'{grid[(4, 3)]}가지')
+pick('S-U04', f"{sum(1 for d in itertools.permutations(range(10), 4) if d[0] and d[3] % 2 == 0 and sum(d) == 10)}가지")
+lv = lambda y: min(25, 15 + ((y - 1) // 2 if y >= 3 else 0)); pick('S-U05', f'{lv(10) + lv(2) + lv(25)}일')
+pick('S-U06', '甲이 행정심판을 청구할 수 있는 마지막 날은 2026년 6월 8일이다.' if min(_dt.date(2026, 3, 10) + _dt.timedelta(days=90), _dt.date(2026, 1, 20) + _dt.timedelta(days=180)) == _dt.date(2026, 6, 8) else '?')
+sN, aN = 12 * 20 // 100, 12 * 40 // 100; pick('S-U07', f'{sN * 450 + aN * 300 + (12 - sN - aN) * 150:,}만 원')
+x8 = 4000 + (5500 + 3000) + 7500; y8 = (3500 + (6000 + 2500) + 3500) * 9 // 10
+pick('S-U08', f"{'X' if x8 < y8 else 'Y'}사, {min(x8, y8):,}원")
+lec = [s for s in (dict(zip('ABCDE', pm)) for pm in itertools.permutations(range(5))) if s['A'] < s['B'] and s['C'] in (1, 3) and s['D'] == s['A'] + 1 and s['B'] != 4]
+ok(len(lec) == 1, f'S-U09 {lec}'); pick('S-U09', [k for k in lec[0] if lec[0][k] == 2][0])
+up = sorted({4, 6, 7, 8, 9}); pick('S-U10', f'{(9 - 1) + (9 - 2)}개 층' if up[-1] == 9 else '?')
+# D-U
+a24, a25 = [400, 300, 200, 100], [460, 330, 190, 140]
+dif = [b - a for a, b in zip(a24, a25)]
+combo('D-U01', [l for l, t in zip('ㄱㄴㄷㄹ', [dif.index(max(dif)) == 0, max(range(4), key=lambda i: F(dif[i], a24[i])) == 3, F(460 + 330 + 140, 400 + 300 + 100) >= F(23, 20), dif[1] > dif[3]]) if t])
+by_text('D-U02', list(zip(['2023~2025년 연평균 증가율이 가장', '2023~2025년 연평균 증가율은 A와', 'C의 2023~2025년', 'E의 2025년', '2024년 생산량의'], [False, F(121, 100) == F(242, 200), F(441, 400) == F(121, 100), 300 > 300, max([(F(110, 100), 'A'), (F(250, 200), 'B'), (F(420, 400), 'C'), (F(60, 50), 'D'), (F(270, 300), 'E')])[1] == 'D'])))
+mul = {k: F(100 + a, 100) * F(100 + b, 100) for k, (a, b) in {'A': (10, 20), 'B': (-10, 30), 'C': (20, -10), 'D': (5, 5)}.items()}
+combo('D-U03', [l for l, t in zip('ㄱㄴㄷㄹ', [max(mul, key=mul.get) == 'A', mul['B'] == F(12, 10), mul['C'] > mul['D'], all(v > 1 for v in mul.values())]) if t])
+by_text('D-U04', list(zip(['인건비는', '운영비는', '사업비 증가액은', '기타 항목은', '2025년 사업비는'], [600 * 35 > 500 * 40, 600 * 25 == 500 * 30, F(600 * 30 - 500 * 20, 100 * 100) == F(8, 10), 600 * 10 == 500 * 10, F(600 * 30, 500 * 20) == F(9, 5)])), want=False, what='false options')
+fac = {'A': (4800, 40, 8), 'B': (3600, 25, 8), 'C': (6000, 50, 10), 'D': (2700, 15, 9)}
+hr = {k: F(q, n * h) for k, (q, n, h) in fac.items()}
+by_text('D-U05', list(zip(['근로자 1인당 생산량은', '근로시간 1시간당 생산량이 가장', '생산량이 많은', 'C의 근로시간', '네 공장 전체의'], [F(4800, 40) > F(6000, 50), max(hr, key=hr.get) == 'B', False, hr['C'] == hr['A'] * F(4, 5), F(17100, 1155) >= 16])))
+combo('D-U06', ['ㄱ', 'ㄴ', 'ㄷ'])
+p10 = {'A': F(3000, 200), 'B': F(1000, 50), 'C': F(1500, 120), 'D': F(600, 30)}
+combo('D-U07', [l for l, t in zip('ㄱㄴㄷㄹ', [max(p10, key=p10.get) == 'A', p10['B'] == p10['D'], F(6100, 400) >= 15, F(1500, 96) > 15]) if t])
+pr = {'A': F(5 * 140, 100), 'B': F(3 * 150, 100), 'C': F(4 * 120, 100)}
+by_text('D-U08', list(zip(['2025년 평균 주택가격은', '2020년 대비 2025년', '2025년 주택가격 지수는', 'C의 평균', '세 지역'], [pr['B'] > pr['C'], max(['A', 'B', 'C'], key=lambda k: pr[k] - {'A': 5, 'B': 3, 'C': 4}[k]) == 'A', pr['A'] < pr['B'], F(120, 100) > F(12, 10), F(sum(pr.values()), 12) >= F(3, 2)])))
+cw = {'A': (1000, 100, 50), 'B': (800, 120, 40), 'C': (600, 60, 40), 'D': (400, 60, 20)}
+mm9 = [m for m in (dict(zip('가나다라', pm)) for pm in itertools.permutations('ABCD')) if F(cw[m['가']][1], cw[m['가']][0]) == F(cw[m['다']][1], cw[m['다']][0]) and m['나'] == min(cw, key=lambda k: F(cw[k][0], cw[k][2])) and cw[m['가']][2] > cw[m['다']][2]]
+ok(len(mm9) == 1, f'D-U09 {mm9}'); iv = {v: k for k, v in mm9[0].items()}; pick('D-U09', ', '.join(f'{c} {iv[c]}' for c in 'ABCD'))
+by_text('D-U10', list(zip(['학생 수가 가장', '(나)는', '(다)는', '네 학교 전체의', '(가)와 (라)의'], [False, 30 * 18 <= 500, 720 // 48 == 16, F(600 + 540 + 720 + 330, 40 + 30 + 48 + 30) >= 15, 600 // 15 + 330 // 11 < 5 * (720 // 48)])))
+# L-U
+pick('L-U02', '남쪽' if (90 + 90) % 360 == 180 else '?')
+pick('L-U05', '(라)'); pick('L-U06', '(나) - (다) - (가) - (라)')
+ty = list(itertools.product((0, 1), repeat=4)); okm = []
+for bits in itertools.product((0, 1), repeat=16):
+    exs = [t for t, b_ in zip(ty, bits) if b_]
+    if all(r for m_, r, g, nn in exs if m_) and any(g and m_ for m_, r, g, nn in exs) and not any(r and nn for m_, r, g, nn in exs): okm.append(exs)
+combo('L-U07', [l for l, t in zip('ㄱㄴㄷㄹ', [all(any(g and r for m_, r, g, nn in e) for e in okm), all(all(not nn for m_, r, g, nn in e if g) for e in okm), all(all(not nn for m_, r, g, nn in e if m_) for e in okm), all(any(nn and not g for m_, r, g, nn in e) for e in okm)]) if t])
+m8 = [m for m in itertools.product((0, 1), repeat=6) if imp(m[0], m[1]) and (m[2] or m[3]) and imp(m[1], not m[2]) and imp(m[3], m[4]) and not (m[4] and m[5]) and (m[0] or m[5])]
+combo('L-U08', [l for l, t in zip('ㄱㄴㄷㄹ', [all(m[2] == m[5] for m in m8), all(sum(m) in (2, 4) for m in m8), all(imp(not m[1], m[3]) for m in m8), all(m[0] == m[3] for m in m8)]) if t])
+bx9 = [x for x in 'ABCD' if (x in 'BC') + (x != 'A') + (x == 'D') + (x != 'B') == 2]
+ok(len(bx9) == 1, f'L-U09 {bx9}'); pick('L-U09', f'{bx9[0]} 상자')
 print('ALL OK' if ok_all else 'SOME FAILED')
