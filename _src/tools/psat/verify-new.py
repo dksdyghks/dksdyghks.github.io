@@ -1412,4 +1412,54 @@ for xs in itertools.product('ABC', repeat=6):
     if a['丙'] == 'A' and (a['丁'] != 'B' or a['戊'] == 'C') and a['己'] == a['甲'] and a['乙'] != 'C': tz4.append(a)
 mate = lambda a: [p_ for p_ in a if a[p_] == 'A' and p_ != '丙'][0]
 combo('L-Z04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(mate(a) in '乙丁' for a in tz4), all(a['戊'] == 'B' for a in tz4), all(imp(a['甲'] == 'B', a['丁'] == 'C') for a in tz4), all(a['乙'] == a['戊'] for a in tz4)]) if t])
+# ================= S-AA / D-AA / L-AA (5급 실전, independent re-solve from the rendered options) =================
+def youth(age, dis, house, inc, rent, other):
+    elig = house and inc <= 150 and (19 <= age <= 34 or (dis and age <= 39))
+    return max(0, min(F(rent * 2, 5), 20) - other) if elig else 0
+pick('S-AA01', f"{int(youth(28, 0, 1, 140, 60, 0) + youth(37, 1, 1, 120, 40, 0) + youth(30, 0, 0, 90, 50, 0) + youth(33, 0, 1, 155, 50, 0) + youth(25, 0, 1, 100, 35, 5))}만 원")
+def reach(ws, both=True):
+    r = set()
+    for sg in itertools.product(*[((-w, 0, w) if both else (0, w)) for w in ws]):
+        if sum(sg) > 0: r.add(sum(sg))
+    return r
+combo('S-AA02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(x in reach([1, 3, 9]) for x in range(1, 14)), len(reach([1, 3, 9], False)) == 6, all(x in reach([1, 3, 8]) for x in range(1, 13)), all(x in reach([1, 3, 9, 27]) for x in range(1, 41))]) if t])
+cands = [(1, 38, 24000, 1), (0, 32, 18000, 1), (0, 14, 12000, 1), (0, 11, 15000, 0), (0, 5, 5000, 1)]
+tot_aa3 = sum((min(s, 20000) if (w or p_ >= 15) else (min(s, 20000) // 2 if p_ >= 10 else 0)) if r else 0 for w, p_, s, r in cands)
+pick('S-AA03', f'{tot_aa3 // 10000}억 {tot_aa3 % 10000:,}만 원')
+num = [n for n in range(1000, 10000) if n // 100 == 3 * (n % 100) and sum(map(int, str(n))) == 20 and n % 2 == 0]
+ok(num == [9632], f'S-AA04 {num}')
+combo('S-AA04', [l for l, t in zip('ㄱㄴㄷㄹ', [str(num[0])[0] == '9', len(set(str(num[0]))) == 4, num[0] % 3 == 0, num[0] % 100 > 30]) if t])
+def stair(n, ban):
+    seqs = []
+    def go(rem, prev, acc):
+        if rem == 0: seqs.append(acc); return
+        go(rem - 1, 1, acc + [1])
+        if rem >= 2 and not (ban and prev == 2): go(rem - 2, 2, acc + [2])
+    go(n, 0, []); return seqs
+s10 = stair(10, True)
+combo('S-AA05', [l for l, t in zip('ㄱㄴㄷㄹ', [len(s10) == 41, len(stair(10, False)) == 89, max(s.count(2) for s in s10) == 4, 2 * len(stair(9, True)) >= len(s10)]) if t])
+# D-AA
+bth = [260, 250, 230, 225, 238]; rg = {'A': (60, 72), 'B': (45, 85), 'C': (50, 95), 'D': (38, 80), 'E': (45, 105)}
+fa = [bth[4] * 100 >= bth[3] * 105 and bth[1] < bth[0] and bth[2] < bth[1] and bth[3] < bth[2], (bth[0] - bth[4]) * 100 >= 8 * bth[0], max(rg, key=lambda k: rg[k][0]) == min(rg, key=lambda k: rg[k][1]), sum(v[1] >= 100 for v in rg.values()) == 1, 2 * sum(sorted(v[0] for v in rg.values())[-2:]) >= bth[4]]
+only('D-AA01', [not f for f in fa], 'false statements')
+tr = {'A': 320 * 45, 'B': 250 * 60, 'C': 180 * 80, 'D': 400 * 30, 'E': 150 * 70}
+combo('D-AA02', [l for l, t in zip('ㄱㄴㄷㄹ', [max(tr, key=tr.get) == 'B', min(tr, key=tr.get) == 'D', tr['A'] == tr['C'], sum(tr.values()) >= 50 * (320 + 250 + 180 + 400 + 150)]) if t])
+uv = {'A': (12000, 600, 900, 68), 'B': (8000, 500, 1200, 72), 'C': (20000, 800, 1500, 65), 'D': (6000, 400, 300, 75), 'E': (15000, 500, 750, 70)}
+mu = [m for m in itertools.permutations('ABCDE') if m[3] == max(uv, key=lambda k: F(uv[k][0], uv[k][1])) and m[0] == max(uv, key=lambda k: uv[k][3]) and F(uv[m[1]][2], uv[m[1]][1]) > F(uv[m[4]][2], uv[m[4]][1]) and uv[m[2]][0] > uv[m[1]][0] and uv[m[2]][2] > uv[m[4]][2]]
+ok(len(mu) == 1, f'D-AA03 {mu}'); pick('D-AA03', ', '.join(mu[0]))
+ev = {'반도체': (1000, 1150, 1380, 115), '자동차': (600, 660, 693, 95), '석유화학': (500, 450, 495, 100), '선박': (200, 240, 300, 125)}
+up = {k: F(c * 100, b * v) for k, (a, b, c, v) in ev.items()}
+combo('D-AA04', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(v[2] for v in ev.values()) * 100 >= sum(v[1] for v in ev.values()) * 115, sum(a < b < c for a, b, c, v in ev.values()) == 3, max(up, key=up.get) == '자동차', up['선박'] == 1]) if t])
+pp = {'y': (800, 45), 'm': (1400, 78), 'o': (1100, 70), 's': (4200 - 800 - 1400 - 1100, 35)}; emp = {k: F(p_ * r, 100) for k, (p_, r) in pp.items()}; E = sum(emp.values())
+by_text('D-AA05', list(zip(['취업자 수가 가장', '15세 이상 전체의 취업률은 네', '65세 이상 취업자', '50~64세 취업자는', '15~29세의 취업률이'],
+                           [max(emp, key=emp.get) == max(pp, key=lambda k: pp[k][0]), E / 4200 < F(45 + 78 + 70 + 35, 400), emp['s'] > emp['y'], emp['o'] * 100 >= 35 * E, (E + 40) * 100 >= 62 * 4200])))
+# L-AA
+pick('L-AA01', '실험에서 영상에 없던 깨진 유리를 보았다고 답한 참가자가 있었다.')
+combo('L-AA02', ['ㄱ', 'ㄴ']); combo('L-AA03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AA05', ['ㄱ', 'ㄴ', 'ㄷ'])
+lies = {}
+for c in '甲乙丙丁戊':
+    st = {'甲': c in '乙丙', '乙': c != '丁', '丙': c != '甲'}; st['丁'] = c == '乙'; st['戊'] = not st['丙']
+    lies[c] = [k for k, v in st.items() if not v]
+two = [(c, v) for c, v in lies.items() if len(v) == 2]
+ok(len(two) == 1, f'L-AA04 {two}'); pick('L-AA04', f'범인 {two[0][0]}, 거짓을 말한 사람 {two[0][1][0]}·{two[0][1][1]}')
 print('ALL OK' if ok_all else 'SOME FAILED')
