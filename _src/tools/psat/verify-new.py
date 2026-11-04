@@ -1595,4 +1595,56 @@ for bits in itertools.product((0, 1), repeat=5):
     st = {'甲': g['乙'] == 1, '乙': g['丙'] + g['丁'] == 1, '丙': g['甲'] == 0, '丁': g['戊'] == 1, '戊': g['丙'] == 1}
     if all(st[k] == bool(g[k]) for k in g): pas.append(', '.join(k for k in '甲乙丙丁戊' if g[k]))
 ok(len(pas) == 1, f'L-AD04 {pas}'); pick('L-AD04', pas[0])
+# ================= S-AE / D-AE / L-AE (5급 실전, independent re-solve from the rendered options) =================
+def rate_sale(p_):
+    for lo, hi, r, cap in [(0, 5000, F(6, 1000), 25), (5000, 20000, F(5, 1000), 80), (20000, 90000, F(4, 1000), None), (90000, 10 ** 9, F(7, 1000), None)]:
+        if lo <= p_ < hi: return min(p_ * r, cap) if cap else p_ * r
+def rate_lease(dep, rent):
+    a = dep + 100 * rent
+    if a < 5000: a = dep + 70 * rent
+    for lo, hi, r, cap in [(0, 5000, F(5, 1000), 20), (5000, 10000, F(4, 1000), 30), (10000, 10 ** 9, F(3, 1000), None)]:
+        if lo <= a < hi: return min(a * r, cap) if cap else a * r
+fee_ae = 2 * (rate_sale(30000) + rate_lease(500, 40))
+pick('S-AE01', f'{int(fee_ae)}만 원' if fee_ae == int(fee_ae) else f'{int(fee_ae)}만 {int((fee_ae - int(fee_ae)) * 10)}천 원')
+def runoff(bal):
+    alive = list('ABCD'); hist = []
+    while True:
+        c = {x: 0 for x in alive}
+        for order, n in bal: c[next(x for x in order if x in alive)] += n
+        hist.append(c)
+        top = max(c, key=c.get)
+        if 2 * c[top] > sum(n for _, n in bal): return top, hist
+        alive.remove(min(c, key=c.get))
+w, h = runoff([('ABCD', 4), ('BCAD', 3), ('CBAD', 2), ('DBCA', 1)]); w2, _ = runoff([('ABCD', 4), ('BCAD', 3), ('CABD', 2), ('DBCA', 1)])
+combo('S-AE02', [l for l, t in zip('ㄱㄴㄷㄹ', [max(h[0], key=h[0].get) != w, set(h[1]) - set(h[2]) == {'C'}, h[-1][w] == 7, w2 == 'A']) if t])
+by_text('S-AE03', list(zip(['甲은 신고만', '乙의 활동은', '丙은 특강을', '丁의 연장', '甲의 강의 시간이'], [False, False, False, _dt.date(2026, 2, 10) > _dt.date(2026, 2, 28) - _dt.timedelta(days=30), 24 <= 20])))
+def tank(bfrom, drain):
+    v = 0
+    for s in range(10800):
+        if v >= 1300 * 60: return F(s, 60)
+        m = F(s, 60); v += 20 + (30 if m >= bfrom else 0) - (10 if drain and 30 <= m < 50 else 0)
+combo('S-AE04', [l for l, t in zip('ㄱㄴㄷㄹ', [tank(20, True) == 40, tank(20, False) == 38, tank(0, True) < 30, (20 * 20 + 50 * 10) * 10 >= 1300 * 7]) if t])
+ppl = ['m1', 'm2', 'm3', 'm4', 'm5', 'w1', 'w2', 'w3', 'w4']
+pick('S-AE05', f"{sum(1 for s in itertools.combinations(ppl, 3) if any(x[0] == 'w' for x in s) and not ('m1' in s and 'm2' in s))}가지")
+tv = {'c': (300, 360, 1200), 'j': (250, 240, 900), 'u': (100, 120, 1500), 'o': (150, 180, 1000)}
+s_ = [sum(b for a, b, c in tv.values()) * 1000 == 1125 * sum(a for a, b, c in tv.values()), [k for k, (a, b, c) in tv.items() if b < a] == ['j'], max(tv, key=lambda k: tv[k][1] * tv[k][2]) == 'c', sum(b * c for a, b, c in tv.values()) >= 1150 * sum(b for a, b, c in tv.values()), 120 * 300 == 360 * 100]
+only('D-AE01', [not x for x in s_], 'false statements')
+p15, p25, ar = [120, 80, 60, 150, 40], [110, 95, 58, 180, 42], [600, 400, 300, 900, 200]
+combo('D-AE02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(b < a for a, b in zip(p15, p25)) == 2, max(range(5), key=lambda i: F(p25[i], ar[i])) == 1, max(range(5), key=lambda i: F(p25[i], p15[i])) == max(range(5), key=lambda i: p25[i] - p15[i]), sum(p25) * 10 >= sum(p15) * 11]) if t])
+hz = {'A': (500, 100, 60, 900), 'B': (300, 90, 45, 600), 'C': (800, 120, 70, 1100), 'D': (200, 80, 30, 500), 'E': (400, 70, 50, 700)}
+mh = [m for m in itertools.permutations('ABCDE') if m[0] == max(hz, key=lambda k: F(hz[k][2], hz[k][1])) and m[1] == max(hz, key=lambda k: F(hz[k][3], hz[k][0])) and hz[m[2]][0] > hz[m[3]][0] and hz[m[3]][1] > hz[m[4]][1]]
+ok(len(mh) == 1, f'D-AE03 {mh}'); pick('D-AE03', ', '.join(mh[0]))
+sc = {'A': (900, 900 // 15, 30), 'B': (50 * 18, 50, 36), 'C': (720, 48, 24), 'D': (600, 600 // 12, 25)}
+pc = {k: F(s, c) for k, (s, t, c) in sc.items()}
+by_text('D-AE04', list(zip(['교원 1인당 학생 수가 가장', '학급당 학생 수가 같은', '네 학교 전체의', '(라)는', '교원 수가 가장'], [pc[max(sc, key=lambda k: F(sc[k][0], sc[k][1]))] == max(pc.values()), sorted(k for k in pc if pc[k] == 30) == ['A', 'C'], sum(v[0] for v in sc.values()) >= 16 * sum(v[1] for v in sc.values()), sc['D'][1] > sc['A'][1], max(sc, key=lambda k: sc[k][1]) == max(sc, key=lambda k: sc[k][2])])))
+wg, cp = [5, 4, 3, 6], [3, 5, 3, 2]
+rr = [F(100 + a, 100 + b) for a, b in zip(wg, cp)]; cr = rr[0] * rr[1] * rr[2] * rr[3]; cn = F(105 * 104 * 103 * 106, 10 ** 8)
+combo('D-AE05', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i, r in enumerate(rr) if r < 1] == [1], rr[2] == 1, cr >= F(105, 100), cn >= F(118, 100)]) if t])
+pick('L-AE01', '윗글의 예에서 1,000명이 검사를 받으면 양성 판정을 받는 사람은 108명이다.')
+pat, non = 100, 900; tp, fp = pat * 9 // 10, non // 10; ppv1 = F(9, 9 + 99)
+combo('L-AE02', [l for l, t in zip('ㄱㄴㄷㄹ', [tp + fp == 180, F(tp, tp + fp) == F(1, 2), pat - tp == 20, F(tp, tp + fp) >= 5 * ppv1]) if t])
+combo('L-AE03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AE05', ['ㄱ', 'ㄴ', 'ㄷ'])
+tt = [dict(zip('국영수사과', pm)) for pm in itertools.permutations(range(1, 6))]
+tt = [p_ for p_ in tt if p_['수'] < p_['영'] and p_['국'] in (1, 5) and abs(p_['사'] - p_['과']) != 1 and p_['영'] != 3 and p_['과'] == p_['수'] + 1]
+by_text('L-AE04', list(zip(['영어는', '수학은', '국어는', '사회가', '과학은'], [all(p_['영'] in (4, 5) for p_ in tt), all(p_['수'] == 2 for p_ in tt), all(p_['국'] == 1 for p_ in tt), all(imp(p_['사'] == 1, p_['영'] == 5) for p_ in tt), all(p_['과'] == 3 for p_ in tt)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
