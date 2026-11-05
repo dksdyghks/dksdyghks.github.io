@@ -2294,4 +2294,83 @@ for p_ in itertools.permutations('RRBBYY'):
     a, b, c = sorted(p_[:2]), sorted(p_[2:4]), sorted(p_[4:])
     if a[0] != a[1] and 'R' not in b and 'B' in c: deal.add((''.join(a), ''.join(b), ''.join(c)))
 by_text('L-AP04', list(zip(['丙은 빨간', '甲은 파란', '乙은 노란', '甲과 乙이', '乙은 파란'], [all('R' in c for a, b, c in deal), all('B' in a for a, b, c in deal), all(b == 'YY' for a, b, c in deal), all(not set(a) & set(b) for a, b, c in deal), all('B' not in b for a, b, c in deal)])))
+# ================= S-AQ / D-AQ / L-AQ (5급 실전, independent re-solve from the rendered options) =================
+def refund_sub(grant, spent, misuse, late, force):
+    base = grant - spent + misuse
+    amt = F(base) + F(misuse, 10) + (F(base, 20) if late and not force else 0)
+    return 0 if amt < 10 else amt
+s_aq01 = refund_sub(1000, 940, 0, 0, 0) + refund_sub(2000, 2000, 300, 0, 0) + refund_sub(1500, 1400, 0, 1, 0) + refund_sub(800, 795, 0, 0, 0) + refund_sub(3000, 2600, 200, 1, 1)
+pick('S-AQ01', f'{int(s_aq01):,}만 원')
+def slide_reach():
+    st0 = '12345_'; seen = {st0}; fr = [st0]
+    while fr:
+        nx = []
+        for s in fr:
+            i = s.index('_'); r, c = divmod(i, 3)
+            for rr, cc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+                if 0 <= rr < 2 and 0 <= cc < 3:
+                    j = rr * 3 + cc; t = list(s); t[i], t[j] = t[j], t[i]; t = ''.join(t)
+                    if t not in seen: seen.add(t); nx.append(t)
+        fr = nx
+    return seen
+rs = slide_reach()
+two = {s for s in ['12345_'] for _ in [0]}
+lvl = {'12345_'}; lv = [lvl]
+for _ in range(2):
+    nxt = set()
+    for s in lv[-1]:
+        i = s.index('_'); r, c = divmod(i, 3)
+        for rr, cc in ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1)):
+            if 0 <= rr < 2 and 0 <= cc < 3:
+                j = rr * 3 + cc; t = list(s); t[i], t[j] = t[j], t[i]; nxt.add(''.join(t))
+    lv.append(nxt)
+combo('S-AQ02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(rs) * 2 == 720, '21345_' not in rs, '123_45' in lv[2], '32145_' in rs]) if t])
+pick('S-AQ03', '광고와 다른 재화를 받은 소비자가 청약을 철회하는 경우 반환 비용은 사업자가 부담한다.')
+def wd_of(day_index): return day_index % 7      # 0 = 일요일
+def fri13_count(leap):
+    ml = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    cnt, start = 0, 0
+    for m in range(12):
+        if wd_of(start + 12) == 5: cnt += 1
+        start += ml[m]
+    return cnt
+combo('S-AQ04', [l for l, t in zip('ㄱㄴㄷㄹ', [fri13_count(False) == 2, wd_of(364) == 6, wd_of(365) == 1, fri13_count(True) == 4]) if t])
+tm = {frozenset(k): v for k, v in {('H', 'A'): 30, ('H', 'B'): 60, ('H', 'C'): 40, ('H', 'D'): 50, ('A', 'B'): 40, ('A', 'C'): 50, ('A', 'D'): 70, ('B', 'C'): 30, ('B', 'D'): 40, ('C', 'D'): 60}.items()}
+win = {'A': (600, 1080, 90), 'B': (540, 720, 60), 'C': (780, 1080, 60), 'D': (540, 960, 90)}
+good = []
+for od in itertools.permutations('ABCD'):
+    t, cur, okk = 540, 'H', True
+    for x in od:
+        t = max(t + tm[frozenset((cur, x))], win[x][0]) + win[x][2]
+        if t > win[x][1]: okk = False; break
+        cur = x
+    if okk and t + tm[frozenset((cur, 'H'))] <= 1080: good.append(od)
+ok(len(good) == 1, f'S-AQ05 {good}'); pick('S-AQ05', ', '.join(good[0]))
+fa = {'A': (40, 2000, 1700, 1840), 'B': (25, 1500, 1350, 1395), 'C': (30, 1200, 1000, 1080), 'D': (20, 1600, 1200, 1520), 'E': (15, 600, 480, 510)}
+s_ = [sum(v[3] for v in fa.values()) * 10 >= 11 * sum(v[2] for v in fa.values()), max(fa, key=lambda k: F(fa[k][3], fa[k][1])) == 'B', max(fa, key=lambda k: F(fa[k][1], fa[k][0])) == 'D', max(fa, key=lambda k: F(fa[k][3], fa[k][2])) == 'D', [k for k, v in fa.items() if v[3] * 10 < 9 * v[1]] == ['E']]
+only('D-AQ01', [not x for x in s_], 'false statements')
+fw0, fw1 = 40, 60; sh = {'제조업': (50, 45), '농축산업': (15, 18), '건설업': (20, 17), '서비스업': (15, 20)}
+nn = {k: (fw0 * a, fw1 * b) for k, (a, b) in sh.items()}
+combo('D-AQ02', [l for l, t in zip('ㄱㄴㄷㄹ', [sh['제조업'][1] < sh['제조업'][0] and nn['제조업'][1] > nn['제조업'][0], nn['서비스업'][1] == 2 * nn['서비스업'][0], nn['건설업'][1] * fw0 < nn['건설업'][0] * fw1, nn['농축산업'][1] - nn['농축산업'][0] >= 3 * (nn['건설업'][1] - nn['건설업'][0])]) if t])
+ts = {'가': (20, 26, 32), '나': (30, 24, 27), '다': (22, 28, 34), '라': (35, 30, 28), '마': (18, 21, 21)}
+mq = [m for m in itertools.permutations(ts) if sum(ts[m[0]]) == max(sum(v) for v in ts.values()) and ts[m[1]][1] < ts[m[1]][0] < 99 and ts[m[1]][2] > ts[m[1]][1] and 3 * ts[m[2]][2] - sum(ts[m[2]]) >= 18 and sum(ts[m[3]]) > sum(ts[m[2]])]
+ok(len(mq) == 1, f'D-AQ03 {mq}'); pick('D-AQ03', ', '.join(mq[0]))
+wa = {'A': (4000, 3600, 400), 'B': (2500, 2250, 250), 'C': (6000, 5100, 900), 'D': (3000, 2760, 240)}; pw = {'A': 50, 'B': 30, 'C': 80, 'D': 40}
+pu = {k: F(wa[k][1], pw[k]) for k in wa}; lr = {k: F(wa[k][2], wa[k][0]) for k in wa}
+by_text('D-AQ04', list(zip(['급수 인구 1인당 사용량이 가장 많은', '네 지역 전체의 누수율', 'C의 공급량은', 'D의 공급량이', '급수 인구 1인당 사용량이 가장 적은'], [max(pu, key=pu.get) == 'B', sum(v[2] for v in wa.values()) * 100 >= 12 * sum(v[0] for v in wa.values()), wa['C'][0] * 2 > 3 * wa['A'][0], wa['D'][0] * 95 >= 2900 * 100, min(pu, key=pu.get) == min(lr, key=lr.get)])))
+pg, pop_ = [50, 30, 12, 8], [60, 100, 250, 400]; gg = [a * b for a, b in zip(pg, pop_)]
+combo('D-AQ05', [l for l, t in zip('ㄱㄴㄷㄹ', [gg.index(max(gg)) == 3, gg[0] == gg[1] == gg[2], sum(gg) >= 15 * sum(pop_), pg[0] >= 7 * pg[3]]) if t])
+pick('L-AQ01', '하위 집단마다 비율이 더 높더라도 비율이 낮은 하위 집단의 비중이 크면 전체 비율은 더 낮을 수 있다.')
+ha = {'sev': (80, 56), 'mild': (20, 19)}; hb = {'sev': (20, 12), 'mild': (80, 72)}
+ra = {g: F(v[1], v[0]) for g, v in ha.items()}; rb = {g: F(v[1], v[0]) for g, v in hb.items()}
+oa, ob = F(56 + 19, 100), F(12 + 72, 100)
+combo('L-AQ02', [l for l, t in zip('ㄱㄴㄷㄹ', [ob - oa == F(9, 100), ra['sev'] > rb['sev'] and ra['mild'] > rb['mild'], F(1, 5) * ra['sev'] + F(4, 5) * ra['mild'] > ob, F(4, 5) * rb['sev'] + F(1, 5) * rb['mild'] < F(3, 5)]) if t])
+combo('L-AQ03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AQ05', ['ㄴ'])
+rt_ = []
+for pm in itertools.permutations('BCDEF'):
+    ring = 'A' + ''.join(pm); pos = {x: i for i, x in enumerate(ring)}
+    adj = lambda x, y: abs(pos[x] - pos[y]) in (1, 5)
+    if abs(pos['A'] - pos['B']) == 3 and adj('A', 'C') and not adj('D', 'E') and adj('F', 'B'): rt_.append(pos)
+adj2 = lambda p_, x, y: abs(p_[x] - p_[y]) in (1, 5)
+by_text('L-AQ04', list(zip(['C는 A의 오른쪽', 'D는 B의', 'E는 F의', 'C는 B의', 'D와 F는'], [all(p_['C'] == 1 for p_ in rt_), all(adj2(p_, 'D', 'B') for p_ in rt_), all(adj2(p_, 'E', 'F') for p_ in rt_), all(not adj2(p_, 'C', 'B') for p_ in rt_), all(abs(p_['D'] - p_['F']) == 3 for p_ in rt_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
