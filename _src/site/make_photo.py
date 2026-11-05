@@ -1,6 +1,6 @@
 """Makes the profile photo from photo-src.jpg (the original, kept with the sources).
 
-- photo.b64: the 3:4 card in the hero (shown at 128 x 171, drawn at twice that for sharp screens)
+- photo.b64: the 3:4 card in the hero (shown at 160 x 213, drawn at twice that for sharp screens)
 - og-image.png: the link preview; the photo box (x 79-290, y 285-567, corner radius 24) is replaced in place
 Run once after changing photo-src.jpg, then run build.py.
 """
@@ -16,7 +16,7 @@ src = Image.open(HERE / 'photo-src.jpg').convert('RGB')
 card = src.crop(CROP)
 assert abs(card.size[0] / card.size[1] - 0.75) < 0.002, card.size
 
-out = card.resize((256, 342), Image.LANCZOS)
+out = card.resize((320, 427), Image.LANCZOS)
 buf = io.BytesIO(); out.save(buf, 'JPEG', quality=84, optimize=True, progressive=True)
 (HERE / 'photo.b64').write_text(base64.b64encode(buf.getvalue()).decode())
 print('photo.b64', len(buf.getvalue()), 'bytes')

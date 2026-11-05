@@ -136,7 +136,7 @@ button { font: inherit; }
 
 .id { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 28px; align-items: end; min-width: 0; }
 .photo {
-  flex: none; display: block; width: 128px; height: 171px; max-width: 100%; object-fit: cover; border-radius: 18px;
+  flex: none; display: block; width: 160px; height: 213px; max-width: 100%; object-fit: cover; border-radius: 20px;
   box-shadow: 0 0 0 1px var(--glass-line), 0 22px 44px -18px #000000B0;
   pointer-events: none; user-select: none; -webkit-user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none;
   grid-row: 1 / span 2; align-self: end;
@@ -378,7 +378,7 @@ button { font: inherit; }
   .mail { font-size: 0.8125rem; gap: 6px; padding: 10px 13px 10px 11px; }
   .mail svg { width: 16px; height: 16px; }
   .id { column-gap: 18px; align-items: center; }
-  .photo { width: 88px; height: 117px; border-radius: 14px; grid-row: 1; align-self: center; }
+  .photo { width: 104px; height: 139px; border-radius: 15px; grid-row: 1; align-self: center; }
   .fields-block { grid-column: 1 / -1; grid-row: 2; margin-top: 20px; }
   #view-en .fields { display: grid; grid-template-columns: auto auto; justify-content: start; }
   #view-en .fields li:first-child { grid-column: 1 / -1; justify-self: start; }

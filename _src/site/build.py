@@ -357,7 +357,7 @@ def view(lang):
       + switch('on-dark') + '</div>')
     flag = taegukgi.svg(30, '태극기' if ko else 'Flag of the Republic of Korea')  # a small emblem above the name
     w('<div class="hero-grid"><div class="id">')
-    w(f'<img class="photo" src="data:image/jpeg;base64,{PHOTO_B64}" alt="{e(P["name"])}" width="128" height="171" draggable="false">')
+    w(f'<img class="photo" src="data:image/jpeg;base64,{PHOTO_B64}" alt="{e(P["name"])}" width="160" height="213" draggable="false">')
     w(f'<div class="id-text">{flag}<h1 class="name">{e(P["name"])}</h1></div>'
       f'<div class="fields-block"><span class="fields-label" id="{sid("fields")}">{e(L["fields"])}</span>'
       f'<ul class="fields" aria-labelledby="{sid("fields")}">' + ''.join(f'<li>{e(f)}</li>' for f in P['fields']) + '</ul></div>')
