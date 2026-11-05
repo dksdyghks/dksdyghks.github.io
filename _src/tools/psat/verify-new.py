@@ -2373,4 +2373,65 @@ for pm in itertools.permutations('BCDEF'):
     if abs(pos['A'] - pos['B']) == 3 and adj('A', 'C') and not adj('D', 'E') and adj('F', 'B'): rt_.append(pos)
 adj2 = lambda p_, x, y: abs(p_[x] - p_[y]) in (1, 5)
 by_text('L-AQ04', list(zip(['C는 A의 오른쪽', 'D는 B의', 'E는 F의', 'C는 B의', 'D와 F는'], [all(p_['C'] == 1 for p_ in rt_), all(adj2(p_, 'D', 'B') for p_ in rt_), all(adj2(p_, 'E', 'F') for p_ in rt_), all(not adj2(p_, 'C', 'B') for p_ in rt_), all(abs(p_['D'] - p_['F']) == 3 for p_ in rt_)])))
+# ================= S-AR / D-AR / L-AR (5급 실전, independent re-solve from the rendered options) =================
+def baby(order_older, n_new, twin, months, transfer):
+    base = sum((100, 200, 300)[min(order_older + i, 2)] + (30 if twin else 0) for i in range(n_new))
+    if transfer or months >= 12: return F(base)
+    return F(base, 2) if months >= 6 else F(0)
+s_ar01 = baby(0, 1, 0, 24, 0) + baby(2, 1, 0, 8, 0) + baby(0, 2, 1, 36, 0) + baby(1, 1, 0, 4, 1) + baby(2, 1, 0, 24, 0)
+pick('S-AR01', f'{int(s_ar01):,}만 원')
+fin_cnt, cnt_all, mx_w = {r: 0 for r in range(1, 9)}, 0, {r: 0 for r in range(1, 9)}
+for seat in itertools.permutations(range(1, 9)):
+    cnt_all += 1
+    q1 = [min(seat[i], seat[i + 1]) for i in (0, 2, 4, 6)]; q2 = [min(q1[0], q1[1]), min(q1[2], q1[3])]
+    for r in range(1, 9):
+        w = (r in q1) + (r in q2) + (r == min(q2))
+        mx_w[r] = max(mx_w[r], w)
+        if r in q2: fin_cnt[r] += 1
+combo('S-AR02', [l for l, t in zip('ㄱㄴㄷㄹ', [fin_cnt[2] == cnt_all, [r for r in mx_w if mx_w[r] >= 2] == [1, 2, 3, 4, 5], mx_w[6] <= 1, 3 * fin_cnt[3] >= cnt_all]) if t])
+pick('S-AR03', '국가에 귀속된 평가액 8,000만 원의 문화유산을 남의 땅에서 발견하여 기한 안에 신고한 사람이 받을 수 있는 보상금은 최대 2,000만 원이다.')
+def opened(who): return [j for j in range(1, 41) if sum(1 for k in who if j % k == 0) % 2 == 1]
+combo('S-AR04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(opened(range(1, 41))) == 6, sum(1 for k in range(1, 41) if 30 % k == 0) == 8, opened(range(1, 41, 2)) == opened(range(1, 41)), len(opened([1, 2, 3])) == 19]) if t])
+dur = {'A': 1, 'B': 2, 'C': 3, 'D': 3, 'E': 3, 'F': 2}; need = {'A': '', 'B': 'A', 'C': '', 'D': 'C', 'E': 'AB', 'F': 'DE'}
+best_ = 99
+for who in itertools.product('甲乙', repeat=6):
+    w = dict(zip('ABCDEF', who))
+    if w['B'] != '甲' or w['C'] != '甲': continue
+    for od in itertools.permutations('ABCDEF'):
+        if any(od.index(x) < od.index(y) for x in od for y in need[x]): continue
+        busy, end = {'甲': 0, '乙': 0}, {}
+        for x in od:
+            st = max([busy[w[x]]] + [end[y] for y in need[x]]); end[x] = st + dur[x]; busy[w[x]] = end[x]
+        best_ = min(best_, max(end.values()))
+pick('S-AR05', f'{best_}시간')
+mk = {'A': (40, 3200, 4000, 4200), 'B': (25, 2500, 3000, 3450), 'C': (30, 1800, 2000, 2120), 'D': (20, 2200, 2500, 2750), 'E': (15, 975, 1000, 1020)}
+g0, g1 = sum(v[2] for v in mk.values()), sum(v[3] for v in mk.values())
+s_ = [g1 * 100 >= 108 * g0, max(mk, key=lambda k: F(mk[k][1], mk[k][0])) == 'D', max(mk, key=lambda k: F(mk[k][3], mk[k][1])) == 'A', max(mk, key=lambda k: F(mk[k][3], mk[k][2])) == 'B', sum(1 for v in mk.values() if F(v[3], v[2]) < F(g1, g0)) == 3]
+only('D-AR01', [not x for x in s_], 'false statements')
+y4, y5, pp = [60, 90, 40, 50], [54, 95, 44, 57], [500, 650, 700, 2900]
+combo('D-AR02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(y5) > sum(y4), y5[1] * pp[0] > y5[0] * pp[1], y5[3] * y4[2] > y5[2] * y4[3], (y5[0] + y5[1]) * 10 >= 6 * sum(y5)]) if t])
+bod = {'가': (20, 18, 15), '나': (32, 35, 30), '다': (12, 14, 16), '라': (40, 32, 26), '마': (24, 26, 28)}
+md = [m for m in itertools.permutations(bod) if all(F(bod[m[1]][0] - bod[m[1]][2], bod[m[1]][0]) > F(bod[k][0] - bod[k][2], bod[k][0]) for k in bod if k != m[1]) and bod[m[2]][2] < bod[m[3]][2] and bod[m[0]][2] > bod[m[4]][2] and bod[m[3]][2] < 20]
+ok(len(md) == 1, f'D-AR03 {md}'); pick('D-AR03', ', '.join(md[0]))
+lo = {'A': (5000, 4000, 4000 * 500 / 10000), 'B': (2700 * 100 // 90, 2700, 162), 'C': (4000, 3000, 240), 'D': (2000, 1700, 1700 * 400 / 10000)}
+per = {k: F(int(v[2] * 10000), v[1]) for k, v in lo.items()}
+by_text('D-AR04', list(zip(['네 유형 전체의 승인율', '1인당 대출액이 가장 많은', '(가)는', 'B의 신청자 수는', '네 유형의 대출액 합계'], [sum(v[1] for v in lo.values()) * 100 >= 82 * sum(v[0] for v in lo.values()), max(per, key=per.get) == 'C', lo['A'][2] >= 3 * lo['D'][2], lo['B'][0] * 10 > 6 * lo['A'][0], sum(v[2] for v in lo.values()) >= 700])))
+asr, dbt, hh = [30, 55, 60, 50], [10, 13, 11, 10], [300, 400, 500, 800]
+nets = [a - d for a, d in zip(asr, dbt)]; tot_d = sum(d * h for d, h in zip(dbt, hh))
+combo('D-AR05', [l for l, t in zip('ㄱㄴㄷㄹ', [nets.index(max(nets)) == 2, all(dbt[i] * asr[i + 1] > dbt[i + 1] * asr[i] for i in range(3)), dbt[3] * hh[3] * 100 >= 35 * tot_d, tot_d >= 10 * sum(hh)]) if t])
+pick('L-AR01', '결선투표제에서는 콩도르세 승자가 1차 투표에서 탈락할 수 있다.')
+bal = [('ABC', 8), ('BCA', 6), ('CBA', 5)]
+first_ = {c: sum(n_ for r, n_ in bal if r[0] == c) for c in 'ABC'}
+pw_ = lambda x, y: sum(n_ for r, n_ in bal if r.find(x) < r.find(y))
+fx = sorted(first_, key=first_.get)[::-1]
+run_w = fx[0] if 2 * first_[fx[0]] > 19 else (fx[0] if pw_(fx[0], fx[1]) > pw_(fx[1], fx[0]) else fx[1])
+bsc = {c: sum(n_ * (2 - r.find(c)) for r, n_ in bal) for c in 'ABC'}
+two_ = {c: sum(n_ for r, n_ in bal if r.replace('C', '')[0] == c) for c in 'AB'}
+combo('L-AR02', [l for l, t in zip('ㄱㄴㄷㄹ', [max(first_, key=first_.get) == 'A', run_w == max(bsc, key=bsc.get), all(2 * pw_('B', y) > 19 for y in 'AC'), max(two_, key=two_.get) == 'A']) if t])
+combo('L-AR03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AR05', ['ㄱ', 'ㄴ'])
+rc = []
+for mid in itertools.permutations('ABCDE'):
+    for fin in itertools.permutations('ABCDE'):
+        if mid[0] == 'A' and fin[0] != 'A' and mid.index('B') == fin.index('B') and mid.index('C') > mid.index('D') and fin.index('C') < fin.index('D') and mid.index(fin[0]) == 2 and fin[1] == 'C': rc.append((mid, fin))
+by_text('L-AR04', list(zip(['D는 중간 지점에서 2위', 'A는 결승에서 3위', 'B는 결승에서 4위', 'C는 중간 지점에서 4위', 'D는 결승에서 3위'], [all(m[1] == 'D' for m, f in rc), all(f[2] == 'A' for m, f in rc), all(f[3] == 'B' for m, f in rc), all(m[3] == 'C' for m, f in rc), all(f[2] == 'D' for m, f in rc)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
