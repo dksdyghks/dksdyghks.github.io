@@ -1872,4 +1872,69 @@ for cl in itertools.product('rbw', repeat=5):
     A_, B_, C_, D_, E_ = cl
     if cl.count('r') == 2 and A_ != B_ and imp(C_ == 'r', D_ == 'b') and E_ != 'w' and cl.count('b') > cl.count('w') and B_ == D_: cases_.append(cl)
 by_text('L-AI04', list(zip(['A에 흰', 'E에 빨간', 'B에 흰', '파란 공이 든', 'C에 흰'], [all(c_[0] != 'w' for c_ in cases_), all(c_[4] != 'r' for c_ in cases_), all(c_[1] != 'w' for c_ in cases_), all(c_.count('b') != 3 for c_ in cases_), all(c_[2] != 'w' for c_ in cases_)])), what='always-false options')
+# ================= S-AJ / D-AJ / L-AJ (5급 실전, independent re-solve from the rendered options) =================
+def ev_sub(car, price, kids, poor, redo):
+    if redo == 'again': return 0
+    b = 600 if car == 'p' else 400
+    if price >= 8500: return 0
+    if price >= 5500: b = b * F(1, 2)
+    extra = (200 if kids >= 3 else 100 if kids == 2 else 0) + (b * F(1, 5) if poor else 0)
+    return b + min(extra, 200)
+s_aj01 = ev_sub('p', 4800, 1, 0, None) + ev_sub('p', 6000, 3, 0, None) + ev_sub('s', 2500, 2, 1, None) + ev_sub('p', 5000, 3, 1, None) + ev_sub('p', 4500, 0, 0, 'accident')
+pick('S-AJ01', f'{int(s_aj01):,}만 원')
+def moves(s):
+    a, b = s
+    r = [(3, b), (a, 5), (0, b), (a, 0)]
+    k = min(a, 5 - b); r.append((a - k, b + k)); k = min(b, 3 - a); r.append((a + k, b - k))
+    return [x for x in r if x != s]
+lev = {(0, 0): 0}; frontier = [(0, 0)]; n_ = 0
+while frontier:
+    n_ += 1; nxt = []
+    for s in frontier:
+        for t in moves(s):
+            if t not in lev: lev[t] = n_; nxt.append(t)
+    frontier = nxt
+combo('S-AJ02', [l for l, t in zip('ㄱㄴㄷㄹ', [min(v for k, v in lev.items() if k[1] == 4) == 6, min(v for k, v in lev.items() if 1 in k) == 4, any(sum(k) == 7 for k in lev), lev[(2, 0)] == 5]) if t])
+pick('S-AJ03', '묵시적으로 갱신된 경우, 임차인이 해지를 통지하면 임대인이 그 통지를 받은 날부터 3개월이 지나 해지의 효력이 생긴다.')
+def asleep(h): return h % 24 >= 23 or h % 24 < 6
+def wake(h): return h + ((30 - h % 24) % 24 if h % 24 >= 23 else 6 - h % 24) if asleep(h) else h
+ta = []; h = 7
+while h < 72: ta.append(h); h = wake(h + 8)
+tb = []; h = 7
+while h < 72:
+    if h in ta: h += 1
+    tb.append(h); h = wake(h + 10)
+dcount = lambda ts, d: len([x for x in ts if 24 * (d - 1) <= x < 24 * d])
+combo('S-AJ04', [l for l, t in zip('ㄱㄴㄷㄹ', [dcount(ta, 2) + dcount(tb, 2) == 6, dcount(ta, 2) == 3, [x - 48 for x in tb if x >= 48] == [7, 17], len(ta) + len(tb) == 15]) if t])
+mm5 = {'A': '갑을', 'B': '을병', 'C': '병정', 'D': '정무', 'E': '무갑', 'F': '기경', 'G': '갑기'}
+best5 = None
+for d in range(1, 8):
+    for asg in itertools.product(range(d), repeat=7):
+        c = dict(zip('ABCDEFG', asg))
+        if any(c[x] == c[y] and set(mm5[x]) & set(mm5[y]) for x, y in itertools.combinations('ABCDEFG', 2)): continue
+        if c['B'] < c['E'] < c['G']: best5 = d; break
+    if best5: break
+pick('S-AJ05', f'{best5}일')
+lb = {'A': (50, 400, 300, 330, 660), 'B': (30, 270, 200, 190, 380), 'C': (20, 200, 120, 150, 330), 'D': (40, 280, 250, 275, 440), 'E': (10, 110, 60, 78, 195)}
+s_ = [sum(v[3] for v in lb.values()) * 10 == 11 * sum(v[2] for v in lb.values()), max(lb, key=lambda k: F(lb[k][3], lb[k][2])) == 'E', sum(F(v[4], v[3]) >= 2 for v in lb.values()) == 3, max(lb, key=lambda k: F(lb[k][1], lb[k][0])) == 'E', sum(v[4] for v in lb.values()) < 2 * sum(v[3] for v in lb.values())]
+only('D-AJ01', [not x for x in s_], 'false statements')
+rd, gd = [90, 100, 108, 112, 125], [2000, 2150, 2250, 2400, 2500]
+combo('D-AJ02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(1, 5) if rd[i] * gd[i - 1] < rd[i - 1] * gd[i]] == [3], rd[4] * 100 >= 5 * gd[4], sum(rd[i] * gd[i - 1] > rd[i - 1] * gd[i] for i in range(1, 5)) == 3, (F(rd[4], rd[0]) - 1) * 2 >= 3 * (F(gd[4], gd[0]) - 1)]) if t])
+ex = {'가': (320, 300), '나': (280, 330), '다': (250, 260), '라': (200, 240)}
+def rnk(k, y): return 1 + sum(ex[o][y] > ex[k][y] for o in ex)
+cand = [m for m in itertools.permutations('가나다라') if rnk(m[2], 1) > rnk(m[2], 0) and F(ex[m[1]][1], ex[m[1]][0]) > F(ex[m[3]][1], ex[m[3]][0]) and ex[m[0]][1] > ex[m[1]][1] and ex[m[3]][1] < 300]
+ok(len(cand) == 1, f'D-AJ03 {cand}'); pick('D-AJ03', ', '.join(cand[0]))
+sch = {'A': (200, 60, 74), 'B': (F(45 * 100, 25), 45, 68), 'C': (150, 66, 73), 'D': (250, 50, 67)}
+tn = sum(v[0] for v in sch.values()); wv = sum(v[0] * v[2] for v in sch.values())
+by_text('D-AJ04', list(zip(['합격률이 가장 높은', '네 학교 전체의 합격률', '합격자가 가장 많은', '네 학교 전체 응시자의', 'B의 응시자는'], [max(sch, key=lambda k: F(sch[k][1], sch[k][0])) == max(sch, key=lambda k: sch[k][2]), sum(v[1] for v in sch.values()) * 10 >= 3 * tn, max(sch, key=lambda k: sch[k][1]) == max(sch, key=lambda k: sch[k][0]), wv >= 70 * tn, sch['B'][0] * 4 >= 3 * sch['D'][0]])))
+nw, cp = [300, 315, 330, 340, 358], [102, 107, 110, 112, 115]
+rw = [F(a * 100, b) for a, b in zip(nw, cp)]; gw_ = [F(nw[i], nw[i - 1]) for i in range(1, 5)]
+combo('D-AJ05', [l for l, t in zip('ㄱㄴㄷㄹ', [gw_.index(max(gw_)) == 3 and gw_.count(max(gw_)) == 1, any(rw[i] < rw[i - 1] for i in range(1, 5)), rw[4] * 100 >= 105 * rw[0], [i for i in range(1, 5) if cp[i] * nw[i - 1] > cp[i - 1] * nw[i]] == [1]]) if t])
+pick('L-AJ01', '이부 요금제를 쓰면 사용량이 한계비용 가격 설정 때와 같아지면서도 기업이 손실을 보지 않을 수 있다.')
+use = lambda pr: 100 - 10 * pr
+acp = [F(k, 10) for k in range(0, 101) if use(F(k, 10)) > 0 and F(k, 10) * use(F(k, 10)) == 120 + 2 * use(F(k, 10))]
+combo('L-AJ02', [l for l, t in zip('ㄱㄴㄷㄹ', [use(2) == 80 and 120 - (2 * use(2) - 2 * use(2)) == 120, min(acp) == 4 and use(4) == 60, 120 / 20 == 6 and use(2) == use(min(acp)), min(acp) * use(min(acp)) == 240]) if t])
+combo('L-AJ03', ['ㄱ', 'ㄴ']); combo('L-AJ05', ['ㄷ'])
+ords = [o for o in itertools.permutations('甲乙丙丁戊己') if o.index('甲') < o.index('乙') and o.index('丙') in (2, 3) and abs(o.index('丁') - o.index('戊')) != 1 and o.index('乙') == o.index('丙') + 1 and o.index('戊') < o.index('甲')]
+by_text('L-AJ04', list(zip(['甲은 두 번째', '丁은 마지막', '己는 丙보다', '乙은 네 번째', '丁과 己는'], [all(o.index('甲') == 1 for o in ords), all(o.index('丁') == 5 for o in ords), all(o.index('己') > o.index('丙') for o in ords), all(o.index('乙') in (3, 4) for o in ords), all(abs(o.index('丁') - o.index('己')) == 1 for o in ords)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
