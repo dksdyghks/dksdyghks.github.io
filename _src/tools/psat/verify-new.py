@@ -2733,4 +2733,63 @@ for pick_ in itertools.product([frozenset(c) for k in (1, 2, 3) for c in itertoo
     a_, b_, c_, d_ = pick_
     if len(a_) == 3 and '영' in d_ and not (b_ & c_) and sum(1 for x in pick_ if '국' in x) == 3 and sum(len(x) for x in pick_) == 7: ex_.append(pick_)
 by_text('L-AW04', list(zip(['B는 국어', 'C는 수학', 'D는 수학', '수학에 응시한 사람은', 'B와 C 가운데'], [all('국' in x[1] for x in ex_), all('수' in x[2] for x in ex_), all('수' not in x[3] for x in ex_), all(sum(1 for y in x if '수' in y) == 2 for x in ex_), all('영' in x[1] or '영' in x[2] for x in ex_)])))
+# ================= S-AX / D-AX / L-AX (5급 실전, independent re-solve from the rendered options) =================
+def toll_(big, km, cuts, commute):
+    v = F(900 + 50 * km) * (F(3, 2) if big else 1)
+    rate = {'경': F(1, 2), '장': F(1, 2), '유': F(1)}
+    if cuts: v = v * (1 - max(rate[c] for c in cuts))
+    elif commute and km <= 20: v = v * F(4, 5)
+    return (int(v) // 100) * 100
+s_ax = toll_(0, 30, ['경'], 1) + toll_(0, 15, [], 1) + toll_(1, 40, [], 0) + toll_(0, 18, ['경', '장'], 1) + toll_(0, 10, ['유', '경'], 0)
+pick('S-AX01', f'{s_ax:,}원')
+def cover(rows, cols):
+    memo = {}
+    def go(col, mask):           # mask: cells in column col already filled from the left
+        if col == cols: return 1 if mask == 0 else 0
+        key = (col, mask)
+        if key in memo: return memo[key]
+        res = 0
+        def fill(r, cur, nxt):
+            nonlocal res
+            if r == rows: res += go(col + 1, nxt); return
+            if cur >> r & 1: fill(r + 1, cur, nxt); return
+            fill(r + 1, cur | 1 << r, nxt | 1 << r)                      # 가로로 다음 열까지
+            if r + 1 < rows and not cur >> (r + 1) & 1: fill(r + 2, cur | 3 << r, nxt)   # 세로
+        fill(0, mask, 0); memo[key] = res; return res
+    return go(0, 0)
+combo('S-AX02', [l for l, t in zip('ㄱㄴㄷㄹ', [cover(2, 6) == 13, cover(3, 5) == 0, cover(3, 4) == 11, cover(2, 5) == 2 * cover(2, 4)]) if t])
+pick('S-AX03', '올해 처음 어린이 보호구역에서 오후 7시에 승용차를 세워 과태료를 받은 사람이 기한 안에 자진 납부하면 9만 6천 원을 낸다.')
+cs_ = [n_ for n_ in range(1, 201) if n_ % 3 == 2 and n_ % 5 == 3 and n_ % 7 == 2]
+combo('S-AX04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(cs_) == 2, min(cs_) == 53, len([n_ for n_ in cs_ if n_ % 4 == 3]) == 1, all(n_ % 6 == 4 for n_ in cs_ if n_ > 100)]) if t])
+dem_ = [50, 90, 120, 70]; gcap, grun, gst = [50, 60, 40], [20, 40, 50], [40, 80, 40]
+bestg = None
+for code in range(8 ** 4):
+    on = [[(code >> (3 * t + g)) & 1 for g in range(3)] for t in range(4)]
+    if any(sum(gcap[g] for g in range(3) if on[t][g]) < dem_[t] + 10 for t in range(4)): continue
+    cc = ''.join(str(on[t][2]) for t in range(4))
+    if any(len(seg) == 1 for seg in cc.split('0') if seg): continue
+    c = sum(grun[g] for t in range(4) for g in range(3) if on[t][g]) + sum(gst[g] for t in range(4) for g in range(3) if on[t][g] and (t == 0 or not on[t - 1][g]))
+    bestg = c if bestg is None else min(bestg, c)
+pick('S-AX05', f'{bestg}백만 원')
+pa = {'A': (8000, 8800, 240, 40), 'B': (6000, 6900, 230, 30), 'C': (5000, 5250, 140, 35), 'D': (4000, 4800, 168, 24), 'E': (3000, 3120, 78, 20)}
+s_ = [sum(v[1] for v in pa.values()) * 10 >= 11 * sum(v[0] for v in pa.values()), max(pa, key=lambda k: F(pa[k][2], pa[k][1])) == 'D', max(pa, key=lambda k: F(pa[k][1], pa[k][3])) == 'A', max(pa, key=lambda k: F(pa[k][1], pa[k][0])) == 'D', sum(v[2] for v in pa.values()) >= 850]
+only('D-AX01', [not x for x in s_], 'false statements')
+am0, am1 = [40, 60, 20, 30], [44, 63, 22, 27]; c0, c1 = [20, 15, 40, 10], [25, 14, 44, 9]
+combo('D-AX02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if am1[i] * c0[i] < am0[i] * c1[i]] == [0], am1[2] * c0[2] == am0[2] * c1[2], sum(am1) * 100 >= 105 * sum(am0), am1[1] * 5 >= 2 * sum(am1)]) if t])
+lec = {'가': (80, 46, 92), '나': (60, 44, 95), '다': (100, 40, 90), '라': (120, 42, 88), '마': (150, 38, 85)}
+ml = [m for m in itertools.permutations(lec) if lec[m[0]][1] == max(v[1] for v in lec.values()) and lec[m[1]][0] == max(v[0] for v in lec.values()) and lec[m[2]][2] == max(v[2] for v in lec.values()) and lec[m[3]][0] * lec[m[3]][2] > lec[m[4]][0] * lec[m[4]][2]]
+ok(len(ml) == 1, f'D-AX03 {ml}'); pick('D-AX03', ', '.join(ml[0]))
+ag = {'A': (400, 100, 400 + 100 - 480, 480), 'B': (450 - 200 + 50, 200, 50, 450), 'C': (150, 500 - 150, 0, 500), 'D': (600, 60, 60, 600)}
+by_text('D-AX04', list(zip(['네 품목의 수입량', '(나)는', 'C의 자급률', '자급률이 100% 이상', '수출량이 생산량의'], [sum(v[1] for v in ag.values()) >= 720, ag['B'][0] > 15 * ag['A'][2], ag['C'][0] * 100 >= 35 * ag['C'][3], [k for k, v in ag.items() if v[0] >= v[3]] == ['D'], [k for k, v in ag.items() if v[2] * 10 >= v[0]] == ['D']])))
+vol, fare = [10, 11, 12, 15], [2500, 2400, 2450, 2300]
+rv = [a * b for a, b in zip(vol, fare)]
+combo('D-AX05', [l for l, t in zip('ㄱㄴㄷㄹ', [rv.index(max(rv)) == 3, [i for i in range(1, 4) if fare[i] > fare[i - 1]] == [2], sum(rv) >= 2400 * sum(vol), rv[3] * 10 >= 14 * rv[0]]) if t])
+pick('L-AX01', '정률법의 감가상각비는 처음 몇 해에 크고 갈수록 작아진다.')
+st_ = [F(1500, 4)] * 4; bk = F(1600); dc_ = []
+for _ in range(4): dc_.append(bk / 2); bk -= bk / 2
+combo('L-AX02', [l for l, t in zip('ㄱㄴㄷㄹ', [dc_[0] >= 2 * st_[0], (1600 - sum(st_[:2])) - (1600 - sum(dc_[:2])) == 450, dc_[2] > st_[2], sum(dc_) == sum(st_)]) if t])
+combo('L-AX03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AX05', ['ㄱ', 'ㄷ'])
+packs = [dict(zip(['텐', '침', '버', '랜', '우'], b)) for b in itertools.product((0, 1), repeat=5)]
+packs = [x for x in packs if (not x['텐'] or x['침']) and not (x['침'] and x['우']) and sum(x.values()) == 3 and (x['침'] or not x['버'])]
+by_text('L-AX04', list(zip(['甲은 텐트를 챙긴다', '甲은 우산을', '甲은 랜턴을', '甲은 버너를', '甲은 텐트와 랜턴을'], [all(x['텐'] for x in packs), all(not x['우'] for x in packs), all(x['랜'] for x in packs), all(not x['버'] for x in packs), all(x['텐'] and x['랜'] for x in packs)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
