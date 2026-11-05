@@ -441,3 +441,10 @@ td.slowt { color: var(--pen); }
   .subj-types { padding: 8px 14px; }
   .seg button, .chip { min-height: 40px; }
 }
+/* 설정 스위치: 줄의 글자를 눌러도 켜고 끄며, 손가락 기기에서는 스위치를 조금 크게 */
+.sw-label { cursor: pointer; flex: 1; }
+@media (pointer: coarse) {
+  .switch { width: 54px; height: 34px; }
+  .switch::after { top: 4px; left: 4px; width: 26px; height: 26px; }
+  .switch[aria-checked="true"]::after { transform: translateX(20px); }
+}

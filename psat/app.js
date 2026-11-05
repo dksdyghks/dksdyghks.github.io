@@ -994,7 +994,7 @@
 
   /* ----- 설정 ----- */
   function seg(name, cur, opts) { return `<div class="seg" role="group">${opts.map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-act="set" data-k="${name}" data-v="${v}">${l}</button>`).join('')}</div>`; }
-  const sw = (k, on) => `<button class="switch" role="switch" aria-checked="${on ? 'true' : 'false'}" data-act="toggle" data-k="${k}" aria-label="${k}"></button>`;
+  const sw = (k, on, label) => `<button class="switch" id="sw-${k}" role="switch" aria-checked="${on ? 'true' : 'false'}" data-act="toggle" data-k="${k}" aria-label="${label}"></button>`;
   function viewSettings() {
     const nBank = ORDER.map((k) => `${SUBJ[k].name} ${(P.bank[k] || []).length}`).join(' · ');
     paint(shell('<b>설정</b>', `
@@ -1009,8 +1009,8 @@
         <div class="set-row"><div class="l">문제 난이도<small>‘자동’은 유형마다 최근 5~6문제 결과를 보고 한 단계씩 올리거나 내립니다. 기본·실전·심화는 인원·조건·경우의 수·자료 크기로 조절되며, 어느 단계든 정답 검증은 같습니다. 직접 출제한 독해·논증 문항은 난이도와 관계없이 나옵니다.</small></div>${seg('level', S.settings.level, [['auto', '자동'], ['1', '기본'], ['2', '실전'], ['3', '심화']])}</div>
       </div>
       <div class="card"><h2>풀이</h2>
-        <div class="set-row"><div class="l">타이머 표시<small>권장 시간을 넘기면 빨갛게 바뀝니다. 다른 창을 보는 동안은 멈춥니다</small></div>${sw('timer', S.settings.timer)}</div>
-        <div class="set-row"><div class="l">복습 문제 섞기<small>과목 풀이 중에 복습할 때가 된 오답이 가끔 나옵니다</small></div>${sw('mixReview', S.settings.mixReview)}</div>
+        <div class="set-row"><label class="l sw-label" for="sw-timer">타이머 표시<small>권장 시간을 넘기면 빨갛게 바뀝니다. 다른 창을 보는 동안은 멈춥니다</small></label>${sw('timer', S.settings.timer, '타이머 표시')}</div>
+        <div class="set-row"><label class="l sw-label" for="sw-mixReview">복습 문제 섞기<small>과목 풀이 중에 복습할 때가 된 오답이 가끔 나옵니다</small></label>${sw('mixReview', S.settings.mixReview, '복습 문제 섞기')}</div>
         <div class="set-row"><div class="l">하루 목표<small>첫 화면에 오늘 푼 문항 수와 목표까지 남은 수를 보여 줍니다</small></div>${seg('goal', String(S.settings.goal || '0'), [['0', '없음'], ['20', '20문항'], ['40', '40문항'], ['60', '60문항'], ['100', '100문항']])}</div>
       </div>
       <div class="card"><h2>기록 보관</h2>
