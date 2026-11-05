@@ -136,15 +136,15 @@ PROJECTS = [  # newest first: (period, ko title, ko sponsor, en title, en sponso
 TALKS = [  # newest first: (y,m,d, ko role, en role, ko title, ko venue, en title, en venue)
     (2025, 8, 28, '발표', 'Presenter', '우주법제의 헌법적 쟁점',
      '제7회 한국헌법학자대회(한국헌법학회 et al.)',
-     'The Constitution in Outer Space: Issues in Space Legislation',
+     'Constitutional Issues in Space Legislation of Korea',
      '7th Conference of Korean Constitutional Scholars (Korean Constitutional Law Association et al.)'),
     (2025, 4, 19, '발표', 'Presenter', '위헌법률심판의 적법요건 판단에 관한 일고찰', '한국헌법판례연구학회 제149회 월례발표회',
      'Gatekeeping Constitutional Review: Admissibility in the Review of Statutes', '149th Monthly Meeting, Korean Society of Constitutional Case Law'),
     (2024, 8, 30, '발표', 'Presenter', '선거범죄로 인한 당선무효의 존립방안', '제6회 한국헌법학자대회(한국헌법학회 et al.)',
-     'Forfeiting the Seat: The Future of Election Invalidation for Electoral Crimes',
+     'The Future of Election Invalidation for Electoral Crimes',
      '6th Conference of Korean Constitutional Scholars (Korean Constitutional Law Association et al.)'),
     (2023, 6, 16, '토론', 'Discussant', '중대재해처벌법의 적용에서 항공분야의 특수성과 관련 법적 쟁점', '한국항공우주정책·법학회 제70회 학술대회',
-     'Aviation Under the Serious Accidents Punishment Act: Distinctive Features and Legal Issues',
+     'Aviation Under the Serious Accidents Punishment Act',
      '70th Conference, Korean Society of Air & Space Law and Policy'),
 ]
 AWARDS = [((2024, 5, 16), '최우수 논문상', '이화여자대학교 법학전문대학원',
