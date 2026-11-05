@@ -4,15 +4,15 @@
 import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, EMBED, fmtSize, kdate, kdt, toast, applyTheme, saveSettings, saveProject, saveCard, saveIdea, logEvent,
   docMeta, docPages, docOf, addFiles, removeDoc, updateDoc, libLoad, parseQuery, searchLib, indexLibrary, libStats, connectFolder, syncFolder, OCR, scanned, ocrAll,
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
-  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=264c7c1fd3';
-import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=264c7c1fd3';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=264c7c1fd3';
-import { caseCourt, citationsIn } from './lawtext.js?v=264c7c1fd3';
-import { excluded, excludeHint } from './profile.js?v=264c7c1fd3';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=264c7c1fd3';
-import { buildDocx, DOCX_MIME } from './docx.js?v=264c7c1fd3';
-import { viewJudg, openJudgment } from './judg.js?v=264c7c1fd3';
-import { isJudgment } from './judgment.js?v=264c7c1fd3';
+  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=61cfbfbbbf';
+import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=61cfbfbbbf';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=61cfbfbbbf';
+import { caseCourt, citationsIn } from './lawtext.js?v=61cfbfbbbf';
+import { excluded, excludeHint } from './profile.js?v=61cfbfbbbf';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=61cfbfbbbf';
+import { buildDocx, DOCX_MIME } from './docx.js?v=61cfbfbbbf';
+import { viewJudg, openJudgment } from './judg.js?v=61cfbfbbbf';
+import { isJudgment } from './judgment.js?v=61cfbfbbbf';
 
 /* ---------------- 모양 ---------------- */
 const sv = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
@@ -519,14 +519,14 @@ function libStatusHTML() {
   return `<div class="lib-line">연결된 폴더: ${folder}${S.settings.folderAt ? ` · 마지막 확인 ${kdt(S.settings.folderAt)}` : ''}</div>
     <div class="lib-line">문헌 ${st.n}개${st.ok ? ` · ${st.pages.toLocaleString()}쪽 · 본문 ${st.chars >= 10000 ? `약 ${Math.round(st.chars / 10000).toLocaleString()}만` : st.chars.toLocaleString()}자` : ''} · ${fmtSize(st.size)}${t ? ` · <b>${esc(t)}</b>` : ''}</div>
     ${OCR.run ? `<div class="lib-line"><b>스캔본 글자 읽는 중</b> ${OCR.done}/${OCR.total} · 「${esc(OCR.doc)}」 ${esc(OCR.page)} <button class="btn sm" data-act="ocr-stop">멈추기</button></div>`
-      : scanned().length ? `<div class="lib-line warn">글자가 없는 스캔본 ${scanned().length}개는 아직 찾기에서 빠집니다. <button class="btn sm primary" data-act="ocr-all">글자 읽기(OCR)</button></div><div class="lib-line">글자 읽기는 이 컴퓨터 안에서 쪽마다 몇 초씩 걸립니다. 켜 두고 다른 일을 하세요.</div>` : ''}
+      : scanned().length ? `<div class="lib-line warn">글자가 없는 스캔본 ${scanned().length}개는 아직 찾기에서 빠집니다. <button class="btn sm primary" data-act="ocr-all">글자 읽기(OCR)</button></div><div class="lib-line">글자 읽기는 이 기기 안에서 쪽마다 몇 초씩 걸립니다. 켜 두고 다른 일을 하세요.</div>` : ''}
     <div class="lib-line" id="store-line"></div>`;
 }
 async function paintStore() {
   const el = $('#store-line'); if (!el || !navigator.storage || !navigator.storage.estimate) return;
   try {
     const e = await navigator.storage.estimate(), kept = navigator.storage.persisted ? await navigator.storage.persisted() : false;
-    el.innerHTML = `이 컴퓨터의 저장 공간: ${fmtSize(e.usage || 0)} 사용${e.quota ? ` / ${fmtSize(e.quota)} 가능` : ''} · ${kept ? '브라우저가 임의로 지우지 않도록 보호됨' : '<button class="linkish" data-act="persist">브라우저가 임의로 지우지 않게 보호하기</button>'}`;
+    el.innerHTML = `이 기기의 저장 공간: ${fmtSize(e.usage || 0)} 사용${e.quota ? ` / ${fmtSize(e.quota)} 가능` : ''} · ${kept ? '브라우저가 임의로 지우지 않도록 보호됨' : '<button class="linkish" data-act="persist">브라우저가 임의로 지우지 않게 보호하기</button>'}`;
   } catch (err) { /* not available */ }
 }
 const LIB_FILTERS = [['all', '모두'], ['mine', '내 글'], ['read', '읽기 카드'], ['noinfo', '정보 미입력'], ['scan', '스캔본']];
@@ -548,16 +548,18 @@ function filteredDocs() {
     && (!q || `${d.title}${d.author}${d.venue}`.toLowerCase().replace(/\s+/g, '').includes(q))).sort((a, b) => b.addedAt - a.addedAt);
 }
 function paintDocList() { const el = $('#doc-list'); if (!el) return; const list = filteredDocs(); el.innerHTML = list.map(docRow).join('') || `<p class="find-none">${S.docs.length ? '맞는 문헌이 없습니다.' : '아직 문헌이 없습니다.'}</p>`; const c = $('#lib-count'); if (c) c.textContent = `${list.length}편`; }
+const touchOnly = () => { try { return matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches; } catch (e) { return false; } }; // 손가락으로만 쓰는 기기(휴대전화·태블릿)
 function viewLibrary() {
   view().innerHTML = `<div class="page">
     <div class="notes-head"><h1>서재</h1></div>
     <div class="lib-box">
       <div class="lib-head"><b>폴더 통째로 넣기</b><span><button class="btn primary" data-act="folder">${S.folder || S.settings.folderName ? '다른 폴더 고르기' : '폴더 고르기'}</button><button class="btn" data-act="folder-sync" ${S.folder && S.folder.handle ? '' : 'hidden'}>다시 읽기</button></span></div>
-      <p class="sub">폴더(하위 폴더 포함) 안의 PDF·한글(.hwp·.hwpx)·텍스트를 모두 넣고 모든 쪽의 글자를 읽어 둡니다. 문헌은 이 컴퓨터 안에만 있으며 어디로도 보내지 않습니다.</p>
+      <p class="sub">폴더(하위 폴더 포함) 안의 PDF·한글(.hwp·.hwpx)·텍스트를 모두 넣고 모든 쪽의 글자를 읽어 둡니다. 문헌은 이 기기 안에만 있으며 어디로도 보내지 않습니다.</p>
       <div id="lib-status">${libStatusHTML()}</div>
       <input type="file" id="folder-in" webkitdirectory multiple class="sr" tabindex="-1">
     </div>
-    <label class="drop" id="drop">파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u><input type="file" id="files" accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
+    ${touchOnly() ? '<p class="sub"><b>휴대전화·태블릿</b>에서는 브라우저가 폴더를 통째로 고르지 못하는 경우가 많습니다. 아래를 눌러 파일을 여러 개 한꺼번에 고르세요.</p>' : ''}
+    <label class="drop" id="drop">${touchOnly() ? '<u>눌러서 파일 고르기</u>(여러 개 가능)' : '파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u>'}<input type="file" id="files" accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
     <p class="sub">문헌의 <b>정보</b>에 종류·학술지·권호·발행기관·첫 쪽 번호를 적으면 각주가 박사학위논문 양식 그대로 만들어집니다. 첫 쪽에서 읽은 제안이 있으면 눌러서 넣을 수 있습니다(저절로 채우지는 않습니다). 내가 쓴 글은 <b>내 글</b>로 표시하세요.</p>
     <div class="lib-filter"><button class="btn sm" data-act="bulk-meta" title="정보가 빈 문헌의 첫 쪽에서 저자·학술지·권호·쪽을 읽어 제안합니다">정보 제안 한꺼번에</button><div class="chips-row">${LIB_FILTERS.map(([k, l]) => `<button class="chip${(S.libF || 'all') === k ? ' on' : ''}" data-act="lib-f" data-v="${k}">${l}</button>`).join('')}</div><label class="sr" for="lib-q">제목·저자로 거르기</label><input id="lib-q" type="search" placeholder="제목·저자로 거르기" value="${esc(S.libQ || '')}" autocomplete="off"><span class="m" id="lib-count"></span></div>
     <div class="doc-list" id="doc-list"></div></div>`;
@@ -639,7 +641,7 @@ Object.assign(ACT, {
   'ocr-all': () => ocrAll(null, ocrDone), 'ocr-one': (el) => ocrAll(rowDoc(el), ocrDone), 'ocr-stop': () => { OCR.stop = true; paintStatus(); },
   folder: async () => { await connectFolder(); redraw('library'); },
   'folder-sync': () => syncFolder(),
-  persist: async () => { if (navigator.storage && navigator.storage.persist) { const ok = await navigator.storage.persist(); toast(ok ? '이 컴퓨터에서 YO아이의 저장소를 보호합니다.' : '브라우저가 보호 요청을 받지 않았습니다. YO아이를 설치하거나 자주 열면 보호될 수 있습니다.'); paintStore(); } },
+  persist: async () => { if (navigator.storage && navigator.storage.persist) { const ok = await navigator.storage.persist(); toast(ok ? '이 기기에서 YO아이의 저장소를 보호합니다.' : '브라우저가 보호 요청을 받지 않았습니다. YO아이를 설치하거나 자주 열면 보호될 수 있습니다.'); paintStore(); } },
 });
 function ocrDone(r) { if (r.fail.length) modal(`<h2>글자 읽기 결과</h2><p class="prose">${r.ok}개 문헌의 글자를 읽었습니다.${r.stopped ? ' 중간에 멈췄습니다.' : ''}</p><ul class="plain">${r.fail.map((x) => `<li>${esc(x)}</li>`).join('')}</ul><div class="modal-foot"><button class="btn primary" data-close>닫기</button></div>`); else if (r.ok) toast(`${r.ok}개 문헌의 글자를 읽었습니다.`); }
 ON_CHANGE.push((t) => {
@@ -671,7 +673,7 @@ async function wipeAll() {
   try { for (const k of await caches.keys()) if (/^(yoai-|webllm)/i.test(k)) await caches.delete(k); } catch (e) { /* ignore */ }
   try { if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) if (/\/yoai\/$/.test(r.scope)) await r.unregister(); } catch (e) { /* ignore */ }
   for (const st of ['localStorage', 'sessionStorage']) { try { const sto = window[st]; for (const k of Object.keys(sto)) if (/^(yoai|door:yoai)/.test(k)) sto.removeItem(k); } catch (e) { /* ignore */ } }
-  document.body.innerHTML = `<main class="wiped"><h1>YO아이를 이 컴퓨터에서 지웠습니다</h1><p>문헌·연구·카드·오프라인용 파일을 모두 지웠습니다. 백업 폴더에 저장된 백업 파일과 송공 기록은 그대로입니다.</p>${blocked ? '<p><b>다른 창에 YO아이가 열려 있으면 그 창을 닫아야 마저 지워집니다.</b></p>' : ''}<p>이 탭을 닫으세요.</p><p><a href="../">0128.kr로 돌아가기</a></p></main>`;
+  document.body.innerHTML = `<main class="wiped"><h1>YO아이를 이 기기에서 지웠습니다</h1><p>문헌·연구·카드·오프라인용 파일을 모두 지웠습니다. 백업 폴더에 저장된 백업 파일과 송공 기록은 그대로입니다.</p>${blocked ? '<p><b>다른 창에 YO아이가 열려 있으면 그 창을 닫아야 마저 지워집니다.</b></p>' : ''}<p>이 탭을 닫으세요.</p><p><a href="../">0128.kr로 돌아가기</a></p></main>`;
 }
 function oldChatsMd() {
   let out = '# YO아이 이전 AI 대화\n\n';
@@ -712,7 +714,7 @@ function openSettings() {
   on('#s-zip', async () => { toast('전체 백업을 만드는 중…'); download(`YO아이-전체-${stamp()}.zip`, await fullBackupZip(), 'application/zip'); });
   on('#s-chats', () => download(`YO아이-이전대화-${stamp()}.md`, oldChatsMd(), 'text/markdown;charset=utf-8'));
   on('#s-chats-del', async () => { if (!(await confirmBox(`이전 AI 대화 ${S.chats.length}개를 지울까요? 되돌릴 수 없습니다.`, '지우기'))) return; for (const c of S.chats) await DB.del('chats', c.id); S.chats = []; touched(); m.close(); openSettings(); });
-  on('#wipe', async () => { if (!(await confirmBox('문헌·연구·카드가 이 컴퓨터에서 모두 지워집니다. 되돌릴 수 없습니다. 남기려면 먼저 백업을 받으세요. 지울까요?', '모두 지우기'))) return; m.close(); await wipeAll(); });
+  on('#wipe', async () => { if (!(await confirmBox('문헌·연구·카드가 이 기기에서 모두 지워집니다. 되돌릴 수 없습니다. 남기려면 먼저 백업을 받으세요. 지울까요?', '모두 지우기'))) return; m.close(); await wipeAll(); });
   on('#install', async () => { const e = installEvt; installEvt = null; try { await e.prompt(); } catch (err) { /* ignore */ } m.close(); });
   on('#relock', () => { window.Door.close('yoai'); toast('다음에 열 때 비밀번호를 다시 묻습니다.'); });
   $('#s-restore', m.el).addEventListener('change', async (e) => {
