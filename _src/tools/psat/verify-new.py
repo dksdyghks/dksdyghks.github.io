@@ -2167,4 +2167,69 @@ for res in itertools.product('LR', repeat=6):
         x, y = (a, b) if r == 'L' else (b, a); wn[x] += 1; bt.add(x + y)
     if wn['甲'] == 2 and '乙丙' in bt and wn['丁'] >= 1 and wn['乙'] == wn['丁']: lg.append((wn, bt))
 by_text('L-AN04', list(zip(['甲은 乙에게', '丙은 한 경기도', '乙은 丁에게', '丁은 丙에게', '丙이 2승을'], [all('甲乙' in b for w, b in lg), all(w['丙'] == 0 for w, b in lg), all('乙丁' in b for w, b in lg), all('丁丙' in b for w, b in lg), all(imp(w['丙'] == 2, '甲乙' in b and '甲丁' in b) for w, b in lg)])))
+# ================= S-AO / D-AO / L-AO (5급 실전, independent re-solve from the rendered options) =================
+def reimb(pct, spent, illegal, void_):
+    if void_: return 0
+    b = min(spent - illegal, 20000)
+    return b if pct >= 15 else (b // 2 if pct >= 10 else 0)
+t_ao = reimb(40, 18000, 0, 0) + reimb(12, 16000, 0, 0) + reimb(30, 24000, 0, 0) + reimb(16, 15000, 3000, 0) + reimb(45, 19000, 0, 1)
+pick('S-AO01', f'{t_ao // 10000}억 {t_ao % 10000:,}만 원')
+bad = {'009', '001', '019', '091'}
+def steps_to(target, banned):
+    seen = {'000': 0}; fr = ['000']
+    while fr:
+        nx = []
+        for s in fr:
+            for i in range(3):
+                for d in (1, 9):
+                    t = s[:i] + str((int(s[i]) + d) % 10) + s[i + 1:]
+                    if t in banned or t in seen: continue
+                    seen[t] = seen[s] + 1; nx.append(t)
+        fr = nx
+    return seen[target]
+combo('S-AO02', [l for l, t in zip('ㄱㄴㄷㄹ', [steps_to('008', bad) == 4, steps_to('555', bad) == 16, steps_to('005', bad) == 5, steps_to('007', bad) - steps_to('007', set()) == 2]) if t])
+pick('S-AO03', '바닥 면적 80제곱미터인 판매 시설을 공동 주택으로 바꾸려는 자는 신고하지 않아도 된다.')
+def riffle(d, upper_first):
+    a, b = d[:4], d[4:]
+    return [c for pair in zip(a, b) for c in (pair if upper_first else pair[::-1])]
+dk = list(range(1, 9))
+a1 = riffle(dk, True); a2 = riffle(a1, True); a3 = riffle(a2, True); b3 = riffle(riffle(riffle(dk, False), False), False)
+combo('S-AO04', [l for l, t in zip('ㄱㄴㄷㄹ', [a3 == dk, b3 == dk, a1[0] == 1 and a1[7] == 8, a2[1] == 3]) if t])
+seg = [(6000, False, 4), (5000, False, 3), (3600, True, 2), (2400, True, 1)]
+riders = [['甲', '乙', '丙', '丁'], ['乙', '丙', '丁'], ['丙', '丁'], ['丁']]
+owe = {q: F(0) for q in '甲乙丙丁'}; total_ = F(0)
+for (f_, night, n_), rs in zip(seg, riders):
+    v = F(f_) * (F(6, 5) if night else 1); total_ += v
+    for q in rs: owe[q] += v / n_
+paid_ = {q: (owe[q] // 100) * 100 for q in '甲乙丙'}
+pick('S-AO05', f'{int(total_ - sum(paid_.values())):,}원')
+bk = {'소설': (300, 330, 60), '자기계발': (200, 180, 70), '아동': (150, 165, 50), '학습': (250, 240, 40), '만화': (100, 130, 80)}
+on_ = {k: b * r for k, (a, b, r) in bk.items()}
+s_ = [sum(v[1] for v in bk.values()) > sum(v[0] for v in bk.values()), max(bk, key=lambda k: F(bk[k][1], bk[k][0])) == '만화', [k for k, v in bk.items() if v[1] < v[0]] == ['자기계발', '학습'], max(on_, key=on_.get) == '소설', sum(on_.values()) >= 60 * sum(v[1] for v in bk.values())]
+only('D-AO01', [not x for x in s_], 'false statements')
+sm, sh0, sh1 = [1000, 1200, 1500], {'중국': 40, '미국': 15, '베트남': 10}, {'중국': 30, '미국': 20, '베트남': 12}
+e0 = {k: sm[0] * v for k, v in sh0.items()}; e1 = {k: sm[2] * v for k, v in sh1.items()}
+combo('D-AO02', [l for l, t in zip('ㄱㄴㄷㄹ', [sh1['중국'] < sh0['중국'] and e1['중국'] > e0['중국'], e1['미국'] == 2 * e0['미국'], e1['베트남'] >= 2 * e0['베트남'], max(e1, key=lambda k: e1[k] - e0[k]) == '미국']) if t])
+br = {'가': (12, 8), '나': (7, 9), '다': (10, 5), '라': (6, 10), '마': (9, 6)}
+mo = [m for m in itertools.permutations(br) if br[m[0]][0] < br[m[0]][1] and br[m[1]][0] < br[m[1]][1] and br[m[1]][1] > br[m[0]][1] and br[m[2]][0] == 2 * br[m[2]][1] and br[m[3]][0] - br[m[3]][1] > br[m[4]][0] - br[m[4]][1]]
+ok(len(mo) == 1, f'D-AO03 {mo}'); pick('D-AO03', ', '.join(mo[0]))
+ac = {'A': (20000, 20000 * 3 // 2 - 29700, 29700), 'B': ((120 + 17880) * 2 // 3, 120, 17880), 'C': (15000, 180, 15000 * 7 // 5 - 180), 'D': (8000, 100, 12700)}
+by_text('D-AO04', list(zip(['사고 1건당 사상자가', '사고 1만 건당', '네 지역 전체의', 'B의 부상자는', 'C의 사고 건수는'], [max(ac, key=lambda k: F(ac[k][1] + ac[k][2], ac[k][0])) == max(ac, key=lambda k: ac[k][1]), max(ac, key=lambda k: F(ac[k][1], ac[k][0])) == 'C', sum(v[1] + v[2] for v in ac.values()) * 2 >= 3 * sum(v[0] for v in ac.values()), ac['B'][2] - ac['D'][2] >= 5000, ac['C'][0] * 10 >= 13 * ac['B'][0]])))
+inc_, con_, s24 = [120, 250, 380, 520, 900], [130, 210, 290, 360, 520], [2, 14, 22, 29, 40]
+sv = [a - b for a, b in zip(inc_, con_)]
+combo('D-AO05', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(5) if F(sv[i] * 100, inc_[i]) < s24[i]] == [0], sv[4] > sum(sv[:4]), F(inc_[4] * con_[0], con_[4] * inc_[0]) >= 2, (sum(inc_) - sum(con_)) * 100 >= 30 * sum(inc_)]) if t])
+pick('L-AO01', '죄수의 딜레마에서 두 용의자가 모두 우월 전략을 따르면 둘 다 침묵할 때보다 나쁜 결과를 얻는다.')
+G2 = {('K', 'K'): (10, 8), ('K', 'C'): (2, 9), ('C', 'K'): (14, 3), ('C', 'C'): (5, 6)}       # K 유지, C 인하
+def dom(g, pl):
+    for s in 'KC':
+        o = 'C' if s == 'K' else 'K'
+        if pl == 0 and all(g[(s, x)][0] > g[(o, x)][0] for x in 'KC'): return s
+        if pl == 1 and all(g[(x, s)][1] > g[(x, o)][1] for x in 'KC'): return s
+    return None
+ne = [k for k in G2 if all(G2[k][0] >= G2[(x, k[1])][0] for x in 'KC') and all(G2[k][1] >= G2[(k[0], y)][1] for y in 'KC')]
+G3 = dict(G2); G3[('K', 'C')] = (2, 7)
+combo('L-AO02', [l for l, t in zip('ㄱㄴㄷㄹ', [dom(G2, 0) == 'C' and dom(G2, 1) == 'C', ne == [('C', 'C')], max(G2, key=lambda k: sum(G2[k])) == ('K', 'K'), dom(G3, 1) == 'K']) if t])
+combo('L-AO03', ['ㄱ', 'ㄷ', 'ㄹ']); combo('L-AO05', ['ㄴ', 'ㄷ'])
+wk = [o for o in itertools.permutations('ABCDE') if o.index('A') < o.index('B') and o.index('C') != 2 and o.index('D') == o.index('E') + 1 and o.index('B') != 4 and o.index('A') != 0]
+by_text('L-AO04', list(zip(['A는 화요일', 'B는 화요일', 'D는 금요일', 'C는 월요일', 'E는 월요일'], [all(o.index('A') != 1 for o in wk), all(o.index('B') != 1 for o in wk), all(o.index('D') != 4 for o in wk), all(o.index('C') != 0 for o in wk), all(o.index('E') != 0 for o in wk)])), what='always-false options')
 print('ALL OK' if ok_all else 'SOME FAILED')
