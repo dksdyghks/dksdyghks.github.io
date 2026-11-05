@@ -3339,4 +3339,63 @@ for mask in range(1 << 16):
     vals = [any(s and not p for s, h, r, p in M), not any(r and not h for s, h, r, p in M), any(p and h for s, h, r, p in M), not any(s and p for s, h, r, p in M), any(h and not r for s, h, r, p in M)]
     must4_ = [a and b for a, b in zip(must4_, vals)]
 by_text('L-BG04', list(zip(['수영반 학생 가운데', '독서반 학생은 모두', '사진반 학생 가운데', '수영반이면서', '등산반 학생 가운데'], must4_)))
+# ================= S-BH / D-BH / L-BH (5급 실전, independent re-solve from the rendered options) =================
+import math
+def pc_(kg, dims, jeju, n=1):
+    aw = max(F(kg), F(dims[0] * dims[1] * dims[2], 6000))
+    b = 4000 if aw <= 2 else 5000 if aw <= 5 else 6500 if aw <= 10 else 8000
+    return n * (b * (F(9, 10) if n >= 3 else 1) + (3000 if jeju else 0))
+pick('S-BH01', f'{int(pc_(3, (40, 30, 30), 0) + pc_(F(3, 2), (20, 20, 10), 1) + pc_(4, (30, 20, 20), 1, 3) + pc_(12, (60, 50, 40), 0)):,}원')
+cnt_ = lambda a, b: math.comb((b[0] - a[0]) + (b[1] - a[1]), b[0] - a[0])
+o_, t_, p_, q_ = (0, 0), (4, 3), (2, 1), (2, 2)
+via = lambda *pts: math.prod(cnt_(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+combo('S-BH02', [l for l, t in zip('ㄱㄴㄷㄹ', [via(o_, t_) == 35, via(o_, p_, t_) == 18, via(o_, t_) - via(o_, q_, t_) == 18, via(o_, p_, t_) - via(o_, p_, q_, t_) == 9]) if t])
+apply_ = lambda d: 3 <= d <= 30
+refund_ = lambda d: 1 if d >= 7 else F(1, 2) if d >= 3 else 0
+gym_ = lambda h, extra, local: h * 20000 * (F(3, 2) if extra else 1) * (F(7, 10) if local else 1)
+by_text('S-BH03', list(zip(['관내 단체가 토요일', '사용일 2일 전에', '관외 단체가 평일', '사용일 5일 전에', '관내 단체가 평일 오후 7시'],
+        [gym_(2, True, True) == 42000, apply_(2), gym_(2, False, False) == 60000, refund_(5) == 1, gym_(2, True, True) == 28000])))
+tooth_ = {'A': 12, 'B': 18, 'C': 30}
+spin_ = {'A': 1}
+for a_, b_ in [('A', 'B'), ('B', 'C')]: spin_[b_] = -spin_[a_]      # 맞물린 이웃은 반대로
+k_ = 1
+while any((tooth_['A'] * k_) % t for t in tooth_.values()): k_ += 1
+combo('S-BH04', [l for l, t in zip('ㄱㄴㄷㄹ', [spin_['C'] == spin_['A'], F(12 * 15, 30) == 6, k_ == 15, F(18 * 4, 30) == F(5, 2)]) if t])
+cr_ = {'A': (1, 4, 'W'), 'B': (1, 1, 'T'), 'C': (2, 1, 'W'), 'D': (3, 2, 'M'), 'E': (1, 2, 'U'), 'F': (3, 4, 'U')}
+bc_ = max(sum(cr_[x][0] for x in s) for k in range(1, 7) for s in itertools.combinations(cr_, k)
+          if len({cr_[x][2] for x in s}) == k and ('D' not in s or 'A' in s) and sum(cr_[x][1] for x in s) <= 8)
+pick('S-BH05', f'{bc_}학점')
+rt_ = [400, 480, 600, 660]; zn_ = {'A': (200, 8, 20), 'B': (150, 5, 25), 'C': (120, 6, 15), 'D': (110, 4, 30), 'E': (80, 2, 18)}
+pb_ = {k: F(a * 10, b) for k, (a, b, c) in zn_.items()}; tt_ = {k: a * c for k, (a, b, c) in zn_.items()}; dd_ = [rt_[i] - rt_[i - 1] for i in range(1, 4)]
+only('D-BH01', [not x for x in [min(dd_) > 0 and dd_.index(max(dd_)) == 1, rt_[3] >= F(16, 10) * rt_[0], max(pb_, key=pb_.get) == 'E', max(zn_, key=lambda k: zn_[k][2]) == max(tt_, key=tt_.get), sorted(k for k in pb_ if pb_[k] >= 300) == ['B', 'E']]], 'false statements')
+hs_ = {'가': (400, 80, 24000), '나': (300, 100, 21000), '다': (500, 125, 25000), '라': (240, 40, 19200), '마': (350, 50, 21700)}
+mh_ = [m for m in itertools.permutations(hs_) if hs_[m[0]][0] == max(v[0] for v in hs_.values()) and F(hs_[m[1]][0], hs_[m[1]][1]) == min(F(v[0], v[1]) for v in hs_.values())
+       and F(hs_[m[2]][2], hs_[m[2]][0]) == max(F(v[2], v[0]) for v in hs_.values()) and hs_[m[3]][1] > hs_[m[4]][1]]
+ok(len(mh_) == 1, f'D-BH02 {mh_}'); pick('D-BH02', ', '.join(mh_[0]))
+B_disc = 100 - F(4800000, 15000 * 400) * 100; C_list = F(10800000, F(75, 100) * 600); D_qty = F(12000000, 30000); E_rev = F(12000 * 85 * 1000, 100 * 10000)
+sp_ = {'A': 18000, 'B': 15000 * (100 - B_disc) / 100, 'C': C_list * F(75, 100), 'D': 30000, 'E': 12000 * F(85, 100)}
+qt_ = {'A': 500, 'B': 400, 'C': 600, 'D': D_qty, 'E': 1000}; rv_ = {k: sp_[k] * qt_[k] / 10000 for k in sp_}; dc_ = {'A': 10, 'B': B_disc, 'C': 25, 'D': 0, 'E': 15}
+by_text('D-BH03', list(zip(['(가)에 해당하는', '판매량이 가장 많은', '할인 뒤 판매 가격이', '(다)와 (라)를', '다섯 상품의 매출액'],
+        [max(dc_, key=dc_.get) == 'B', max(qt_, key=qt_.get) == max(rv_, key=rv_.get), max(sp_, key=sp_.get) == 'D', D_qty + E_rev >= 1500, sum(rv_.values()) >= 5000])))
+cp_ = {'식료품': (30, 110, 121), '주거': (25, 100, 104), '교통': (20, 120, 114), '기타': (25, 108, 108)}
+ci_ = lambda j: F(sum(w[0] * w[j] for w in cp_.values()), 100); cb_ = {k: v[0] * (v[2] - v[1]) for k, v in cp_.items()}
+combo('D-BH04', [l for l, t in zip('ㄱㄴㄷㄹ', [ci_(2) >= F(103, 100) * ci_(1), max(cb_, key=cb_.get) == '식료품', F(114, 120) == F(95, 100), max(cp_, key=lambda k: cp_[k][2]) == '식료품']) if t])
+ex5_, im5_, b24_, e24_ = [500, 300, 450, 200], [420, 340, 400, 260], [60, -20, 70, -30], [450, 280, 430, 175]
+b5_ = [a - b for a, b in zip(ex5_, im5_)]; g5_ = [F(a, b) for a, b in zip(ex5_, e24_)]
+combo('D-BH05', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(x > 0 for x in b5_) == 2, sum(a < b for a, b in zip(b5_, b24_)) == 3, g5_.index(max(g5_)) == ex5_.index(max(ex5_)), sum(b for a, b in zip(ex5_, im5_) if b > a) >= 600]) if t])
+pick('L-BH01', '나누는 수를 조정하는 방식에서는 전체 자리 수를 늘려도 자리가 줄어드는 집단이 생기지 않는다.')
+def lr_(n, pop=(62, 33, 5)):
+    q = [F(x * n, sum(pop)) for x in pop]; g = [int(x) for x in q]
+    for i in sorted(range(3), key=lambda i: g[i] - q[i])[:n - sum(g)]: g[i] += 1
+    return g, q
+combo('L-BH02', [l for l, t in zip('ㄱㄴㄷㄹ', [lr_(10)[0][2] == 1, lr_(11)[0][2] == 0, lr_(11)[1][0] > 7, lr_(12)[0][2] == 1]) if t])
+combo('L-BH03', ['ㄱ', 'ㄹ']); combo('L-BH05', ['ㄱ', 'ㄴ'])
+sol4_ = []
+for cul in '갑을병정무':
+    for liars in itertools.combinations('갑을병정무', 2):
+        tr = {x: x not in liars for x in '갑을병정무'}
+        said = {'갑': not tr['을'], '을': cul != '갑', '병': cul in '무을', '정': cul == '을', '무': cul == '병'}
+        if said == tr: sol4_.append((cul, set(liars)))
+ok(len(sol4_) == 1, f'L-BH04 {sol4_}'); c4_, l4_ = sol4_[0]
+by_text('L-BH04', list(zip(['갑과 무가', '병이 꽃병을', '정은 거짓말을', '을은 거짓말을', '무가 꽃병을'], [l4_ == {'갑', '무'}, c4_ == '병', '정' in l4_, '을' in l4_, c4_ == '무'])))
 print('ALL OK' if ok_all else 'SOME FAILED')
