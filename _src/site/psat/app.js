@@ -498,7 +498,7 @@
     const c = S.cur, q = c.q;
     const inSet = c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done, later = inSet ? (S.set.later || []).length : 0;
     const canLater = inSet && (S.set.results.length + later + 1 < S.set.n || later > 0);
-    const crumb = inSet ? `<b>실전 세트</b> · ${SUBJ[q.subject].name} · 푼 문항 ${S.set.results.length}/${S.set.n}${later ? ` · 넘긴 문항 ${later}` : ''}${c.deferred ? ' · <b>넘겼던 문항</b>' : ''}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}${c.ctx && c.ctx.p5 ? ' · 5급 실전 정예' : ''}`;
+    const crumb = inSet ? `<span class="crumb-x"><b>실전 세트</b> · ${SUBJ[q.subject].name} · </span>푼 문항 <b>${S.set.results.length}/${S.set.n}</b>${later ? ` · 넘긴 ${later}` : ''}${c.deferred ? ' · <b>넘겼던 문항</b>' : ''}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}${c.ctx && c.ctx.p5 ? ' · 5급 실전 정예' : ''}`;
     paint(shell(crumb, `
       <article class="sheet fade-in" aria-label="문제">${questionHTML(q, { choice: c.choice, no: c.no, review: c.review })}</article>
       <div class="actions">
