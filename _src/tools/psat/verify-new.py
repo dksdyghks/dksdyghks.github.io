@@ -3398,4 +3398,52 @@ for cul in '갑을병정무':
         if said == tr: sol4_.append((cul, set(liars)))
 ok(len(sol4_) == 1, f'L-BH04 {sol4_}'); c4_, l4_ = sol4_[0]
 by_text('L-BH04', list(zip(['갑과 무가', '병이 꽃병을', '정은 거짓말을', '을은 거짓말을', '무가 꽃병을'], [l4_ == {'갑', '무'}, c4_ == '병', '정' in l4_, '을' in l4_, c4_ == '무'])))
+# ================= S-BI / D-BI / L-BI (5급 실전, independent re-solve from the rendered options) =================
+def el_(month, kwh, disabled):
+    lo, hi = (300, 450) if month in (7, 8) else (200, 400)
+    fee = (1000 if kwh <= lo else 2000 if kwh <= hi else 7000) + 100 * min(kwh, lo) + 200 * max(0, min(kwh, hi) - lo) + 300 * max(0, kwh - hi)
+    return fee - min(16000, fee) if disabled else fee
+pick('S-BI01', f'{el_(3, 350, 0) + el_(7, 350, 0) + el_(8, 500, 1) + el_(1, 120, 1):,}원')
+pay_ = lambda amt: [(a, b, c) for a in range(3) for b in range(6) for c in range(5) if 500 * a + 100 * b + 50 * c == amt]
+can_ = {500 * a + 100 * b + 50 * c for a in range(3) for b in range(6) for c in range(5)}
+combo('S-BI02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(pay_(1000)) == 4, min(map(sum, pay_(1000))) == 2, len(pay_(700)) == 3, set(range(50, 1701, 50)) <= can_]) if t])
+fly_ = lambda alt, apt, night, ok_: alt < 150 and apt > 9 and (not night or ok_)
+ins_ = lambda paid: paid
+fine_ = {'report': 100, 'fly': 200}
+by_text('S-BI03', list(zip(['최대 이륙 중량 1.5kg', '미리 승인을 받으면 일몰 후', '미리 승인을 받으면 고도 200', '취미로 드론을', '신고 없이 3kg'],
+        [fly_(30, 5, False, False), fly_(50, 30, True, True), fly_(200, 30, False, True), ins_(False), fine_['report'] >= 200])))
+back_ = lambda per_day: next(d for d in range(1, 5000) if per_day * d % 720 == 0)
+b50_ = (720 - 2 * 50) % 720
+combo('S-BI04', [l for l, t in zip('ㄱㄴㄷㄹ', [back_(3) == 240, back_(5) == 144, back_(2) < back_(3), (b50_ // 60, b50_ % 60) == (10, 40)]) if t])
+d5_ = {frozenset(k): v for k, v in {('H', 'A'): 30, ('H', 'B'): 35, ('H', 'C'): 25, ('H', 'D'): 50, ('A', 'B'): 60, ('A', 'C'): 60, ('A', 'D'): 25, ('B', 'C'): 20, ('B', 'D'): 25, ('C', 'D'): 40}.items()}
+bt_ = min(sum(d5_[frozenset((r[i], r[i + 1]))] for i in range(5)) for o in itertools.permutations('ABCD') for r in [('H',) + o + ('H',)]
+          if o.index('B') < o.index('D') and o.index('C') in (1, 2) and o.index('A') in (0, 1))
+pick('S-BI05', f'{bt_}분')
+ar_ = [(730, 500), (720, 510), (700, 500), (690, 520)]; rg_ = {'A': (200, 530), 'B': (150, 520), 'C': (140, 510), 'D': (120, 525), 'E': (80, 505)}
+pv_ = [a * y for a, y in ar_]; rv_ = {k: a * y for k, (a, y) in rg_.items()}
+only('D-BI01', [not x for x in [ar_[0][0] > ar_[1][0] > ar_[2][0] > ar_[3][0], pv_.index(min(pv_)) == 2, pv_[3] > pv_[0], max(rg_, key=lambda k: rg_[k][1]) == max(rv_, key=rv_.get), sorted(k for k in rg_ if rg_[k][1] > 520) == ['A', 'D']]], 'false statements')
+sc_ = {'초': (40, 80, 250), '중': (45, 75, 130), '고': (42, 60, 120)}
+pp_ = {k: F(a * 100, r) for k, (a, r, n) in sc_.items()}; tt2_ = {k: a * n for k, (a, r, n) in sc_.items()}; pn_ = {k: F(n * r, 100) for k, (a, r, n) in sc_.items()}
+combo('D-BI02', [l for l, t in zip('ㄱㄴㄷㄹ', [max(pp_, key=pp_.get) == '고', max(sc_, key=lambda k: sc_[k][0]) == '중', tt2_['초'] > tt2_['중'] + tt2_['고'], pn_['중'] * 2 >= 3 * pn_['고']]) if t])
+cp_ = {'가': (800, 400, 40), '나': (600, 200, 60), '다': (1000, 250, 50), '라': (500, 100, 75), '마': (700, 500, 35)}
+mc_ = [m for m in itertools.permutations(cp_) if cp_[m[0]][0] == max(v[0] for v in cp_.values()) and F(cp_[m[1]][0], cp_[m[1]][1]) == min(F(v[0], v[1]) for v in cp_.values())
+       and F(cp_[m[2]][2], cp_[m[2]][0]) == max(F(v[2], v[0]) for v in cp_.values()) and cp_[m[3]][1] > cp_[m[4]][1]]
+ok(len(mc_) == 1, f'D-BI03 {mc_}'); pick('D-BI03', ', '.join(mc_[0]))
+ga_ = 800 * F(55, 10); na_ = F(2100, 7); da_ = F(2400, 400); ra_ = F(4320, 600)
+births_ = {'A': 3000, 'B': ga_, 'C': 2100, 'D': 2400, 'E': 4320}; natinc_ = {'A': -1000, 'B': -1200, 'C': -400, 'D': 200, 'E': 600}
+deaths_ = {k: births_[k] - natinc_[k] for k in births_}; rate_ = {'A': 6, 'B': F(55, 10), 'C': 7, 'D': da_, 'E': ra_}
+by_text('D-BI04', list(zip(['사망자가 가장 많은', '(가)와 (나)를', '조출생률이 가장 높은', '(다)는 (라)보다', '다섯 지역의 자연증가'],
+        [max(deaths_, key=deaths_.get) == 'B', ga_ + na_ >= 5000, max(rate_, key=rate_.get) == max(births_, key=births_.get), da_ > ra_, sum(natinc_.values()) > 0])))
+tv_ = [300, 600, 1000, 1100]; sp_ = [1500, 1300, 1200, 1100]; rv5_ = [a * b for a, b in zip(tv_, sp_)]
+g1_ = [F(tv_[i], tv_[i - 1]) for i in (1, 2, 3)]; g2_ = [F(rv5_[i], rv5_[i - 1]) for i in (1, 2, 3)]
+combo('D-BI05', [l for l, t in zip('ㄱㄴㄷㄹ', [rv5_ == sorted(rv5_) and len(set(rv5_)) == 4, g1_.index(max(g1_)) == g2_.index(max(g2_)), rv5_[3] * 2 >= 5 * rv5_[0], sp_[3] * 10 <= 7 * sp_[0]]) if t])
+pick('L-BI01', '원점수가 평균보다 표준편차의 두 배만큼 높은 사람의 표준점수는 70이다.')
+z_ = lambda x, m, s: 50 + F(10 * (x - m), s)
+combo('L-BI02', [l for l, t in zip('ㄱㄴㄷㄹ', [z_(75, 60, 10) == z_(80, 50, 20), z_(90, 50, 20) == 70, (70 + 90 > 75 + 80) and z_(70, 60, 10) + z_(90, 50, 20) > z_(75, 60, 10) + z_(80, 50, 20), z_(60, 50, 20) - z_(50, 50, 20) == 5]) if t])
+combo('L-BI03', ['ㄱ', 'ㄷ']); combo('L-BI05', ['ㄱ', 'ㄴ'])
+ln_ = []
+for pm in itertools.permutations(range(1, 6)):
+    x = dict(zip('갑을병정무', pm))
+    if x['을'] == x['갑'] + 1 and abs(x['갑'] - x['병']) == 1 and 1 < x['병'] < 5 and x['정'] > 1: ln_.append(x)
+by_text('L-BI04', list(zip(['갑은 세 번째', '정은 다섯 번째', '을은 다섯 번째', '병은 두 번째', '무는 첫 번째'], [all(x['갑'] == 3 for x in ln_), all(x['정'] == 5 for x in ln_), all(x['을'] == 5 for x in ln_), all(x['병'] == 2 for x in ln_), all(x['무'] == 1 for x in ln_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
