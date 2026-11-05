@@ -3270,4 +3270,73 @@ combo('L-BF02', [l for l, t in zip('ㄱㄴㄷㄹ', [qv_ == 34, F(44 - 34) * 22 /
 combo('L-BF03', ['ㄱ', 'ㄷ']); combo('L-BF05', ['ㄱ', 'ㄴ'])
 bx4_ = [(a, b, 15 - a - b) for a in range(16) for b in range(16 - a) if a > b and a - (15 - a - b) >= 3 and a < 15 - a]
 by_text('L-BF04', list(zip(['나에 든 공은', '나에는 공이 5개', '다에는 공이 3개', '가에는 공이 7개', '나와 다에 든'], [all(x[1] > x[2] for x in bx4_), all(x[1] == 5 for x in bx4_), all(x[2] == 3 for x in bx4_), all(x[0] == 7 for x in bx4_), all(abs(x[1] - x[2]) >= 2 for x in bx4_)])))
+# ================= S-BG / D-BG / L-BG (5급 실전, independent re-solve from the rendered options) =================
+def pk_(mins, cut):
+    if mins <= 10: return F(0)
+    return min(F(1000 + 500 * -(-max(0, mins - 30) // 10)), 10000) * (1 - cut)
+pick('S-BG01', f'{int(pk_(125, 0) + pk_(240, F(1, 2)) + pk_(50, max(F(1, 2), F(4, 5))) + pk_(8, 0)):,}원')
+def st_(n, prev=0):
+    if n == 0: return [()]
+    r = [(1,) + s for s in st_(n - 1, 1)]
+    if n >= 2 and prev != 2: r += [(2,) + s for s in st_(n - 2, 2)]
+    return r
+s10_, s8_ = st_(10), st_(8)
+combo('S-BG02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(s10_) == 41, min(map(len, s10_)) == 7, len([s for s in s10_ if len(s) == 9]) == 8, len(s8_) >= 20]) if t])
+reg_ = lambda days: days >= 60
+lost_ = lambda reported=None, found=None: (found is not None and found <= 10) or (reported is not None and reported <= 10)
+muz_ = lambda months: months >= 3
+chg_ = lambda d: d <= 30
+by_text('S-BG03', list(zip(['생후 75일', '등록한 개를 잃어버린 소유자가', '생후 5개월', '이사한 소유자가', '등록한 개를 잃어버렸다가'], [not reg_(75), lost_(reported=15), not muz_(5), chg_(40), lost_(found=7)])))
+gm4_ = list(itertools.combinations('ABCD', 2)); res4_ = []
+for oc in itertools.product((3, 1, 0), repeat=6):
+    pt = dict.fromkeys('ABCD', 0)
+    for (x, y), o in zip(gm4_, oc): pt[x] += o; pt[y] += {3: 0, 1: 1, 0: 3}[o]
+    if pt == {'A': 7, 'B': 5, 'C': 3, 'D': 1}: res4_.append(dict(zip(gm4_, oc)))
+ok(len(res4_) == 1, f'S-BG04 unique {len(res4_)}'); r4_ = res4_[0]
+combo('S-BG04', [l for l, t in zip('ㄱㄴㄷㄹ', [list(r4_.values()).count(1) == 2, all(o != 0 for (x, y), o in r4_.items() if x == 'A'), r4_[('B', 'D')] == 1, r4_[('A', 'D')] == 1]) if t])
+wt5_ = {'가': 1000, '나': 600, '다': 500, '라': 400, '마': 300, '바': 200}
+best5_ = None
+for asg in itertools.product(range(6), repeat=6):            # 작품마다 트럭 번호
+    grp = {}
+    for k, t in zip(wt5_, asg): grp.setdefault(t, []).append(k)
+    cost, good = 0, True
+    for g in grp.values():
+        w = sum(wt5_[k] for k in g)
+        if ('가' in g and '나' in g) or len(g) > 3 or w > 2500: good = False; break
+        cost += 17 if (w > 1000 or '다' in g) else 10
+    if good and (best5_ is None or cost < best5_): best5_ = cost
+pick('S-BG05', f'{best5_}만 원')
+ev_ = [(40, 20), (54, 24), (68, 34), (80, 40)]; rg_ = {'A': (24, 10), 'B': (20, 12), 'C': (16, 6), 'D': (12, 8), 'E': (8, 4)}
+q_ = lambda v: F(v[0], v[1])
+only('D-BG01', [not x for x in [all(ev_[i][0] - ev_[i - 1][0] >= 10 for i in range(1, 4)), max(range(4), key=lambda i: q_(ev_[i])) == 1, max(rg_, key=lambda k: q_(rg_[k])) == 'A',
+     max(rg_, key=lambda k: rg_[k][1]) == 'B' and q_(rg_['B']) < q_(ev_[3]), sorted(k for k in rg_ if q_(rg_[k]) < q_(ev_[3])) == ['B', 'D']]], 'false statements')
+mx_ = {'A': {'B': 30, 'C': 20, 'D': 10}, 'B': {'A': 25, 'C': 15, 'D': 15}, 'C': {'A': 10, 'B': 20, 'D': 5}, 'D': {'A': 15, 'B': 10, 'C': 25}}
+ot_ = {a: sum(r.values()) for a, r in mx_.items()}; it_ = {b: sum(mx_[a].get(b, 0) for a in mx_) for b in mx_}
+pr_ = {(a, b): mx_[a][b] + mx_[b][a] for a, b in itertools.combinations('ABCD', 2)}
+combo('D-BG02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(it_[r] > ot_[r] for r in mx_) == 2, max(pr_, key=pr_.get) == ('A', 'B'), mx_['D']['C'] * 2 >= it_['C'], ot_['A'] * 10 >= 3 * sum(ot_.values())]) if t])
+lb_ = {'가': (50, 30, 24), '나': (60, 54, 30), '다': (80, 40, 36), '라': (45, 36, 18), '마': (70, 49, 35)}
+mt_ = [m for m in itertools.permutations(lb_) if lb_[m[0]][0] == max(v[0] for v in lb_.values()) and F(lb_[m[1]][2], lb_[m[1]][1]) == min(F(v[2], v[1]) for v in lb_.values())
+       and F(lb_[m[2]][1], lb_[m[2]][0]) == max(F(v[1], v[0]) for v in lb_.values()) and lb_[m[3]][2] > lb_[m[4]][2]]
+ok(len(mt_) == 1, f'D-BG03 {mt_}'); pick('D-BG03', ', '.join(mt_[0]))
+B_emp = 50 - 50 * 6 // 100; C_act = 76 * 100 // 95; D_ur = F(40 - 38, 40) * 100; E_ur = F(70 - 63, 70) * 100
+p15_ = {'A': F(57 * 1000, 570), 'B': F(B_emp * 1000, 500), 'C': F(76 * 1000, 608), 'D': F(38 * 1000, 475), 'E': F(63 * 1000, 525)}
+une_ = {'A': 60 - 57, 'B': 50 - B_emp, 'C': C_act - 76, 'D': 40 - 38, 'E': 70 - 63}; act_ = {'A': 60, 'B': 50, 'C': C_act, 'D': 40, 'E': 70}
+er_ = {'A': 570, 'B': 500, 'C': 608, 'D': 475, 'E': 525}; urr_ = {k: F(une_[k], act_[k]) for k in une_}
+by_text('D-BG04', list(zip(['(가)와 (나)를', '다섯 지역을', '15세 이상 인구가', '(다)는 (라)의', '고용률이 가장 높은'],
+        [B_emp + C_act >= 130, sum(une_.values()) * 100 >= 6 * sum(act_.values()), max(p15_, key=p15_.get) == 'E', D_ur * 2 < E_ur, max(er_, key=er_.get) == max(urr_, key=urr_.get)])))
+b24_ = [200, 250, 300, 250]; g25_ = [20, 12, 5, 16]; a25_ = [F(b * (100 + g), 100) for b, g in zip(b24_, g25_)]
+combo('D-BG05', [l for l, t in zip('ㄱㄴㄷㄹ', [a25_.index(max(a25_)) == g25_.index(max(g25_)), sum(a25_) * 100 >= 112 * sum(b24_), a25_[1] - a25_[0] == 40, a25_[3] < a25_[2]]) if t])
+pick('L-BG01', '성과급을 쓰면 성과로 재기 어려운 일에는 대리인의 노력이 덜 갈 수 있다.')
+def ag_(fx, bo):
+    hi, lo = fx + F(8, 10) * bo - 30, fx + F(3, 10) * bo
+    e = 'hi' if hi > lo else 'lo'; v = max(hi, lo); return e, v >= 30, (F(8, 10) if e == 'hi' else F(3, 10)) * (200 - bo) - fx if v >= 30 else 0
+combo('L-BG02', [l for l, t in zip('ㄱㄴㄷㄹ', [ag_(50, 0)[0] == 'lo', ag_(10, 70)[2] >= 90, ag_(0, 70)[1] and ag_(0, 70)[2] > ag_(10, 70)[2], ag_(30, 0)[1]]) if t])
+combo('L-BG03', ['ㄱ', 'ㄹ']); combo('L-BG05', ['ㄱ', 'ㄷ'])
+rg4_ = list(itertools.product((0, 1), repeat=4)); must4_ = [True] * 5
+for mask in range(1 << 16):
+    M = [r for i, r in enumerate(rg4_) if mask >> i & 1]
+    if any(s and not h for s, h, r, p in M) or any(h and r and p for s, h, r, p in M) or not any(r and s for s, h, r, p in M): continue
+    vals = [any(s and not p for s, h, r, p in M), not any(r and not h for s, h, r, p in M), any(p and h for s, h, r, p in M), not any(s and p for s, h, r, p in M), any(h and not r for s, h, r, p in M)]
+    must4_ = [a and b for a, b in zip(must4_, vals)]
+by_text('L-BG04', list(zip(['수영반 학생 가운데', '독서반 학생은 모두', '사진반 학생 가운데', '수영반이면서', '등산반 학생 가운데'], must4_)))
 print('ALL OK' if ok_all else 'SOME FAILED')
