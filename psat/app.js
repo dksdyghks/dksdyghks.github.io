@@ -334,7 +334,11 @@
       case 'steps': return `<ol class="steps">${(b.items || []).map((s) => `<li class="${s.ind ? 'i1' : ''}${s.k === 'case' ? ' case' : ''}${s.k === 'ok' ? ' ok' : ''}">${s.h}</li>`).join('')}</ol>`;
       case 'h': return `<h4>${b.h}</h4>`;
       case 'ox': return `<ol class="oxl" aria-label="선지별 해설">${(b.items || []).map((it, i) => oxItem(i + 1, q ? q.options[i] : '', it, q && i === q.answer)).join('')}</ol>`;
-      case 'bx': return `<ul class="oxl bx" aria-label="보기별 해설">${(b.items || []).map((it) => oxItem(it.label, it.text, it, false)).join('')}</ul>`;
+      case 'bx': {   // 해설에서 ㄱ·ㄴ·ㄷ마다 <보기> 원문을 그대로 보여 준다(선지별 해설이 선지 원문을 보여 주듯이). 원문을 못 찾으면 요약 글을 쓴다.
+        const vb = q && (q.body || []).find((x) => x.t === 'box' && x.title === '보기');
+        const full = (l) => { const s = vb && (vb.items || []).find((x) => String(x).startsWith(l + '. ')); return s ? String(s).slice(l.length + 2) : ''; };
+        return `<ul class="oxl bx" aria-label="보기별 해설">${(b.items || []).map((it) => oxItem(it.label, full(it.label) || it.text, it, false)).join('')}</ul>`;
+      }
       default: return b.h ? `<p>${b.h}</p>` : '';
     }
   }
