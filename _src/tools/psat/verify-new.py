@@ -3204,4 +3204,70 @@ combo('L-BE03', ['ㄱ', 'ㄹ']); combo('L-BE05', ['ㄱ', 'ㄴ'])
 fx = [dict(zip(['기', '인', '회', '홍', '총'], p)) for p in itertools.permutations(range(1, 6))]
 fx = [x for x in fx if x['회'] != 2 and abs(x['총'] - x['회']) == 1 and x['인'] > x['홍'] > x['총']]
 by_text('L-BE04', list(zip(['회계는 1층', '인사는 5층', '홍보는 3층', '기획은 4층', '총무는 2층'], [all(x['회'] == 1 for x in fx), all(x['인'] == 5 for x in fx), all(x['홍'] == 3 for x in fx), all(x['기'] == 4 for x in fx), all(x['총'] == 2 for x in fx)])))
+# ================= S-BF / D-BF / L-BF (5급 실전, independent re-solve from the rendered options) =================
+def rf_(low, buys):
+    seen, t = set(), F(0)
+    for it, g, pr in buys:
+        if it not in ('냉장고', '세탁기', '에어컨') or g != 1 or it in seen: continue
+        seen.add(it); t += min(pr * (F(2, 10) if low else F(1, 10)), 20)
+    return min(t, 30)
+rf_t = rf_(0, [('냉장고', 1, 180), ('세탁기', 1, 120)]) + rf_(1, [('에어컨', 1, 150), ('냉장고', 1, 250)]) + rf_(0, [('냉장고', 2, 200), ('TV', 1, 150)]) + rf_(0, [('세탁기', 1, 90), ('세탁기', 1, 110), ('에어컨', 1, 220)])
+pick('S-BF01', f'{int(rf_t * 10000):,}원')
+mz_ = [n for n in range(100, 1000) if (n // 100) * (n // 10 % 10) * (n % 10) == 36 and n // 100 + n // 10 % 10 + n % 10 == 13]
+combo('S-BF02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(mz_) == 6, len([n for n in mz_ if n % 2 == 0]) == 4, mz_[-1] - mz_[0] == 763, len([n for n in mz_ if n % 11 == 0]) == 1]) if t])
+site_ok_ = lambda width, cross: width >= 3 and cross > 10
+torn_ = lambda permitted, idle: not permitted or idle >= 30
+pays_ = lambda notice_days: notice_days is None or notice_days > 7
+fine_ = {'연락처 미표시': 200000}
+by_text('S-BF03', list(zip(['허가를 받으면 폭 2.5', '35일 동안', '폭 4미터인', '허가를 받아 설치한', '연락처를 표시하지'], [site_ok_(2.5, 50), torn_(True, 35) and not pays_(5), site_ok_(4, 8), torn_(True, 20), fine_['연락처 미표시'] == 100000])))
+tt_ = range(1, 120); hits_ = lambda t: (t % 6 == 0) + (t % 8 == 0) + (t % 15 == 0)
+lc_ = next(t for t in range(1, 1000) if hits_(t) == 3)
+combo('S-BF04', [l for l, t in zip('ㄱㄴㄷㄹ', [lc_ == 120, sum(hits_(t) == 2 for t in tt_) == 7, not any(t % 8 == 0 and t % 15 == 0 for t in tt_), sum(hits_(t) > 0 for t in tt_) == 35]) if t])
+sv_ = {'A': ('나라', 15000), 'B': ('가다마', 9000), 'C': ('나다마', 6000), 'D': ('나다바', 8000), 'E': ('라마', 5000)}
+cost_ = []
+for k in range(1, 4):
+    for s in itertools.combinations('ABCDE', k):
+        if set(''.join(sv_[x][0] for x in s)) != set('가나다라마바') or ('E' in s and 'C' not in s): continue
+        cost_.append(sum(sv_[x][1] for x in s) - (3000 if 'A' in s and 'B' in s else 0))
+pick('S-BF05', f'{min(cost_):,}원')
+yr1_ = [(520, 35), (510, 37), (505, 40), (500, 38)]; rg1_ = {'A': (120, 35), 'B': (110, 40), 'C': (100, 32), 'D': (90, 44), 'E': (80, 40.5)}
+yv_ = [a * r for a, r in yr1_]; rv_ = {k: a * r for k, (a, r) in rg1_.items()}
+only('D-BF01', [not x for x in [35 < 37 < 40 > 38, yv_.index(max(yv_)) == 2, yv_[3] > yv_[0], max(rg1_, key=lambda k: rg1_[k][1]) == max(rv_, key=rv_.get), sorted(k for k in rg1_ if rg1_[k][1] < 38) == ['A', 'C']]], 'false statements')
+c24_, c25_ = [140, 60, 50, 150], [120, 45, 55, 160]; p24_, p25_ = [2500, 8000, 12000, 1500], [3000, 10000, 12000, 1400]
+w24_ = [a * b for a, b in zip(c24_, p24_)]; w25_ = [a * b for a, b in zip(c25_, p25_)]
+combo('D-BF02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if c25_[i] < c24_[i] and w25_[i] > w24_[i]] == [0], sum(w25_) * 100 >= 103 * sum(w24_), w25_.index(max(w25_)) == 2, w25_[3] < w24_[3]]) if t])
+fr_ = {'가': (200, 15, 300), '나': (150, 20, 360), '다': (300, 12, 480), '라': (100, 8, 220), '마': (250, 25, 425)}
+mm_ = [m for m in itertools.permutations(fr_) if fr_[m[0]][2] == max(v[2] for v in fr_.values()) and fr_[m[1]][1] == max(v[1] for v in fr_.values())
+       and F(fr_[m[2]][2], fr_[m[2]][0]) == max(F(v[2], v[0]) for v in fr_.values()) and F(fr_[m[3]][2], fr_[m[3]][1]) > F(fr_[m[4]][2], fr_[m[4]][1])]
+ok(len(mm_) == 1, f'D-BF03 {mm_}'); pick('D-BF03', ', '.join(mm_[0]))
+debt_ = {'A': 600, 'B': 150 * 600 // 100, 'C': 300, 'D': 1000, 'E': 400}; eq_ = {'A': 400, 'B': 600, 'C': 500, 'D': 2000 - 1000, 'E': 200}; asset_C = 300 + 500
+dr_ = {k: F(debt_[k] * 100, eq_[k]) for k in debt_}
+by_text('D-BF04', list(zip(['(가)와 (나)를', '다섯 기업을', '부채가 가장 많은', '부채비율이 150%', '자본이 부채'],
+        [debt_['B'] + asset_C >= 1750, sum(debt_.values()) >= sum(eq_.values()), max(debt_, key=debt_.get) == max(dr_, key=dr_.get), [k for k in dr_ if dr_[k] == 150] == ['A'], [k for k in eq_ if eq_[k] >= debt_[k]] == ['C']])))
+sl_ = [3000, 3600, 4200, 4500]; sh_ = {'뮤지컬': (50, 55), '콘서트': (30, 32), '연극': (12, 8), '클래식': (8, 5)}
+gm_ = lambda g, j: sl_[0 if j == 0 else 3] * sh_[g][j]
+combo('D-BF05', [l for l, t in zip('ㄱㄴㄷㄹ', [gm_('연극', 0) == gm_('연극', 1), gm_('클래식', 1) < gm_('클래식', 0), gm_('뮤지컬', 1) * 10 >= 16 * gm_('뮤지컬', 0), max(range(1, 4), key=lambda i: F(sl_[i], sl_[i - 1])) == 2]) if t])
+pick('L-BF01', '드룹 기준수를 쓰면 기준수에 이른 후보가 뽑을 의석 수보다 많아지는 일이 없다.')
+def stv_(bal, seats):
+    q = sum(n for n, _ in bal) // (seats + 1) + 1; w = [[F(n), r] for n, r in bal]; el, gone = [], set()
+    while len(el) < seats:
+        cur = lambda r: next(c for c in r if c not in el and c not in gone)
+        tl = {}
+        for x in w:
+            if x[0]: tl[cur(x[1])] = tl.get(cur(x[1]), 0) + x[0]
+        for c in set(''.join(r for _, r in bal)) - set(el) - gone: tl.setdefault(c, 0)
+        c = max(tl, key=tl.get)
+        if tl[c] >= q:
+            fac = (tl[c] - q) / tl[c]
+            for x in w:
+                if x[0] and cur(x[1]) == c: x[0] *= fac
+            el.append(c)
+        else: gone.add(min(tl, key=tl.get))
+    return q, el
+bf_ = [(22, 'ACBD'), (22, 'ABCD'), (25, 'BDCA'), (16, 'CBDA'), (15, 'DCBA')]
+qv_, wv_ = stv_(bf_, 2); _, wv2_ = stv_(bf_[:4] + [(15, 'DBCA')], 2)
+combo('L-BF02', [l for l, t in zip('ㄱㄴㄷㄹ', [qv_ == 34, F(44 - 34) * 22 / 44 == 5, 'B' in wv_, sorted(wv2_) == ['A', 'B']]) if t])
+combo('L-BF03', ['ㄱ', 'ㄷ']); combo('L-BF05', ['ㄱ', 'ㄴ'])
+bx4_ = [(a, b, 15 - a - b) for a in range(16) for b in range(16 - a) if a > b and a - (15 - a - b) >= 3 and a < 15 - a]
+by_text('L-BF04', list(zip(['나에 든 공은', '나에는 공이 5개', '다에는 공이 3개', '가에는 공이 7개', '나와 다에 든'], [all(x[1] > x[2] for x in bx4_), all(x[1] == 5 for x in bx4_), all(x[2] == 3 for x in bx4_), all(x[0] == 7 for x in bx4_), all(abs(x[1] - x[2]) >= 2 for x in bx4_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
