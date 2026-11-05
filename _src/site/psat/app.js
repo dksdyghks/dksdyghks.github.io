@@ -437,7 +437,7 @@
         <button class="link-card" data-act="settings"><span class="t">설정 · 백업</span><span class="s">${S.persistent ? (S.meta.lastBackup ? `마지막 백업 ${md(dayKey(S.meta.lastBackup))}` : '백업 파일로 기록 보관') : '<b>기록이 저장되지 않는 환경</b>'}</span></button>
       </div>
       ${S.persistent ? '' : '<div class="notice"><b>이 브라우저에서는 기록이 저장되지 않습니다.</b> 비공개(시크릿) 창이거나 저장 공간이 막혀 있을 수 있습니다. 문제 풀이는 가능하지만 창을 닫으면 기록이 사라집니다.</div>'}
-      <p class="notice">처음이라면 <button class="linkish" data-act="help">사용법</button>을 먼저 보세요. 숫자 키 <b>1~3</b>으로 과목을 바로 시작하고, 문제에서는 <b>1~5</b>로 고른 뒤 <b>Enter</b>로 채점합니다. ${EMBED ? '<b>Esc</b>를 누르면 바로 닫힙니다(풀던 문제는 그대로 남습니다).' : ''}</p>`);
+      <p class="notice">처음이라면 <button class="linkish" data-act="help">사용법</button>을 먼저 보세요.<span class="kbd-hint"> 숫자 키 <b>1~3</b>으로 과목을 바로 시작하고, 문제에서는 <b>1~5</b>로 고른 뒤 <b>Enter</b>로 채점합니다. ${EMBED ? '<b>Esc</b>를 누르면 바로 닫힙니다(풀던 문제는 그대로 남습니다).' : ''}</span><span class="touch-hint"> 과목 카드를 누르면 바로 한 문제가 나오고, 선택지를 누른 뒤 <b>정답 확인</b>을 누르면 채점과 해설이 나옵니다. 풀던 문제는 창을 닫아도 그대로 남습니다.</span></p>`);
     paint(html, 'home');
   }
 
@@ -678,7 +678,7 @@
     const m = S.mock; if (!m) { viewMockSetup(); return; }
     if (m.done) { viewMockResult(); return; }
     const it = m.items[m.i], total = m.items.length;
-    const crumb = `<b>모의고사</b> · ${MOCKS[m.kind].name} · ${SUBJ[it.subj].name} ${m.i + 1}/${total}`;
+    const crumb = `<span class="crumb-x"><b>모의고사</b> · ${MOCKS[m.kind].name} · </span><b>${SUBJ[it.subj].name}</b> ${m.i + 1}/${total}`;   // 좁은 화면에서는 과목과 문항 번호만
     paint(shell(crumb, `<div class="mock">
       <div class="mock-q"><article class="sheet fade-in" aria-label="문제">${questionHTML(it.q, { choice: it.choice, no: m.i + 1 })}</article>
         <div class="actions">
@@ -1030,8 +1030,8 @@
       <div class="page-h"><h1>사용법</h1></div>
       <div class="card prose">
         <h2>한 문제씩 풀기</h2>
-        <p>처음 화면에서 과목을 누르면(숫자 키 <b>1~3</b>) 바로 한 문제가 나옵니다. 선택지를 누르고(<b>1~5</b>) <b>정답 확인</b>(Enter)을 누르면 다음 화면에서 채점과 해설을 보여 줍니다. <b>다음 문제</b>(Enter)로 계속 풀거나 <b>그만 풀기</b>로 멈추면 됩니다. 모르는 문제는 <b>모르겠음</b>을 누르면 해설로 넘어가며, 오답으로 기록됩니다.</p>
-        <p>창을 닫거나 Esc를 눌러도 풀던 문제는 그대로 남아, 다시 열면 이어서 풀 수 있습니다. 다른 창을 보는 동안에는 타이머가 멈춥니다.</p>
+        <p>처음 화면에서 과목을 누르면<span class="kbd-hint">(숫자 키 <b>1~3</b>)</span> 바로 한 문제가 나옵니다. 선택지를 누르고<span class="kbd-hint">(<b>1~5</b>)</span> <b>정답 확인</b><span class="kbd-hint">(Enter)</span>을 누르면 다음 화면에서 채점과 해설을 보여 줍니다. <b>다음 문제</b><span class="kbd-hint">(Enter)</span>로 계속 풀거나 <b>그만 풀기</b>로 멈추면 됩니다. 모르는 문제는 <b>모르겠음</b>을 누르면 해설로 넘어가며, 오답으로 기록됩니다.</p>
+        <p>창을 닫아도<span class="kbd-hint">(Esc를 눌러도)</span> 풀던 문제는 그대로 남아, 다시 열면 이어서 풀 수 있습니다. 다른 창을 보는 동안에는 타이머가 멈춥니다.</p>
         <h2>해설 읽는 법</h2>
         <p>해설은 출발점 → 경우 나누기 → 확정 순서로 사람이 푸는 방식대로 적었고, 선지마다 근거와 판정을 붙였습니다. 빨간 동그라미가 정답, 빗금이 고른 오답입니다. 넓은 화면에서는 왼쪽에 문제, 오른쪽에 해설이 나란히 보입니다.</p>
         <h2>오답노트와 복습</h2>

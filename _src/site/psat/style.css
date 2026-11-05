@@ -426,6 +426,9 @@ td.slowt { color: var(--pen); }
   .mk-sheet, .omr-close { display: none; }
 }
 @media (pointer: coarse) { .kbd-hint { display: none; } }
+.touch-hint { display: none; }
+@media (pointer: coarse) { .touch-hint { display: inline; } }   /* 손가락으로 쓰는 기기에는 키보드 대신 누르는 법을 안내 */
+@media (max-width: 520px) { .crumb-x { display: none; } }
 /* 하루 목표 */
 .goal { margin: 10px 0 6px; max-width: 420px; }
 .goal-t { display: flex; justify-content: space-between; gap: 12px; font-size: .8125rem; color: var(--ink-2); margin-bottom: 5px; }
