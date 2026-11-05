@@ -2557,4 +2557,64 @@ combo('L-AT03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AT05', ['ㄱ', 'ㄴ'])
 sc_ = [dict(zip('ABCDE', pm)) for pm in itertools.permutations([60, 70, 80, 90, 100])]
 sc_ = [x for x in sc_ if x['A'] > x['B'] and x['C'] >= x['D'] + 20 and x['B'] + x['E'] == 150 and x['B'] != 60]
 by_text('L-AT04', list(zip(['A는 100점', 'B는 70점', 'C는 A보다', 'D는 60점', 'E는 B보다'], [all(x['A'] == 100 for x in sc_), all(x['B'] == 70 for x in sc_), all(x['C'] > x['A'] for x in sc_), all(x['D'] == 60 for x in sc_), all(x['E'] > x['B'] for x in sc_)])))
+# ================= S-AU / D-AU / L-AU (5급 실전, independent re-solve from the rendered options) =================
+def acq(price, others, first):
+    n_ = 1 + sum(1 for o in others if o > 10000)
+    if n_ >= 3 and price > 10000: t = price * 8 / F(100)
+    else: t = price * (1 if price <= 60000 else 2 if price <= 90000 else 3) / F(100)
+    if first and price <= 120000: t = max(t - 200, F(0))
+    return t * F(11, 10)
+s_au = int(acq(50000, [], 1) + acq(80000, [30000], 0) + acq(100000, [40000, 50000], 0) + acq(70000, [60000, 8000], 0) + acq(9000, [30000, 20000, 40000], 0))
+pick('S-AU01', f'{s_au // 10000}억 {s_au % 10000:,}만 원')
+def frog_next(s):
+    e = s.index('_'); r = []
+    for d in (1, 2):
+        if e - d >= 0 and s[e - d] == 'L' and (d == 1 or s[e - 1] != '_'): r.append((s[:e - d] + '_' + s[e - d + 1:e] + 'L' + s[e + 1:], d))
+        if e + d < 7 and s[e + d] == 'R' and (d == 1 or s[e + 1] != '_'): r.append((s[:e] + 'R' + s[e + 1:e + d] + '_' + s[e + d + 1:], d))
+    return r
+sols_f = []
+def dfs(s, path):
+    if s == 'RRR_LLL': sols_f.append(path); return
+    for t_, d in frog_next(s): dfs(t_, path + [d])
+dfs('LLL_RRR', [])
+first_jump_ok = []
+for t_, d in frog_next('LLL_RRR'):
+    if d == 2:
+        before = len(sols_f); sub = []
+        def dfs2(s):
+            if s == 'RRR_LLL': sub.append(1); return
+            for u, _ in frog_next(s): dfs2(u)
+        dfs2(t_); first_jump_ok.append(bool(sub))
+combo('S-AU02', [l for l, t in zip('ㄱㄴㄷㄹ', [min(len(x) for x in sols_f) == 15, len(sols_f) == 4, not any(first_jump_ok), all(x.count(1) == 9 for x in sols_f)]) if t])
+pick('S-AU03', '다친 고라니를 구조센터에 넘기려고 붙잡아 차에 싣고 간 사람은 제1조를 위반한 것이 아니다.')
+ta_ = set(range(0, 961, 12)); tb_ = set(range(6, 961, 18)); tc_ = set(range(10, 961, 20))
+combo('S-AU04', [l for l, t in zip('ㄱㄴㄷㄹ', [min(ta_ & tb_) == 24, not (ta_ & tc_), len(tb_ & tc_) == 5 and min(tb_ & tc_) == 150, len(ta_ & tb_) == 30]) if t])
+sa, sb, sc = [45, 57, 68, 77, 86, 93, 100], [19, 32, 44, 51, 57, 61, 63], [32, 44, 56, 67, 77, 87, 93]
+bst = max(sa[a] + sb[b] + sc[c] for a in range(7) for b in range(7) for c in range(7) if a + b + c <= 10 and min(sa[a], sb[b], sc[c]) >= 50)
+pick('S-AU05', f'{bst}점')
+pkd = {'A': (50000, 50000, 48000, 47000), 'B': (40000, 36000, 38000, 35000), 'C': (30000, 33000, 29000, 32000), 'D': (25000, 23000, 23000, 21000), 'E': (15000, 15750, 14500, 15000)}
+pubs = {'A': F(12000, 50000), 'B': F(8000, 36000), 'C': F(9000, 33000), 'D': F(4000, 23000), 'E': F(3000, 15750)}
+s_ = [sorted(k for k, v in pkd.items() if v[1] < v[0]) == ['B', 'D'], max(pkd, key=lambda k: F(pkd[k][1], pkd[k][0])) == 'C', max(pubs, key=pubs.get) == 'C', sum(1 for v in pkd.values() if F(v[1], v[0]) > F(v[3], v[2])) == 2, sum(v[0] for v in pkd.values()) * 100 > 104 * sum(v[2] for v in pkd.values())]
+only('D-AU01', [not x for x in s_], 'false statements')
+b15, b25 = [400, 300, 250, 150], [360, 330, 300, 120]; pp15, pp25 = [500, 400, 300, 200], [450, 420, 260, 250]
+x15 = [a * b for a, b in zip(b15, pp15)]; x25 = [a * b for a, b in zip(b25, pp25)]
+combo('D-AU02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(x25) < sum(x15), [i for i in range(4) if x25[i] > x15[i]] == [1, 2], x25[3] > x15[3], x25[0] * 5 >= 2 * sum(x25)]) if t])
+wdl = {'가': (11, 1, 8), '나': (8, 7, 5), '다': (12, 2, 6), '라': (9, 5, 6), '마': (10, 6, 4)}
+pts = {k: 3 * w + d for k, (w, d, l_) in wdl.items()}
+md_ = [m for m in itertools.permutations(wdl) if pts[m[0]] == max(pts.values()) and F(wdl[m[1]][0], wdl[m[1]][0] + wdl[m[1]][2]) == max(F(w, w + l_) for w, d, l_ in wdl.values()) and wdl[m[2]][1] == max(v[1] for v in wdl.values()) and pts[m[3]] > pts[m[4]]]
+ok(len(md_) == 1, f'D-AU03 {md_}'); pick('D-AU03', ', '.join(md_[0]))
+fo = {'A': (500, 1500, 1500 * 8 // 10), 'B': (250, 810 * 10 // 9, 810), 'C': (400, 1200, 960), 'D': (300, 702 * 100 // 78, 702)}
+by_text('D-AU04', list(zip(['네 지역 전체의 생존율', '(가)는', '조림 면적 1ha당 생존', '고사 본수가 가장 많은', '조림 면적 1ha당 식재'], [sum(v[2] for v in fo.values()) * 100 >= 82 * sum(v[1] for v in fo.values()), fo['A'][2] * 2 >= 3 * fo['D'][1], max(fo, key=lambda k: F(fo[k][2], fo[k][0])) == 'D', max(fo, key=lambda k: fo[k][1] - fo[k][2]) == 'C', max(fo, key=lambda k: F(fo[k][1], fo[k][0])) == 'B'])))
+st = [(270, 240), (150, 135), (180, 130)]; rr = [(80, 85), (70, 75), (60, 65)]
+n15 = [a * r[0] for (a, b), r in zip(st, rr)]; n25 = [b * r[1] for (a, b), r in zip(st, rr)]
+combo('D-AU05', [l for l, t in zip('ㄱㄴㄷㄹ', [all(n25[i] > n15[i] for i in range(3)), F(sum(n25), sum(b for a, b in st)) > F(sum(n15), sum(a for a, b in st)), max(range(3), key=lambda i: F(n15[i] - n25[i], n15[i])) == 2, n25[0] * 100 >= 55 * sum(n25)]) if t])
+pick('L-AU01', '합계출산율이 대체 출산율보다 낮아도 인구가 한동안 늘어날 수 있다.')
+ga_ = [1, 6, 12, 10, 5, 2]; gb_ = [0, 2, 6, 8, 4, 2]       # 백분의 1 단위
+combo('L-AU02', [l for l, t in zip('ㄱㄴㄷㄹ', [2 * sum(ga_) >= 3 * sum(gb_), 5 * (sum(gb_) + 2) == 120, False, 2 * sum(ga_[3:]) >= sum(ga_)]) if t])
+combo('L-AU03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AU05', ['ㄱ', 'ㄷ'])
+rooms_ = []
+for pm in itertools.permutations('ABCDEF'):
+    asg = {pm[i]: ('101', '102', '103')[i // 2] for i in range(6)}
+    if asg['C'] == '102' and asg['D'] == asg['E'] and asg['F'] != '101' and asg['B'] != '101' and asg not in rooms_: rooms_.append(asg)
+by_text('L-AU04', list(zip(['A는 103호', 'B는 102호', 'F는 103호', 'A와 B는 같은', 'D는 101호'], [all(x['A'] == '103' for x in rooms_), all(x['B'] == '102' for x in rooms_), all(x['F'] == '103' for x in rooms_), all(x['A'] == x['B'] for x in rooms_), all(x['D'] == '101' for x in rooms_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
