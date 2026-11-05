@@ -2434,4 +2434,78 @@ for mid in itertools.permutations('ABCDE'):
     for fin in itertools.permutations('ABCDE'):
         if mid[0] == 'A' and fin[0] != 'A' and mid.index('B') == fin.index('B') and mid.index('C') > mid.index('D') and fin.index('C') < fin.index('D') and mid.index(fin[0]) == 2 and fin[1] == 'C': rc.append((mid, fin))
 by_text('L-AR04', list(zip(['D는 중간 지점에서 2위', 'A는 결승에서 3위', 'B는 결승에서 4위', 'C는 중간 지점에서 4위', 'D는 결승에서 3위'], [all(m[1] == 'D' for m, f in rc), all(f[2] == 'A' for m, f in rc), all(f[3] == 'B' for m, f in rc), all(m[3] == 'C' for m, f in rc), all(f[2] == 'D' for m, f in rc)])))
+# ================= S-AS / D-AS / L-AS (5급 실전, independent re-solve from the rendered options) =================
+def ikg(home, built, use, prior):
+    amt = F(built * 10 + use * 4); ar = built + use
+    if home and ar <= 60 and not prior: amt = amt / 2
+    if ar > 200: amt = amt * F(12, 10)
+    return min(amt, F(5000))
+s_as01 = ikg(1, 40, 0, 0) + ikg(1, 30, 20, 1) + ikg(0, 0, 250, 0) + ikg(1, 50, 20, 0) + ikg(0, 450, 0, 0)
+pick('S-AS01', f'{int(s_as01):,}만 원')
+sh7 = {'0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg', '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg'}
+back7 = {frozenset(v): k for k, v in sh7.items()}
+opsh = {'+': 'hv', '-': 'h'}; backop = {frozenset(v): k for k, v in opsh.items()}
+def one_moves(eq):
+    a, op, b, c = eq[0], eq[1], eq[2], eq[4]
+    syms = [set(sh7[a]), set(opsh[op]), set(sh7[b]), set(sh7[c])]
+    alls = [set('abcdefg'), set('hv'), set('abcdefg'), set('abcdefg')]
+    res = set()
+    for i in range(4):
+        for st in syms[i]:
+            for j in range(4):
+                for t in alls[j] - syms[j]:
+                    if i == j and t == st: continue
+                    ns = [set(x) for x in syms]; ns[i].discard(st); ns[j].add(t)
+                    dec = [back7.get(frozenset(ns[0])), backop.get(frozenset(ns[1])), back7.get(frozenset(ns[2])), back7.get(frozenset(ns[3]))]
+                    if None in dec: continue
+                    lhs = int(dec[0]) + int(dec[2]) if dec[1] == '+' else int(dec[0]) - int(dec[2])
+                    if lhs == int(dec[3]): res.add(f'{dec[0]}{dec[1]}{dec[2]}={dec[3]}')
+    return res
+combo('S-AS02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(one_moves('5+7=2')) > 0, len(one_moves('2+7=3')) > 0, len(one_moves('8-3=3')) == 3, one_moves('6+4=4') == {'8-4=4'}]) if t])
+pick('S-AS03', '무게 15kg인 드론을 비행장 중심에서 3km 떨어진 곳에서 낮에 날리려면 비행 승인을 받아야 한다.')
+def tank(open_, dt=F(1, 1000)):
+    # exact event-based: level crosses 1/2 once
+    ra = F(1, 6) if 'A' in open_ else 0; rc = F(1, 12) if 'C' in open_ else 0
+    lo = ra + (F(1, 4) if 'B' in open_ else 0) - rc; hi = ra + (F(1, 8) if 'B' in open_ else 0) - rc
+    return F(1, 2) / lo + F(1, 2) / hi
+combo('S-AS04', [l for l, t in zip('ㄱㄴㄷㄹ', [tank('AB') < 3, tank('B') < tank('A'), tank('ABC') < 4, tank('BC') > 12]) if t])
+best_l = None
+for mask in range(1 << 13):
+    S = [x for x in range(13) if mask >> x & 1]
+    if 8 in S: continue
+    lit = [sum(1 for s in S if abs(s - q) <= 2) for q in range(13)]
+    if min(lit) < 1 or lit[6] < 2 or lit[7] < 2: continue
+    cst = sum(20 if s % 4 == 0 else 30 for s in S)
+    best_l = cst if best_l is None else min(best_l, cst)
+pick('S-AS05', f'{best_l}만 원')
+kd = {'A': (190, 8000, 7200, 1200), 'B': (150, 7800, 6000, 960), 'C': (120, 4800, 4560, 800), 'D': (80, 4000, 3000, 600), 'E': (100, 3000, 2820, 380)}
+s_ = [sum(v[2] for v in kd.values()) * 100 >= 85 * sum(v[1] for v in kd.values()), max(kd, key=lambda k: F(kd[k][2], kd[k][1])) == 'C', max(kd, key=lambda k: F(kd[k][1], kd[k][0])) == 'B', max(kd, key=lambda k: F(kd[k][2], kd[k][3])) == 'B', sum(1 for v in kd.values() if v[2] * 10 >= 9 * v[1]) == 3]
+only('D-AS01', [not x for x in s_], 'false statements')
+fc, fa = [480, 520, 600, 560, 640], [1200, 24800, 4900, 3200, 6400]
+combo('D-AS02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(1, 5) if fc[i] < fc[i - 1]] == [3], max(range(5), key=lambda i: F(fa[i], fc[i])) == 1, fa[4] * fc[0] > 4 * fa[0] * fc[4], (fa[4] - fa[0]) * fc[0] >= 10 * (fc[4] - fc[0]) * fa[0]]) if t])
+pz = {'가': (2000, 2600, 3200), '나': (3000, 2400, 2700), '다': (1500, 1800, 1500), '라': (4000, 3600, 3000), '마': (2500, 2500, 3800)}
+mp = [m for m in itertools.permutations(pz) if pz[m[2]][1] > pz[m[2]][0] and pz[m[2]][1] > pz[m[2]][2] and pz[m[1]][0] > pz[m[0]][0] and pz[m[3]][2] > pz[m[4]][2] and pz[m[4]][0] < pz[m[4]][1] < pz[m[4]][2]]
+ok(len(mp) == 1, f'D-AS03 {mp}'); pick('D-AS03', ', '.join(mp[0]))
+tx = {'A': (5000, 4750), 'B': (2880 + 120, 2880), 'C': (2000, 2000 * 9 // 10), 'D': (1500, 1380)}
+uu = {k: a - b for k, (a, b) in tx.items()}
+by_text('D-AS04', list(zip(['네 세목 전체의 징수율', '미수납액이 가장 많은', '(나)는', 'D의 징수율은', '네 세목의 미수납액 합계'], [sum(b for a, b in tx.values()) * 100 > 94 * sum(a for a, b in tx.values()), max(uu, key=uu.get) == 'A', tx['B'][0] >= 2 * tx['C'][1], tx['D'][1] * tx['B'][0] > tx['B'][1] * tx['D'][0], sum(uu.values()) >= 700])))
+r15, r25 = [70, 55, 40], [65, 52, 41]
+w15 = [400 * r for r in r15]; w25 = [560 * r for r in r25]      # ×100
+combo('D-AS05', [l for l, t in zip('ㄱㄴㄷㄹ', [all(b > a for a, b in zip(w15, w25)), w25[2] * 400 > w15[2] * 560, 2 * (56000 - w25[0]) >= 3 * (40000 - w15[0]), w25[1] < w15[0]]) if t])
+pick('L-AS01', '지니계수가 같은 두 사회라도 로렌츠 곡선의 모양은 다를 수 있다.')
+def gn(sh):
+    c = [0]
+    for x in sh: c.append(c[-1] + x)
+    area = sum(F(c[i] + c[i + 1], 100) for i in range(5)) / 10
+    return (F(1, 2) - area) * 2
+ga, gb = [8, 12, 16, 24, 40], [6, 14, 18, 22, 40]
+combo('L-AS02', [l for l, t in zip('ㄱㄴㄷㄹ', [gn(ga) == gn(gb), F(gb[4], gb[0]) > F(ga[4], ga[0]), sum(ga[:3]) > sum(gb[:3]), gn([10, 12, 16, 24, 38]) > gn(ga)]) if t])
+combo('L-AS03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AS05', ['ㄱ', 'ㄴ'])
+cm = []
+for joinset in itertools.product(itertools.combinations(['독서', '등산', '사진'], 2), repeat=6):
+    jn = dict(zip('ABCDEF', joinset))
+    if len({sum(1 for v in jn.values() if c in v) for c in ['독서', '등산', '사진']}) != 1: continue
+    if len(set(jn['A']) & set(jn['B'])) != 1 or '사진' in jn['C'] or jn['D'] != jn['E'] or '독서' not in jn['F']: continue
+    cm.append(jn)
+by_text('L-AS04', list(zip(['A는 사진', 'B는 등산', 'C와 F가', 'E는 독서', 'F는 등산'], [all('사진' in j['A'] for j in cm), all('등산' in j['B'] for j in cm), all(len(set(j['C']) & set(j['F'])) == 2 for j in cm), all('독서' in j['E'] for j in cm), all('등산' not in j['F'] for j in cm)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
