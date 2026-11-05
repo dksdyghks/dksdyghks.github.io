@@ -2927,4 +2927,56 @@ combo('L-AZ03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AZ05', ['ㄱ', 'ㄷ'])
 bxm = [dict(zip('가나다라', p_)) for p_ in itertools.permutations(['금', '은', '동', '빈'])]
 bxm = [x for x in bxm if [x['나'] == '금', x['나'] != '금', x['가'] == '은', x['라'] != '동'].count(True) == 1]
 by_text('L-AZ04', list(zip(['가에는 금화가 들어 있다.', '가에는 금화가 들어 있거나', '나에는 은화', '다는 빈', '금화는 나에'], [all(x['가'] == '금' for x in bxm), all(x['가'] in '금빈' for x in bxm), all(x['나'] == '은' for x in bxm), all(x['다'] == '빈' for x in bxm), all(x['나'] == '금' for x in bxm)])))
+# ================= S-BA / D-BA / L-BA (5급 실전, independent re-solve from the rendered options) =================
+mat_ = 1200 - 80; trv_ = min(400, F(2500 + mat_, 10)); dir_ = 2500 + mat_ + trv_ + 900; ind_ = min(F(15, 100) * (dir_ - 900), 550)
+pick('S-BA01', f'{int((6000 - dir_ - ind_) * 10000):,}원')
+pr_ = list(itertools.combinations('갑을병정무', 2)); dg_ = {'을': 4, '병': 1, '정': 3, '무': 2}
+gr_ = [g for bits in itertools.product((0, 1), repeat=10) for g in [[p for p, b in zip(pr_, bits) if b]] if all(sum(1 for p in g if k in p) == v for k, v in dg_.items())]
+ok(len(gr_) == 1, 'S-BA02 unique graph'); g_ = gr_[0]
+combo('S-BA02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(1 for p in g_ if '갑' in p) == 2, ('갑', '무') in g_, len(g_) == 6, ('병', '정') in g_]) if t])
+rp_ = lambda ds: sum(2 if d >= 20 else 1 for d in ds); fn_ = lambda n: min(50 * n, 500)
+by_text('S-BA03', list(zip(['허가 없이 가로수 12그루', '쓰러질 위험이', '허가를 받아 줄기 지름 25', '지름 35센티미터인', '허가를 받아 줄기 지름 15'],
+        [fn_(12) == 600, 5 <= 3, rp_([25] * 3) == 6, 35 >= 30 and '가지치기' in ('벌채', '옮겨 심기'), rp_([15] * 4 + [22]) == 5])))
+def chime_(h, m, quiet=True):
+    if quiet and (h >= 22 or h < 6): return 0
+    return ((h % 12) or 12) if m == 0 else (1 if m == 30 else 0)
+cd_ = [chime_(h, m) for h in range(24) for m in (0, 30)]
+combo('S-BA04', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(cd_) == 124, sum(cd_[24:]) - sum(cd_[:24]) == 10, cd_.count(12) == 2, sum(chime_(h, m, False) for h in range(24) for m in (0, 30)) - sum(cd_) > 60]) if t])
+vl_ = {'A': (6, 200), 'B': (12, 500), 'C': (17, 800), 'D': (23, 100), 'E': (24, 500), 'F': (30, 100)}
+bb_ = min(sum(p * min(abs(x - vl_[s][0]) for s in pair) for x, p in vl_.values()) for pair in itertools.combinations(vl_, 2)
+          if 'B' not in pair and abs(vl_[pair[0]][0] - vl_[pair[1]][0]) >= 8 and all(min(abs(x - vl_[s][0]) for s in pair) <= 11 for x, _ in vl_.values()))
+pick('S-BA05', f'{bb_:,}')
+hy = [(320, 160), (360, 170), (390, 180), (420, 190)]; hr = {'A': (120, 40), 'B': (90, 50), 'C': (80, 35), 'D': (70, 60), 'E': (60, 30)}
+st_ = {k: a * r for k, (a, r) in hr.items()}; ord_ = sorted(st_, key=st_.get, reverse=True)
+s_ = [all(hy[i][0] > hy[i - 1][0] for i in range(1, 4)) and hy[3][0] * 10 >= 13 * hy[0][0], all(F(*hy[i]) > F(*hy[i - 1]) for i in range(1, 4)), ord_[0] == 'A', ord_[1] == 'D', sum(st_.values()) >= 40 * 420]
+only('D-BA01', [not x for x in s_], 'false statements')
+dt_ = [150, 170, 180, 190]; ds_ = [50000, 52000, 55000, 54000]; st2 = [90, 110, 120, 120]; ss_ = [200000, 210000, 220000, 225000]
+dsp = [a * b for a, b in zip(dt_, ds_)]; ssp = [a * b for a, b in zip(st2, ss_)]
+combo('D-BA02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(ssp[i] > ssp[i - 1] for i in range(1, 4)), ssp[3] * 10 >= 7 * (ssp[3] + dsp[3]), all(dsp[i] < dsp[i - 1] for i in range(1, 4) if ds_[i] < ds_[i - 1]), (ssp[1] + dsp[1]) * 10 >= 13 * (ssp[0] + dsp[0])]) if t])
+bd = {'가': (800, 60, 1995), '나': (1200, 45, 2010), '다': (500, 80, 1988), '라': (950, 30, 2003), '마': (650, 55, 2018)}
+mb = [m for m in itertools.permutations(bd) if bd[m[0]][0] == max(v[0] for v in bd.values()) and bd[m[1]][2] == min(v[2] for v in bd.values())
+      and bd[m[2]][2] >= 2000 and bd[m[2]][1] == max(v[1] for v in bd.values() if v[2] >= 2000) and bd[m[3]][1] * bd[m[4]][0] > bd[m[4]][1] * bd[m[3]][0]]
+ok(len(mb) == 1, f'D-BA03 {mb}'); pick('D-BA03', ', '.join(mb[0]))
+sc = {'A': (600, 360, 50), 'B': (800, 800 * 56 // 100, 40), 'C': (290 * 100 // 58, 290, 60), 'D': (400, 260, 50), 'E': (486 * 100 // 54, 486, 30)}
+per_ = {k: F(v[1] * 100, v[0]) for k, v in sc.items()}; sp_ = {k: v[1] * v[2] for k, v in sc.items()}
+by_text('D-BA04', list(zip(['(가)와 (나)를', '1인당 급식비가 가장', '정부 지원액이 가장', '다섯 학교 전체', '학생 수가 500명'],
+        [sc['B'][1] + sc['C'][0] >= 950, max(per_, key=per_.get) == 'D', max(sp_, key=sp_.get) == 'B', sum(v[1] for v in sc.values()) * 100 >= 58 * sum(v[0] for v in sc.values()), sum(1 for v in sc.values() if v[0] < 500) == 2])))
+op_, cl_, e4 = [60, 40, 50, 10], [55, 45, 30, 12], [700, 500, 400, 150]
+e5 = [e4[i] + op_[i] - cl_[i] for i in range(4)]
+combo('D-BA05', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if e5[i] < e4[i]] == [1, 3], max(range(4), key=lambda i: F(cl_[i], op_[i])) == 3, max(range(4), key=lambda i: F(cl_[i], e4[i])) == 1, sum(e5) * 100 >= 102 * sum(e4)]) if t])
+pick('L-BA01', '표를 가지고 있는 투표자라도 반스하프 지수가 0일 수 있다.')
+def bz_(w, q):
+    c = {k: 0 for k in w}
+    for mask in range(1, 1 << len(w)):
+        mem = [k for i, k in enumerate(w) if mask >> i & 1]; s = sum(w[k] for k in mem)
+        if s >= q:
+            for k in mem: c[k] += s - w[k] < q
+    t = sum(c.values()); return {k: F(v, t) for k, v in c.items()}
+w_ = {'A': 40, 'B': 30, 'C': 20, 'D': 10}; b51, b67 = bz_(w_, 51), bz_(w_, 67)
+combo('L-BA02', [l for l, t in zip('ㄱㄴㄷㄹ', [b51['B'] == b51['C'], b51['A'] > F(40, 100), b67['C'] == b67['D'], b67['A'] < b51['A']]) if t])
+combo('L-BA03', ['ㄱ', 'ㄷ']); combo('L-BA05', ['ㄴ', 'ㄷ'])
+jm = [(dict(zip('갑을병정', j)), dict(zip('갑을병정', h))) for j in itertools.permutations(['교', '의', '기', '변']) for h in itertools.permutations(['서', '부', '대', '광'])]
+wo = lambda m, v: [k for k in m if m[k] == v][0]
+jm = [x for x in jm if x[0]['을'] != '기' and x[1][wo(x[0], '기')] != '서' and x[1]['정'] in '대광' and x[1]['을'] in '대광' and x[1][wo(x[0], '변')] == '부']
+by_text('L-BA04', list(zip(['丁은 기자', '甲은 변호사', '乙은 의사', '丙의 고향', '丁의 고향'], [all(x[0]['정'] == '기' for x in jm), all(x[0]['갑'] == '변' for x in jm), all(x[0]['을'] == '의' for x in jm), all(x[1]['병'] == '서' for x in jm), all(x[1]['정'] == '대' for x in jm)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
