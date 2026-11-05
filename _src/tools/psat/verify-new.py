@@ -2106,4 +2106,65 @@ for X in itertools.combinations('ABCDEF', 3):
     tm = {q: (q in X) for q in 'ABCDEF'}
     if tm['A'] != tm['B'] and tm['C'] == tm['D'] and imp(tm['E'], not tm['F']): splits.append(tm)
 by_text('L-AM04', list(zip(['A는 X팀', 'B와 E는', 'D는 X팀', 'F와 C는', 'A와 F는'], [all(t['A'] for t in splits), all(t['B'] == t['E'] for t in splits), all(t['D'] for t in splits), all(t['F'] == t['C'] for t in splits), all(t['A'] != t['F'] for t in splits)])))
+# ================= S-AN / D-AN / L-AN (5급 실전, independent re-solve from the rendered options) =================
+act = [(6, 1, 'n'), (10, F(5, 2), 'n'), (5, F(1, 2), 'n'), (10, 3, 'd')]
+vh = sum((F(3, 2) * h if k == 'd' else min(h, 8)) + (1 if m >= 2 else 0) for h, m, k in act) + min(F(8 + 14, 2), 10)
+pick('S-AN01', f'{int(vh)}시간')
+seen = {'ABCDE': 0}; fr = ['ABCDE']
+while fr:
+    nx = []
+    for s in fr:
+        for i in range(4):
+            if set(s[i:i + 2]) == {'B', 'C'}: continue
+            t = s[:i] + s[i + 1] + s[i] + s[i + 2:]
+            if t not in seen: seen[t] = seen[s] + 1; nx.append(t)
+    fr = nx
+top = max(seen.values())
+combo('S-AN02', [l for l, t in zip('ㄱㄴㄷㄹ', ['EDCBA' not in seen, [k for k, v in seen.items() if v == top] == ['EDBCA'] and top == 10, seen['BCDEA'] == 4, len(seen) == 60]) if t])
+pick('S-AN03', '겸직 허가를 받은 공무원이 1년이 지난 뒤에도 겸직을 계속하려면 다시 허가를 받아야 한다.')
+# trains, minute resolution with exact fractions: simulate by small time steps of 1/3600 h
+def xa(t): return 120 * t
+def xb(t, st=True):
+    if t <= F(1, 2): return F(300)
+    r = t - F(1, 2)
+    if st:
+        if r <= F(1, 2): pass
+        elif r <= F(2, 3): r = F(1, 2)
+        else: r -= F(1, 6)
+    return 300 - 150 * r
+def first_meet(st=True):
+    s = 0
+    while xa(F(s, 3600)) < xb(F(s, 3600), st): s += 1
+    return F(s, 3600)
+m1, m0 = first_meet(), first_meet(False)
+combo('S-AN04', [l for l, t in zip('ㄱㄴㄷㄹ', [F(80, 60) < m1 <= F(90, 60), xa(m1) > 150, m0 < F(85, 60), F(1, 2) + 2 + F(1, 6) < F(300, 120)]) if t])
+opt = min(30 * s - (5 * s if s >= 3 else 0) + 45 * b for s in range(10) for b in range(3) if 24 * s + 44 * b >= 121)
+pick('S-AN05', f'{opt}만 원')
+fi = {'A': (1200, 1080, 540), 'B': (800, 840, 504), 'C': (600, 660, 264), 'D': (400, 380, 266), 'E': (300, 320, 96)}
+pr = {k: F(v[2], v[1]) for k, v in fi.items()}
+s_ = [sum(v[1] for v in fi.values()) < sum(v[0] for v in fi.values()), max(fi, key=lambda k: F(fi[k][1], fi[k][0])) == 'C', max(pr, key=pr.get) == 'D', max(fi, key=lambda k: fi[k][2]) == max(pr, key=pr.get), sum(v[2] for v in fi.values()) * 2 >= sum(v[1] for v in fi.values())]
+only('D-AN01', [not x for x in s_], 'false statements')
+py, us = [40, 52, 60, 72, 84], [20, 24, 25, 30, 35]
+combo('D-AN02', [l for l, t in zip('ㄱㄴㄷㄹ', [py[2] * us[3] == py[3] * us[2] and py[3] * us[4] == py[4] * us[3], max(range(1, 5), key=lambda i: F(py[i], py[i - 1])) == 1, py[4] >= 2 * py[0], any(us[i] * py[i - 1] > us[i - 1] * py[i] for i in range(1, 5))]) if t])
+pd = {'가': (50, 30), '나': (40, 45), '다': (30, 55), '라': (80, 20), '마': (20, 60)}
+def rank_of(k, key): return sorted(pd, key=key, reverse=True).index(k)
+mp = [m for m in itertools.permutations(pd) if rank_of(m[0], lambda x: pd[x][0]) == rank_of(m[0], lambda x: pd[x][0] * pd[x][1]) and rank_of(m[1], lambda x: pd[x][1]) == 1 and pd[m[2]][0] * pd[m[2]][1] > pd[m[3]][0] * pd[m[3]][1] and rank_of(m[4], lambda x: pd[x][0]) == 0]
+ok(len(mp) == 1, f'D-AN03 {mp}'); pick('D-AN03', ', '.join(mp[0]))
+hl = {'A': (500, 200, 500 * 200 * 80 // 100), 'B': (54000 * 100 // (150 * 90), 150, 54000), 'C': (800, 96000 * 100 // (800 * 75), 96000), 'D': (1000, 100, 72000)}
+oc = {k: F(a, s * n) for k, (s, n, a) in hl.items()}
+by_text('D-AN04', list(zip(['객석 점유율이 가장 높은', '네 공연장 전체의', '공연 횟수가', 'B의 좌석 수는', '관객 수가 가장 적은'], [max(oc, key=oc.get) == max(hl, key=lambda k: hl[k][2]), sum(v[2] for v in hl.values()) * 100 >= 75 * sum(v[0] * v[1] for v in hl.values()), max(hl, key=lambda k: hl[k][1]) == 'C', hl['B'][0] * 10 > 8 * hl['A'][0], min(hl, key=lambda k: hl[k][2]) == min(oc, key=oc.get)])))
+g0, g1, r0, r1 = [20, 15, 40, 8], [25, 18, 44, 12], [40, 60, 100, 30], [48, 55, 110, 35]
+d0 = [a * b for a, b in zip(g0, r0)]; d1 = [a * b for a, b in zip(g1, r1)]
+combo('D-AN05', [l for l, t in zip('ㄱㄴㄷㄹ', [r1[1] < r0[1] and d1[1] > d0[1], max(range(4), key=lambda i: F(d1[i], d0[i])) == 3, d1[2] >= 2 * (d1[0] + d1[1] + d1[3]), F(sum(d1), sum(g1)) > F(sum(d0), sum(g0))]) if t])
+pick('L-AN01', '구간별 누진 구조에서 평균세율은 한계세율보다 높을 수 없다.')
+def ptax(x): return min(x, 2000) * 10 + max(0, min(x, 5000) - 2000) * 20 + max(0, x - 5000) * 30
+combo('L-AN02', [l for l, t in zip('ㄱㄴㄷㄹ', [ptax(4000) == 600 * 100, ptax(6000) * 100 >= 20 * 6000 * 100, ptax(6100) - ptax(6000) == 30 * 100, (ptax(6000) - ptax(4000)) * 4 == 2000 * 100]) if t])
+combo('L-AN03', ['ㄱ', 'ㄴ']); combo('L-AN05', ['ㄷ'])
+lg = []
+for res in itertools.product('LR', repeat=6):
+    wn = {t: 0 for t in '甲乙丙丁'}; bt = set()
+    for (a, b), r in zip(itertools.combinations('甲乙丙丁', 2), res):
+        x, y = (a, b) if r == 'L' else (b, a); wn[x] += 1; bt.add(x + y)
+    if wn['甲'] == 2 and '乙丙' in bt and wn['丁'] >= 1 and wn['乙'] == wn['丁']: lg.append((wn, bt))
+by_text('L-AN04', list(zip(['甲은 乙에게', '丙은 한 경기도', '乙은 丁에게', '丁은 丙에게', '丙이 2승을'], [all('甲乙' in b for w, b in lg), all(w['丙'] == 0 for w, b in lg), all('乙丁' in b for w, b in lg), all('丁丙' in b for w, b in lg), all(imp(w['丙'] == 2, '甲乙' in b and '甲丁' in b) for w, b in lg)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
