@@ -435,3 +435,9 @@ td.slowt { color: var(--pen); }
 .goal-t .ok { color: var(--ok); }
 .goal .acc-bar { height: 6px; }
 .goal .acc-bar i { background: var(--gold); }
+/* 손가락으로 쓰는 기기: 작은 버튼·칩·구간 선택을 누르기 좋은 크기로 */
+@media (pointer: coarse) {
+  .btn.sm, .subj-types, table.st td .btn { min-height: 40px; }
+  .subj-types { padding: 8px 14px; }
+  .seg button, .chip { min-height: 40px; }
+}
