@@ -4,15 +4,15 @@
 import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, EMBED, fmtSize, kdate, kdt, toast, applyTheme, saveSettings, saveProject, saveCard, saveIdea, logEvent,
   docMeta, docPages, docOf, addFiles, removeDoc, updateDoc, libLoad, parseQuery, searchLib, indexLibrary, libStats, connectFolder, syncFolder, OCR, scanned, ocrAll,
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
-  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=61cfbfbbbf';
-import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=61cfbfbbbf';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=61cfbfbbbf';
-import { caseCourt, citationsIn } from './lawtext.js?v=61cfbfbbbf';
-import { excluded, excludeHint } from './profile.js?v=61cfbfbbbf';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=61cfbfbbbf';
-import { buildDocx, DOCX_MIME } from './docx.js?v=61cfbfbbbf';
-import { viewJudg, openJudgment } from './judg.js?v=61cfbfbbbf';
-import { isJudgment } from './judgment.js?v=61cfbfbbbf';
+  backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js?v=f20bc8174f';
+import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js?v=f20bc8174f';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js?v=f20bc8174f';
+import { caseCourt, citationsIn } from './lawtext.js?v=f20bc8174f';
+import { excluded, excludeHint } from './profile.js?v=f20bc8174f';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=f20bc8174f';
+import { buildDocx, DOCX_MIME } from './docx.js?v=f20bc8174f';
+import { viewJudg, openJudgment } from './judg.js?v=f20bc8174f';
+import { isJudgment } from './judgment.js?v=f20bc8174f';
 
 /* ---------------- 모양 ---------------- */
 const sv = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;

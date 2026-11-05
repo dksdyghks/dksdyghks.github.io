@@ -2792,4 +2792,71 @@ combo('L-AX03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AX05', ['ㄱ', 'ㄷ'])
 packs = [dict(zip(['텐', '침', '버', '랜', '우'], b)) for b in itertools.product((0, 1), repeat=5)]
 packs = [x for x in packs if (not x['텐'] or x['침']) and not (x['침'] and x['우']) and sum(x.values()) == 3 and (x['침'] or not x['버'])]
 by_text('L-AX04', list(zip(['甲은 텐트를 챙긴다', '甲은 우산을', '甲은 랜턴을', '甲은 버너를', '甲은 텐트와 랜턴을'], [all(x['텐'] for x in packs), all(not x['우'] for x in packs), all(x['랜'] for x in packs), all(not x['버'] for x in packs), all(x['텐'] and x['랜'] for x in packs)])))
+# ================= S-AY / D-AY / L-AY (5급 실전, independent re-solve from the rendered options) =================
+def care_(typ, baby, kids, hrs):
+    sup = {'가': 85, '나': 60, '다': 15, '라': 0}[typ] + (5 if baby and typ != '라' else 0)
+    v = F(min(hrs, 80) * 12000 * (100 - sup), 100) + max(hrs - 80, 0) * 12000
+    if kids >= 3: v -= min(v / 10, 50000)
+    return v
+s_ay = care_('가', 1, 1, 60) + care_('나', 0, 3, 100) + care_('라', 1, 1, 40) + care_('다', 1, 2, 90)
+pick('S-AY01', f'{int(s_ay):,}원')
+nums_ = set()
+for a_, b_, c_ in itertools.permutations('01467', 3):
+    for x_ in ([a_] if a_ != '6' else ['6', '9']):
+        for y_ in ([b_] if b_ != '6' else ['6', '9']):
+            for z_ in ([c_] if c_ != '6' else ['6', '9']):
+                if x_ != '0': nums_.add(int(x_ + y_ + z_))
+ev_ = sum(1 for n_ in nums_ if n_ % 2 == 0)
+combo('S-AY02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(nums_) == 78, max(nums_) - min(nums_) == 872, sum(1 for n_ in nums_ if n_ % 3 == 0) == 6, ev_ > len(nums_) - ev_]) if t])
+bn_ = lambda pops: sum(3 if x > 50000 else 2 for x in pops)
+school_ok_ = lambda m, vac: bool(vac) or m > 50       # 방학 중이면 학교 정문 제한 없음
+rm_ = [6, 6, 6, 7]; due_ = 3 + 3            # 선거일 6월 3일 다음 날부터 3일 이내 → 6월 6일
+by_text('S-AY03', list(zip(['인구가 4만 8천', '후보자는 5월 16일', '방학 중인 학교', '6월 6일까지', '인구가 정확히'], [bn_([48000, 48000, 62000]) == 7, 16 >= 16 + 1, (school_ok_(30, vac=1)) and 8 > 10, sum(1 for d in rm_ if d > due_) * 10 == 40, bn_([50000]) == 3])))
+def ladder_(cfg):
+    p_ = [0, 1, 2, 3]
+    for lv in cfg:
+        for i in lv: p_ = [i + 1 if x == i else i if x == i + 1 else x for x in p_]
+    return tuple(p_)
+lad = [(sum(map(len, c)), ladder_(c)) for c in itertools.product([(), (0,), (1,), (2,), (0, 2)], repeat=5)]
+combo('S-AY04', [l for l, t in zip('ㄱㄴㄷㄹ', [any(n_ == 3 and r[0] == 3 for n_, r in lad), min(n_ for n_, r in lad if r == (3, 2, 1, 0)) == 6, not any(n_ == 4 and r == (0, 1, 2, 3) for n_, r in lad), len({r for n_, r in lad if n_ == 2}) == 6]) if t])
+jb = {'A': (3, 0, 13, 4), 'B': (1, 1, 13, 4), 'C': (1, 0, 11, 4), 'D': (4, 0, 13, 1), 'E': (2, 1, 20, 2)}
+bj = None
+for o_ in itertools.permutations(jb):
+    if o_.index('B') < o_.index('D'): continue
+    t_, pen_ = 9, 0
+    for k_, j_ in enumerate(o_):
+        if k_ and jb[o_[k_ - 1]][1] != jb[j_][1]: t_ += 1
+        t_ += jb[j_][0]; pen_ += max(0, t_ - jb[j_][2]) * jb[j_][3]
+    bj = pen_ if bj is None else min(bj, pen_)
+pick('S-AY05', f'{bj}만 원')
+gy = [(14400, 21600), (12600, 18270), (10500, 14700), (10200, 13770)]; rg = {'A': (2400, 75), 'B': (2100, 80), 'C': (1800, 70), 'D': (2500, 76), 'E': (1400, 85)}
+on_ = {k: a * r for k, (a, r) in rg.items()}
+s_ = [all(gy[i][0] < gy[i - 1][0] for i in range(1, 4)) and gy[3][0] * 10 <= 7 * gy[0][0], all(gy[i][1] * gy[i - 1][0] < gy[i - 1][1] * gy[i][0] for i in range(1, 4)), max(on_, key=on_.get) == 'D', min(on_, key=on_.get) == 'E', sum(on_.values()) > 75 * gy[3][0]]
+only('D-AY01', [not x for x in s_], 'false statements')
+px0, px1 = [40, 20, 10, 6], [44, 24, 12, 5]; r0, r1 = [15, 5, 10, 20], [14, 6, 8, 24]
+tr0 = [a * b for a, b in zip(px0, r0)]; tr1 = [a * b for a, b in zip(px1, r1)]
+nd0 = [a * 100 - b for a, b in zip(px0, tr0)]; nd1 = [a * 100 - b for a, b in zip(px1, tr1)]
+gi = max(range(4), key=lambda i: F(nd1[i], nd0[i]))
+combo('D-AY02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if tr1[i] < tr0[i]] == [2], tr1[0] >= 2 * sum(tr1[1:]), sum(px1) * 10 >= 11 * sum(px0), gi == 2]) if t])
+fs = {'가': (50, 40, 20), '나': (30, 70, 15), '다': (20, 80, 12), '라': (40, 45, 10), '마': (25, 60, 30)}
+mf = [m for m in itertools.permutations(fs) if fs[m[0]][0] * fs[m[0]][1] == max(v[0] * v[1] for v in fs.values()) and F(fs[m[1]][2], fs[m[1]][0]) == max(F(v[2], v[0]) for v in fs.values())
+      and fs[m[2]][1] == max(v[1] for v in fs.values()) and F(fs[m[3]][2], fs[m[3]][0]) < F(fs[m[4]][2], fs[m[4]][0])]
+ok(len(mf) == 1, f'D-AY03 {mf}'); pick('D-AY03', ', '.join(mf[0]))
+vt = {'A': (200, 130, 1950), 'B': (150, 150 * 66 // 100, 1980), 'C': (168 * 100 // 70, 168, 1680), 'D': (120, 75, 1800), 'E': (80, 80 * 75 // 100, 900)}
+ir = {k: F(v[2], v[1]) for k, v in vt.items()}
+by_text('D-AY04', list(zip(['(가)는 (라)보다', '선거인 수가 가장', '다섯 지역 전체', '투표자 수 대비 무효표 비율이 가장', '투표자 수 대비 무효표 비율이 A와'],
+       [vt['B'][1] - vt['E'][1] >= 40, max(vt, key=lambda k: vt[k][0]) == max(vt, key=lambda k: F(vt[k][1], vt[k][0])), sum(v[1] for v in vt.values()) * 100 >= 68 * sum(v[0] for v in vt.values()), max(ir, key=ir.get) == 'D', not any(ir[k] == ir['A'] for k in 'BCDE')])))
+sh0, sh1 = [50, 20, 20, 10], [44, 12, 28, 16]
+n0 = [160 * s for s in sh0]; n1 = [150 * s for s in sh1]
+combo('D-AY05', [l for l, t in zip('ㄱㄴㄷㄹ', [n1[2] * 10 >= 13 * n0[2], n0[0] - n1[0] > n0[1] - n1[1], F(n1[3], n0[3]) < F(sh1[3], sh0[3]), n1[2] + n1[3] >= 4 * n1[1]]) if t])
+pick('L-AY01', '두 정당의 정책이 비슷해질 때 양 끝의 유권자가 투표하지 않을 것을 걱정하는 정당은 가운데로 끝까지 다가가지 않는다.')
+vp = [1] * 10 + [2] * 15 + [4] * 20 + [5] * 10 + [6] * 15 + [9] * 30
+def win_(a, b):
+    va = sum(1 for x in vp if abs(x - a) < abs(x - b)); vb = sum(1 for x in vp if abs(x - b) < abs(x - a)); return va, vb
+md = sorted(vp)[49]
+combo('L-AY02', [l for l, t in zip('ㄱㄴㄷㄹ', [md == 5 and sorted(vp)[50] == 5, win_(3, 6)[1] > win_(3, 6)[0], F(sum(vp), 100) < md, all(win_(5, b)[0] > win_(5, b)[1] for b in range(11) if b != 5)]) if t])
+combo('L-AY03', ['ㄱ', 'ㄷ']); combo('L-AY05', ['ㄱ', 'ㄴ'])
+cm = [dict(zip('갑을병정무', a)) for a in itertools.product('기예감', repeat=5)]
+cm = [x for x in cm if list(x.values()).count('예') == 2 and x['무'] == '감' and x['갑'] != '예' and (x['을'] != '감' or x['병'] == '기')]
+by_text('L-AY04', list(zip(['甲은 기획', '乙은 감사', '丙은 기획', '丁은 예산', '감사 위원회에는'], [all(x['갑'] == '기' for x in cm), all(x['을'] != '감' for x in cm), all(x['병'] != '기' for x in cm), all(x['정'] == '예' for x in cm), all(list(x.values()).count('감') == 1 for x in cm)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
