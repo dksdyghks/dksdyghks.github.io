@@ -369,13 +369,14 @@
   };
   const MARK = '<svg class="brand-mark" viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="#0A1426"/><g fill="#F5C46C"><path d="M1.6 8.6 L2.6 2.2 L6.6 5.2 Z"/><path d="M14.4 8.6 L13.4 2.2 L9.4 5.2 Z"/><ellipse cx="8" cy="9.7" rx="6.6" ry="4.9"/></g><g fill="#E5323B"><path transform="translate(5.2 9.6) scale(1.45)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z"/><path transform="translate(10.8 9.6) scale(1.45)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z"/></g></svg>'; // the heart cat's face (no Taegukgi inside 송공)
   function shell(crumb, inner, o = {}) {
+    const nd = dueItems().length;
     const timer = o.timer ? `<span class="timer${S.settings.timer ? '' : ' hide'}" id="timer" aria-label="경과 시간">00:00</span>` : '';
     return `<header class="top"><div class="top-in">
         <button class="brand" data-act="home" aria-label="송공 처음 화면">${MARK}<span class="brand-name">송공</span></button>
         <div class="crumb">${crumb || ''}</div>
         <div class="tools">${timer}
           <button class="icon-btn lab" data-act="home" title="처음 화면 (풀던 문제는 기록하지 않고 나갑니다)">${ICON.home}<span>홈</span></button>
-          <button class="icon-btn lab" data-act="notes" title="틀린 문제를 모아 다시 풉니다 (W)">${ICON.notes}<span>오답노트</span></button>
+          <button class="icon-btn lab" data-act="notes" title="틀린 문제를 모아 다시 풉니다 (W)${nd ? ` · 오늘 복습 ${nd}문제` : ''}">${ICON.notes}<span>오답노트</span>${nd ? `<b class="nbadge" aria-label="오늘 복습 ${nd}문제">${nd > 99 ? '99+' : nd}</b>` : ''}</button>
           <button class="icon-btn lab" data-act="stats" title="과목·유형별 정답률, 약한 유형">${ICON.stats}<span>기록</span></button>
           <button class="icon-btn lab" data-act="settings" title="글자 크기, 시간, 백업">${ICON.gear}<span>설정</span></button>
           ${EMBED ? `<button class="icon-btn" data-act="close" title="닫기 (Esc)" aria-label="닫기">${ICON.close}</button>` : ''}

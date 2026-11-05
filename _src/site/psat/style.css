@@ -83,6 +83,8 @@ a { color: inherit; }
 .icon-btn svg { width: 20px; height: 20px; }
 .icon-btn.lab { width: auto; min-width: 46px; height: 46px; padding: 3px 6px 2px; grid-template-rows: 22px auto; gap: 1px; }
 .icon-btn.lab span { font-size: .6875rem; line-height: 1.1; color: var(--muted); white-space: nowrap; }
+.icon-btn.lab { position: relative; }
+.icon-btn .nbadge { position: absolute; top: 1px; right: 2px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px; background: var(--gold-wash); color: var(--gold-ink); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent); font-size: .625rem; font-weight: 700; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
 .timer { font-variant-numeric: tabular-nums; font-size: .875rem; color: var(--muted); padding: 4px 10px; border-radius: 999px; background: var(--chip); min-width: 64px; text-align: center; }
 .timer.over { color: var(--pen); background: var(--pen-wash); }
 .timer.paused { opacity: .55; }
