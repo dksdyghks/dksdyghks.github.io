@@ -2859,4 +2859,72 @@ combo('L-AY03', ['ㄱ', 'ㄷ']); combo('L-AY05', ['ㄱ', 'ㄴ'])
 cm = [dict(zip('갑을병정무', a)) for a in itertools.product('기예감', repeat=5)]
 cm = [x for x in cm if list(x.values()).count('예') == 2 and x['무'] == '감' and x['갑'] != '예' and (x['을'] != '감' or x['병'] == '기')]
 by_text('L-AY04', list(zip(['甲은 기획', '乙은 감사', '丙은 기획', '丁은 예산', '감사 위원회에는'], [all(x['갑'] == '기' for x in cm), all(x['을'] != '감' for x in cm), all(x['병'] != '기' for x in cm), all(x['정'] == '예' for x in cm), all(list(x.values()).count('감') == 1 for x in cm)])))
+# ================= S-AZ / D-AZ / L-AZ (5급 실전, independent re-solve from the rendered options) =================
+def ctax_(fuel, cc, age, disabled, kids3):
+    if fuel == 'ev': v = F(100000)
+    else:
+        v = F(cc * (90 if cc <= 1000 else 150 if cc <= 1600 else 220))
+        if age >= 3: v = v * (1 - min(F(5 * (age - 2), 100), F(1, 2)))
+    cut = max([F(1)] * (disabled and cc <= 2000 and fuel != 'ev') + [F(1, 2)] * kids3 + [F(0)])
+    return int(v * (1 - cut)) // 100 * 100
+s_az = ctax_('g', 1500, 5, 0, 0) + ctax_('d', 2400, 14, 0, 0) + ctax_('ev', 0, 7, 0, 0) + ctax_('g', 998, 2, 1, 0) + ctax_('d', 2200, 6, 1, 1)
+pick('S-AZ01', f'{s_az:,}원')
+mark_ = {}
+def hg_(t, a, b, evs):
+    for fa in (0, 1):
+        for fb in (0, 1):
+            a2 = 7 - a if fa else a; b2 = 11 - b if fb else b
+            pos = [x for x in (a2, b2) if x > 0]
+            if not pos or t + min(pos) > 26: continue
+            t2 = t + min(pos)
+            for e in evs: mark_[t2 - e] = min(mark_.get(t2 - e, 99), t2)
+            hg_(t2, max(a2 - min(pos), 0), max(b2 - min(pos), 0), evs + [t2])
+hg_(0, 0, 0, [0])
+combo('S-AZ02', [l for l, t in zip('ㄱㄴㄷㄹ', [3 in mark_, mark_.get(15) == 15, mark_.get(8, 99) >= 16, 1 not in mark_]) if t])
+import datetime as dtz_
+inst_, chk_ = 2014, dtz_.date(2025, 3, 10)
+nxt_ = chk_.replace(year=chk_.year + (1 if chk_.year - inst_ >= 10 else 2))
+edu_ = lambda d: dtz_.date(d.year + (d.month + 2) // 12, (d.month + 2) % 12 + 1, d.day)
+rep_ = lambda weeks_days, death=False: death or weeks_days >= 21
+fine_ = lambda reported_day, hidden: (200 if hidden else 100) if (hidden or reported_day > 7) else 0
+by_text('S-AZ03', list(zip(['2014년에 설치한', '3주의 치료가', '2026년 2월 1일부터', '놀이시설에서 2주의', '사고를 숨기려고'],
+        [nxt_ == dtz_.date(2027, 3, 10), rep_(21) and fine_(10, False) == 100, edu_(dtz_.date(2026, 2, 1)) >= dtz_.date(2026, 5, 15), rep_(14), fine_(None, True) == 100])))
+w27_ = [(a, b, c) for a in range(10) for b in range(6) for c in range(4) if 300 * a + 500 * b + 800 * c == 2700]
+cant_ = [x for x in range(100, 5001, 100) if not any(300 * a + 500 * b + 800 * c == x for a in range(17) for b in range(11) for c in range(7))]
+combo('S-AZ04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(w27_) == 5, min(map(sum, w27_)) == 4, max(cant_) == 1100, sum(1 for w in w27_ if sum(w) <= 5) == 2]) if t])
+lb_ = min(a * 7500 + (30000 if 0 < a < 30 else 0) + b * 9000 + (20000 if b else 0) + ((60 - a - b) * 10500 * 9 // 10 if 60 - a - b >= 30 else (60 - a - b) * 10500)
+          for a in range(41) for b in range(61 - a) if not (0 < b < 40))
+pick('S-AZ05', f'{lb_:,}원')
+yv = [(2400, 60), (2700, 60), (2550, 50), (2940, 56)]; bc = {'A': (900, 45), 'B': (720, 18), 'C': (600, 24), 'D': (480, 16), 'E': (240, 15)}
+rr_ = sorted(bc, key=lambda k: F(bc[k][1], bc[k][0]), reverse=True); ac_ = sorted(bc, key=lambda k: bc[k][1], reverse=True)
+s_ = [yv[3][0] * 5 >= 6 * yv[0][0], rr_[1] == ac_[1], all(F(*yv[i]) > F(*yv[i - 1]) for i in range(1, 4)), rr_[0] == 'E', sum(v[1] for v in bc.values()) * 100 >= 4 * sum(v[0] for v in bc.values())]
+only('D-AZ01', [not x for x in s_], 'false statements')
+r4_, r5_ = [40, 15, 12, 18], [36, 18, 12, 20]; po4, po5 = [500, 650, 1600, 1400], [480, 640, 1560, 1450]
+q4 = [a * b for a, b in zip(r4_, po4)]; q5 = [a * b for a, b in zip(r5_, po5)]
+combo('D-AZ02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if q5[i] < q4[i]] == [0, 2], q5.index(max(q5)) == 3, F(sum(q5), sum(po5)) > F(sum(q4), sum(po4)), F(q5[1], q4[1]) > F(r5_[1], r4_[1])]) if t])
+og = {'가': (1200, 90), '나': (800, 95), '다': (1500, 80), '라': (600, 98), '마': (1000, 85)}
+ov_ = lambda k: og[k][0] * (100 - og[k][1])
+mo = [m for m in itertools.permutations(og) if og[m[0]][0] * og[m[0]][1] == max(v[0] * v[1] for v in og.values()) and og[m[1]][1] == max(v[1] for v in og.values()) and sorted(og, key=ov_, reverse=True)[1] == m[2] and og[m[3]][0] > og[m[4]][0]]
+ok(len(mo) == 1, f'D-AZ03 {mo}'); pick('D-AZ03', ', '.join(mo[0]))
+pw_ = {6: (9600, 8000), 7: (9900, 9900 - 900), 8: (9500 + 760, 9500), 9: (9720, 8100), 10: (9000, 7500)}
+rs_ = {m: a - b for m, (a, b) in pw_.items()}; rt_ = {m: F(rs_[m] * 100, pw_[m][1]) for m in pw_}
+by_text('D-AZ04', list(zip(['(가)와 (다)를', '예비율이 가장 낮은', '예비력이 가장 큰', '예비율이 20%인', '공급 능력이 전월보다'],
+       [pw_[7][1] + rs_[9] >= 10700, min(rt_, key=rt_.get) == 7, max(rs_, key=rs_.get) == 9, sum(1 for v in rt_.values() if v == 20) == 2, [m for m in (7, 8, 9, 10) if pw_[m][0] < pw_[m - 1][0]] == [9]])))
+cn_ = [90, 110, 150, 180]; sh_ = {'갑': (50, 40), '을': (30, 60), '병': (15, 30), '기': (5, 100)}
+am_ = {k: 180 * a * b for k, (a, b) in sh_.items()}
+combo('D-AZ05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(1, 4), key=lambda i: F(cn_[i], cn_[i - 1])) == 2, am_['갑'] > am_['을'], sum(am_.values()) >= 50 * 180 * 100, 180 * 15 >= 30 * 90]) if t])
+pick('L-AZ01', '최대 잉여 방식에서는 다른 조건이 같은데 총의석이 늘었을 때 어떤 정당의 의석이 줄어드는 일이 생길 수 있다.')
+vv_ = {'A': 41000, 'B': 29000, 'C': 17000, 'D': 8000, 'E': 5000}
+def lr_(v, s):
+    q = F(sum(v.values()), s); b = {k: int(x / q) for k, x in v.items()}
+    for k in sorted(v, key=lambda k: v[k] / q - int(v[k] / q), reverse=True)[:s - sum(b.values())]: b[k] += 1
+    return b
+def dv_(v, s, step, first=1):
+    vals = sorted(((F(x, first + step * i), k) for k, x in v.items() for i in range(s)), reverse=True)[:s]
+    return {k: sum(1 for _, kk in vals if kk == k) for k in v}
+combo('L-AZ02', [l for l, t in zip('ㄱㄴㄷㄹ', [dv_(vv_, 10, 1)['A'] == lr_(vv_, 10)['A'] + 1, dv_(vv_, 10, 2) == lr_(vv_, 10), dv_({**vv_, 'D': 8100}, 10, 1)['D'] == 1, any(lr_(vv_, 11)[k] < lr_(vv_, 10)[k] for k in vv_)]) if t])
+combo('L-AZ03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AZ05', ['ㄱ', 'ㄷ'])
+bxm = [dict(zip('가나다라', p_)) for p_ in itertools.permutations(['금', '은', '동', '빈'])]
+bxm = [x for x in bxm if [x['나'] == '금', x['나'] != '금', x['가'] == '은', x['라'] != '동'].count(True) == 1]
+by_text('L-AZ04', list(zip(['가에는 금화가 들어 있다.', '가에는 금화가 들어 있거나', '나에는 은화', '다는 빈', '금화는 나에'], [all(x['가'] == '금' for x in bxm), all(x['가'] in '금빈' for x in bxm), all(x['나'] == '은' for x in bxm), all(x['다'] == '빈' for x in bxm), all(x['나'] == '금' for x in bxm)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
