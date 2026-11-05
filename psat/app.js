@@ -934,13 +934,20 @@
     list.sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
     const seg1 = [['', '전체'], ...ORDER.map((k) => [k, SUBJ[k].name])].map(([k, n]) => `<button class="${noteFilter.subj === k ? 'on' : ''}" data-act="nf-subj" data-v="${k}">${n}</button>`).join('');
     const seg2 = [['all', '모두'], ['due', '오늘 복습'], ['star', '★ 중요'], ['memo', '메모'], ['done', '졸업']].map(([k, n]) => `<button class="${noteFilter.kind === k ? 'on' : ''}" data-act="nf-kind" data-v="${k}">${n}</button>`).join('');
+    // 지난번에 틀릴 때 고른 선지(번호가 아니라 글로: 다시 풀 때 선지 순서가 바뀔 수 있다). 정답은 보여 주지 않는다.
+    const lastPick = (it) => {
+      if (it.lastOk !== false || !it.q || !Array.isArray(it.q.options)) return '';
+      const c = it.lastChoice;
+      const txt = c === -1 ? '모르겠음으로 넘김' : Number.isInteger(c) && it.q.options[c] != null ? stemText(String(it.q.options[c])) : '';
+      return txt ? `<span class="t5">지난번 고른 답: ${esc(txt.length > 46 ? txt.slice(0, 46) + '…' : txt)}</span>` : '';
+    };
     const items = list.map((it) => {
       const st = it.done ? '<span class="tag">졸업</span>' : it.due ? (it.due <= t ? '<span class="tag rev">오늘 복습</span>' : `<span class="tag">${md(it.due)} 복습</span>`) : '';
       return `<button class="item" data-act="open-note" data-id="${esc(it.qid)}">
         <span class="t1"><span>${esc(SUBJ[it.subj].name)} · ${esc(typeShort(it.subj, it.type))}</span>${st}${it.star ? '<span class="tag src">★</span>' : ''}${it.wrong ? `<span>오답 ${it.wrong}회</span>` : ''}${it.cause ? `<span class="tag">${esc(it.cause)}</span>` : ''}${it.right ? `<span>정답 ${it.right}회</span>` : ''}</span>
         <span class="t2">${esc(stemText(it.q.stem))}</span>
         <span class="t4">${esc(snippet(it.q))}</span>
-        <span class="t3">${md(dayKey(it.addedAt))} 담음${it.memo ? ` · 메모: ${esc(it.memo.replace(/\s+/g, ' ').slice(0, 60))}` : ''}</span></button>`;
+        ${lastPick(it)}<span class="t3">${md(dayKey(it.addedAt))} 담음${it.memo ? ` · 메모: ${esc(it.memo.replace(/\s+/g, ' ').slice(0, 60))}` : ''}</span></button>`;
     }).join('');
     paint(shell('<b>오답노트</b>', `
       <div class="page-h"><h1>오답노트</h1>${due.length ? `<button class="btn primary sm" data-act="review-start">오늘 복습 ${due.length}문제 시작</button>` : '<span class="subj-meta">오늘 복습할 문제가 없습니다</span>'}</div>
