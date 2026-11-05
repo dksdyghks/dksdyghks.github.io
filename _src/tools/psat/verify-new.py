@@ -3086,4 +3086,62 @@ for c in '갑을병정무':
     tr = {'갑': c == '을', '을': c == '정', '병': c != '병', '무': c != '갑'}; tr['정'] = not tr['을']
     if list(tr.values()).count(False) == 2: lm.append((c, [k for k, v in tr.items() if not v]))
 by_text('L-BC04', list(zip(['丁이 깨뜨렸다', '乙의 진술은 참', '戊는 깨뜨리지', '丁의 진술은 참', '甲의 진술은 거짓'], [all(c == '정' for c, L in lm), all('을' not in L for c, L in lm), all(c != '무' for c, L in lm), all('정' not in L for c, L in lm), all('갑' in L for c, L in lm)])))
+# ================= S-BD / D-BD / L-BD (5급 실전, independent re-solve from the rendered options) =================
+def rent_(rate, mk, minors, inc):
+    v = mk * rate * (100 - min(10 * minors, 30)) // 10000
+    return min(v, inc * 30 // 100)
+pick('S-BD01', f'{rent_(35, 1000000, 0, 2000000) + rent_(50, 1200000, 1, 2400000) + rent_(70, 1500000, 4, 3000000) + rent_(50, 1800000, 1, 2000000):,}원')
+tr3 = [c for c in itertools.combinations(range(1, 10), 3) if sum(c) == 15]
+combo('S-BD02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(tr3) == 8, sum(5 in c for c in tr3) == 4, sum(9 in c for c in tr3) == 3, any(all(v % 2 == 0 for v in c) for c in tr3)]) if t])
+quota_ = lambda cap: cap * 10 // 100
+rk_ = {'맞벌이': 1, '한부모': 1, '형제': 2, '그 밖': 3}
+by_text('S-BD03', list(zip(['형제자매가 이미', '정원이 20명인', '확정 통보를 받은', '정원이 15명인', '형제자매가 다니지 않는'], [rk_['형제'] < rk_['한부모'], quota_(20) == 2 and rk_['맞벌이'] == 1, 7 > 7, quota_(15) == 2, rk_['그 밖'] == 2])))
+def split_(stops, people):
+    pay = {q: F(0) for q in people}; on = list(people); prev = 0
+    for m, off in stops:
+        for q in on: pay[q] += F(m - prev, len(on))
+        on = [q for q in on if q not in off]; prev = m
+    return pay
+s0 = split_([(6300, ['갑']), (9000, ['을']), (14200, ['병'])], ['갑', '을', '병']); s1 = split_([(9000, ['을']), (14200, ['갑', '병'])], ['갑', '을', '병'])
+combo('S-BD04', [l for l, t in zip('ㄱㄴㄷㄹ', [s0['병'] > s0['갑'] + s0['을'], 9000 - s0['을'] > 5000, s1['갑'] >= 2 * s0['갑'], s0['병'] * 10 >= 7 * 14200]) if t])
+tt_ = {frozenset(k): v for k, v in [(('H', 'A'), 50), (('H', 'B'), 50), (('H', 'C'), 40), (('H', 'D'), 25), (('A', 'B'), 50), (('A', 'C'), 25), (('A', 'D'), 55), (('B', 'C'), 45), (('B', 'D'), 30), (('C', 'D'), 45)]}
+def rt5(o):
+    t, c = 540, 'H'
+    for x in o:
+        t += tt_[frozenset((c, x))]
+        if x == 'D': t = max(t, 660)
+        if x == 'B' and t > 630: return None
+        t += 30; c = x
+    return t + tt_[frozenset((c, 'H'))]
+b5_ = min(v for o in itertools.permutations('ABCD') if o.index('C') < o.index('A') for v in [rt5(o)] if v)
+pick('S-BD05', f'오후 {b5_ // 60 - 12}시 {b5_ % 60}분')
+yu = [(120000, 60), (140000, 58), (160000, 55), (180000, 52)]; nt = {'A': (72000, 50), 'B': (45000, 60), 'C': (27000, 40), 'D': (21000, 70), 'E': (15000, 34)}
+yd = [a * r for a, r in yu]; nd = {k: a * r for k, (a, r) in nt.items()}
+s_ = [yu[3][0] * 2 == 3 * yu[0][0] and all(yu[i][0] > yu[i - 1][0] for i in range(1, 4)), all(yu[i][1] < yu[i - 1][1] and yd[i] > yd[i - 1] for i in range(1, 4)), max(nt, key=lambda k: nt[k][1]) == max(nd, key=nd.get), max(nd.values()) * 100 >= 35 * yd[3], yu[3][0] * 100 - yd[3] > yu[0][0] * 100 - yd[0]]
+only('D-BD01', [not x for x in s_], 'false statements')
+fm4, fm5 = [800, 600, 1200, 400], [880, 720, 1150, 380]; pr4, pr5 = [20, 30, 100, 25], [20, 28, 110, 25]
+x4 = [a * b for a, b in zip(fm4, pr4)]; x5 = [a * b for a, b in zip(fm5, pr5)]
+combo('D-BD02', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(4), key=lambda i: F(x5[i], x4[i])) == 1, any(fm5[i] < fm4[i] and x5[i] > x4[i] for i in range(4)), sum(x5) * 100 >= 106 * sum(x4), x5[2] * 4 >= 3 * sum(x5)]) if t])
+ms = {'가': (120, 8000, 40), '나': (80, 12000, 25), '다': (60, 3000, 70), '라': (150, 6000, 20), '마': (40, 5000, 50)}
+mm = [m for m in itertools.permutations(ms) if ms[m[0]][0] * (100 - ms[m[0]][2]) == max(v[0] * (100 - v[2]) for v in ms.values()) and ms[m[1]][1] == max(v[1] for v in ms.values())
+      and ms[m[2]][0] * ms[m[2]][2] == max(v[0] * v[2] for v in ms.values()) and ms[m[3]][0] > ms[m[4]][0]]
+ok(len(mm) == 1, f'D-BD03 {mm}'); pick('D-BD03', ', '.join(mm[0]))
+cr = {'A': (5000, 3000), 'B': (8000, 8000 - 2400), 'C': (1400 * 100 // 35, 2600), 'D': (6000, 4200), 'E': (10000, 6000)}
+ic = {k: a - b for k, (a, b) in cr.items()}; rr2 = {k: F(ic[k], cr[k][0]) for k in cr}
+by_text('D-BD04', list(zip(['(가)와 (나)를', '농업 소득이 가장', '소득률이 가장', '다섯 작목을', '경영비가 농업'],
+        [cr['B'][1] + cr['C'][0] >= 9700, max(ic, key=ic.get) == max(cr, key=lambda k: cr[k][1]), [k for k in rr2 if rr2[k] == max(rr2.values())] == ['A'], sum(ic.values()) * 100 >= 36 * sum(v[0] for v in cr.values()), [k for k in cr if cr[k][1] * 10 == 7 * cr[k][0]] == ['B']])))
+ap_ = [25, 28, 30, 33]; sh_ = {'개인': (40, 35), '중소': (45, 50), '대기업': (10, 8), '외국인': (5, 7)}
+a22 = {k: ap_[0] * v[0] for k, v in sh_.items()}; a25 = {k: ap_[3] * v[1] for k, v in sh_.items()}
+combo('D-BD05', [l for l, t in zip('ㄱㄴㄷㄹ', [a25['개인'] > a22['개인'], a25['대기업'] < a22['대기업'], a25['외국인'] * 10 >= 18 * a22['외국인'], F(ap_[1], ap_[0]) > F(ap_[2], ap_[1])]) if t])
+pick('L-BD01', '승인 투표에서 가장 좋아하는 후보 한 명에게만 찬성하는 유권자가 많아지면 결과가 최다득표제와 비슷해진다.')
+gp = [(40, 'ACB', 'A'), (35, 'BCA', 'BC'), (25, 'CBA', 'C')]
+plu = max('ABC', key=lambda c: sum(n for n, pr, a in gp if pr[0] == c))
+appr = lambda g: max('ABC', key=lambda c: sum(n for n, pr, a in g if c in a))
+top2 = sorted('ABC', key=lambda c: -sum(n for n, pr, a in gp if pr[0] == c))[:2]
+ro = max(top2, key=lambda c: sum(n for n, pr, a in gp if pr.index(c) < pr.index([d for d in top2 if d != c][0])))
+combo('L-BD02', [l for l, t in zip('ㄱㄴㄷㄹ', [plu == 'A', appr(gp) == 'C', ro == 'B', appr([(40, 'ACB', 'AC'), (35, 'BCA', 'BC'), (25, 'CBA', 'C')]) != appr(gp)]) if t])
+combo('L-BD03', ['ㄴ', 'ㄷ']); combo('L-BD05', ['ㄱ', 'ㄴ'])
+at = [dict(zip('갑을병정무', b)) for b in itertools.product((0, 1), repeat=5)]
+at = [x for x in at if (not x['무'] or x['정']) and sum(x.values()) == 3 and not (x['정'] and x['병']) and (not x['을'] or x['병'])]
+by_text('L-BD04', list(zip(['甲은 참석', '乙은 참석', '丁은 참석하지', '戊는 참석', '丙은 참석하지'], [all(x['갑'] for x in at), all(x['을'] for x in at), all(not x['정'] for x in at), all(x['무'] for x in at), all(not x['병'] for x in at)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
