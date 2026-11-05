@@ -576,7 +576,7 @@
     const wide = window.matchMedia('(min-width: 1180px)').matches;
     const chosen = c.choice >= 0 ? `고른 답 <b>${c.choice + 1}번</b> · ` : '';
     const title = c.choice < 0 ? '해설을 먼저 봤습니다' : c.ok ? '정답입니다' : '오답입니다';
-    const sub = `${chosen}정답 <b>${q.answer + 1}번</b> · ${human(c.ms)}${c.ms / 1000 > paceOf(q) ? ` (권장 ${human(paceOf(q) * 1000)})` : ''}${!c.ok ? ' · 오답노트에 담았습니다' : ''}`;
+    const sub = `${chosen}정답 <b>${q.answer + 1}번</b> · ${human(c.ms)}${c.ms / 1000 > paceOf(q) ? ` (권장 ${human(paceOf(q) * 1000)})` : ''}${!c.ok ? ` · 오답노트에 담았습니다${rec && rec.due ? `(${md(rec.due)} 복습)` : ''}` : rec && rec.box ? (rec.done ? ' · 오답노트 졸업' : rec.due ? ` · 다음 복습 ${md(rec.due)}` : '') : ''}`;
     const src = q.exam ? `출처 <b>${esc(q.exam)}</b>` : q.src === 'bank' ? '출처 <b>송공 출제</b> · 기출의 발문·선지 양식을 본뜬 창작 문항' : '출처 <b>송공 생성</b> · 조건과 정답을 프로그램이 계산하고 검증한 문항';
     const crumb = `<b>${SUBJ[q.subject].name}</b> · 해설`;
     paint(shell(crumb, `
