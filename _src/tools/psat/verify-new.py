@@ -2232,4 +2232,66 @@ combo('L-AO02', [l for l, t in zip('ㄱㄴㄷㄹ', [dom(G2, 0) == 'C' and dom(G2
 combo('L-AO03', ['ㄱ', 'ㄷ', 'ㄹ']); combo('L-AO05', ['ㄴ', 'ㄷ'])
 wk = [o for o in itertools.permutations('ABCDE') if o.index('A') < o.index('B') and o.index('C') != 2 and o.index('D') == o.index('E') + 1 and o.index('B') != 4 and o.index('A') != 0]
 by_text('L-AO04', list(zip(['A는 화요일', 'B는 화요일', 'D는 금요일', 'C는 월요일', 'E는 월요일'], [all(o.index('A') != 1 for o in wk), all(o.index('B') != 1 for o in wk), all(o.index('D') != 4 for o in wk), all(o.index('C') != 0 for o in wk), all(o.index('E') != 0 for o in wk)])), what='always-false options')
+# ================= S-AP / D-AP / L-AP (5급 실전, independent re-solve from the rendered options) =================
+def info_fee(minutes, pages, post, kind):
+    f_ = 0
+    if minutes: f_ += 1000 + 500 * ((max(0, minutes - 60) + 29) // 30)
+    if pages: f_ += 250 + 50 * (pages - 1)
+    if kind == 'pub': f_ = f_ * F(1, 2)
+    if kind == 'poor': f_ = 0
+    return f_ + post
+s_ap01 = info_fee(130, 0, 0, '') + info_fee(0, 30, 2000, '') + info_fee(60, 21, 0, 'pub') + info_fee(0, 50, 1500, 'poor') + info_fee(40, 10, 0, '')
+pick('S-AP01', f'{int(s_ap01):,}원')
+def neighbors(st):
+    for k in range(3):
+        if any(st[j] == st[k] for j in range(k)): continue
+        for to in (st[k] - 1, st[k] + 1):
+            if 0 <= to <= 2 and not any(st[j] == to for j in range(k)):
+                n_ = list(st); n_[k] = to; yield tuple(n_)
+dist_ = {(0, 0, 0): 0}; prev_ = {}; fr = [(0, 0, 0)]
+while fr:
+    nx = []
+    for s in fr:
+        for t in neighbors(s):
+            if t not in dist_: dist_[t] = dist_[s] + 1; prev_[t] = s; nx.append(t)
+    fr = nx
+pth = [(2, 2, 2)]
+while pth[-1] != (0, 0, 0): pth.append(prev_[pth[-1]])
+mvc = [sum(1 for a, b in zip(pth, pth[1:]) if a[k] != b[k]) for k in range(3)]
+combo('S-AP02', [l for l, t in zip('ㄱㄴㄷㄹ', [dist_[(2, 2, 2)] == 26, dist_[(1, 1, 1)] == 14, mvc[2] == 2, mvc[0] == 18]) if t])
+pick('S-AP03', '16세인 근로자가 합의하여 근로시간을 연장하면 1주 40시간까지 일할 수 있다.')
+def weighable(ws, sides):
+    return {sum(c * w for c, w in zip(cs, ws)) for cs in itertools.product(sides, repeat=len(ws))} - {0}
+pos = lambda st: {x for x in st if x > 0}
+combo('S-AP04', [l for l, t in zip('ㄱㄴㄷㄹ', [pos(weighable([1, 3, 9], (-1, 0, 1))) == set(range(1, 14)), len(pos(weighable([1, 3, 9], (0, 1)))) == 6, len(pos(weighable([1, 9], (-1, 0, 1)))) == 5, pos(weighable([1, 3, 9, 27], (-1, 0, 1))) == set(range(1, 41))]) if t])
+wd = [1, 2, 3, 4, 5, 8, 9, 15, 16, 17, 18, 19, 20, 21, 29, 30]
+cost_ = {31: 0}
+for d in range(30, 0, -1):
+    if d not in wd: cost_[d] = cost_[d + 1]; continue
+    cost_[d] = min(3000 + cost_[d + 1], 10000 + cost_[min(31, d + 7)], 36000 + cost_[min(31, d + 30)])
+pick('S-AP05', f'{cost_[1]:,}원')
+lo = {'A': (200, 6000, 70, 72), 'B': (150, 5250, 60, 66), 'C': (100, 2500, 80, 76), 'D': (80, 3200, 55, 60), 'E': (50, 1000, 65, 70)}
+s_ = [sum(1 for v in lo.values() if v[3] < v[2]) == 2, max(lo, key=lambda k: F(lo[k][1], lo[k][0])) == 'D', max(lo, key=lambda k: lo[k][1] * lo[k][3]) == 'A', max(lo, key=lambda k: lo[k][3] - lo[k][2]) == 'B', sum(v[1] * v[3] for v in lo.values()) >= 68 * sum(v[1] for v in lo.values())]
+only('D-AP01', [not x for x in s_], 'false statements')
+kg, pp_ = [63, 58, 52], [5100, 5180, 5150]
+tt = [a * b for a, b in zip(kg, pp_)]
+combo('D-AP02', [l for l, t in zip('ㄱㄴㄷㄹ', [tt[0] > tt[1] > tt[2], tt[2] * 100 <= 85 * tt[0], F(kg[1] - kg[2], kg[1]) > F(kg[0] - kg[1], kg[0]), kg[2] * pp_[1] >= 270 * 1000]) if t])
+xv = {'가': (100, 130), '나': (400, 440), '다': (50, 60), '라': (250, 295), '마': (300, 315)}
+mx_ = [m for m in itertools.permutations(xv) if m[0] == max(xv, key=lambda k: F(xv[k][1], xv[k][0])) and m[1] == max(xv, key=lambda k: xv[k][1] - xv[k][0]) and F(xv[m[2]][1], xv[m[2]][0]) > F(xv[m[3]][1], xv[m[3]][0]) and xv[m[2]][1] - xv[m[2]][0] < xv[m[3]][1] - xv[m[3]][0] and xv[m[4]][1] < xv[m[3]][1]]
+ok(len(mx_) == 1, f'D-AP03 {mx_}'); pick('D-AP03', ', '.join(mx_[0]))
+uni = {'A': (10000, 10000 * 30 // 100, 90), 'B': (2400 * 100 // 40, 2400, 60), 'C': (8000, 2000, 70), 'D': (5000, 5000 * 35 // 100, 49)}
+pcap = {k: F(v[2] * 10000, v[1]) for k, v in uni.items()}
+by_text('D-AP04', list(zip(['수혜율이 가장', '장학금 총액이', '네 대학 전체의 수혜율', 'B의 재학생은', '네 대학 전체의 수혜자'], [max(uni, key=lambda k: F(uni[k][1], uni[k][0])) == max(pcap, key=pcap.get), max(uni, key=lambda k: uni[k][2]) == max(pcap, key=pcap.get), sum(v[1] for v in uni.values()) * 10 >= 3 * sum(v[0] for v in uni.values()), uni['B'][0] * 10 > 12 * uni['D'][0], sum(v[2] for v in uni.values()) * 10000 >= 300 * sum(v[1] for v in uni.values())])))
+c20_, c25_ = [80 * s for s in (5, 35, 60)], [100 * s for s in (4, 30, 66)]
+combo('D-AP05', [l for l, t in zip('ㄱㄴㄷㄹ', [30 < 35 and c25_[1] > c20_[1], c25_[0] == c20_[0], (c25_[2] - c20_[2]) * 10 >= 9 * (100 - 80) * 100, c25_[2] * 10 >= 14 * c20_[2]]) if t])
+pick('L-AP01', '배출권 가격이 두 기업의 1톤당 감축 비용 사이에서 정해지면 배출권을 파는 기업과 사는 기업이 모두 이득을 본다.')
+no_trade = 100 * 2 + 100 * 6; with_trade = 200 * 2
+gap_a = 100 * 2 - (200 * 2 - 100 * 4)
+combo('L-AP02', [l for l, t in zip('ㄱㄴㄷㄹ', [no_trade == 800, no_trade - with_trade == 400, gap_a == 200, 100 * 7 < 100 * 6]) if t])
+combo('L-AP03', ['ㄴ', 'ㄷ']); combo('L-AP05', ['ㄱ', 'ㄷ'])
+deal = set()
+for p_ in itertools.permutations('RRBBYY'):
+    a, b, c = sorted(p_[:2]), sorted(p_[2:4]), sorted(p_[4:])
+    if a[0] != a[1] and 'R' not in b and 'B' in c: deal.add((''.join(a), ''.join(b), ''.join(c)))
+by_text('L-AP04', list(zip(['丙은 빨간', '甲은 파란', '乙은 노란', '甲과 乙이', '乙은 파란'], [all('R' in c for a, b, c in deal), all('B' in a for a, b, c in deal), all(b == 'YY' for a, b, c in deal), all(not set(a) & set(b) for a, b, c in deal), all('B' not in b for a, b, c in deal)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
