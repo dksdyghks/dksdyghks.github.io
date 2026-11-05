@@ -2039,4 +2039,71 @@ for both in range(0, 31):
     e_only, z_only = 18 - both, 15 - both; none_ = 30 - e_only - z_only - both
     if min(e_only, z_only, none_) >= 0 and none_ >= 5: grid.append((both, e_only, z_only, none_))
 by_text('L-AL04', list(zip(['영어와 중국어를 모두 할 수', '영어만 할 수 있는 직원은 10', '중국어만', '영어와 중국어를 모두 하지', '영어만 할 수 있는 직원의 수는'], [all(g[0] >= 8 for g in grid), all(g[1] >= 10 for g in grid), all(g[2] >= 5 for g in grid), any(g[3] > 12 for g in grid), all(g[1] <= 2 * g[2] for g in grid)])))
+# ================= S-AM / D-AM / L-AM (5급 실전, independent re-solve from the rendered options) =================
+def farm_levy(area, price, kind, prev):
+    unit = min(price * 3 // 10, 50000)
+    if kind == 'pub': return 0
+    if kind == 'farm':
+        cut = min(area, max(0, 1000 - prev)); return (cut * unit // 2 + (area - cut) * unit) // 10000
+    return area * unit // 10000
+s_am01 = farm_levy(500, 100000, 'gen', 0) + farm_levy(1000, 200000, 'gen', 0) + farm_levy(600, 50000, 'farm', 0) + farm_levy(800, 100000, 'farm', 500) + farm_levy(400, 100000, 'pub', 0)
+pick('S-AM01', f'{s_am01:,}만 원')
+blocked = {('c', 3), ('b', 4)}
+cells = [(c, r) for c in 'abcde' for r in range(1, 6) if (c, r) not in blocked]
+def nbr(x, blk):
+    c, r = 'abcde'.index(x[0]), x[1]
+    for dc, dr in [(1, 2), (2, 1), (-1, 2), (-2, 1), (1, -2), (2, -1), (-1, -2), (-2, -1)]:
+        nc, nr = c + dc, r + dr
+        if 0 <= nc < 5 and 1 <= nr <= 5 and ('abcde'[nc], nr) not in blk: yield ('abcde'[nc], nr)
+def dist_from(blk):
+    d = {('a', 1): 0}; layer = [('a', 1)]
+    while layer:
+        nxt = []
+        for x in layer:
+            for y in nbr(x, blk):
+                if y not in d: d[y] = d[x] + 1; nxt.append(y)
+        layer = nxt
+    return d
+dB, dN = dist_from(blocked), dist_from(set())
+paths_c5 = [p_ for p_ in itertools.product(cells, repeat=1) if p_[0] in list(nbr(('a', 1), blocked)) and ('c', 5) in list(nbr(p_[0], blocked))]
+mx = max(dB.values())
+combo('S-AM02', [l for l, t in zip('ㄱㄴㄷㄹ', [dB[('e', 5)] == 4, len(paths_c5) == 1, [k for k, v in dB.items() if v == mx] == [('e', 5)], any(dB[k] > dN[k] for k in dB)]) if t])
+pick('S-AM03', '돼지고기를 김치찌개와 제육볶음에 쓰면서 원산지를 표시하지 않은 음식점이 돼지고기에 대하여 받는 과태료는 30만 원이다.')
+def mix_round(a, b):
+    ws, ss = a; wt, st = b
+    m = ss * F(100) / ws; ws, ss, wt, st = ws - 100, ss - m, wt + 100, st + m
+    m = st * F(100) / wt; return (ws + 100, ss + m), (wt - 100, st - m)
+ga, gb = (F(300), F(30)), (F(200), F(40)); hist = []
+for _ in range(100): ga, gb = mix_round(ga, gb); hist.append((ga[1] / ga[0], gb[1] / gb[0]))
+combo('S-AM04', [l for l, t in zip('ㄱㄴㄷㄹ', [hist[0][0] >= F(12, 100), F(20, 100) - hist[0][1] >= F(4, 100), hist[1][0] >= F(13, 100), all(h[0] <= F(14, 100) for h in hist)]) if t])
+loc = {'가': 0, '나': 10, '다': 20, '라': 30, '마': 40}; trips = {'가': 7, '나': 1, '다': 1, '라': 5, '마': 7}; rent = {'가': 70, '나': 40, '다': 100, '라': 0, '마': 0}
+ok_sites = [s for s in loc if s != '라' and all(abs(loc[s] - loc[v]) <= 30 for v in loc)]
+best_ = min(sum(trips[v] * abs(loc[v] - loc[s]) for v in loc) + rent[s] for s in ok_sites)
+pick('S-AM05', f'{best_}만 원')
+gr_ = {'인문': (400, 380, 228), '사회': (600, 620, 403), '공학': (800, 840, 630), '자연': (300, 290, 203), '예체능': (200, 210, 120)}
+T_e, T_g = sum(v[2] for v in gr_.values()), sum(v[1] for v in gr_.values())
+s_ = [T_g > sum(v[0] for v in gr_.values()), max(gr_, key=lambda k: F(gr_[k][2], gr_[k][1])) == '공학', sum(F(v[2], v[1]) > F(T_e, T_g) for v in gr_.values()) == 3, [k for k, v in gr_.items() if v[1] < v[0]] == ['인문', '자연'], gr_['공학'][2] * 100 >= 39 * T_e]
+only('D-AM01', [not x for x in s_], 'false statements')
+def tariff(k): return min(k, 200) * 100 + max(0, min(k, 400) - 200) * 200 + max(0, k - 400) * 300
+use_ = [400, 380, 320, 280, 300, 420]; bl = [tariff(k) for k in use_]
+combo('D-AM02', [l for l, t in zip('ㄱㄴㄷㄹ', [bl.index(max(bl)) == 5, bl[5] * 10 >= 18 * bl[3], sum(bl) <= 300000, all(bl[i] * 10 <= 8 * bl[i - 1] for i in range(1, 6) if use_[i] < use_[i - 1])]) if t])
+shr = {'가': (30, 26), '나': (25, 25), '다': (20, 22), '라': (15, 12), '마': (10, 15)}
+sl = {k: (5 * a, 6 * b) for k, (a, b) in shr.items()}       # 천 대
+mm_ = [m for m in itertools.permutations(shr) if shr[m[0]][1] < shr[m[0]][0] and sl[m[0]][1] > sl[m[0]][0] and m[1] == max(sl, key=lambda k: F(sl[k][1], sl[k][0])) and sl[m[2]][1] - sl[m[2]][0] < sl[m[3]][1] - sl[m[3]][0] and sl[m[4]][1] < sl[m[4]][0]]
+ok(len(mm_) == 1, f'D-AM03 {mm_}'); pick('D-AM03', ', '.join(mm_[0]))
+pp_ = {'A': 500, 'B': F(-3 * 1000, -2), 'C': 800, 'D': 200}; inn_ = {'A': 30, 'B': 45, 'C': 52 + 5 * 800 // 1000, 'D': 15}; out_ = {'A': 30 - 4 * 500 // 1000, 'B': 48, 'C': 52, 'D': 13}
+nr_ = {k: F(inn_[k] - out_[k], pp_[k]) * 1000 for k in pp_}; tnet = sum(inn_[k] - out_[k] for k in pp_)
+by_text('D-AM04', list(zip(['순이동률이 가장', '전입이 가장', '네 지역 전체의 순이동은', 'B의 인구는', '네 지역 전체의 순이동률'], [max(nr_, key=nr_.get) == 'C', max(inn_, key=inn_.get) == 'B', tnet < 0, pp_['B'] > 3 * pp_['A'], F(tnet * 1000, sum(pp_.values())) >= F(3, 2)])))
+prod, imp_, exp_, c20 = [1, 2, 3, 40], [120, 50, 70, 0], [30, 0, 0, 0], [95, 45, 80, 35]
+c25 = [a + b - c for a, b, c in zip(prod, imp_, exp_)]; dp_ = [F(b - c, d) for b, c, d in zip(imp_, exp_, c25)]
+combo('D-AM05', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if c25[i] < c20[i]] == [0, 2], (sum(imp_) - sum(exp_)) * 10 >= 8 * sum(c25), dp_.index(max(dp_)) == 0, F(c25[3], sum(c25)) - F(c20[3], sum(c20)) >= F(3, 100)]) if t])
+pick('L-AM01', '상대적 구매력 평가에 따르면 갑국의 물가 상승률이 을국보다 높을수록 원화의 가치는 달러에 비해 떨어진다.')
+pp_fx = F(6000, 4); ov = pp_fx / 1200 - 1
+combo('L-AM02', [l for l, t in zip('ㄱㄴㄷㄹ', [pp_fx == 1500, ov == F(1, 4), (4 - 1) < 0, F(7200, 4) / 1200 - 1 == F(2, 5)]) if t])
+combo('L-AM03', ['ㄱ', 'ㄷ', 'ㄹ']); combo('L-AM05', ['ㄴ'])
+splits = []
+for X in itertools.combinations('ABCDEF', 3):
+    tm = {q: (q in X) for q in 'ABCDEF'}
+    if tm['A'] != tm['B'] and tm['C'] == tm['D'] and imp(tm['E'], not tm['F']): splits.append(tm)
+by_text('L-AM04', list(zip(['A는 X팀', 'B와 E는', 'D는 X팀', 'F와 C는', 'A와 F는'], [all(t['A'] for t in splits), all(t['B'] == t['E'] for t in splits), all(t['D'] for t in splits), all(t['F'] == t['C'] for t in splits), all(t['A'] != t['F'] for t in splits)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
