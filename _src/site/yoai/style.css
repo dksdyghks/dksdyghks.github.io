@@ -519,3 +519,6 @@ ul.refs-list li { padding: 2px 0; }
   .pj-tools .linkish { padding: 10px 0; }
   ul.issues li .linkish { padding: 12px 6px; margin: -12px -6px; }   /* 줄 높이는 그대로, 누르는 자리만 넓게 */
 }
+
+.touch-only { display: none; }
+@media (pointer: coarse) { .touch-only { display: inline; } }

@@ -308,12 +308,25 @@ async function viewRead() {
       ${pdfOk ? `<div class="seg" role="group" aria-label="보기"><button class="${mode === 'pdf' ? 'on' : ''}" data-act="rd-mode" data-v="pdf">원문</button><button class="${mode === 'text' ? 'on' : ''}" data-act="rd-mode" data-v="text">글자</button></div>` : ''}
     </div>
     <div class="rd-find"><label class="sr" for="rd-q">이 문헌에서 찾기</label><input id="rd-q" type="search" placeholder="이 문헌에서 찾기" autocomplete="off" value="${esc(r.q || '')}"><div id="rd-hits" class="rd-hits"></div></div>
-    <div class="rd-body" id="rd-body">${mode === 'pdf' ? '<div class="rd-canvas"><canvas id="rd-canvas" aria-label="원문 쪽"></canvas></div><p class="rd-tip">글을 골라 인용하려면 <b>글자</b> 보기로 바꾸세요.</p>' : `<div class="rd-text" id="rd-text">${pageTextHTML(pg ? pg.pages[r.page - 1] : '', r.terms)}</div><p class="rd-tip">글을 골라 <b>카드에 담기</b>나 <b>인용 복사</b>를 누르세요.</p>`}</div>
+    <div class="rd-body" id="rd-body">${mode === 'pdf' ? '<div class="rd-canvas"><canvas id="rd-canvas" aria-label="원문 쪽"></canvas></div><p class="rd-tip">글을 골라 인용하려면 <b>글자</b> 보기로 바꾸세요.<span class="touch-only"> 좌우로 밀면 쪽이 넘어갑니다.</span></p>' : `<div class="rd-text" id="rd-text">${pageTextHTML(pg ? pg.pages[r.page - 1] : '', r.terms)}</div><p class="rd-tip">글을 골라 <b>카드에 담기</b>나 <b>인용 복사</b>를 누르세요.<span class="touch-only"> 글을 좌우로 밀면 쪽이 넘어갑니다.</span></p>`}</div>
     <div class="rd-foot">${d.isJudg || (pg && isJudgment(pg.pages)) ? '<button class="btn primary" data-act="rd-judg">판결 분석</button>' : ''}<button class="btn" data-act="rd-facts">빠른 파악</button>${S.project ? `<button class="btn${rc ? ' has' : ''}" data-act="rd-read">${rc ? '읽기 카드 ✓' : '읽기 카드'}</button>` : ''}<button class="btn" data-act="rd-card">이 쪽을 노트에</button><button class="btn" data-act="rd-cite">이 쪽 각주 복사</button></div>
   </div>`;
   if (mode === 'pdf') drawPage(d.id, r.page);
   if (r.q) runDocFind();
-  const b = $('#rd-body'); if (b) b.scrollTop = 0;
+  const b = $('#rd-body'); if (b) { b.scrollTop = 0; swipePages(b, n); }
+}
+/* 손가락 기기에서 글(또는 원문)을 좌우로 밀면 앞뒤 쪽으로 넘긴다. 글을 고르는 중이거나 세로로 훑는 손짓, 느린 끌기는 넘기지 않는다. */
+function swipePages(el, n) {
+  if (!matchMedia('(pointer: coarse)').matches) return;
+  let x0 = null, y0 = 0, t0 = 0;
+  el.addEventListener('touchstart', (e) => { if (e.touches.length !== 1) { x0 = null; return; } x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (x0 == null) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
+    if (Date.now() - t0 > 700 || Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    const sel = window.getSelection && String(window.getSelection() || '').trim(); if (sel) return;
+    const r = S.reader; if (!r) return; const to = r.page + (dx < 0 ? 1 : -1);
+    if (to >= 1 && to <= n) goPage(to);
+  }, { passive: true });
 }
 function pageTextHTML(text, terms) {
   if (!text || !text.trim()) return '<p class="sub">이 쪽에서는 글자를 추출하지 못했습니다(스캔본일 수 있습니다). 원문 보기로 확인하거나, 서재에서 글자 읽기(OCR)를 하세요.</p>';
