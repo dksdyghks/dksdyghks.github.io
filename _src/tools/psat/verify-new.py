@@ -2979,4 +2979,64 @@ jm = [(dict(zip('갑을병정', j)), dict(zip('갑을병정', h))) for j in iter
 wo = lambda m, v: [k for k in m if m[k] == v][0]
 jm = [x for x in jm if x[0]['을'] != '기' and x[1][wo(x[0], '기')] != '서' and x[1]['정'] in '대광' and x[1]['을'] in '대광' and x[1][wo(x[0], '변')] == '부']
 by_text('L-BA04', list(zip(['丁은 기자', '甲은 변호사', '乙은 의사', '丙의 고향', '丁의 고향'], [all(x[0]['정'] == '기' for x in jm), all(x[0]['갑'] == '변' for x in jm), all(x[0]['을'] == '의' for x in jm), all(x[1]['병'] == '서' for x in jm), all(x[1]['정'] == '대' for x in jm)])))
+# ================= S-BB / D-BB / L-BB (5급 실전, independent re-solve from the rendered options) =================
+import math as _m
+def tow_(kind, km, hrs, back):
+    t = (40000 if kind == '승용' else 50000) + (2000 * _m.floor(km - 10) if km > 10 else 0)
+    if back: return t // 2
+    h = _m.ceil(hrs); return t + min(1000 * min(h, 6) + 500 * max(h - 6, 0), 15000)
+pick('S-BB01', f'{tow_("승용", 8, 3, 0) + tow_("승합", 13.6, 30, 0) + tow_("승용", 12, 0, 1) + tow_("화물", 9, 7.5, 0):,}원')
+tr_ = {('입구', 'P'): (40, 30), ('입구', 'Q'): (50, 35), ('P', 'Q'): (15, 15), ('P', 'R'): (35, 25), ('Q', 'R'): (30, 25), ('P', '정상'): (70, 45), ('R', '정상'): (30, 15), ('Q', '정상'): (65, 40)}
+def rt_(a, b, path):
+    if a == b: yield path; return
+    for (x, y) in tr_:
+        for u, v in ((x, y), (y, x)):
+            if u == a and v not in path: yield from rt_(v, b, path + [v])
+tt_ = lambda p: sum(tr_[(p[i], p[i + 1])][0] if (p[i], p[i + 1]) in tr_ else tr_[(p[i + 1], p[i])][1] for i in range(len(p) - 1))
+eg_ = lambda p: {frozenset(p[i:i + 2]) for i in range(len(p) - 1)}
+ups_ = list(rt_('입구', '정상', ['입구'])); dns_ = list(rt_('정상', '입구', ['정상']))
+bu = min(map(tt_, ups_)); bd = min(map(tt_, dns_)); bdp = [p for p in dns_ if tt_(p) == bd]
+br = min(tt_(u) + tt_(d) for u in ups_ for d in dns_ if not eg_(u) & eg_(d))
+combo('S-BB02', [l for l, t in zip('ㄱㄴㄷㄹ', [bu == 105, br == 180, br - (bu + bd) >= 10, len(bdp) == 1 and {'R', 'P'} <= set(bdp[0])]) if t])
+f_ = {'장롱': 10000, '침대': 8000, '의자': 2000}
+fee_ = lambda it, size=0: f_[it] * (1.5 if it == '장롱' and size > 2 else 1)
+fn_ = lambda n, h=None: 0 if (h is not None and h <= 24) else 100000 * n
+by_text('S-BB03', list(zip(['가로·세로·높이의 합이 2.4', '신고하지 않고 가구 2개', '소형 가전제품 3개', '침대 1개와 의자 3개', '신고하지 않고 가구 3개'],
+        [fee_('장롱', 2.4) == 10000, fn_(2, 20) == 0 and fn_(2) == 200000, 3 >= 5, fee_('침대') + 3 * fee_('의자') == 16000, fn_(3, 30) == 0])))
+gg_ = [g for g in itertools.permutations(range(1, 10)) if len({sum(g[0:3]), sum(g[3:6]), sum(g[6:9]), sum(g[0::3]), sum(g[1::3]), sum(g[2::3])}) == 1]
+combo('S-BB04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(sum(g[0:3]) == 15 for g in gg_), all(g[4] == 5 for g in gg_), all(any(9 in g[3 * r:3 * r + 3] and ({1, 2} & set(g[3 * r:3 * r + 3])) for r in range(3)) for g in gg_), any(all(g[i] % 2 == 0 for i in (0, 2, 6, 8)) for g in gg_)]) if t])
+pj_ = {'A': (8, 9), 'B': (9, 12), 'C': (5, 14), 'D': (3, 13), 'E': (3, 10), 'F': (4, 5)}
+bv_ = max(sum(pj_[x][1] for x in s) for k in range(4) for s in itertools.combinations(pj_, k) if sum(pj_[x][0] for x in s) <= 18 and ('B' not in s or 'A' in s) and not ('C' in s and 'D' in s) and ('E' not in s or 'F' in s))
+pick('S-BB05', f'{bv_}점')
+yy = [(6000, 1200), (7500, 1800), (9000, 2700), (8400, 3024)]; rg_ = {'A': (2400, 30), 'B': (2000, 45), 'C': (1800, 35), 'D': (1200, 22), 'E': (1000, 51)}
+af_ = {k: a * r for k, (a, r) in rg_.items()}
+s_ = [yy[0][0] < yy[1][0] < yy[2][0] > yy[3][0], all(F(yy[i][1], yy[i][0]) > F(yy[i - 1][1], yy[i - 1][0]) for i in range(1, 4)), yy[3][1] * 2 >= 5 * yy[0][1], max(rg_, key=lambda k: rg_[k][1]) == max(af_, key=af_.get), max(af_.values()) * 4 >= sum(af_.values())]
+only('D-BB01', [not x for x in s_], 'false statements')
+cl_, hp_, pp_ = [480, 300, 210, 90], [60, 45, 30, 15], [400, 250, 150, 50]
+pr_ = [F(cl_[i] + hp_[i], pp_[i]) for i in range(4)]
+combo('D-BB02', [l for l, t in zip('ㄱㄴㄷㄹ', [pr_[0] < pr_[1] < pr_[2] < pr_[3], max(range(4), key=lambda i: F(hp_[i], cl_[i] + hp_[i])) == 3, F(sum(cl_) + sum(hp_), sum(pp_)) >= F(3, 2), [i for i in range(4) if F(pp_[i], hp_[i]) <= 5] == [3]]) if t])
+lb = {'가': (120, 80, 1600), '나': (90, 95, 1200), '다': (150, 60, 2000), '라': (70, 40, 700), '마': (100, 70, 800)}
+ml = [m for m in itertools.permutations(lb) if lb[m[0]][0] == max(v[0] for v in lb.values()) and lb[m[1]][1] == max(v[1] for v in lb.values())
+      and F(lb[m[2]][1], lb[m[2]][2]) == max(F(v[1], v[2]) for v in lb.values()) and lb[m[3]][0] > lb[m[4]][0]]
+ok(len(ml) == 1, f'D-BB03 {ml}'); pick('D-BB03', ', '.join(ml[0]))
+vc = {'65': (900, 720, 1440), '50': (1200, 1200 * 55 // 100, 990), '19': (600 * 100 // 30, 600, 1500), '7': (600, 240, 480), '6': (200 * 100 // 80, 200, 300)}
+rt2 = {k: F(v[1] * 100, v[0]) for k, v in vc.items()}; ad_ = {k: F(v[2], v[1]) for k, v in vc.items()}
+by_text('D-BB04', list(zip(['(가)와 (나)를', '접종자 1만 명당', '접종률이 가장 높은', '다섯 연령대 전체', '이상반응 신고 건수가'],
+        [vc['50'][1] + vc['19'][0] >= 2700, max(ad_, key=ad_.get) == '19', [k for k in rt2 if rt2[k] == max(rt2.values())] == ['65'], sum(v[1] for v in vc.values()) * 2 >= sum(v[0] for v in vc.values()), max(vc, key=lambda k: vc[k][2]) == '65'])))
+eb_, pb_, us_ = [300, 420, 540, 600], [2400, 2280, 2160, 2100], [800, 820, 840, 850]
+al_ = [a + b for a, b in zip(eb_, pb_)]
+combo('D-BB05', [l for l, t in zip('ㄱㄴㄷㄹ', [len(set(al_)) == 1, eb_[3] * 5 >= al_[3], all(F(al_[i], us_[i]) < F(al_[i - 1], us_[i - 1]) for i in range(1, 4)), F(eb_[2], eb_[1]) > F(eb_[1], eb_[0])]) if t])
+pick('L-BB01', '어떤 정당의 지지자가 도시에 몰려 살면 경계를 공정하게 그어도 효율성 격차가 생길 수 있다.')
+def wv_(plan):
+    wa = wb = seats = 0
+    for a in plan:
+        b = 100 - a
+        if a > b: seats += 1; wa += a - 50; wb += b
+        else: wa += a; wb += b - 50
+    return seats, wa, wb
+p1, p2 = wv_([90, 90, 30, 20, 20]), wv_([60, 60, 60, 40, 30])
+combo('L-BB02', [l for l, t in zip('ㄱㄴㄷㄹ', [p1[0] == 2, p1[1] - p1[2] == 50, abs(p2[1] - p2[2]) == abs(p1[1] - p1[2]), sum(100 - a for a in [60, 60, 60, 40, 30] if a < 50) == p2[2]]) if t])
+combo('L-BB03', ['ㄴ', 'ㄹ']); combo('L-BB05', ['ㄱ'])
+lq = [o for o in itertools.permutations('갑을병정무') if o.index('갑') < o.index('병') and o.index('정') < o.index('을') and 0 < o.index('병') < 4 and abs(o.index('을') - o.index('무')) == 2 and abs(o.index('정') - o.index('무')) > 1]
+by_text('L-BB04', list(zip(['甲은 첫째', '乙은 셋째', '丁은 첫째', '戊는 다섯째', '丙은 넷째'], [all(o[0] == '갑' for o in lq), all(o[2] == '을' for o in lq), all(o[0] == '정' for o in lq), all(o[4] == '무' for o in lq), all(o[3] == '병' for o in lq)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
