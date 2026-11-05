@@ -808,13 +808,14 @@
     const segS = ORDER.map((k) => `<button class="${setPick.subj === k ? 'on' : ''}" data-act="set-subj" data-v="${k}">${SUBJ[k].name}</button>`).join('');
     const segN = [5, 10, 20, 40].map((n) => `<button class="${setPick.n === n ? 'on' : ''}" data-act="set-n" data-v="${n}">${n}문항</button>`).join('');
     const lim = setPick.n * SUBJ[setPick.subj].pace * 1000;
-    const weak = weakTypesOf(setPick.subj), weakLeft = weak.reduce((t, x) => t + bankLeft(setPick.subj, x), 0);
+    const weak = weakTypesOf(setPick.subj), weakLeft = weak.reduce((t, x) => t + bankLeft(setPick.subj, x), 0), p5Left = bankLeft(setPick.subj, '', true);
     if (setPick.focus === 'weak' && !weak.length) setPick.focus = 'even';
+    if (setPick.focus === 'p5' && !p5Left) setPick.focus = 'even';
     paint(shell('<b>실전 세트</b>', `
       <div class="page-h"><h1>실전 세트</h1></div>
       <div class="card"><div class="set-row"><div class="l">과목</div><div class="seg">${segS}</div></div>
         <div class="set-row"><div class="l">문항 수</div><div class="seg">${segN}</div></div>
-        <div class="set-row"><div class="l">구성<small>${weak.length ? `약점 위주: 정답률이 낮은 ${weak.length}개 유형(${weak.slice(0, 3).map((x) => esc(typeShort(setPick.subj, x))).join(', ')}${weak.length > 3 ? ' …' : ''})에서 남은 직접 출제 문항 ${weakLeft}개를 먼저 넣고, 모자라면 다른 유형으로 채웁니다` : '유형마다 3문항 이상 풀면 정답률이 낮은 유형 위주로도 짤 수 있습니다'}</small></div><div class="seg"><button class="${setPick.focus !== 'weak' ? 'on' : ''}" data-act="set-focus" data-v="even">고르게</button><button class="${setPick.focus === 'weak' ? 'on' : ''}" data-act="set-focus" data-v="weak" ${weak.length ? '' : 'disabled'}>약점 위주</button></div></div>
+        <div class="set-row"><div class="l">구성<small>${setPick.focus === 'p5' ? `5급 실전 정예: 5급 공채 PSAT 실전·심화 수준으로 직접 출제한 문항 가운데 아직 풀지 않은 ${p5Left}개에서 유형을 고루 섞어 짜고, 모자라면 다른 문항으로 채웁니다` : weak.length ? `약점 위주: 정답률이 낮은 ${weak.length}개 유형(${weak.slice(0, 3).map((x) => esc(typeShort(setPick.subj, x))).join(', ')}${weak.length > 3 ? ' …' : ''})에서 남은 직접 출제 문항 ${weakLeft}개를 먼저 넣고, 모자라면 다른 유형으로 채웁니다` : '유형마다 3문항 이상 풀면 정답률이 낮은 유형 위주로도 짤 수 있습니다'}</small></div><div class="seg"><button class="${setPick.focus !== 'weak' && setPick.focus !== 'p5' ? 'on' : ''}" data-act="set-focus" data-v="even">고르게</button><button class="${setPick.focus === 'weak' ? 'on' : ''}" data-act="set-focus" data-v="weak" ${weak.length ? '' : 'disabled'}>약점 위주</button><button class="${setPick.focus === 'p5' ? 'on' : ''}" data-act="set-focus" data-v="p5" ${p5Left ? '' : 'disabled'} title="5급 공채 PSAT 실전·심화 수준으로 직접 출제한 정예 문항으로 짭니다">5급 정예</button></div></div>
         <div class="set-row"><div class="l">제한 시간<small>실제 시험 속도(문항당 ${human(SUBJ[setPick.subj].pace * 1000)})로 계산합니다. 40문항은 실제 시험 한 과목(90분)과 같습니다. 다른 창을 보는 동안은 멈춥니다.</small></div><b style="font-variant-numeric:tabular-nums">${human(lim)}</b></div>
         <p class="prose" style="margin:8px 0 12px">문항 사이에는 해설을 보여 주지 않고 시험처럼 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(L)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다(쓴 시간과 고른 답은 그대로). 끝나면 점수와 문항별 해설을 한꺼번에 봅니다. 틀린 문제는 오답노트에 담깁니다.</p>
         <button class="btn primary" data-act="set-start">시작하기</button></div>
@@ -858,13 +859,18 @@
   function startSet() {
     const focus = setPick.focus === 'weak' ? weakTypesOf(setPick.subj) : null;
     let plan = planSet(setPick.subj, setPick.n, focus), genTypes = [];
+    if (setPick.focus === 'p5') { // 5급 실전 정예로 먼저 짜고, 모자라면 나머지 문항으로 채운다
+      const all0 = P.bank[setPick.subj] || [];
+      const first = planSet(setPick.subj, setPick.n, null, all0.filter((q) => q.p5));
+      plan = first.length >= setPick.n ? first : first.concat(planSet(setPick.subj, setPick.n - first.length, null, all0.filter((q) => !first.includes(q.id) && !(q.set && all0.some((x) => x.set === q.set && first.includes(x.id))))));
+    }
     if (focus) { // 약한 유형이 생성 유형이면, 문항의 70%가 약한 유형이 되도록 뒤쪽 자리를 생성 문항에 내준다
       genTypes = focus.filter((t) => (P.gens[setPick.subj] || []).some((g) => g.label === t));
       const bankWeak = plan.filter((id) => { const q = (P.bank[setPick.subj] || []).find((x) => x.id === id); return q && focus.includes(q.type); }).length;
       const room = Math.max(0, Math.round(setPick.n * 0.7) - bankWeak);
       if (genTypes.length && room) plan = plan.slice(0, Math.max(bankWeak, plan.length - room));
     }
-    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false, plan, focus: focus ? 'weak' : 'even', genTypes };
+    S.set = { subj: setPick.subj, n: setPick.n, results: [], usedMs: 0, limitMs: setPick.n * SUBJ[setPick.subj].pace * 1000, at: Date.now(), done: false, plan, focus: focus ? 'weak' : setPick.focus === 'p5' ? 'p5' : 'even', genTypes };
     saveSet();
     startSession({ subj: setPick.subj, type: '', mode: 'set' });
   }
@@ -1033,6 +1039,7 @@
         <h2>실전 세트</h2>
         <p>처음 화면의 <b>실전 세트</b>에서 과목과 문항 수를 고르면 실제 시험 속도로 제한 시간이 정해지고, 해설 없이 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(<b>L</b>)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다. 끝난 세트는 <b>세트 기록</b>에 쌓여 과목별 점수의 흐름을 볼 수 있습니다.</p>
         <p>구성을 <b>약점 위주</b>로 고르면 기록 화면의 약점 분석과 같은 기준(3문항 이상 푼 유형 가운데 정답률 60% 미만이거나 과목 평균보다 10%p 이상 낮은 유형)으로 약한 유형의 문항을 먼저 넣습니다. 설정에서 <b>하루 목표</b>를 정하면 첫 화면에 남은 문항 수가 보입니다.</p>
+        <p>구성을 <b>5급 정예</b>로 고르면 5급 공채 PSAT 실전·심화 수준으로 직접 출제한 문항(문제 위에 ‘5급 실전’ 표시)만으로 세트를 짭니다. 아직 풀지 않은 정예 문항이 모자라면 다른 문항으로 채웁니다.</p>
         <h2>모의고사</h2>
         <p>처음 화면의 <b>모의고사</b>에서 7급 PSAT(1교시 언어논리·상황판단 50문항 120분, 2교시 자료해석 25문항 60분)이나 5급 PSAT(과목별 40문항 90분)을 고릅니다. 답안지에서 아무 문항으로나 오가고(←/→), 답(1~5)은 제출 전까지 바꿀 수 있으며, 다시 볼 문항은 <b>체크</b>(F)합니다. 제출하면 100점 환산 점수, 유형별 정답률, 체크했는데 맞힌 문항, 시간을 넘긴 문항을 보여 줍니다.</p>
         <h2>기록 보관</h2>
