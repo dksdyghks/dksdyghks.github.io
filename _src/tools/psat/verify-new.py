@@ -2617,4 +2617,76 @@ for pm in itertools.permutations('ABCDEF'):
     asg = {pm[i]: ('101', '102', '103')[i // 2] for i in range(6)}
     if asg['C'] == '102' and asg['D'] == asg['E'] and asg['F'] != '101' and asg['B'] != '101' and asg not in rooms_: rooms_.append(asg)
 by_text('L-AU04', list(zip(['A는 103호', 'B는 102호', 'F는 103호', 'A와 B는 같은', 'D는 101호'], [all(x['A'] == '103' for x in rooms_), all(x['B'] == '102' for x in rooms_), all(x['F'] == '103' for x in rooms_), all(x['A'] == x['B'] for x in rooms_), all(x['D'] == '101' for x in rooms_)])))
+# ================= S-AV / D-AV / L-AV (5급 실전, independent re-solve from the rendered options) =================
+def empty_aid(kind, cost, months, risk, pledge, other):
+    if months < 12: return F(0)
+    if kind == 'd': amt = min(F(cost, 2), F(1000)) + (200 if risk else 0)
+    elif pledge: amt = min(F(cost, 2), F(3000))
+    else: amt = min(F(cost, 3), F(2000))
+    return max(amt - other, F(0))
+s_av = empty_aid('d', 1600, 18, 1, 0, 0) + empty_aid('d', 2400, 8, 0, 0, 0) + empty_aid('r', 4500, 30, 0, 0, 0) + empty_aid('r', 7000, 24, 0, 1, 0) + empty_aid('r', 3000, 15, 0, 1, 300)
+pick('S-AV01', f'{int(s_av):,}만 원')
+def ferry(ad, ch):
+    seen = {(ad, ch, 'L'): 0}; fr = [(ad, ch, 'L')]; d = 0
+    while fr:
+        d += 1; nx = []
+        for a, c, side in fr:
+            for ma, mc in ((1, 0), (0, 1), (0, 2)):
+                if side == 'L': t = (a - ma, c - mc, 'R')
+                else: t = (a + ma, c + mc, 'L')
+                if 0 <= t[0] <= ad and 0 <= t[1] <= ch and t not in seen: seen[t] = d; nx.append(t)
+        fr = nx
+    return seen.get((0, 0, 'R'))
+combo('S-AV02', [l for l, t in zip('ㄱㄴㄷㄹ', [ferry(3, 2) == 13, ferry(1, 1) is not None, [ferry(a, 2) for a in range(1, 6)] == [5, 9, 13, 17, 21], ferry(3, 3) < 13]) if t])
+pick('S-AV03', '관람객 2,500명이 모일 것으로 예상되는 옥외 행사의 안전관리계획은 행사 시작일 14일 전까지 제출하면 된다.')
+wts = [1, 3, 1, 3, 1, 3, 1]
+okn = lambda ds: sum(w * x for w, x in zip(wts, ds)) % 10 == 0
+cd6 = next(x for x in range(10) if okn([1, 2, 3, 4, 5, 6, x]))
+single = all(not okn(ds[:i] + [y] + ds[i + 1:]) for ds in ([1, 2, 3, 4, 5, 6, cd6], [0] * 7, [9, 0, 9, 0, 9, 0, 0]) for i in range(7) for y in range(10) if y != ds[i] and okn(ds))
+swap_all = True
+for i in range(6):
+    for a in range(10):
+        for b in range(10):
+            if a == b: continue
+            base = [0] * 7; base[i], base[i + 1] = a, b
+            fix = next(x for x in range(10) if okn(base[:6] + [x])) if i < 5 else None
+            if i < 5: base[6] = fix
+            if not okn(base): continue
+            sw = list(base); sw[i], sw[i + 1] = sw[i + 1], sw[i]
+            if okn(sw): swap_all = False
+ones_never = all(sum(x for x in ds) % 10 == sum(x for x in ds[:i] + [ds[i + 1], ds[i]] + ds[i + 2:]) % 10 for ds in ([1, 2, 3, 4, 5, 6, 9], [5, 0, 7, 3, 8, 1, 6]) for i in range(6))
+combo('S-AV04', [l for l, t in zip('ㄱㄴㄷㄹ', [cd6 == 5, single, swap_all, ones_never]) if t])
+hourly = [800, 1500, 1500, 500, 1000, 1000, 1500, 800, 800, 1000, 600, 500]
+best_e = None
+for on in itertools.combinations(range(12), 6):
+    if 4 in on or 5 in on: continue
+    runs = []; 
+    for i in on:
+        if runs and runs[-1][-1] == i - 1: runs[-1].append(i)
+        else: runs.append([i])
+    if len(runs) <= 2 and all(len(r) >= 2 for r in runs):
+        c = sum(hourly[i] for i in on); best_e = c if best_e is None else min(best_e, c)
+pick('S-AV05', f'{best_e:,}원')
+am = {'A': (40, 48000, 36000, 75), 'B': (25, 35000, 28000, 68), 'C': (30, 30000, 21000, 92), 'D': (20, 26000, 18720, 81), 'E': (15, 12000, 10200, 114)}
+order_t = sorted(am, key=lambda k: am[k][3])
+s_ = [sum(v[2] for v in am.values()) * 4 >= 3 * sum(v[1] for v in am.values()), max(am, key=lambda k: F(am[k][1], am[k][0])) == 'B', max(am, key=lambda k: F(am[k][2], am[k][1])) == 'B', [k for k in am if am[k][3] > 100] == ['E'], order_t[1] == max(am, key=lambda k: am[k][1])]
+only('D-AV01', [not x for x in s_], 'false statements')
+vv = {'A': (120, 110, 5000, 6000), 'B': (80, 90, 8000, 8000), 'C': (60, 66, 10000, 9000), 'D': (40, 50, 6000, 6000)}
+rv0 = {k: v[0] * v[2] for k, v in vv.items()}; rv1 = {k: v[1] * v[3] for k, v in vv.items()}
+combo('D-AV02', [l for l, t in zip('ㄱㄴㄷㄹ', [[k for k in vv if vv[k][1] < vv[k][0] and rv1[k] > rv0[k]] == ['A'], max(rv1, key=rv1.get) == 'B', rv1['C'] > rv0['C'], sum(rv1.values()) * 10 >= 11 * sum(rv0.values())]) if t])
+cl = {'가': (-5, 26, 1300), '나': (3, 27, 1500), '다': (-10, 22, 600), '라': (8, 28, 1800), '마': (1, 24, 1100)}
+mc_ = [m for m in itertools.permutations(cl) if cl[m[0]][1] - cl[m[0]][0] == max(v[1] - v[0] for v in cl.values()) and cl[m[1]][2] == max(v[2] for v in cl.values()) and cl[m[2]][0] < 0 and cl[m[3]][1] > cl[m[4]][1]]
+ok(len(mc_) == 1, f'D-AV03 {mc_}'); pick('D-AV03', ', '.join(mc_[0]))
+po = {'A': (20000, 20000 - 600, 600), 'B': (14250 + 750, 14250, 750), 'C': (12000, 11760, 12000 - 11760), 'D': (8000, 8000 - 320, 320)}
+by_text('D-AV04', list(zip(['네 우체국 전체의 배달률', '(가)는', 'C의 배달률은', '반송된 우편물이 가장 많은', '접수한 우편물 가운데'], [sum(v[1] for v in po.values()) * 100 >= 97 * sum(v[0] for v in po.values()), po['A'][1] * 10 >= 26 * po['D'][1], po['C'][1] * po['A'][0] < po['A'][1] * po['C'][0], max(po, key=lambda k: po[k][2]) == 'B', max(po, key=lambda k: F(po[k][2], po[k][0])) == 'D'])))
+ob = {'초': ((15, 130), (10, 125)), '중': ((18, 70), (12, 66)), '고': ((22, 68), (14, 64))}
+cnt = {(l, g): r * n_ for l, v in ob.items() for g, (r, n_) in zip('MF', v)}
+combo('D-AV05', [l for l, t in zip('ㄱㄴㄷㄹ', [(15 - 10) < (18 - 12) < (22 - 14), max(cnt, key=cnt.get) == ('초', 'M'), (cnt[('고', 'M')] + cnt[('고', 'F')]) >= 18 * (68 + 64), sum(v for (l, g), v in cnt.items() if g == 'F') * 5 >= 2 * sum(cnt.values())]) if t])
+pick('L-AV01', '전체 접종률이 집단 면역 임계치를 넘더라도 일부 집단 안에서는 유행이 일어날 수 있다.')
+hi = lambda r0: 1 - F(1, r0)
+combo('L-AV02', [l for l, t in zip('ㄱㄴㄷㄹ', [hi(4) == F(3, 4), hi(4) / F(9, 10) <= F(4, 5), hi(10) / F(17, 20) > 1, hi(8) == 2 * hi(4)]) if t])
+combo('L-AV03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AV05', ['ㄱ', 'ㄴ'])
+gifts = [dict(zip('ABCDE', pm)) for pm in itertools.permutations('ABCDE') if all(x != y for x, y in zip('ABCDE', pm))]
+gifts = [g for g in gifts if g['A'] != 'B' and g['B'] == 'C' and g['D'] != 'B' and all(g[g[x]] != x for x in 'ABCDE')]
+by_text('L-AV04', list(zip(['A는 D에게', 'C는 A에게', 'D는 E에게', 'C는 E에게', 'E는 B에게'], [all(g['A'] == 'D' for g in gifts), all(g['C'] == 'A' for g in gifts), all(g['D'] == 'E' for g in gifts), all(g['C'] == 'E' for g in gifts), all(g['E'] == 'B' for g in gifts)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
