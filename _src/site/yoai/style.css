@@ -66,6 +66,7 @@ button { cursor: pointer; }
 .prose { font-size: .9375rem; line-height: 1.75; }
 .m { font-size: .75rem; color: var(--muted); }
 .good { color: var(--ok); }
+[hidden] { display: none !important; }   /* hidden 속성은 .btn 등의 display보다 앞선다 */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--rule-2); background: var(--card); border-radius: 10px; padding: 8px 14px; font-weight: 600; font-size: .8125rem; white-space: nowrap; text-decoration: none; color: var(--ink); }
 .btn:hover { background: var(--hover); }
 .btn.sm { padding: 5px 10px; font-size: .75rem; border-radius: 8px; }
@@ -311,6 +312,7 @@ table.arts a { color: var(--ink); text-decoration-color: var(--gold); text-under
 .seltool { position: fixed; z-index: 60; display: flex; gap: 2px; background: var(--navy); border-radius: 12px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
 .seltool button { border: 0; background: none; color: var(--on-navy); padding: 8px 12px; border-radius: 9px; font-size: .8125rem; font-weight: 600; }
 .seltool button:hover { background: rgba(255,255,255,.12); }
+@media (pointer: coarse) { .seltool button { min-height: 44px; padding: 10px 14px; font-size: .875rem; } }   /* 손가락으로 누르기 좋은 크기 */
 
 /* 빠른 파악 */
 .fact { margin-top: 14px; }

@@ -379,8 +379,9 @@ function selTool(s) {
   let t = $('#seltool');
   if (!s) { if (t) t.remove(); return; }
   if (!t) { t = document.createElement('div'); t.id = 'seltool'; t.className = 'seltool'; t.innerHTML = '<button data-act="sel-card">카드에 담기</button><button data-act="sel-cite">인용 복사</button>'; document.body.appendChild(t); }
-  const below = s.rect.bottom + 10 + 44 < window.innerHeight;
-  t.style.top = `${Math.round(below ? s.rect.bottom + 10 : Math.max(8, s.rect.top - 52))}px`;
+  const gap = touchOnly() ? 30 : 10;   // 손가락 기기에서는 선택 손잡이를 피해 조금 더 떨어뜨린다
+  const below = s.rect.bottom + gap + 48 < window.innerHeight;
+  t.style.top = `${Math.round(below ? s.rect.bottom + gap : Math.max(8, s.rect.top - gap - 48))}px`;
   t.style.left = `${Math.round(Math.min(window.innerWidth - 220, Math.max(8, s.rect.left + s.rect.width / 2 - 105)))}px`;
   t.dataset.text = s.text;
 }
@@ -550,16 +551,19 @@ function filteredDocs() {
 function paintDocList() { const el = $('#doc-list'); if (!el) return; const list = filteredDocs(); el.innerHTML = list.map(docRow).join('') || `<p class="find-none">${S.docs.length ? '맞는 문헌이 없습니다.' : '아직 문헌이 없습니다.'}</p>`; const c = $('#lib-count'); if (c) c.textContent = `${list.length}편`; }
 const touchOnly = () => { try { return matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches; } catch (e) { return false; } }; // 손가락으로만 쓰는 기기(휴대전화·태블릿)
 function viewLibrary() {
+  const touch = touchOnly();   // 손가락으로만 쓰는 기기: 폴더 고르기가 잘 안 되므로 파일 고르기를 먼저 보여 준다
+  const pick = `${touch ? '<p class="sub"><b>휴대전화·태블릿</b>에서는 브라우저가 폴더를 통째로 고르지 못하는 경우가 많습니다. 아래를 눌러 파일을 여러 개 한꺼번에 고르세요.</p>' : ''}
+    <label class="drop" id="drop">${touch ? '<u>눌러서 파일 고르기</u>(여러 개 가능)' : '파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u>'}<input type="file" id="files" accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>`;
   view().innerHTML = `<div class="page">
     <div class="notes-head"><h1>서재</h1></div>
+    ${touch ? pick : ''}
     <div class="lib-box">
-      <div class="lib-head"><b>폴더 통째로 넣기</b><span><button class="btn primary" data-act="folder">${S.folder || S.settings.folderName ? '다른 폴더 고르기' : '폴더 고르기'}</button><button class="btn" data-act="folder-sync" ${S.folder && S.folder.handle ? '' : 'hidden'}>다시 읽기</button></span></div>
+      <div class="lib-head"><b>폴더 통째로 넣기</b><span><button class="btn${touch ? '' : ' primary'}" data-act="folder">${S.folder || S.settings.folderName ? '다른 폴더 고르기' : '폴더 고르기'}</button><button class="btn" data-act="folder-sync" ${S.folder && S.folder.handle ? '' : 'hidden'}>다시 읽기</button></span></div>
       <p class="sub">폴더(하위 폴더 포함) 안의 PDF·한글(.hwp·.hwpx)·텍스트를 모두 넣고 모든 쪽의 글자를 읽어 둡니다. 문헌은 이 기기 안에만 있으며 어디로도 보내지 않습니다.</p>
       <div id="lib-status">${libStatusHTML()}</div>
       <input type="file" id="folder-in" webkitdirectory multiple class="sr" tabindex="-1">
     </div>
-    ${touchOnly() ? '<p class="sub"><b>휴대전화·태블릿</b>에서는 브라우저가 폴더를 통째로 고르지 못하는 경우가 많습니다. 아래를 눌러 파일을 여러 개 한꺼번에 고르세요.</p>' : ''}
-    <label class="drop" id="drop">${touchOnly() ? '<u>눌러서 파일 고르기</u>(여러 개 가능)' : '파일 몇 개만 넣으려면 여기에 끌어 놓거나 <u>눌러서 고르세요</u>'}<input type="file" id="files" accept=".pdf,.hwp,.hwpx,.docx,.txt,.md,application/pdf,text/plain" multiple class="sr"></label>
+    ${touch ? '' : pick}
     <p class="sub">문헌의 <b>정보</b>에 종류·학술지·권호·발행기관·첫 쪽 번호를 적으면 각주가 박사학위논문 양식 그대로 만들어집니다. 첫 쪽에서 읽은 제안이 있으면 눌러서 넣을 수 있습니다(저절로 채우지는 않습니다). 내가 쓴 글은 <b>내 글</b>로 표시하세요.</p>
     <div class="lib-filter"><button class="btn sm" data-act="bulk-meta" title="정보가 빈 문헌의 첫 쪽에서 저자·학술지·권호·쪽을 읽어 제안합니다">정보 제안 한꺼번에</button><div class="chips-row">${LIB_FILTERS.map(([k, l]) => `<button class="chip${(S.libF || 'all') === k ? ' on' : ''}" data-act="lib-f" data-v="${k}">${l}</button>`).join('')}</div><label class="sr" for="lib-q">제목·저자로 거르기</label><input id="lib-q" type="search" placeholder="제목·저자로 거르기" value="${esc(S.libQ || '')}" autocomplete="off"><span class="m" id="lib-count"></span></div>
     <div class="doc-list" id="doc-list"></div></div>`;
