@@ -46,9 +46,9 @@ const kidsOf = (p, id) => p.arg.filter((n) => n.parent === id).sort((a, b) => (a
 const descendants = (p, id) => { const out = []; const walk = (x) => kidsOf(p, x).forEach((k) => { out.push(k); walk(k.id); }); walk(id); return out; };
 export function argIssues(p) {
   const out = []; if (!p) return out;
-  const add = (level, msg, node) => out.push({ level, msg, node });
-  if (!String(p.question || '').trim()) add('bad', '연구 질문이 비어 있습니다. 이 논문이 답하려는 물음을 한 문장으로 적으세요.');
-  if (!String(p.answer || '').trim()) add('warn', '연구 질문에 대한 답(결론 한 문장)을 아직 적지 않았습니다. 서론의 질문과 결론의 답이 맞물려야 합니다.');
+  const add = (level, msg, node, go) => out.push({ level, msg, node, go });
+  if (!String(p.question || '').trim()) add('bad', '연구 질문이 비어 있습니다. 이 논문이 답하려는 물음을 한 문장으로 적으세요.', null, 'question');
+  if (!String(p.answer || '').trim()) add('warn', '연구 질문에 대한 답(결론 한 문장)을 아직 적지 않았습니다. 서론의 질문과 결론의 답이 맞물려야 합니다.', null, 'answer');
   const claims = p.arg.filter((n) => n.kind === 'claim');
   if (!claims.length) add('warn', '핵심 주장이 아직 없습니다.');
   for (const c of claims) {
@@ -62,11 +62,11 @@ export function argIssues(p) {
     const bare = grounds.filter((g) => !(g.refs || []).length);
     if (bare.length) add('info', `${name}: 자료가 연결되지 않은 근거가 ${bare.length}개 있습니다.`, bare[0].id);
   }
-  if (!String(p.gap || '').trim()) add('warn', '선행연구와의 차별성을 아직 적지 않았습니다.');
-  else if (!(p.gapDocs || []).length) add('warn', '차별성 문장에 근거가 되는 선행연구를 연결하지 않았습니다.');
+  if (!String(p.gap || '').trim()) add('warn', '선행연구와의 차별성을 아직 적지 않았습니다.', null, 'gap');
+  else if (!(p.gapDocs || []).length) add('warn', '차별성 문장에 근거가 되는 선행연구를 연결하지 않았습니다.', null, 'gapdocs');
   const reads = projReads(p);
-  if (reads.length < 5) add('info', `선행연구 읽기 카드가 ${reads.length}편입니다.`);
-  else if (!reads.some((r) => r.rel === 'oppose')) add('info', '반대 입장의 선행연구 읽기 카드가 없습니다. 반론 검토와 차별성을 위해 찾아 읽어 보세요.');
+  if (reads.length < 5) add('info', `선행연구 읽기 카드가 ${reads.length}편입니다.`, null, 'reads');
+  else if (!reads.some((r) => r.rel === 'oppose')) add('info', '반대 입장의 선행연구 읽기 카드가 없습니다. 반론 검토와 차별성을 위해 찾아 읽어 보세요.', null, 'reads');
   return out;
 }
 function nodeHTML(p, n, depth) {
@@ -85,9 +85,11 @@ function nodeHTML(p, n, depth) {
     ${kids ? `<div class="kids">${kids}</div>` : ''}</div>`;
 }
 const LEVEL = { bad: '고칠 것', warn: '살필 것', info: '참고' };
+// 주장 마디가 아닌 점검 항목의 바로 가기: [보여 줄 화면, 그 화면에서 데려갈 자리, 단추 글자]
+const ISSUE_GO = { question: ['arg', '[data-pf="question"]', '적기'], answer: ['arg', '[data-pf="answer"]', '적기'], gap: ['lit', '[data-pf="gap"]', '적으러 가기'], gapdocs: ['lit', '[data-act="gap-pick"]', '연결하러 가기'], reads: ['lit', '[data-act="lit-add"]', '선행연구 지도로'] };
 export function issuesHTML(list) {
   if (!list.length) return '<p class="ok-line">점검할 것이 없습니다. 질문·답·주장·근거·반론·차별성이 모두 갖춰졌습니다.</p>';
-  return `<ul class="issues">${list.map((x) => `<li class="${x.level}"><b>${LEVEL[x.level]}</b><span>${esc(x.msg)}</span>${x.node ? `<button class="linkish" data-act="node-go" data-node="${x.node}">보기</button>` : ''}</li>`).join('')}</ul>`;
+  return `<ul class="issues">${list.map((x) => `<li class="${x.level}"><b>${LEVEL[x.level]}</b><span>${esc(x.msg)}</span>${x.node ? `<button class="linkish" data-act="node-go" data-node="${x.node}">보기</button>` : x.go ? `<button class="linkish" data-act="issue-go" data-go="${x.go}">${ISSUE_GO[x.go][2]}</button>` : ''}</li>`).join('')}</ul>`;
 }
 export function viewArg() {
   const p = S.project; if (!p) return;
@@ -131,6 +133,15 @@ const moveNode = async (el, dir) => {
 };
 ACT['node-up'] = (el) => moveNode(el, -1); ACT['node-down'] = (el) => moveNode(el, 1);
 ACT['node-go'] = (el) => { const x = $(`[data-node="${el.dataset.node}"]`); if (x) { x.scrollIntoView({ block: 'center', behavior: 'smooth' }); x.classList.add('flash'); setTimeout(() => x.classList.remove('flash'), 1400); } };
+ACT['issue-go'] = (el) => {
+  const g = ISSUE_GO[el.dataset.go]; if (!g) return;
+  if (g[0] === 'lit') litTab = 'map';
+  if (S.view !== g[0]) UI.show(g[0]); else if (g[0] === 'lit') viewLit();
+  const x = $(g[1]); if (!x) return;
+  x.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const box = x.closest('.field') || x; box.classList.add('flash'); setTimeout(() => box.classList.remove('flash'), 1400);
+  if (x.tagName === 'TEXTAREA') x.focus({ preventScroll: true });
+};
 ACT['ref-del'] = async (el) => { const p = S.project, n = p.arg.find((x) => x.id === el.dataset.node); if (!n) return; n.refs.splice(+el.dataset.i, 1); await saveProject(p); viewArg(); };
 ACT['ref-add'] = async (el) => {
   const p = S.project, n = p.arg.find((x) => x.id === el.dataset.node); if (!n) return;

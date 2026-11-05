@@ -154,6 +154,7 @@ ol.qlog .w { display: block; color: var(--gold-ink); }
 .node.k-counter { border-left-color: var(--red); }
 .node.k-rebut { border-left-color: var(--gold); }
 .node.flash { background: var(--gold-wash); }
+.field.flash textarea, .ref-add.flash, .btn.flash { box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 45%, transparent); transition: box-shadow .2s; }
 .node-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-bottom: 6px; }
 .nk { font-size: .6875rem; font-weight: 700; color: var(--ink-2); letter-spacing: .02em; }
 .node-tools { display: flex; flex-wrap: wrap; gap: 2px; }
@@ -516,4 +517,5 @@ ul.refs-list li { padding: 2px 0; }
   .card-tools button { min-height: 40px; min-width: 40px; padding: 8px 10px; }
   .pj-tools { gap: 18px; }
   .pj-tools .linkish { padding: 10px 0; }
+  ul.issues li .linkish { padding: 12px 6px; margin: -12px -6px; }   /* 줄 높이는 그대로, 누르는 자리만 넓게 */
 }
