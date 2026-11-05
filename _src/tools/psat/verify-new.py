@@ -3144,4 +3144,64 @@ combo('L-BD03', ['ㄴ', 'ㄷ']); combo('L-BD05', ['ㄱ', 'ㄴ'])
 at = [dict(zip('갑을병정무', b)) for b in itertools.product((0, 1), repeat=5)]
 at = [x for x in at if (not x['무'] or x['정']) and sum(x.values()) == 3 and not (x['정'] and x['병']) and (not x['을'] or x['병'])]
 by_text('L-BD04', list(zip(['甲은 참석', '乙은 참석', '丁은 참석하지', '戊는 참석', '丙은 참석하지'], [all(x['갑'] for x in at), all(x['을'] for x in at), all(not x['정'] for x in at), all(x['무'] for x in at), all(not x['병'] for x in at)])))
+# ================= S-BE / D-BE / L-BE (5급 실전, independent re-solve from the rendered options) =================
+def cb_(seq):
+    used, c = 0, F(0)
+    for kind, amt in seq:
+        if kind == '마트': continue
+        part = min(amt, max(0, 50 - used)); used += amt
+        c += part * (F(15, 100) if kind == '시장' else F(10, 100))
+    return min(c, 6)
+tcb = cb_([('일반', 30), ('시장', 10)]) + cb_([('시장', 40), ('일반', 20)]) + cb_([('마트', 30), ('일반', 60)]) + cb_([('일반', 20), ('시장', 40)])
+pick('S-BE01', f'{int(tcb * 10000):,}원')
+bad_ = {(0, 0), (1, 1), (2, 2), (3, 3), (0, 1)}
+fw = [p for p in itertools.permutations(range(4)) if not any((r, p[r]) in bad_ for r in range(4))]
+fw2 = [p for p in itertools.permutations(range(4)) if not any((r, p[r]) in bad_ - {(0, 1)} for r in range(4))]
+combo('S-BE02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(fw) == 6, all(p[0] in (2, 3) for p in fw), len(fw2) == 9, sum(1 for p in fw if p[1] == 0) == 3]) if t])
+ride_ = lambda age, lic: age >= 16 and lic
+zone_ = lambda d_cross, d_bus: d_cross <= 5 or d_bus <= 5
+fine_ = lambda two, nohelmet: 40000 * two + 20000 * nohelmet
+tow2 = lambda z, mins=None: 0 if (not z or (mins is not None and mins <= 60)) else 40000
+by_text('S-BE03', list(zip(['원동기 면허가 없는', '횡단보도에서 3미터', '횡단보도에서 8미터', '두 사람이 함께 탄', '버스 정류장에서 4미터'],
+        [ride_(17, False), tow2(zone_(3, 99), 50) == 0 and fine_(1, 1) == 60000, tow2(zone_(8, 99)) == 40000, fine_(1, 0) == 20000, tow2(zone_(99, 4), 90) == 0])))
+def bp_(need, coupon=True, six=True):
+    best = None
+    for a in range(16):
+        for b in range(7):
+            for c in range(4 if six else 1):
+                n = a + 3 * b + 6 * c
+                if n < need: continue
+                cost = 1500 * a + 4000 * b + 7500 * c
+                if coupon and n >= 10: cost = cost * 9 // 10
+                if best is None or (cost, n) < best: best = (cost, n)
+    return best
+combo('S-BE04', [l for l, t in zip('ㄱㄴㄷㄹ', [bp_(11)[0] == 13050, bp_(11)[1] == 11, bp_(11, coupon=False)[1] == 12, bp_(11, six=False)[0] >= 13950]) if t])
+cs_ = {'A': [60, 90, 70, 90, 80], 'B': [90, 120, 160, 160, 120], 'C': [80, 160, 130, 80, 100], 'D': [80, 70, 110, 120, 140]}
+bs_ = min(sum(cs_[x][d] + (30 if d == 2 else 0) for x, d in zip('ABCD', ds)) for ds in itertools.permutations(range(5), 4) if ds[0] != 4 and abs(ds[1] - ds[2]) != 1)
+pick('S-BE05', f'{bs_}만 원')
+yr_ = [(60, F(5)), (65, F(52, 10)), (70, F(55, 10)), (68, F(56, 10))]; ag_ = {'10': (120, 85), '20': (150, 90), '30': (160, 80), '40': (170, 70), '50': (400, 49)}
+vw = {k: a * r for k, (a, r) in ag_.items()}; tv = [r * t for r, t in yr_]
+s_ = [yr_[0][0] < yr_[1][0] < yr_[2][0] > yr_[3][0], all(yr_[i][1] > yr_[i - 1][1] for i in range(1, 4)), tv[3] < tv[2], max(ag_, key=lambda k: ag_[k][1]) == max(vw, key=vw.get), vw['50'] * 4 >= sum(vw.values())]
+only('D-BE01', [not x for x in s_], 'false statements')
+ar15, ar25 = [120, 80, 60, 40], [118, 79, 61, 38]; st15, st25 = [130, 120, 140, 100], [160, 150, 165, 140]
+w15 = [a * b for a, b in zip(ar15, st15)]; w25 = [a * b for a, b in zip(ar25, st25)]
+combo('D-BE02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(w25[i] > w15[i] for i in range(4) if ar25[i] < ar15[i]), sum(w25) * 4 >= 5 * sum(w15), max(range(4), key=lambda i: F(st25[i], st15[i])) == 3, max(w25) * 5 >= 2 * sum(w25)]) if t])
+ai = {'가': (20, 85, 40), '나': (15, 92, 30), '다': (25, 76, 50), '라': (10, 95, 20), '마': (18, 80, 45)}
+ot_ = lambda k: ai[k][0] * ai[k][1]; lt_ = lambda k: ai[k][0] * (100 - ai[k][1])
+ma = [m for m in itertools.permutations(ai) if ot_(m[0]) == max(map(ot_, ai)) and ai[m[1]][1] == max(v[1] for v in ai.values()) and sorted(ai, key=lt_, reverse=True)[1] == m[2] and ai[m[3]][2] > ai[m[4]][2]]
+ok(len(ma) == 1, f'D-BE03 {ma}'); pick('D-BE03', ', '.join(ma[0]))
+ins = {'A': (500, 400, 25), 'B': (800, 800 * 85 // 100, 32), 'C': (450 * 100 // 75, 450, 30), 'D': (1000, 920, 40), 'E': (400, 400 * 90 // 100, 20)}
+lr_ = {k: F(v[1], v[0]) for k, v in ins.items()}; pp_ = {k: F(v[0], v[2]) for k, v in ins.items()}
+by_text('D-BE04', list(zip(['(가)와 (라)를', '손해율이 가장 높은', '계약 1건당', '다섯 상품을', '손해율이 80%'],
+        [ins['B'][1] + ins['E'][1] >= 1050, max(lr_, key=lr_.get) == max(ins, key=lambda k: ins[k][1]), [k for k in pp_ if pp_[k] == max(pp_.values())] == ['B'], sum(v[1] for v in ins.values()) * 100 >= 86 * sum(v[0] for v in ins.values()), [k for k in lr_ if lr_[k] <= F(8, 10)] == ['C']])))
+od_ = [300, 330, 360, 330]; s22, s25 = {'중동': 40, '아시아': 35, '미주': 15, '기타': 10}, {'중동': 35, '아시아': 30, '미주': 25, '기타': 10}
+combo('D-BE05', [l for l, t in zip('ㄱㄴㄷㄹ', [od_[3] * 10 == 11 * od_[0], od_[3] * s25['중동'] < od_[0] * s22['중동'], od_[3] * s25['미주'] >= 2 * od_[0] * s22['미주'], od_[3] * s25['기타'] > od_[0] * s22['기타']]) if t])
+pick('L-BE01', '갤러거 지수에서는 작은 차이 여러 개보다 큰 차이 몇 개가 지수를 더 크게 끌어올린다.')
+lh_ = lambda e: sum(abs(a - b) for a, b in e) / 2; g2_ = lambda e: sum((a - b) ** 2 for a, b in e) / 2
+e1, e2, e1b = [(45, 60), (35, 35), (20, 5)], [(40, 50), (30, 35), (20, 15), (10, 0)], [(45, 65), (35, 35), (20, 0)]
+combo('L-BE02', [l for l, t in zip('ㄱㄴㄷㄹ', [lh_(e1) == lh_(e2), g2_(e1) > g2_(e2), g2_(e2) >= 100, g2_(e1b) > 400]) if t])
+combo('L-BE03', ['ㄱ', 'ㄹ']); combo('L-BE05', ['ㄱ', 'ㄴ'])
+fx = [dict(zip(['기', '인', '회', '홍', '총'], p)) for p in itertools.permutations(range(1, 6))]
+fx = [x for x in fx if x['회'] != 2 and abs(x['총'] - x['회']) == 1 and x['인'] > x['홍'] > x['총']]
+by_text('L-BE04', list(zip(['회계는 1층', '인사는 5층', '홍보는 3층', '기획은 4층', '총무는 2층'], [all(x['회'] == 1 for x in fx), all(x['인'] == 5 for x in fx), all(x['홍'] == 3 for x in fx), all(x['기'] == 4 for x in fx), all(x['총'] == 2 for x in fx)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
