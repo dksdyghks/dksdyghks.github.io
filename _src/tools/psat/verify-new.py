@@ -2508,4 +2508,53 @@ for joinset in itertools.product(itertools.combinations(['독서', '등산', '�
     if len(set(jn['A']) & set(jn['B'])) != 1 or '사진' in jn['C'] or jn['D'] != jn['E'] or '독서' not in jn['F']: continue
     cm.append(jn)
 by_text('L-AS04', list(zip(['A는 사진', 'B는 등산', 'C와 F가', 'E는 독서', 'F는 등산'], [all('사진' in j['A'] for j in cm), all('등산' in j['B'] for j in cm), all(len(set(j['C']) & set(j['F'])) == 2 for j in cm), all('독서' in j['E'] for j in cm), all('등산' not in j['F'] for j in cm)])))
+# ================= S-AT / D-AT / L-AT (5급 실전, independent re-solve from the rendered options) =================
+def jobpay(wage, months, age, eligible):
+    if not eligible: return 0
+    d = min(max(wage * 6 // 10, 60000), 66000)
+    n_ = 120 if months < 12 else 150 if months < 36 else 180
+    return d * (n_ + (30 if age >= 50 else 0))
+jp = {'甲': jobpay(100000, 24, 45, 1), '乙': jobpay(150000, 60, 52, 0), '丙': jobpay(80000, 48, 55, 1), '丁': jobpay(120000, 42, 40, 1), '戊': jobpay(130000, 10, 51, 1)}
+pick('S-AT01', max(jp, key=jp.get))
+def die_moves(st):
+    (r, c), (top, south, east) = st
+    out = []
+    if c < 2: out.append(((r, c + 1), (7 - east, south, top)))
+    if c > 0: out.append(((r, c - 1), (east, south, 7 - top)))
+    if r < 2: out.append(((r + 1, c), (7 - south, top, east)))
+    if r > 0: out.append(((r - 1, c), (south, 7 - top, east)))
+    return out
+lay = [{((0, 0), (1, 2, 3))}]
+for _ in range(8): lay.append({t for s in lay[-1] for t in die_moves(s)})
+first_at = lambda cell, tp: min(i for i, L in enumerate(lay) if any(s[0] == cell and s[1][0] == tp for s in L))
+combo('S-AT02', [l for l, t in zip('ㄱㄴㄷㄹ', [sorted({s[1][0] for s in lay[4] if s[0] == (2, 2)}) == [1, 2, 3, 6], first_at((2, 2), 4) == 6, any(s[0] == (0, 0) and s[1][0] == 6 for L in lay[:5] for s in L), len({s[1][0] for s in lay[2] if s[0] == (1, 1)}) == 1]) if t])
+pick('S-AT03', '검사 기간이 끝난 날부터 60일이 지나 정기검사를 받은 소유자의 과태료는 12만 원이다.')
+lab = [n_ for n_ in range(1, 200) if '4' not in str(n_)]
+combo('S-AT04', [l for l, t in zip('ㄱㄴㄷㄹ', [lab[29] == 33, lab.index(50) == 35, lab[39] == 52, sum(1 for n_ in range(1, 101) if '4' not in str(n_)) == 81]) if t])
+cheap = min(5 * a + 3 * b + 2 * c for a in range(25) for b in range(25) for c in range(2) if 4 * a + 2 * b + 4 * c >= 20 and a + 6 * b + c >= 20)
+pick('S-AT05', f'{cheap * 1000:,}원')
+cin = {'A': (60, 480, 3000, 3240), 'B': (40, 360, 2000, 2300), 'C': (50, 300, 1800, 1890), 'D': (30, 252, 1500, 1800), 'E': (20, 130, 700, 728)}
+c0, c1 = sum(v[2] for v in cin.values()), sum(v[3] for v in cin.values())
+s_ = [c1 * 10 >= 11 * c0, max(cin, key=lambda k: F(cin[k][1], cin[k][0])) == 'B', max(cin, key=lambda k: F(cin[k][3], cin[k][1])) == 'A', max(cin, key=lambda k: F(cin[k][3], cin[k][2])) == 'D', sorted(k for k, v in cin.items() if F(v[3], v[2]) > F(c1, c0)) == ['B', 'D']]
+only('D-AT01', [not x for x in s_], 'false statements')
+e15, e25 = [25, 15, 12, 10, 38], [22, 18, 13, 7, 40]
+m15, m25 = [2 * x for x in e15], [F(28, 10) * x for x in e25]
+combo('D-AT02', [l for l, t in zip('ㄱㄴㄷㄹ', [e25[0] < e15[0] and m25[0] > m15[0], m25[3] < m15[3], m25[1] * m15[2] > m25[2] * m15[1], m25[2] * 4 >= 5 * m15[1]]) if t])
+tsh = {'가': (40, 0, 50, 200), '나': (20, 30, 45, 600), '다': (35, 15, 40, 300), '라': (25, 35, 30, 800), '마': (30, 20, 40, 500)}
+mt = [m for m in itertools.permutations(tsh) if tsh[m[0]][1] == max(v[1] for v in tsh.values()) and tsh[m[1]][2] == max(v[2] for v in tsh.values()) and tsh[m[3]][0] * tsh[m[3]][3] < tsh[m[2]][0] * tsh[m[2]][3] and tsh[m[3]][2] * tsh[m[3]][3] > tsh[m[4]][2] * tsh[m[4]][3]]
+ok(len(mt) == 1, f'D-AT03 {mt}'); pick('D-AT03', ', '.join(mt[0]))
+em = {'A': (36500, 36500 - 29200), 'B': (6570 + 15330, 6570), 'C': (18250, 4380), 'D': (29200, 29200 - 23360)}
+hm_ = {'A': 29200, 'B': 15330, 'C': 18250 - 4380, 'D': 23360}
+by_text('D-AT04', list(zip(['네 병원 전체의 입원율', 'B 응급실의 하루 평균', 'C의 입원율은', '귀가 환자가 가장 많은', '(가)와 (마)의 합'], [sum(b for a, b in em.values()) * 100 >= 23 * sum(a for a, b in em.values()), em['B'][0] == 60 * 365, em['C'][1] * em['D'][0] < em['D'][1] * em['C'][0], max(hm_, key=hm_.get) == 'D', em['A'][1] + em['D'][1] >= 13500])))
+ar0, ar1 = [80, 20, 25, 15], [60, 24, 20, 18]; y0, y1 = [2, 25, 20, 4], [F(5, 2), 25, 22, 5]
+q0 = [a * b for a, b in zip(ar0, y0)]; q1 = [a * b for a, b in zip(ar1, y1)]
+combo('D-AT05', [l for l, t in zip('ㄱㄴㄷㄹ', [ar1[0] < ar0[0] and q1[0] > q0[0], q1.index(max(q1)) == 1, q1[3] * 2 == q0[3] * 3, q0[1] == q0[2]]) if t])
+pick('L-AT01', '두 사업 가운데 어느 쪽의 순현재가치가 더 큰지는 할인율에 따라 바뀔 수 있다.')
+def pvv(flows, r): return sum(F(v) / (1 + r) ** t_ for t_, v in flows)
+X_, Y_ = [(0, -100), (1, 60), (2, 60)], [(0, -100), (2, 125)]
+combo('L-AT02', [l for l, t in zip('ㄱㄴㄷㄹ', [pvv(X_, F(1, 10)) > 0 < pvv(Y_, F(1, 10)), pvv(X_, F(1, 10)) > pvv(Y_, F(1, 10)), pvv(Y_, 0) > pvv(X_, 0), pvv(X_, F(1, 5)) > 0 >= pvv(Y_, F(1, 5))]) if t])
+combo('L-AT03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AT05', ['ㄱ', 'ㄴ'])
+sc_ = [dict(zip('ABCDE', pm)) for pm in itertools.permutations([60, 70, 80, 90, 100])]
+sc_ = [x for x in sc_ if x['A'] > x['B'] and x['C'] >= x['D'] + 20 and x['B'] + x['E'] == 150 and x['B'] != 60]
+by_text('L-AT04', list(zip(['A는 100점', 'B는 70점', 'C는 A보다', 'D는 60점', 'E는 B보다'], [all(x['A'] == 100 for x in sc_), all(x['B'] == 70 for x in sc_), all(x['C'] > x['A'] for x in sc_), all(x['D'] == 60 for x in sc_), all(x['E'] > x['B'] for x in sc_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
