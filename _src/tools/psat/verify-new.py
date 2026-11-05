@@ -3039,4 +3039,51 @@ combo('L-BB02', [l for l, t in zip('ㄱㄴㄷㄹ', [p1[0] == 2, p1[1] - p1[2] ==
 combo('L-BB03', ['ㄴ', 'ㄹ']); combo('L-BB05', ['ㄱ'])
 lq = [o for o in itertools.permutations('갑을병정무') if o.index('갑') < o.index('병') and o.index('정') < o.index('을') and 0 < o.index('병') < 4 and abs(o.index('을') - o.index('무')) == 2 and abs(o.index('정') - o.index('무')) > 1]
 by_text('L-BB04', list(zip(['甲은 첫째', '乙은 셋째', '丁은 첫째', '戊는 다섯째', '丙은 넷째'], [all(o[0] == '갑' for o in lq), all(o[2] == '을' for o in lq), all(o[0] == '정' for o in lq), all(o[4] == '무' for o in lq), all(o[3] == '병' for o in lq)])))
+# ================= S-BC / D-BC / L-BC (5급 실전, independent re-solve from the rendered options) =================
+def hall_(wk, s, e, cut, cancel=None):
+    h = max(e - s, 2); main = (30000 if wk else 40000) * h; light = 10000 * max(0, e - max(s, 18))
+    t = main * (100 - cut) // 100 + light
+    return t if cancel is None else (0 if cancel >= 3 else t // 2)
+pick('S-BC01', f'{hall_(1, 19, 21, 50) + hall_(0, 10, 11, 30) + hall_(0, 17, 20, 50) + hall_(1, 14, 17, 0, 2):,}원')
+dg_ = lambda n: sum(len(str(i)) for i in range(1, n + 1)); cd_ = lambda d, n: sum(str(i).count(d) for i in range(1, n + 1))
+combo('S-BC02', [l for l, t in zip('ㄱㄴㄷㄹ', [dg_(200) == 492, cd_('1', 200) == 140, cd_('0', 200) == 30, [n for n in range(1, 1000) if dg_(n) == 1002] == [370]]) if t])
+pen_ = lambda d, w=False: 0 if (w or d >= 7) else (30 if d >= 3 else 50)
+ext_ = lambda n: None if n > 8 else 5000 * max(0, n - 6)
+by_text('S-BC03', list(zip(['이용일 5일 전에', '이용일에 기상 특보', '이용일 35일 전에', '9명이 한 구역에', '이용일 7일 전에'], [pen_(5) == 50, pen_(1, True) == 0 and ext_(8) == 10000, 35 <= 30, ext_(9) == 15000, pen_(7) == 30])))
+def gr_(n, ta=12):
+    b = F(ta * n, 18); d = F(30 * b, 45); return b, d
+dir_ = 1
+for link in ['맞물림', '같은 축', '맞물림']: dir_ *= -1 if link == '맞물림' else 1
+combo('S-BC04', [l for l, t in zip('ㄱㄴㄷㄹ', [gr_(9)[1] == 4, dir_ == 1, min(n for n in range(1, 50) if all(x.denominator == 1 for x in gr_(n))) == 9, gr_(9, 24)[1] == 4]) if t])
+pf_ = {'A': [34, 35, 14], 'B': [24, 11, 13], 'C': [52, 37, 12], 'D': [25, 27, 55], 'E': [47, 35, 56]}
+bt_ = max(sum(pf_[c][a[i]] for i, c in enumerate('ABCDE')) for a in itertools.product(range(3), repeat=5) if a[0] != a[1] and a[2] != 0 and max(a.count(k) for k in range(3)) <= 2 and abs(a[3] - a[4]) == 1)
+pick('S-BC05', f'{bt_}명')
+ry = [(12000, 1500), (12600, 1560), (13200, 1650), (12900, 1720)]; ind_ = {'A': (4500, 90), 'B': (3000, 75), 'C': (2400, 36), 'D': (1800, 54), 'E': (1200, 21)}
+rr_ = [F(a, b) for a, b in ry]
+s_ = [ry[0][0] < ry[1][0] < ry[2][0] > ry[3][0], rr_.index(min(rr_)) == 3, rr_.index(max(rr_)) == 1, max(ind_, key=lambda k: F(ind_[k][1], ind_[k][0])) == 'D' == max(ind_, key=lambda k: ind_[k][1]), sum(v[1] for v in ind_.values()) * 100 >= 2 * sum(v[0] for v in ind_.values())]
+only('D-BC01', [not x for x in s_], 'false statements')
+h4, h5, fd = [350, 40, 1100, 50], [360, 38, 1120, 55], [F(2), F(3), F(9, 10), F(2, 5)]
+q4 = [a * b for a, b in zip(h4, fd)]; q5 = [a * b for a, b in zip(h5, fd)]
+combo('D-BC02', [l for l, t in zip('ㄱㄴㄷㄹ', [q5.index(max(q5)) == 2, sum(q5) * 100 >= 102 * sum(q4), all(q5[i] < q4[i] for i in range(4) if h5[i] < h4[i]), q5[0] * 5 >= 2 * sum(q5)]) if t])
+pt = {'가': (120, 36, 30), '나': (90, 33, 27), '다': (45, 14, 9), '라': (30, 11, 12), '마': (15, 6, 3)}
+srr = {k: F(v[0] * 100, 300) for k, v in pt.items()}
+mp = [m for m in itertools.permutations(pt) if srr[m[0]] - pt[m[0]][1] == max(srr[k] - pt[k][1] for k in pt) and F(pt[m[1]][2], pt[m[1]][0]) == max(F(v[2], v[0]) for v in pt.values())
+      and pt[m[2]][1] > srr[m[2]] and pt[m[2]][0] == max(pt[k][0] for k in pt if pt[k][1] > srr[k]) and pt[m[3]][2] > pt[m[4]][2]]
+ok(len(mp) == 1, f'D-BC03 {mp}'); pick('D-BC03', ', '.join(mp[0]))
+qi = {1: (120, 108), 2: (250, 250 - 50), 3: (84 * 100 // 24, 266), 4: (480, 336), 5: (800, 480)}
+su_ = {k: a - b for k, (a, b) in qi.items()}; sr_ = {k: F(su_[k], qi[k][0]) for k in qi}
+by_text('D-BC04', list(zip(['(가)와 (나)를', '소비지출이 처분가능소득의', '흑자액이 가장 많은', '다섯 분위를 합하여', '1분위의 흑자액은'],
+        [qi[2][1] + qi[3][0] >= 560, [k for k in qi if qi[k][1] * 10 < 7 * qi[k][0]] == [4, 5], max(su_, key=su_.get) == max(sr_, key=sr_.get), sum(su_.values()) * 100 >= 32 * sum(v[0] for v in qi.values()), su_[1] * 100 <= 3 * su_[5]])))
+mq, mpr, yq, ypr = [400, 380, 390, 420], [180, 190, 200, 200], [60, 66, 72, 75], [500, 520, 540, 560]
+mv = [a * b for a, b in zip(mq, mpr)]; yv = [a * b for a, b in zip(yq, ypr)]
+combo('D-BC05', [l for l, t in zip('ㄱㄴㄷㄹ', [all(mv[i] > mv[i - 1] for i in range(1, 4)), yv[3] * 10 >= 14 * yv[0], all(mv[i] < mv[i - 1] for i in range(1, 4) if mq[i] < mq[i - 1]), yv[3] * 5 >= 2 * (mv[3] + yv[3])]) if t])
+pick('L-BC01', '투표 행위 자체에서 얻는 이익을 고려하지 않으면, 유권자가 많은 선거에서 대부분의 사람은 투표하지 않는 것이 합리적이라는 결론이 나온다.')
+nr_ = lambda p_, b, c, d: p_ * b - c + d > 0
+combo('L-BC02', [l for l, t in zip('ㄱㄴㄷㄹ', [not nr_(F(1, 10000), 500000, 20000, 0), nr_(F(1, 10000), 500000, 20000, 25000) and not nr_(F(1, 10000), 500000, 20000, 0), nr_(F(1, 100), 500000, 10000, 10000), nr_(F(1, 100), 1000000, 20000, 10000)]) if t])
+combo('L-BC03', ['ㄱ', 'ㄷ']); combo('L-BC05', ['ㄱ', 'ㄷ'])
+lm = []
+for c in '갑을병정무':
+    tr = {'갑': c == '을', '을': c == '정', '병': c != '병', '무': c != '갑'}; tr['정'] = not tr['을']
+    if list(tr.values()).count(False) == 2: lm.append((c, [k for k, v in tr.items() if not v]))
+by_text('L-BC04', list(zip(['丁이 깨뜨렸다', '乙의 진술은 참', '戊는 깨뜨리지', '丁의 진술은 참', '甲의 진술은 거짓'], [all(c == '정' for c, L in lm), all('을' not in L for c, L in lm), all(c != '무' for c, L in lm), all('정' not in L for c, L in lm), all('갑' in L for c, L in lm)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
