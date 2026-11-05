@@ -1992,4 +1992,51 @@ for fo in itertools.permutations(['noodle', 'rice', 'salad']):
         pair = dict(zip(fo, dr))                      # food -> drink of the same person
         if (fo[1] == 'rice' or dr[1] == 'coffee') and pair['salad'] != 'coffee' and pair['noodle'] == 'tea': sols_.append((fo, dr, pair))
 by_text('L-AK04', list(zip(['甲은 차를', '샐러드를 먹은', '丙은 국수를', '乙은 차를', '덮밥을 먹은'], [all(dr[0] == 'tea' for fo, dr, pr in sols_), all(pr['salad'] == 'juice' for fo, dr, pr in sols_), all(fo[2] == 'noodle' for fo, dr, pr in sols_), all(dr[1] == 'tea' for fo, dr, pr in sols_), all(pr['rice'] == 'juice' for fo, dr, pr in sols_)])))
+# ================= S-AL / D-AL / L-AL (5급 실전, independent re-solve from the rendered options) =================
+def otpay(rate, weekdays, holidays, disaster):
+    wk = sum(min(h * 60 // 60, 4) for h in [int(x) for x in weekdays]); hol = sum(min(h, 8) for h in holidays)
+    if wk + hol > 40: wk = 40 - hol
+    return rate * wk + rate * hol * 3 // 2 + rate * sum(disaster)
+s_al01 = otpay(10000, [3.5] * 10, [], []) + otpay(12000, [5] * 12, [], []) + otpay(10000, [4] * 8, [10], []) + otpay(10000, [4] * 10, [], [12]) + otpay(12000, [4] * 7, [6, 6], [])
+pick('S-AL01', f'{s_al01:,}원')
+def res(sec, g):
+    st = sum(1 for i in range(3) if sec[i] == g[i]); return st, len(set(sec) & set(g)) - st
+cands_ = [c for c in itertools.permutations('123456789', 3) if res(c, '123') == (1, 0) and res(c, '456') == (0, 1) and res(c, '789') == (0, 1) and res(c, '147') == (1, 1)]
+combo('S-AL02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(c[0] == '1' for c in cands_), all('5' in c for c in cands_), len(cands_) == 2, len({res(c, '195') for c in cands_}) == len(cands_)]) if t])
+pick('S-AL03', '등록 의무를 처음 위반한 사람이 스스로 등록을 마쳤다면 과태료는 10만 원이다.')
+votes = [(a, b, 100 - a - b) for a in range(51) for b in range(a) if 20 <= 100 - a - b < b]
+combo('S-AL04', [l for l, t in zip('ㄱㄴㄷㄹ', [min(v[0] for v in votes) >= 35, max(v[1] for v in votes) == 40, max(v[2] for v in votes) == 32, min(v[0] - v[2] for v in votes) >= 4]) if t])
+crs = {'A': ('c', 2, 'w1', 35), 'B': ('c', 2, 'w2', 15), 'C': ('l', 4, 'w1', 35), 'D': ('l', 4, 'w1', 30), 'E': ('d', 4, 'w2', 15), 'F': ('l', 3, 'f1', 35), 'G': ('d', 2, 'm1', 25)}
+pk5 = []
+for mask in range(1, 128):
+    s = [k for i, k in enumerate('ABCDEFG') if mask >> i & 1]
+    if sum(crs[k][1] for k in s) >= 9 and {crs[k][0] for k in s} == {'c', 'l', 'd'} and len({crs[k][2] for k in s}) == len(s): pk5.append((sum(crs[k][3] for k in s), s))
+pk5.sort(); ok(pk5[0][0] < pk5[1][0], 'S-AL05 unique'); pick('S-AL05', ', '.join(pk5[0][1]))
+ct = {'고등어': (120, 100, 2500), '오징어': (60, 45, 8000), '멸치': (200, 210, 1500), '갈치': (50, 55, 9000), '꽃게': (20, 24, 16000)}
+vv = {k: b * p_ for k, (a, b, p_) in ct.items()}
+upk = [k for k, (a, b, p_) in ct.items() if b > a]
+s_ = [sum(b for a, b, p_ in ct.values()) < sum(a for a, b, p_ in ct.values()), min(ct, key=lambda k: F(ct[k][1], ct[k][0])) == '고등어', max(vv, key=vv.get) == '갈치', max(upk, key=lambda k: F(ct[k][1], ct[k][0])) == '꽃게', sum(vv.values()) >= 18000 * 100]
+only('D-AL01', [not x for x in s_], 'false statements')
+dm, fo = [120, 150, 180, 130], [30, 40, 50, 40]
+n_d = [2 * x for x in dm]; n_f = [F(7, 2) * x for x in fo]
+combo('D-AL02', [l for l, t in zip('ㄱㄴㄷㄹ', [any(f * 2 >= d for d, f in zip(n_d, n_f)), sum(fo) * 5 >= sum(dm) + sum(fo), sum(n_f) * 10 >= 3 * (sum(n_d) + sum(n_f)), (n_d[2] + n_f[2]) * 10 >= 16 * (n_d[0] + n_f[0])]) if t])
+tr_ = {'가': (25, 24, 22), '나': (50, 52, 55), '다': (20, 23, 26), '라': (40, 38, 41), '마': (30, 33, 31)}
+mt_ = [m for m in itertools.permutations(tr_) if tr_[m[0]][0] < tr_[m[0]][1] < tr_[m[0]][2] and tr_[m[0]][2] * tr_[m[0]][0] > tr_[m[0]][1] ** 2 and tr_[m[1]][1] < tr_[m[1]][0] and tr_[m[1]][2] > tr_[m[1]][1] and sum(tr_[m[2]]) > sum(tr_[m[3]]) and tr_[m[3]][2] > tr_[m[4]][2]]
+ok(len(mt_) == 1, f'D-AL03 {mt_}'); pick('D-AL03', ', '.join(mt_[0]))
+fn = {'A': (800, 100, 60), 'B': (600, 90, 57), 'C': (500, 40, 25), 'D': (1200, 90, 70)}
+by_text('D-AL04', list(zip(['영업이익이 가장 많은', '순이익률이 가장', '네 기업 전체의', '영업이익 대비', 'D의 매출액은'], [max(fn, key=lambda k: fn[k][1]) != max(fn, key=lambda k: fn[k][0]), max(fn, key=lambda k: F(fn[k][2], fn[k][0])) == 'A', sum(v[1] for v in fn.values()) * 100 >= 11 * sum(v[0] for v in fn.values()), min(fn, key=lambda k: F(fn[k][2], fn[k][1])) == 'C', fn['D'][0] > 2 * fn['B'][0]])))
+e20, e24, r20, r24 = [700, 750, 850, 1700], [650, 700, 820, 1900], [60, 65, 70, 78], [55, 62, 68, 80]
+v20 = [a * b for a, b in zip(e20, r20)]; v24 = [a * b for a, b in zip(e24, r24)]
+combo('D-AL05', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(v24) > sum(v20), F(sum(v24), sum(e24)) > F(sum(v20), sum(e20)), v24[3] * 2 >= sum(v24), (v20[0] - v24[0]) * 3 >= v24[3] - v20[3]]) if t])
+pick('L-AL01', '인구 편차 기준을 엄격하게 할수록 선거구가 행정구역의 경계를 가로지르는 일이 잦아진다.')
+def bad(ps):
+    avg_ = F(sum(ps.values()), len(ps)); return {k for k, v in ps.items() if v * 3 < avg_ * 2 or v * 3 > avg_ * 4}
+d0 = {'갑': 18, '을': 22, '병': 30, '정': 38, '무': 42}
+combo('L-AL02', [l for l, t in zip('ㄱㄴㄷㄹ', [bad(d0) == {'갑', '무'}, 42 >= 2 * 18, bad({'갑': 22, '을': 22, '병': 30, '정': 38, '무': 38}) == set(), bad({'갑을': 40, '병': 30, '정': 38, '무': 42}) == {'무'}]) if t])
+combo('L-AL03', ['ㄱ', 'ㄷ']); combo('L-AL05', ['ㄱ', 'ㄷ'])
+grid = []
+for both in range(0, 31):
+    e_only, z_only = 18 - both, 15 - both; none_ = 30 - e_only - z_only - both
+    if min(e_only, z_only, none_) >= 0 and none_ >= 5: grid.append((both, e_only, z_only, none_))
+by_text('L-AL04', list(zip(['영어와 중국어를 모두 할 수', '영어만 할 수 있는 직원은 10', '중국어만', '영어와 중국어를 모두 하지', '영어만 할 수 있는 직원의 수는'], [all(g[0] >= 8 for g in grid), all(g[1] >= 10 for g in grid), all(g[2] >= 5 for g in grid), any(g[3] > 12 for g in grid), all(g[1] <= 2 * g[2] for g in grid)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
