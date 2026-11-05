@@ -198,8 +198,8 @@
     return null;
   }
   const bankCopy = (q, subj) => JSON.parse(JSON.stringify({ ...q, subject: subj, src: q.src || 'bank' }));
-  function fromBank(subj, type) {
-    const pool = (P.bank[subj] || []).filter((q) => (!type || q.type === type) && !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id));
+  function fromBank(subj, type, p5) {
+    const pool = (P.bank[subj] || []).filter((q) => (!type || q.type === type) && (!p5 || q.p5) && !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id));
     if (!pool.length) return null;
     const q = bankCopy(pool[Math.floor(Math.random() * pool.length)], subj);
     if (q.set) { // 1지문 2문항: queue the sibling(s) to come right after
@@ -209,7 +209,7 @@
     }
     return q;
   }
-  const bankLeft = (subj, type) => (P.bank[subj] || []).filter((q) => (!type || q.type === type) && !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id)).length;
+  const bankLeft = (subj, type, p5) => (P.bank[subj] || []).filter((q) => (!type || q.type === type) && (!p5 || q.p5) && !(q.setNo > 1) && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id)).length;
   function nextQuestion(ctx) {
     const { subj, type } = ctx;
     if (ctx.mode === 'review') {
@@ -236,6 +236,7 @@
       const q = (P.bank[e.subj] || []).find((x) => x.id === e.id);
       if (q && e.subj === subj && !S.seen.has('id:' + q.id) && !isHidden('id:' + q.id)) return { q: bankCopy(q, subj) };
     }
+    if (ctx.p5) { const b = fromBank(subj, type, true); return b ? { q: b } : null; } // 5급 실전 정예만: 직접 출제 정예 문항에서만 낸다
     if (S.settings.mixReview && !type && ctx.mode !== 'set') {
       const due = dueItems(subj);
       if (due.length && Math.random() < 0.22) return { q: due[0].q, review: true };
@@ -345,6 +346,7 @@
     const tags = [`<span class="tag">${esc(SUBJ[q.subject].name)} · ${esc(typeShort(q.subject, q.type))}</span>`];
     if (o && o.review) tags.push('<span class="tag rev">복습</span>');
     if (q.exam) tags.push(`<span class="tag src">${esc(q.exam)}</span>`);
+    if (q.p5) tags.push('<span class="tag p5" title="5급 공채 PSAT 실전·심화 수준으로 직접 출제한 정예 문항">5급 실전</span>');
     if (q.lv) tags.push(`<span class="tag">난이도 ${P.LEVELS[q.lv]}</span>`);
     if (q.set && q.setOf) tags.push(`<span class="tag">1지문 ${q.setOf}문항 · ${q.setNo}/${q.setOf}</span>`);
     return `<div class="qhead">${tags.join('')}</div>
@@ -443,7 +445,7 @@
       return `<tr><td>${esc(typeShort(subj, t))}<div class="subj-meta">${gen ? '무제한 생성' : `직접 출제 · 남은 ${left}문항`}</div></td><td>${a.n}</td><td>${a.n ? pct(a.ok, a.n) + '%' : '–'}</td><td>${a.n ? human(a.ms / a.n) : '–'}</td><td><button class="btn sm" data-act="start" data-subj="${subj}" data-type="${esc(t)}" ${!gen && !left ? 'disabled' : ''}>풀기</button></td></tr>`;
     }).join('');
     paint(shell(`<b>${SUBJ[subj].name}</b> · 유형별`, `
-      <div class="page-h"><h1>${SUBJ[subj].name} 유형별 연습</h1><button class="btn primary sm" data-act="start" data-subj="${subj}">모든 유형 섞어 풀기</button></div>
+      <div class="page-h"><h1>${SUBJ[subj].name} 유형별 연습</h1><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="start" data-subj="${subj}" data-p5="1" ${bankLeft(subj, '', true) ? '' : 'disabled'} title="5급 공채 PSAT 실전·심화 수준으로 직접 출제한 정예 문항만 냅니다">5급 실전 정예만 · 남은 ${bankLeft(subj, '', true)}</button><button class="btn primary sm" data-act="start" data-subj="${subj}">모든 유형 섞어 풀기</button></span></div>
       <div class="card"><table class="st"><thead><tr><th>유형</th><th>풀이</th><th>정답률</th><th>평균 시간</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`), 'types');
   }
 
@@ -478,7 +480,7 @@
     const got = nextQuestion(ctx);
     if (!got) {
       if (ctx.mode === 'review') { toast('오늘 복습할 문제를 모두 풀었습니다.'); viewNotes(); }
-      else { toast('이 유형에서 더 낼 문제가 없습니다.'); viewTypes(ctx.subj); }
+      else { toast(ctx.p5 ? '5급 실전 정예 문항을 모두 풀었습니다. 새 문항이 계속 추가됩니다.' : '이 유형에서 더 낼 문제가 없습니다.'); viewTypes(ctx.subj); }
       return;
     }
     const d = S.daily[dayKey()];
@@ -493,7 +495,7 @@
     const c = S.cur, q = c.q;
     const inSet = c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done, later = inSet ? (S.set.later || []).length : 0;
     const canLater = inSet && (S.set.results.length + later + 1 < S.set.n || later > 0);
-    const crumb = inSet ? `<b>실전 세트</b> · ${SUBJ[q.subject].name} · 푼 문항 ${S.set.results.length}/${S.set.n}${later ? ` · 넘긴 문항 ${later}` : ''}${c.deferred ? ' · <b>넘겼던 문항</b>' : ''}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}`;
+    const crumb = inSet ? `<b>실전 세트</b> · ${SUBJ[q.subject].name} · 푼 문항 ${S.set.results.length}/${S.set.n}${later ? ` · 넘긴 문항 ${later}` : ''}${c.deferred ? ' · <b>넘겼던 문항</b>' : ''}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}${c.ctx && c.ctx.p5 ? ' · 5급 실전 정예' : ''}`;
     paint(shell(crumb, `
       <article class="sheet fade-in" aria-label="문제">${questionHTML(q, { choice: c.choice, no: c.no, review: c.review })}</article>
       <div class="actions">
@@ -1027,7 +1029,7 @@
         <h2>같은 유형 한 문제 더</h2>
         <p>해설 화면의 <b>같은 유형 한 문제 더</b>(<b>T</b>)를 누르면 방금 푼 문제와 같은 유형의 새 문제가 하나 나오고, 다 풀면 하던 곳(과목 풀이·오답노트·세트 결과)으로 돌아갑니다. 틀린 직후 같은 유형을 한 번 더 풀면 실수한 지점이 오래 남습니다.</p>
         <h2>난이도와 유형별 연습</h2>
-        <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
+        <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. 그 화면의 <b>5급 실전 정예만</b>을 누르면 5급 공채 PSAT 실전·심화 수준으로 직접 출제한 문항(문제 위에 ‘5급 실전’ 표시)만 차례로 풉니다. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
         <h2>실전 세트</h2>
         <p>처음 화면의 <b>실전 세트</b>에서 과목과 문항 수를 고르면 실제 시험 속도로 제한 시간이 정해지고, 해설 없이 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(<b>L</b>)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다. 끝난 세트는 <b>세트 기록</b>에 쌓여 과목별 점수의 흐름을 볼 수 있습니다.</p>
         <p>구성을 <b>약점 위주</b>로 고르면 기록 화면의 약점 분석과 같은 기준(3문항 이상 푼 유형 가운데 정답률 60% 미만이거나 과목 평균보다 10%p 이상 낮은 유형)으로 약한 유형의 문항을 먼저 넣습니다. 설정에서 <b>하루 목표</b>를 정하면 첫 화면에 남은 문항 수가 보입니다.</p>
@@ -1157,7 +1159,7 @@
       case 'settings': viewSettings(); break;
       case 'close': closeOverlay(); break;
       case 'types': e.stopPropagation(); viewTypes(el.dataset.subj); break;
-      case 'start': startSession({ subj: el.dataset.subj, type: el.dataset.type || '', mode: 'new' }); break;
+      case 'start': startSession({ subj: el.dataset.subj, type: el.dataset.type || '', mode: 'new', p5: el.dataset.p5 === '1' }); break;
       case 'resume': if (S.cur) (S.cur.phase === 'x' ? viewExplain() : viewQuiz()); break;
       case 'submit': submit(false); break;
       case 'skip': submit(true); break;

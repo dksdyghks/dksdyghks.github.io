@@ -132,6 +132,7 @@ main { max-width: calc(var(--wrap) + 48px); margin: 0 auto; padding: 8px var(--g
 .tag { font-size: .75rem; color: var(--muted); background: var(--chip); padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .tag.src { color: var(--gold-ink); background: var(--gold-wash); }
 .tag.rev { color: var(--pen); background: var(--pen-wash); }
+.tag.p5 { color: var(--gold-ink); background: var(--gold-wash); font-weight: 700; }
 .stem { display: flex; gap: 8px; margin: 0 0 18px; font-weight: 600; font-size: 1.0625em; line-height: 1.6; letter-spacing: -0.02em; }
 .stem .no { flex: none; font-variant-numeric: tabular-nums; }
 .body > * + * { margin-top: 14px; }

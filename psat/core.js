@@ -431,6 +431,7 @@
     const list = (P.bank[subject] = P.bank[subject] || []);
     for (const q of items) {
       q.subject = subject; q.src = q.exam ? 'exam' : 'bank';
+      q.p5 = /^[SDL]-(Z|[A-Z]{2})\d+$/.test(q.id); // 5급 실전(심화) 정예 묶음(Z, AA, AB, …): 두 글자 묶음 기호가 그 표시
       if (!P.check(q)) { if (P.debug) throw new Error('bank item failed check: ' + q.id); continue; }
       if (list.some((x) => x.id === q.id)) { if (P.debug) throw new Error('duplicate bank id: ' + q.id); continue; }
       list.push(q);
