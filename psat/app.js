@@ -132,6 +132,7 @@
       const kv = await DB.kvAll();
       S.settings = { ...DEFAULTS, ...(kv.settings || {}) };
       S.agg = kv.agg || S.agg; S.daily = kv.daily || {}; S.queue = kv.queue || []; S.meta = kv.meta || {}; S.lv = kv.lv || {};
+      if (!S.agg.p5) { S.agg.p5 = {}; for (const e of (await DB.all('log')) || []) if (isP5(e.qid)) bump(S.agg.p5, e.subj, e.ok, e.ms); } // 이 기록이 생기기 전의 풀이도 반영
       for (const it of (await DB.all('items')) || []) S.items.set(it.qid, it);
       for (const k of (await DB.keys('seen')) || []) S.seen.add(k);
       S.persistent = true;
@@ -147,8 +148,10 @@
 
   /* ---------------- statistics ---------------- */
   const bump = (map, k, ok, ms) => { const a = map[k] || (map[k] = { n: 0, ok: 0, ms: 0 }); a.n++; a.ok += ok ? 1 : 0; a.ms += ms; };
+  const isP5 = (id) => /^[SDL]-(Z|[A-Z]{2})\d+$/.test(id || ''); // 5급 실전(심화) 정예 문항(core.js의 q.p5와 같은 기준)
   function addToStats(e) {
     bump(S.agg.subj, e.subj, e.ok, e.ms);
+    if (isP5(e.qid)) bump(S.agg.p5 || (S.agg.p5 = {}), e.subj, e.ok, e.ms);
     bump(S.agg.type, e.subj + '|' + e.type, e.ok, e.ms);
     const d = dayKey(e.at); const day = S.daily[d] || (S.daily[d] = { n: 0, ok: 0, ms: 0, s: {} });
     day.n++; day.ok += e.ok ? 1 : 0; day.ms += e.ms;
@@ -983,6 +986,7 @@
       ${weakCard}
       <div class="card"><h2>최근 30일</h2><div class="bars" aria-label="최근 30일 하루 풀이 수">${bars}</div><div class="bars-x"><span>${md(days[0])}</span><span>오늘</span></div></div>
       <div class="card"><h2>과목별</h2><table class="st"><thead><tr><th>과목</th><th>풀이</th><th>정답률</th><th>평균 시간</th><th>권장</th></tr></thead><tbody>${subjRows}</tbody></table></div>
+      ${(() => { const p5 = S.agg.p5 || {}; const rows = ORDER.map((k) => { const a = p5[k] || { n: 0, ok: 0, ms: 0 }, all = S.agg.subj[k] || { n: 0, ok: 0 }, left = bankLeft(k, '', true); return `<tr><td>${SUBJ[k].name}</td><td>${a.n.toLocaleString()}</td><td>${a.n ? pct(a.ok, a.n) + '%' : '–'}${a.n >= 5 && all.n ? ` <small style="color:var(--muted)">(전체 ${pct(all.ok, all.n)}%)</small>` : ''}</td><td>${a.n ? human(a.ms / a.n) : '–'}</td><td>${left}</td></tr>`; }).join(''); return `<div class="card"><h2>5급 실전 정예</h2><p class="prose" style="margin:0 0 10px">5급 공채 PSAT 실전·심화 수준으로 직접 출제한 문항(‘5급 실전’ 표시)만 따로 모은 결과입니다. 실제 시험에 가장 가까운 지표로 보세요.</p><table class="st"><thead><tr><th>과목</th><th>풀이</th><th>정답률</th><th>평균 시간</th><th>남은 문항</th></tr></thead><tbody>${rows}</tbody></table></div>`; })()}
       <div class="card"><h2>과목별 유형 · 정답률 낮은 순</h2>${typeRows ? `<table class="st"><thead><tr><th>유형</th><th>풀이</th><th>정답률</th><th>평균</th><th></th></tr></thead><tbody>${typeRows}</tbody></table>` : '<p class="subj-meta" style="margin:0">유형마다 3문항 이상 풀면 약한 유형이 여기에 나타납니다.</p>'}</div>
       ${(() => { const cs = {}; let tot = 0; for (const it of S.items.values()) if (it.cause && SUBJ[it.subj]) { cs[it.cause] = (cs[it.cause] || 0) + 1; tot++; } return tot ? `<div class="card"><h2>틀린 이유</h2><table class="st"><tbody>${Object.entries(cs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v}문항</td><td>${pct(v, tot)}%</td></tr>`).join('')}</tbody></table><p class="subj-meta" style="margin:8px 0 0">해설 화면에서 고른 ‘틀린 이유’를 모은 것입니다. 가장 많은 이유부터 습관을 고치면 점수가 빨리 오릅니다.</p></div>` : ''; })()}
       ${flags.length ? `<div class="card"><h2>이상한 점을 알린 문제 ${flags.length}개</h2><p class="subj-meta" style="margin:0 0 10px">아래 버튼으로 내용을 복사해 전달하면 확인 후 고칩니다.</p><button class="btn sm" data-act="copy-flags">내용 복사</button><ul class="prose" style="margin-top:12px">${flags.map((it) => `<li>${esc(it.qid)} — ${esc(plain(it.flag).slice(0, 120))}</li>`).join('')}</ul></div>` : ''}`), 'stats');
@@ -1035,7 +1039,7 @@
         <h2>같은 유형 한 문제 더</h2>
         <p>해설 화면의 <b>같은 유형 한 문제 더</b>(<b>T</b>)를 누르면 방금 푼 문제와 같은 유형의 새 문제가 하나 나오고, 다 풀면 하던 곳(과목 풀이·오답노트·세트 결과)으로 돌아갑니다. 틀린 직후 같은 유형을 한 번 더 풀면 실수한 지점이 오래 남습니다.</p>
         <h2>난이도와 유형별 연습</h2>
-        <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. 그 화면의 <b>5급 실전 정예만</b>을 누르면 5급 공채 PSAT 실전·심화 수준으로 직접 출제한 문항(문제 위에 ‘5급 실전’ 표시)만 차례로 풉니다. <b>기록</b> 화면에는 정답률이 낮은 유형이 위에 나오고, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
+        <p>설정의 <b>난이도</b>를 ‘자동’으로 두면 유형마다 최근 결과를 보고 기본 → 실전 → 심화로 조절합니다. 특정 유형만 연습하려면 과목 카드의 <b>유형별</b>을 누르세요. 그 화면의 <b>5급 실전 정예만</b>을 누르면 5급 공채 PSAT 실전·심화 수준으로 직접 출제한 문항(문제 위에 ‘5급 실전’ 표시)만 차례로 풉니다. <b>기록</b> 화면에는 5급 실전 정예 문항만 따로 모은 정답률도 나오고, 정답률이 낮은 유형이 위에 나오며, ‘집중’ 버튼으로 바로 연습할 수 있습니다.</p>
         <h2>실전 세트</h2>
         <p>처음 화면의 <b>실전 세트</b>에서 과목과 문항 수를 고르면 실제 시험 속도로 제한 시간이 정해지고, 해설 없이 이어서 풉니다. 막히는 문항은 <b>넘기기</b>(<b>L</b>)로 미뤄 두면 남은 문항을 다 푼 뒤에 다시 나옵니다. 끝난 세트는 <b>세트 기록</b>에 쌓여 과목별 점수의 흐름을 볼 수 있습니다.</p>
         <p>구성을 <b>약점 위주</b>로 고르면 기록 화면의 약점 분석과 같은 기준(3문항 이상 푼 유형 가운데 정답률 60% 미만이거나 과목 평균보다 10%p 이상 낮은 유형)으로 약한 유형의 문항을 먼저 넣습니다. 설정에서 <b>하루 목표</b>를 정하면 첫 화면에 남은 문항 수가 보입니다.</p>
@@ -1072,7 +1076,7 @@
       const have = new Set(cur.map(keyOf));
       const add = data.log.filter((e) => e && e.qid && e.at && !have.has(keyOf(e)));
       const merged = cur.concat(add).sort((a, b) => a.at - b.at);
-      S.agg = { subj: {}, type: {} }; S.daily = {};
+      S.agg = { subj: {}, type: {}, p5: {} }; S.daily = {};
       for (const e of merged) addToStats(e);
       for (const h of data.seen || []) S.seen.add(h);
       if (data.meta && Array.isArray(data.meta.mocks)) { const have = new Set((S.meta.mocks || []).map((x) => x.at)); S.meta.mocks = (S.meta.mocks || []).concat(data.meta.mocks.filter((x) => x && x.at && !have.has(x.at))).sort((a, b) => a.at - b.at).slice(-200); saveKV('meta'); }
@@ -1101,7 +1105,7 @@
     if (!confirm('모든 풀이 기록과 오답노트를 지웁니다. 되돌릴 수 없습니다. 계속할까요?')) return;
     if (!confirm('정말 지울까요? 백업 파일이 없다면 복구할 수 없습니다.')) return;
     if (S.persistent) await persist(async () => { for (const st of ['kv', 'items', 'log', 'seen']) await DB.clear(st); });
-    S.agg = { subj: {}, type: {} }; S.daily = {}; S.items.clear(); S.seen.clear(); S.queue = []; S.cur = null; S.meta = { createdAt: Date.now() };
+    S.agg = { subj: {}, type: {}, p5: {} }; S.daily = {}; S.items.clear(); S.seen.clear(); S.queue = []; S.cur = null; S.meta = { createdAt: Date.now() };
     saveCur(); saveKV('meta'); saveSettings();
     toast('기록을 모두 지웠습니다.'); viewHome();
   }
