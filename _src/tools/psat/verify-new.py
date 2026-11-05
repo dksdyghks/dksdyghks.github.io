@@ -2689,4 +2689,48 @@ combo('L-AV03', ['ㄱ', 'ㄴ', 'ㄷ']); combo('L-AV05', ['ㄱ', 'ㄴ'])
 gifts = [dict(zip('ABCDE', pm)) for pm in itertools.permutations('ABCDE') if all(x != y for x, y in zip('ABCDE', pm))]
 gifts = [g for g in gifts if g['A'] != 'B' and g['B'] == 'C' and g['D'] != 'B' and all(g[g[x]] != x for x in 'ABCDE')]
 by_text('L-AV04', list(zip(['A는 D에게', 'C는 A에게', 'D는 E에게', 'C는 E에게', 'E는 B에게'], [all(g['A'] == 'D' for g in gifts), all(g['C'] == 'A' for g in gifts), all(g['D'] == 'E' for g in gifts), all(g['C'] == 'E' for g in gifts), all(g['E'] == 'B' for g in gifts)])))
+# ================= S-AW / D-AW / L-AW (5급 실전, independent re-solve from the rendered options) =================
+def chik(ha10, inc, age, edu, yrs):   # ha10 = 면적 × 10
+    if inc >= 3700: return F(0)
+    if ha10 <= 5 and yrs >= 3: base = F(130)
+    else:
+        h = F(ha10, 10); base = 200 * min(h, 2) + 150 * min(max(h - 2, 0), 4) + 100 * max(h - 6, 0)
+    if not edu and age < 70: base = base - base / 10
+    return base
+s_aw = chik(15, 2000, 45, 1, 10) + chik(40, 1500, 72, 0, 20) + chik(80, 1000, 50, 0, 15) + chik(4, 500, 66, 1, 5) + chik(30, 4000, 58, 1, 12)
+pick('S-AW01', f'{int(s_aw):,}만 원')
+grid_ok = lambda c: c[0] != c[1] and c[1] != c[2] and c[3] != c[4] and c[4] != c[5] and all(c[i] != c[i + 3] for i in range(3))
+cg = [c for c in itertools.product(range(3), repeat=6) if grid_ok(c)]
+combo('S-AW02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(cg) == 54, sum(1 for c in cg if len(set(c)) == 2) == 6, sum(1 for c in cg if c[1] == 0 and c[4] == 1) == 4, sum(1 for c in cg if sorted(c) == [0, 0, 1, 1, 2, 2]) == 12]) if t])
+pick('S-AW03', '대학원에 재학 중인 학생은 신고하지 아니하고 학습자의 집에서 개인 과외 교습을 할 수 있다.')
+fa, sl = F(64, 60), F(54, 60)          # 실제 1분당 시계가 가는 분
+real_when = lambda r, shown: (shown - 540) / r
+combo('S-AW04', [l for l, t in zip('ㄱㄴㄷㄹ', [540 + fa * 180 == 732, 540 + sl * real_when(fa, 720) < 690, (fa - sl) * 360 == 60, real_when(sl, 720) < real_when(fa, 720)]) if t])
+gd = {'A': (35, 30, 90), 'B': (30, 30, 70), 'C': (35, 15, 50), 'D': (20, 10, 80), 'E': (30, 20, 20), 'F': (35, 25, 40)}
+best_g = max(sum(gd[x][2] for x in s) for k in range(7) for s in itertools.combinations('ABCDEF', k) if sum(gd[x][0] for x in s) <= 100 and sum(gd[x][1] for x in s) <= 80 and ('C' not in s or 'E' in s) and not ('A' in s and 'D' in s))
+pick('S-AW05', f'{best_g}만 원')
+gy = {'A': (50, 400, 240, 264), 'B': (30, 300, 180, 207), 'C': (40, 280, 200, 210), 'D': (20, 220, 90, 108), 'E': (25, 150, 100, 104)}
+u0, u1 = sum(v[2] for v in gy.values()), sum(v[3] for v in gy.values())
+s_ = [u1 * 10 >= 11 * u0, max(gy, key=lambda k: F(gy[k][1], gy[k][0])) == 'D', max(gy, key=lambda k: F(gy[k][3], gy[k][1])) == 'C', max(gy, key=lambda k: F(gy[k][3], gy[k][2])) == 'B', sorted(k for k, v in gy.items() if F(v[3], v[2]) < F(u1, u0)) == ['A', 'C', 'E']]
+only('D-AW01', [not x for x in s_], 'false statements')
+fe, sh_ = [60, 70, 80, 75, 50], [15, 18, 22, 20, 25]
+pr_ = [a * b for a, b in zip(fe, sh_)]
+combo('D-AW02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(pr_) >= 6500, pr_.index(max(pr_)) == 2, pr_[4] > pr_[0], 2 * (pr_[2] + pr_[3]) >= sum(pr_)]) if t])
+bz = {'가': (800, 900, 2000), '나': (1200, 1150, 2600), '다': (500, 650, 900), '라': (300, 330, 1200), '마': (1000, 1000, 1800)}
+mb = [m for m in itertools.permutations(bz) if bz[m[0]][1] == max(v[1] for v in bz.values()) and F(bz[m[1]][2], bz[m[1]][1]) == max(F(v[2], v[1]) for v in bz.values()) and F(bz[m[2]][1], bz[m[2]][0]) == max(F(v[1], v[0]) for v in bz.values()) and bz[m[4]][2] > bz[m[3]][2]]
+ok(len(mb) == 1, f'D-AW03 {mb}'); pick('D-AW03', ', '.join(mb[0]))
+ev_ = {'A': (20000, 18000, 18000 * 15), 'B': (15000, 210000 // 14, 210000), 'C': (12000, 9600, 144000), 'D': (10000, 8000, 128000)}   # 금액 단위: 만 원
+by_text('D-AW04', list(zip(['지급률이 가장 높은', '네 지역의 지급액 합계', '가구당 지급액이 가장 적은', 'A의 지급률은', 'D의 지급액은'], [max(ev_, key=lambda k: F(ev_[k][1], ev_[k][0])) == 'B', sum(v[2] for v in ev_.values()) >= 800000, min(ev_, key=lambda k: F(ev_[k][2], ev_[k][1])) == 'C', ev_['A'][1] * 100 >= 95 * ev_['A'][0], ev_['D'][2] * 10 >= 9 * ev_['C'][2]])))
+dd, pp = [250, 180, 300, 150, 220], [500, 300, 200, 400, 100]
+nd = [a * b for a, b in zip(dd, pp)]
+combo('D-AW05', [l for l, t in zip('ㄱㄴㄷㄹ', [nd.index(max(nd)) == 0, nd[2] == nd[3], sum(nd) >= 220 * sum(pp), nd[1] * 2 >= 5 * nd[4]]) if t])
+pick('L-AW01', '가격 차별이 이루어지면 하나의 가격만 받을 때보다 거래되는 양이 늘어날 수 있다.')
+def take(p_gen, p_stu): return (200 * p_gen if p_gen <= 12000 else 0) + (100 * p_stu if p_stu <= 7000 else 0)
+combo('L-AW02', [l for l, t in zip('ㄱㄴㄷㄹ', [take(7000, 7000) > take(12000, 12000), take(12000, 7000) - take(12000, 12000) == 700000, take(12000, 12000) == 2400000 and take(12000, 7000) - 200 * 12000 == 100 * 7000, take(7000, 7000) == take(12000, 7000)]) if t])
+combo('L-AW03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AW05', ['ㄱ'])
+ex_ = []
+for pick_ in itertools.product([frozenset(c) for k in (1, 2, 3) for c in itertools.combinations(['국', '수', '영'], k)], repeat=4):
+    a_, b_, c_, d_ = pick_
+    if len(a_) == 3 and '영' in d_ and not (b_ & c_) and sum(1 for x in pick_ if '국' in x) == 3 and sum(len(x) for x in pick_) == 7: ex_.append(pick_)
+by_text('L-AW04', list(zip(['B는 국어', 'C는 수학', 'D는 수학', '수학에 응시한 사람은', 'B와 C 가운데'], [all('국' in x[1] for x in ex_), all('수' in x[2] for x in ex_), all('수' not in x[3] for x in ex_), all(sum(1 for y in x if '수' in y) == 2 for x in ex_), all('영' in x[1] or '영' in x[2] for x in ex_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
