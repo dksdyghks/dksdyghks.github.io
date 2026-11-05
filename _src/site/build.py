@@ -141,7 +141,7 @@ TALKS = [  # newest first: (y,m,d, ko role, en role, ko title, ko venue, en titl
     (2025, 4, 19, '발표', 'Presenter', '위헌법률심판의 적법요건 판단에 관한 일고찰', '한국헌법판례연구학회 제149회 월례발표회',
      'Gatekeeping Constitutional Review: Admissibility in the Review of Statutes', '149th Monthly Meeting, Korean Society of Constitutional Case Law'),
     (2024, 8, 30, '발표', 'Presenter', '선거범죄로 인한 당선무효의 존립방안', '제6회 한국헌법학자대회(한국헌법학회 et al.)',
-     'The Future of Election Invalidation for Electoral Crimes',
+     'The Future of Invalidating Elected Candidates’ Seats for Electoral Crimes',
      '6th Conference of Korean Constitutional Scholars (Korean Constitutional Law Association et al.)'),
     (2023, 6, 16, '토론', 'Discussant', '중대재해처벌법의 적용에서 항공분야의 특수성과 관련 법적 쟁점', '한국항공우주정책·법학회 제70회 학술대회',
      'Aviation Under the Serious Accidents Punishment Act',
@@ -625,7 +625,7 @@ print('built', len(artifact), len(page))
 sdst = Path('/home/user/dksdyghks.github.io/_src/site')
 sdst.mkdir(parents=True, exist_ok=True)
 for name in ('build.py', 'taegukgi.py', 'topicmap.py', 'serif_subset.py', 'home_fonts.py', 'style.css', 'script.js',
-             'doors.css', 'doors.js', 'photo.b64'):
+             'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py'):
     shutil.copy2(Path('/home/user/yohan-ahn') / name, sdst / name)
 for app in ('psat', 'yoai'):
     if (sdst / app).exists():
