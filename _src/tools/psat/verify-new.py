@@ -3496,4 +3496,49 @@ for su in itertools.permutations(['국어', '영어', '수학']):
         if by_['부산'] == '수학' and by_['대구'] == '국어' and S_['병'] != '영어' and C_['을'] != '서울': gm_.append((S_, C_, by_))
 by_text('L-BJ04', list(zip(['갑은 서울에', '을은 국어를', '병은 부산에', '대구에 사는 사람은', '병은 수학을'],
         [all(C['갑'] == '서울' and S['갑'] == '영어' for S, C, b in gm_), all(S['을'] == '국어' for S, C, b in gm_), all(C['병'] == '부산' for S, C, b in gm_), all(b['대구'] == '수학' for S, C, b in gm_), all(S['병'] == '수학' for S, C, b in gm_)])))
+# ================= S-BK / D-BK / L-BK (5급 실전, independent re-solve from the rendered options) =================
+def bn_(pay, rate_pct, months, punished):
+    if months < 6: return F(0)
+    v = F(pay * rate_pct, 100) * F(months, 12)
+    return min(v / 2 if punished else v, 600)
+pick('S-BK01', f'{int((bn_(400, 200, 12, 0) + bn_(300, 150, 8, 0) + bn_(250, 100, 3, 0) + bn_(350, 150, 12, 1)) * 10000):,}원')
+dd_ = list(itertools.product(range(1, 7), repeat=2)); isp_ = lambda n: n in (2, 3, 5, 7, 11)
+sm_ = [sum(a + b == s for a, b in dd_) for s in range(2, 13)]
+combo('S-BK02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(a * b % 2 == 0 for a, b in dd_) == 27, sm_.index(max(sm_)) + 2 == 7 and sm_.count(max(sm_)) == 1, sum(abs(a - b) == 1 for a, b in dd_) == 10, sum(isp_(a + b) for a, b in dd_) == 16]) if t])
+def rf_(done, book):
+    f = 24 if done == 0 else 16 if done * 3 < 12 else 12 if done * 2 < 12 else 0
+    return f + (0 if book else 3)
+by_text('S-BK03', list(zip(['교재를 받은 수강생이 4회', '교재를 받은 수강생이 6회', '교재를 받은 수강생이 3회', '첫 수업 전에', '교재를 받지 않은'], [rf_(4, 1) == 16, rf_(6, 1) == 12, rf_(3, 1) == 16, rf_(0, 1) == 27, rf_(1, 0) == 16])))
+up_, dn_ = F(6, 3), F(6, 6)
+combo('S-BK04', [l for l, t in zip('ㄱㄴㄷㄹ', [up_ == 2, F(12) / (up_ + dn_) == 4, up_ + dn_ + F(1, 2) == 4, F(12) / (F(6, 4) + dn_) == F(48, 10)]) if t])
+md_ = {'A': (6, 85), 'B': (1, 55), 'C': (1, 50), 'D': (6, 55), 'E': (1, 75), 'F': (2, 35)}
+bk5_ = max(sum(md_[x][1] for x in s) for k in range(1, 4) for s in itertools.combinations(md_, k)
+           if sum(md_[x][0] for x in s) <= 10 and not ('A' in s and 'B' in s) and ('C' not in s or 'D' in s))
+pick('S-BK05', f'{bk5_}만 명')
+yv_ = [(9600, 48), (13000, 52), (17500, 63), (18000, 60)]; cv_ = {'중국': (9000, 20), '미국': (4500, 24), '일본': (2000, 6), '유럽': (1500, F(13, 2)), '기타': (1000, F(7, 2))}
+yp_ = [F(a, n) for n, a in yv_]; cp_ = {k: F(a, n) for k, (n, a) in cv_.items()}
+only('D-BK01', [not x for x in [all(yv_[i][0] > yv_[i - 1][0] for i in (1, 2, 3)), all(yp_[i] < yp_[i - 1] for i in (1, 2, 3)), yv_[3][1] < yv_[2][1], min(cp_, key=cp_.get) == '중국' == max(cv_, key=lambda k: cv_[k][0]), cv_['미국'][1] * 2 >= 3 * cv_['중국'][1]]], 'false statements')
+ap_ = {'가': (6000, 300, 40), '나': (2500, 50, 25), '다': (3000, 30, 15), '라': (1200, 30, 16), '마': (2000, 200, 10)}
+ma_ = [m for m in itertools.permutations(ap_) if ap_[m[0]][0] == max(v[0] for v in ap_.values()) and F(ap_[m[1]][0], ap_[m[1]][2]) == min(F(v[0], v[2]) for v in ap_.values())
+       and F(ap_[m[2]][1], ap_[m[2]][0]) == max(F(v[1], v[0]) for v in ap_.values()) and ap_[m[3]][1] > ap_[m[4]][1]]
+ok(len(ma_) == 1, f'D-BK02 {ma_}'); pick('D-BK02', ', '.join(ma_[0]))
+B_rate = F(600, 300); C_sale = F(640, F(8, 10)); D_fee = 200 * F(22, 10); E_fee = 1000 * F(1, 2)
+sh_ = {'A': (500, F(3, 2), 2500), 'B': (300, B_rate, 2000), 'C': (C_sale, F(8, 10), 5000), 'D': (200, F(22, 10), 1100), 'E': (1000, F(1, 2), 4000)}
+fe_ = {k: a * r for k, (a, r, n) in sh_.items()}; pt_ = {k: F(a, n) for k, (a, r, n) in sh_.items()}
+by_text('D-BK03', list(zip(['수수료가 가장 많은', '(다)와 (라)를', '결제 1건당', '다섯 가맹점을', '수수료율이 2% 이상'],
+        [max(fe_, key=fe_.get) == max(sh_, key=lambda k: sh_[k][0]), D_fee + E_fee >= 1000, max(pt_, key=pt_.get) == min(sh_, key=lambda k: sh_[k][1]), sum(fe_.values()) * 10 >= 11 * sum(v[0] for v in sh_.values()), [k for k in sh_ if sh_[k][1] >= 2] == ['D']])))
+ra_ = {'A': [120, 300, 260, 100], 'B': [80, 220, 340, 180]}; no_ = {'A': [150, 280, 250, 150], 'B': [100, 250, 300, 150]}
+rt_ = {(r, i): F(ra_[r][i], no_[r][i]) for r in ra_ for i in range(4)}
+combo('D-BK04', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(ra_['A']) < sum(no_['A']), sum(ra_['B'][i] > no_['B'][i] for i in range(4)) == 2, min(rt_, key=rt_.get) == ('A', 3), ra_['A'][1] > ra_['B'][1] and rt_[('B', 1)] > rt_[('A', 1)]]) if t])
+in_ = {'제조': (300, 400), '서비스': (600, 280), '건설': (100, 350), '정보통신': (80, 500), '기타': (120, 250)}
+to_ = {k: a * b for k, (a, b) in in_.items()}; av_ = F(sum(to_.values()), sum(a for a, b in in_.values()))
+combo('D-BK05', [l for l, t in zip('ㄱㄴㄷㄹ', [av_ >= 300, max(to_, key=to_.get) == '서비스', sum(a for k, (a, b) in in_.items() if b > av_) * 10 >= 4 * sum(a for a, b in in_.values()), to_['정보통신'] < to_['건설']]) if t])
+pick('L-BK01', '72의 법칙에 따르면 연 이율 8%의 복리로 맡긴 돈은 약 18년 뒤 처음의 네 배쯤이 된다.')
+r72_ = lambda r, y: 2 ** (y * r / 72)
+need_rate_ = lambda years, inflation: 72 / years + inflation     # 실질 이율(72 ÷ 햇수)에 물가 상승률을 더함
+combo('L-BK02', [l for l, t in zip('ㄱㄴㄷㄹ', [abs(1000 * r72_(6, 24) - 4000) < 1, 1000 * (1 + 0.06 * 24) > 1000 * r72_(6, 24) / 2, abs(r72_(6 - 2, 24) - 4) < 0.1, need_rate_(12, 2) == 8]) if t])
+combo('L-BK03', ['ㄱ', 'ㄴ']); combo('L-BK05', ['ㄱ', 'ㄷ'])
+at_ = [dict(zip('갑을병정무', b)) for b in itertools.product((0, 1), repeat=5)]
+at_ = [s for s in at_ if (not s['갑'] or s['을']) and not (s['을'] and s['병']) and (s['병'] or s['정']) and sum(s.values()) >= 3]
+by_text('L-BK04', list(zip(['갑은 참석', '무는 참석', '정은 참석', '을은 참석', '병은 참석하지'], [all(s['갑'] for s in at_), all(s['무'] for s in at_), all(s['정'] for s in at_), all(s['을'] for s in at_), all(not s['병'] for s in at_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')

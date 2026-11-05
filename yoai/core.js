@@ -1,9 +1,9 @@
 /* YO아이 — 바탕: 저장소, 문헌(PDF·한글·텍스트)의 쪽 글자, 찾기, 연결된 폴더, 스캔본 글자 읽기, 각주, 백업.
    서버도 로그인도 없다. 모든 기록은 이 브라우저의 저장소(IndexedDB)에 있고, 사용자가 고른 폴더에만 백업을 쓴다.
    바깥에서 들어오는 정보는 없다: 문헌은 사용자가 넣은 파일뿐이고, 법령·판례 링크는 누를 때만 새 창으로 연다. */
-import { readHangul } from './hwp.js?v=c0a897ced8';
-import { extractFacts, fixGlyphs } from './lawtext.js?v=c0a897ced8';
-import { writeZip, readZip } from './zip.js?v=c0a897ced8';
+import { readHangul } from './hwp.js?v=7b2d8e67ea';
+import { extractFacts, fixGlyphs } from './lawtext.js?v=7b2d8e67ea';
+import { writeZip, readZip } from './zip.js?v=7b2d8e67ea';
 
 export const $ = (s, el = document) => el.querySelector(s);
 export const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -52,7 +52,7 @@ export function toast(m) { let t = $('.toast'); if (!t) { t = document.createEle
 /* ---------------- 문헌: 쪽마다의 글자를 통째로 보관 ---------------- */
 const PDFJS_VENDOR = new URL('./vendor/pdfjs-4.10.38/', import.meta.url).href;
 let pdfjsP = null;
-export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=c0a897ced8').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=c0a897ced8', import.meta.url).href; return m; }); return pdfjsP; };
+export const pdfjsLib = () => { if (!pdfjsP) pdfjsP = import('./pdf.js?v=7b2d8e67ea').then((m) => { m.GlobalWorkerOptions.workerSrc = new URL('./pdf.worker.js?v=7b2d8e67ea', import.meta.url).href; return m; }); return pdfjsP; };
 // Korean journal PDFs often use CID fonts (Adobe-Korea1) whose letters cannot be read without these maps
 export const pdfOpen = async (bytes) => (await pdfjsLib()).getDocument({ data: new Uint8Array(bytes.slice(0)), cMapUrl: PDFJS_VENDOR + 'cmaps/', cMapPacked: true, standardFontDataUrl: PDFJS_VENDOR + 'standard_fonts/' }).promise;
 export const TEXT_V = 3; // bump when the way page text is read changes, so every document is read again once
@@ -362,7 +362,7 @@ export function citer() {
   };
 }
 export const pageLabel = (doc, p) => where(doc, p).ui;
-export { guessMeta } from './lawtext.js?v=c0a897ced8';
+export { guessMeta } from './lawtext.js?v=7b2d8e67ea';
 
 /* ---------------- 창, 파일 ---------------- */
 export function modal(html, onClose) {
