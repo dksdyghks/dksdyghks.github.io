@@ -1937,4 +1937,59 @@ combo('L-AJ02', [l for l, t in zip('ㄱㄴㄷㄹ', [use(2) == 80 and 120 - (2 * 
 combo('L-AJ03', ['ㄱ', 'ㄴ']); combo('L-AJ05', ['ㄷ'])
 ords = [o for o in itertools.permutations('甲乙丙丁戊己') if o.index('甲') < o.index('乙') and o.index('丙') in (2, 3) and abs(o.index('丁') - o.index('戊')) != 1 and o.index('乙') == o.index('丙') + 1 and o.index('戊') < o.index('甲')]
 by_text('L-AJ04', list(zip(['甲은 두 번째', '丁은 마지막', '己는 丙보다', '乙은 네 번째', '丁과 己는'], [all(o.index('甲') == 1 for o in ords), all(o.index('丁') == 5 for o in ords), all(o.index('己') > o.index('丙') for o in ords), all(o.index('乙') in (3, 4) for o in ords), all(abs(o.index('丁') - o.index('己')) == 1 for o in ords)])))
+# ================= S-AK / D-AK / L-AK (5급 실전, independent re-solve from the rendered options) =================
+def fire(level, loss, insurance, needy, fault):
+    if fault == 'own': return 0
+    amt = (loss - insurance) * {'full': F(7, 10), 'half': F(1, 2), 'part': F(3, 10)}[level]
+    return min(amt, 2000 if needy else 1500)
+s_ak01 = fire('full', 2500, 0, 0, None) + fire('half', 3000, 1000, 0, None) + fire('full', 3000, 500, 1, None) + fire('part', 1200, 0, 0, 'landlord') + fire('half', 2400, 0, 0, 'own')
+pick('S-AK01', f'{int(s_ak01):,}만 원')
+up_ = {'r': 3, 's': 2, 'p': 5}; win_ = {('r', 's'), ('s', 'p'), ('p', 'r')}
+fin_ = []
+for g in itertools.product(itertools.product('rsp', repeat=2), repeat=3):
+    x = y = w = 0
+    for a, b in g:
+        if (a, b) in win_: x += up_[a]; y = max(0, y - 1); w += 1
+        elif (b, a) in win_: y += up_[b]; x = max(0, x - 1)
+    fin_.append((x, y, w))
+combo('S-AK02', [l for l, t in zip('ㄱㄴㄷㄹ', [max(x - y for x, y, w in fin_) == 15, any(x == 14 for x, y, w in fin_), any(w == 2 and x < y for x, y, w in fin_), all(x == 0 for x, y, w in fin_ if x == y)]) if t])
+pick('S-AK03', '지방자치단체가 공익을 위하여 건물 옥상에 표시하려는 광고물은 시장의 허가를 받아야 한다.')
+def solvable(cands, w):          # adversary: can we always isolate the heavy coin among cands within w weighings?
+    if cands <= 1: return True
+    if w == 0: return False
+    return any(solvable(k, w - 1) and solvable(cands - 2 * k, w - 1) for k in range(1, cands // 2 + 1))
+first_ok = lambda n_, k, w: solvable(k, w - 1) and solvable(n_ - 2 * k, w - 1)
+combo('S-AK04', [l for l, t in zip('ㄱㄴㄷㄹ', [solvable(8, 2), first_ok(8, 4, 2), first_ok(8, 3, 2), not solvable(10, 2)]) if t])
+single = {'P': 5000, 'Q': 4000, 'R': 3000, 'S': 6000}; packs = [('PQ', 7000), ('QRS', 10500), ('RS', 8000)]
+costs = []
+for chosen in itertools.chain.from_iterable(itertools.combinations(packs, r) for r in range(4)):
+    letters = ''.join(c for c, _ in chosen)
+    if len(letters) != len(set(letters)): continue
+    t = sum(v for _, v in chosen) + sum(v for k, v in single.items() if k not in letters)
+    costs.append(t - 2000 if t >= 16000 else t)
+pick('S-AK05', f'{min(costs):,}원')
+ar = {'A': (100, 95, 520, 513), 'B': (80, 82, 400, 418), 'C': (60, 60, 330, 318), 'D': (40, 36, 204, 198), 'E': (20, 22, 108, 123)}
+s_ = [sum(v[1] for v in ar.values()) < sum(v[0] for v in ar.values()), sum(v[3] for v in ar.values()) > sum(v[2] for v in ar.values()), max(ar, key=lambda k: F(ar[k][3], ar[k][1])) == 'E', [k for k, v in ar.items() if v[3] < v[2]] == ['C'], sum(v[3] for v in ar.values()) * 10 >= 53 * sum(v[1] for v in ar.values())]
+only('D-AK01', [not x for x in s_], 'false statements')
+e0, e1, tg = [300, 120, 100, 30], [255, 126, 90, 27], [20, 5, 15, 10]
+gl = [F(a * (100 - t), 100) for a, t in zip(e0, tg)]
+combo('D-AK02', [l for l, t in zip('ㄱㄴㄷㄹ', [[i for i in range(4) if e1[i] <= gl[i]] == [3], sum(e1) * 10 <= 9 * sum(e0), sum(e1) - sum(gl) >= 30, F(e1[1], sum(e1)) - F(e0[1], sum(e0)) >= F(1, 25)]) if t])
+dp = {'A': (80, 400), 'B': (40, 480), 'C': (100, 700), 'D': (60, 360), 'E': (20, 300)}
+md_ = [m for m in itertools.permutations('ABCDE') if dp[m[0]][1] * dp[m[1]][0] == 2 * dp[m[1]][1] * dp[m[0]][0] and dp[m[2]][0] + dp[m[3]][0] == dp[m[4]][0] and dp[m[2]][1] < dp[m[3]][1]]
+ok(len(md_) == 1, f'D-AK03 {md_}'); pick('D-AK03', ', '.join(md_[0]))
+xm = {'A': (500, 500 - 100), 'B': (300 - 60, 300), 'C': (450, 375), 'D': (200, 200 + 50)}
+by_text('D-AK04', list(zip(['무역수지가 흑자인', '수입이 가장 많은', '네 상대국 전체의 무역수지', 'B에 대한 수출은', '네 상대국 전체의 수출입'], [sum(a for a, b in xm.values() if a > b) >= 1000, max(xm, key=lambda k: xm[k][1]) == 'C', sum(a - b for a, b in xm.values()) >= 100, xm['B'][0] * 4 >= 5 * xm['D'][0], sum(a for a, b in xm.values()) * 100 >= 104 * sum(b for a, b in xm.values())])))
+pc0, pc1, pp0, pp1 = [150, 180, 120], [180, 198, 156], [200, 100, 150], [190, 110, 150]
+t0 = [a * b for a, b in zip(pc0, pp0)]; t1 = [a * b for a, b in zip(pc1, pp1)]
+combo('D-AK05', [l for l, t in zip('ㄱㄴㄷㄹ', [t1.index(max(t1)) == 0, max(range(3), key=lambda i: F(pc1[i], pc0[i])) == 1, F(t1[1], t0[1]) > F(t1[2], t0[2]), sum(t1) * 10 >= 12 * sum(t0)]) if t])
+pick('L-AK01', '다른 조건이 같다면 두 지역 사이 거리가 2배가 될 때 중력 모형이 예측하는 이동량은 4분의 1로 줄어든다.')
+gv = lambda a, b, d: F(a * b, d ** 2)
+combo('L-AK02', [l for l, t in zip('ㄱㄴㄷㄹ', [gv(100, 50, 100) == gv(100, 200, 200), gv(50, 200, 100) == 2 * gv(100, 50, 100), gv(100, 100, 100) == gv(100, 200, 100), gv(100, 200, 100) == 2 * gv(100, 200, 200)]) if t])
+combo('L-AK03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-AK05', ['ㄱ', 'ㄷ'])
+sols_ = []
+for fo in itertools.permutations(['noodle', 'rice', 'salad']):
+    for dr in itertools.permutations(['coffee', 'tea', 'juice']):
+        pair = dict(zip(fo, dr))                      # food -> drink of the same person
+        if (fo[1] == 'rice' or dr[1] == 'coffee') and pair['salad'] != 'coffee' and pair['noodle'] == 'tea': sols_.append((fo, dr, pair))
+by_text('L-AK04', list(zip(['甲은 차를', '샐러드를 먹은', '丙은 국수를', '乙은 차를', '덮밥을 먹은'], [all(dr[0] == 'tea' for fo, dr, pr in sols_), all(pr['salad'] == 'juice' for fo, dr, pr in sols_), all(fo[2] == 'noodle' for fo, dr, pr in sols_), all(dr[1] == 'tea' for fo, dr, pr in sols_), all(pr['rice'] == 'juice' for fo, dr, pr in sols_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
