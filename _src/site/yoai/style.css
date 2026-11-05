@@ -343,7 +343,7 @@ details.proj[open] { padding-bottom: 6px; }
 .card-tools .del { color: var(--red); }
 
 /* 집필 */
-.outline { display: grid; gap: 8px; margin-bottom: 14px; }
+.outline { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 14px; }   /* 한 칸 그리드가 글칸 폭에 밀려 화면 밖으로 넓어지지 않게 */
 .sec { background: var(--card); box-shadow: var(--shadow); border-radius: 12px; padding: 10px 14px 12px; }
 .sec.lv2 { margin-left: 22px; }
 .sec.lv3 { margin-left: 44px; }
