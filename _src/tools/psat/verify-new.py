@@ -3446,4 +3446,54 @@ for pm in itertools.permutations(range(1, 6)):
     x = dict(zip('갑을병정무', pm))
     if x['을'] == x['갑'] + 1 and abs(x['갑'] - x['병']) == 1 and 1 < x['병'] < 5 and x['정'] > 1: ln_.append(x)
 by_text('L-BI04', list(zip(['갑은 세 번째', '정은 다섯 번째', '을은 다섯 번째', '병은 두 번째', '무는 첫 번째'], [all(x['갑'] == 3 for x in ln_), all(x['정'] == 5 for x in ln_), all(x['을'] == 5 for x in ln_), all(x['병'] == 2 for x in ln_), all(x['무'] == 1 for x in ln_)])))
+# ================= S-BJ / D-BJ / L-BJ (5급 실전, independent re-solve from the rendered options) =================
+import math
+from datetime import date as _date, timedelta as _td
+def lt_(due, back):
+    while due.weekday() == 0: due += _td(days=1)
+    return max(0, (back - due).days)
+def st_(age, books):
+    s = min(sum(lt_(_date(2025, 11, a), _date(2025, 11, b)) for a, b in books), 30)
+    return (s + 1) // 2 if age >= 65 else s
+pick('S-BJ01', f'{st_(40, [(5, 8), (6, 11)]) + st_(30, [(10, 13)]) + st_(70, [(1, 10), (1, 11), (1, 16)]) + st_(66, [(4, 11)])}일')
+tr_ = [c for c in itertools.combinations(range(1, 10), 3) if sum(c) == 15]
+combo('S-BJ02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(tr_) == 8, sum(5 in c for c in tr_) == 4, all(sum(n in c for c in tr_) >= 2 for n in range(1, 10)), any(all(x % 2 == 0 for x in c) for c in tr_)]) if t])
+fine_at_ = lambda first: not first          # 과태료는 개선 명령을 어긴 뒤에만
+night_ok_ = lambda urgent, reported: urgent and reported
+lim_ = lambda zone, h: (65 if 7 <= h < 18 else 60 if 18 <= h < 22 else 50) + (5 if zone == '상업' else 0)
+by_text('S-BJ03', list(zip(['주거지역 공사장에서 오후 7시', '상업지역 공사장에서 오전 10시', '소음 기준을 처음', '긴급한 복구 공사라면', '상업지역 공사장의 밤'],
+        [62 > lim_('주거', 19), 68 > lim_('상업', 10), fine_at_(first=True), night_ok_(urgent=True, reported=False), lim_('상업', 23) == 50])))
+tk_ = lambda rate: F(2400, rate)
+combo('S-BJ04', [l for l, t in zip('ㄱㄴㄷㄹ', [tk_(600) == 4, tk_(1000) * 60 == 144, tk_(800) == 3, tk_(200) == tk_(400)]) if t])
+tm_ = {'갑': [7, 8, 4, 6, 2], '을': [3, 3, 6, 8, 8], '병': [9, 8, 6, 4, 4]}
+bj5_ = min(sum(tm_[w][i] for i, w in enumerate(a)) for a in itertools.product('갑을병', repeat=5) if max(a.count(w) for w in '갑을병') <= 2 and a[1] == a[3] and a[2] != '갑')
+pick('S-BJ05', f'{bj5_}시간')
+wy_ = [(1800, 1080), (1900, 1197), (2000, 1300), (1950, 1248)]; wr_ = {'A': (600, 420), 'B': (500, 310), 'C': (400, 236), 'D': (300, 180), 'E': (150, 102)}
+yr_ = [F(b, a) for a, b in wy_]; rr_ = {k: F(b, a) for k, (a, b) in wr_.items()}
+only('D-BJ01', [not x for x in [wy_[0][0] < wy_[1][0] < wy_[2][0] > wy_[3][0], yr_.index(max(yr_)) == 2, wy_[3][1] < wy_[2][1], max(rr_, key=rr_.get) == max(wr_, key=lambda k: wr_[k][1]), sorted(k for k in rr_ if rr_[k] > yr_[3]) == ['A', 'B', 'E']]], 'false statements')
+un_ = {'가': (200, 1600, 300), '나': (300, 1500, 450), '다': (150, 1500, 210), '라': (400, 1600, 560), '마': (250, 1500, 180)}
+mu_ = [m for m in itertools.permutations(un_) if F(un_[m[0]][1], un_[m[0]][0]) == max(F(v[1], v[0]) for v in un_.values()) and un_[m[1]][2] == max(v[2] for v in un_.values())
+       and F(un_[m[2]][2], un_[m[2]][1]) == min(F(v[2], v[1]) for v in un_.values()) and un_[m[3]][0] > un_[m[4]][0]]
+ok(len(mu_) == 1, f'D-BJ02 {mu_}'); pick('D-BJ02', ', '.join(mu_[0]))
+ga3_ = 800 * 200 * F(75, 100) / 1000; na3_ = F(108 * 1000 * 100, 90 * 150)
+rt_ = {'A': (1000, 180, 144), 'B': (800, 200, ga3_), 'C': (na3_, 150, 108), 'D': (1200, 160, 144), 'E': (600, 300, 153)}
+cap_ = {k: F(n * s, 1000) for k, (n, s, p) in rt_.items()}; ld_ = {k: rt_[k][2] / cap_[k] for k in rt_}; em_ = {k: cap_[k] - rt_[k][2] for k in rt_}
+by_text('D-BJ03', list(zip(['(가)와 (나)를', '빈 좌석 수', '탑승객이 가장 많은', '(다)는 (라)보다', '다섯 노선을 합하여'],
+        [ga3_ + na3_ >= 1000, max(em_, key=em_.get) == 'D', max(rt_, key=lambda k: rt_[k][2]) == max(ld_, key=ld_.get), ld_['D'] > ld_['E'], sum(v[2] for v in rt_.values()) >= F(85, 100) * sum(cap_.values())])))
+p05_ = [4800 * s for s in (20, 71, 9)]; p25_ = [5000 * s for s in (12, 68, 20)]
+combo('D-BJ04', [l for l, t in zip('ㄱㄴㄷㄹ', [p25_[1] < p05_[1], p25_[2] >= 2 * p05_[2], p25_[2] * 10 >= 3 * p25_[1], p05_[0] - p25_[0] < p25_[2] - p05_[2]]) if t])
+gd_ = {'갑': (50, 30000, 31500), '을': (120, 10000, 11000), '병': (20, 50000, 49000), '정': (80, 15000, 16200)}
+e25_ = {k: p * b for k, (p, a, b) in gd_.items()}; ic_ = {k: p * (b - a) for k, (p, a, b) in gd_.items()}; rg_ = {k: F(b, a) for k, (p, a, b) in gd_.items()}
+combo('D-BJ05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(e25_, key=e25_.get) == '갑', max(rg_, key=rg_.get) == max(ic_, key=ic_.get), sum(e25_.values()) >= 20000 * sum(v[0] for v in gd_.values()), e25_['병'] < e25_['을']]) if t])
+pick('L-BJ01', '세기가 같은 소리 열 개가 함께 나면 사람은 하나만 날 때보다 두 배쯤 크게 느낀다.')
+db_ = lambda r: 10 * math.log10(r)
+combo('L-BJ02', [l for l, t in zip('ㄱㄴㄷㄹ', [round(80 + db_(2)) == 83, round(80 - db_(16)) == 68, 80 + db_(10) - db_(100) > 80, 0.5 ** (db_(100) / 10) == 0.25]) if t])
+combo('L-BJ03', ['ㄱ', 'ㄴ', 'ㄹ']); combo('L-BJ05', ['ㄱ', 'ㄴ'])
+gm_ = []
+for su in itertools.permutations(['국어', '영어', '수학']):
+    for ci in itertools.permutations(['서울', '부산', '대구']):
+        S_ = dict(zip('갑을병', su)); C_ = dict(zip('갑을병', ci)); by_ = {C_[x]: S_[x] for x in '갑을병'}
+        if by_['부산'] == '수학' and by_['대구'] == '국어' and S_['병'] != '영어' and C_['을'] != '서울': gm_.append((S_, C_, by_))
+by_text('L-BJ04', list(zip(['갑은 서울에', '을은 국어를', '병은 부산에', '대구에 사는 사람은', '병은 수학을'],
+        [all(C['갑'] == '서울' and S['갑'] == '영어' for S, C, b in gm_), all(S['을'] == '국어' for S, C, b in gm_), all(C['병'] == '부산' for S, C, b in gm_), all(b['대구'] == '수학' for S, C, b in gm_), all(S['병'] == '수학' for S, C, b in gm_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
