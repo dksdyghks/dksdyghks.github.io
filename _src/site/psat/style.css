@@ -297,6 +297,9 @@ details.reshow > .sheet { box-shadow: none; padding-top: 6px; }
 .oxl .v { font-weight: 700; }
 .oxl .v.yes { color: var(--ok); }
 .oxl .v.no { color: var(--pen); }
+/* 내가 고른(틀린) 선지: 정답 표시와 구별되게 점선 테두리 */
+.ox.pick { outline: 1px dashed var(--muted); outline-offset: 3px; border-radius: 6px; }
+.pick-tag { color: var(--ink-2); border-style: dashed; }
 .ans-tag { display: inline-block; margin-left: 4px; font-size: .6875rem; font-weight: 700; color: var(--pen); border: 1px solid currentColor; border-radius: 4px; padding: 0 5px; line-height: 1.5; vertical-align: 1px; }
 .empty { padding: 40px 20px; text-align: center; color: var(--muted); background: var(--sheet); border-radius: var(--radius); box-shadow: var(--shadow); }
 .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }

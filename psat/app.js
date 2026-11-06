@@ -318,10 +318,11 @@
     const narrow = draw(340, 300, 'cn', { L: 30, axis: 9.5, cat: 10.5, val: 9.5 });
     return `<div class="tblock">${cap}${legend}<div class="chart-box">${wide}${narrow}</div>${b.note ? `<p class="tbl-note">※ ${b.note}</p>` : ''}</div>`;
   }
-  function oxItem(n, text, it, isAns) {
-    return `<li class="ox${isAns ? ' ans' : ''}"><span class="n" aria-hidden="true">${n}</span><div class="ob">${text ? `<div class="ot">${text}</div>` : ''}<div class="ow"><b class="v ${it.ok ? 'yes' : 'no'}">${it.v}.</b> ${it.why}${isAns ? ' <span class="ans-tag">정답</span>' : ''}</div></div></li>`;
+  // 틀렸을 때 고른 선지에는 '내가 고른 답'(〈보기〉 조합이면 잘못 판단한 ㄱ·ㄴ·ㄷ에 '내 판단과 다름') 표시를 붙여, 어디서 틀렸는지 바로 찾게 한다.
+  function oxItem(n, text, it, isAns, isPick, bxPick) {
+    return `<li class="ox${isAns ? ' ans' : ''}${isPick ? ' pick' : ''}"><span class="n" aria-hidden="true">${n}</span><div class="ob">${text ? `<div class="ot">${text}</div>` : ''}<div class="ow"><b class="v ${it.ok ? 'yes' : 'no'}">${it.v}.</b> ${it.why}${isAns ? ' <span class="ans-tag">정답</span>' : ''}${isPick ? ` <span class="ans-tag pick-tag">${bxPick ? '내 판단과 다름' : '내가 고른 답'}</span>` : ''}</div></div></li>`;
   }
-  function blockHTML(b, q) {
+  function blockHTML(b, q, pick) {
     if (!b) return '';
     switch (b.t) {
       case 'passage': { const h = String(b.h || ''); return `<div class="passage${b.frame ? ' frame' : ''}">${/^\s*</.test(h) ? h : `<p>${h}</p>`}</div>`; }
@@ -333,11 +334,14 @@
       case 'list': return `<ul class="ex">${(b.items || []).map((x) => `<li>${x}</li>`).join('')}</ul>`;
       case 'steps': return `<ol class="steps">${(b.items || []).map((s) => `<li class="${s.ind ? 'i1' : ''}${s.k === 'case' ? ' case' : ''}${s.k === 'ok' ? ' ok' : ''}">${s.h}</li>`).join('')}</ol>`;
       case 'h': return `<h4>${b.h}</h4>`;
-      case 'ox': return `<ol class="oxl" aria-label="선지별 해설">${(b.items || []).map((it, i) => oxItem(i + 1, q ? q.options[i] : '', it, q && i === q.answer)).join('')}</ol>`;
+      case 'ox': return `<ol class="oxl" aria-label="선지별 해설">${(b.items || []).map((it, i) => oxItem(i + 1, q ? q.options[i] : '', it, q && i === q.answer, q && pick >= 0 && pick !== q.answer && i === pick)).join('')}</ol>`;
       case 'bx': {   // 해설에서 ㄱ·ㄴ·ㄷ마다 <보기> 원문을 그대로 보여 준다(선지별 해설이 선지 원문을 보여 주듯이). 원문을 못 찾으면 요약 글을 쓴다.
         const vb = q && (q.body || []).find((x) => x.t === 'box' && x.title === '보기');
         const full = (l) => { const s = vb && (vb.items || []).find((x) => String(x).startsWith(l + '. ')); return s ? String(s).slice(l.length + 2) : ''; };
-        return `<ul class="oxl bx" aria-label="보기별 해설">${(b.items || []).map((it) => oxItem(it.label, full(it.label) || it.text, it, false)).join('')}</ul>`;
+        // 틀린 조합을 골랐다면, 그 조합이 옳고 그름을 잘못 판단한 ㄱ·ㄴ·ㄷ에 표시한다.
+        const po = q && pick >= 0 && pick !== q.answer ? String(q.options[pick] || '').replace(/<[^>]+>/g, '') : '';
+        const mine = /^[ㄱ-ㅎ](, [ㄱ-ㅎ])*$/.test(po) ? po.split(', ') : null;
+        return `<ul class="oxl bx" aria-label="보기별 해설">${(b.items || []).map((it) => oxItem(it.label, full(it.label) || it.text, it, false, mine ? mine.includes(it.label) !== !!it.ok : false, true)).join('')}</ul>`;
       }
       default: return b.h ? `<p>${b.h}</p>` : '';
     }
@@ -593,7 +597,7 @@
         <div class="qcol"><details class="reshow"${wide ? ' open' : ''}><summary>문제 다시 보기</summary><div class="sheet">${questionHTML(q, { graded: true, choice: c.choice, no: c.no, review: c.review })}</div></details></div>
         <div class="exp"><article class="sheet">
           <h3>해설</h3>
-          <div class="exp-body">${(q.explain || []).map((b) => blockHTML(b, q)).join('')}</div>
+          <div class="exp-body">${(q.explain || []).map((b) => blockHTML(b, q, c.choice)).join('')}</div>
           <div class="src-line">${src}<br><span style="font-size:.75rem">문항 번호 ${esc(q.id)}</span></div>
           ${!c.ok ? `<div class="cause-row"><span class="subj-meta">틀린 이유</span>${CAUSES.map((x) => `<button class="chip${rec && rec.cause === x ? ' on' : ''}" data-act="cause" data-v="${x}">${x}</button>`).join('')}</div>` : ''}
           <div class="tools-row">
