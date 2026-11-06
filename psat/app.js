@@ -931,9 +931,10 @@
     if (noteFilter.kind === 'star') list = list.filter((it) => it.star);
     if (noteFilter.kind === 'memo') list = list.filter((it) => it.memo);
     if (noteFilter.kind === 'done') list = list.filter((it) => it.done);
+    if (noteFilter.kind === 'p5') list = list.filter((it) => isP5(it.qid));
     list.sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
     const seg1 = [['', '전체'], ...ORDER.map((k) => [k, SUBJ[k].name])].map(([k, n]) => `<button class="${noteFilter.subj === k ? 'on' : ''}" data-act="nf-subj" data-v="${k}">${n}</button>`).join('');
-    const seg2 = [['all', '모두'], ['due', '오늘 복습'], ['star', '★ 중요'], ['memo', '메모'], ['done', '졸업']].map(([k, n]) => `<button class="${noteFilter.kind === k ? 'on' : ''}" data-act="nf-kind" data-v="${k}">${n}</button>`).join('');
+    const seg2 = [['all', '모두'], ['due', '오늘 복습'], ['p5', '5급 실전'], ['star', '★ 중요'], ['memo', '메모'], ['done', '졸업']].map(([k, n]) => `<button class="${noteFilter.kind === k ? 'on' : ''}" data-act="nf-kind" data-v="${k}">${n}</button>`).join('');
     // 지난번에 틀릴 때 고른 선지(번호가 아니라 글로: 다시 풀 때 선지 순서가 바뀔 수 있다). 정답은 보여 주지 않는다.
     const lastPick = (it) => {
       if (it.lastOk !== false || !it.q || !Array.isArray(it.q.options)) return '';
