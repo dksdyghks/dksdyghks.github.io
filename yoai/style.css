@@ -336,6 +336,11 @@ details.proj[open] { padding-bottom: 6px; }
 .card blockquote { margin: 0 0 8px; font-family: var(--f-serif); font-size: 1rem; line-height: 1.85; color: var(--ink); }
 .card .src { font-size: .8125rem; color: var(--ink-2); margin-bottom: 8px; }
 .card textarea { width: 100%; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); padding: 9px 11px; resize: vertical; font-size: .875rem; line-height: 1.6; }
+.notes-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.notes-filter input[type=search] { flex: 1 1 200px; min-width: 0; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); font-size: .9375rem; }
+.notes-filter .m { font-size: .8125rem; color: var(--muted); }
+.card .use { font-size: .75rem; color: var(--ink-2); margin: -2px 0 8px; }
+.card .use.none { color: var(--muted); }
 .card-tools { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
 .card-tools .n { font-size: .75rem; font-weight: 700; color: var(--gold-ink); margin-right: auto; }
 .card-tools button { border: 0; background: none; color: var(--muted); font-size: .8125rem; padding: 5px 8px; border-radius: 8px; }

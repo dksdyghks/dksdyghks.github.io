@@ -6,7 +6,7 @@ import { S, DB, DEFAULTS, ACT, UI, ON_INPUT, ON_CHANGE, hooks, $, $$, esc, uid, 
   CITE_KINDS, where, footnote, citer, pageLabel, guessMeta, modal, closeModals, confirmBox, formBox, download, safeName, copyText, closePdf, pdfDocFor, setRender,
   backupData, stamp, autoBackup, chooseBackupDir, fullBackupZip, restoreFrom, touched, JUDG } from './core.js';
 import { STAGES, stageName, ensureProject, projReads, projCards, readFor, openReadCard, argIssues, viewArg, viewLit, viewReview, viewMe } from './research.js';
-import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo } from './write.js';
+import { viewWrite, viewCheck, caseCite, ensureCardNos, nextCardNo, sectionNumbers } from './write.js';
 import { caseCourt, citationsIn } from './lawtext.js';
 import { excluded, excludeHint } from './profile.js';
 import { buildHwpx, HWPX_MIME } from './hwpx.js';
@@ -459,13 +459,37 @@ function viewNotes() {
       <div class="tools"><button class="btn" data-act="card-new">${IC.plus} 메모 카드</button>${cards.length ? '<button class="btn primary" data-act="notes-hwpx">한글로 저장</button><button class="btn" data-act="notes-docx">Word</button><button class="btn" data-act="notes-md">마크다운</button>' : ''}</div></div>
     <p class="sub">읽기 화면에서 글을 골라 <b>카드에 담기</b>를 누르면 쪽수와 함께 여기에 모입니다. 카드 번호는 바뀌지 않으며, 집필에서 〔카드 n〕으로 본문에 넣으면 그 자리가 각주가 됩니다.</p>
     <details class="proj"${p.memo ? ' open' : ''}><summary>연구 메모</summary><label class="field"><span>확정한 것, 미결 쟁점, 떠오른 생각</span><textarea data-pf="memo" rows="5">${esc(p.memo || '')}</textarea></label></details>
-    <div class="cards">${cards.map(cardHTML).join('') || '<p class="find-none">아직 카드가 없습니다. <b>찾기</b>에서 쪽을 열고, 글을 골라 <b>카드에 담기</b>를 누르세요.</p>'}</div></div>`;
+    ${cards.length > 1 ? `<div class="notes-filter"><label class="sr" for="notes-q">카드 찾기</label><input id="notes-q" type="search" placeholder="카드 찾기: 인용·메모·문헌" value="${esc(S.notesQ || '')}" autocomplete="off">
+      <button class="chip${S.notesUnused ? ' on' : ''}" data-act="notes-unused" aria-pressed="${S.notesUnused ? 'true' : 'false'}">아직 안 쓴 카드 ${cards.filter((c) => !cardUses(p, c).length).length}</button><span class="m" id="notes-count" aria-live="polite"></span></div>` : ''}
+    <div class="cards">${cards.map((c) => cardHTML(c, p)).join('') || '<p class="find-none">아직 카드가 없습니다. <b>찾기</b>에서 쪽을 열고, 글을 골라 <b>카드에 담기</b>를 누르세요.</p>'}</div></div>`;
+  notesFilter();
 }
-function cardHTML(c) {
-  const d = c.docId ? docOf(c.docId) : null;
-  return `<article class="card" data-id="${c.id}">
+// 카드를 쓴 곳: 집필의 장·절(배치했거나 본문에 〔카드 n〕을 넣은 곳)과 논증 설계도. 아무 데도 안 썼으면 빈 배열.
+function cardUses(p, c) {
+  const out = [], nums = sectionNumbers(p.outline || []), tag = new RegExp(`〔\\s*카드\\s*${c.no}\\s*〕`);
+  (p.outline || []).forEach((s, i) => { if ((s.cards || []).includes(c.id) || tag.test(s.text || '')) out.push(`집필 ${nums[i]}${s.title ? ' ' + s.title : ''}`); });
+  if ((p.arg || []).some((n) => (n.refs || []).some((r) => r.t === 'card' && r.id === c.id))) out.push('논증 설계도');
+  return out;
+}
+// 찾기 칸과 ‘아직 안 쓴 카드’로 카드를 거른다. 다시 그리지 않고 숨기기만 해서, 쓰던 메모와 입력 위치가 그대로 남는다.
+function notesFilter() {
+  const q = (S.notesQ || '').trim().toLowerCase(), all = $$('.cards .card'); let n = 0;
+  for (const a of all) {
+    const c = S.cards.find((x) => x.id === a.dataset.id), d = c && c.docId ? docOf(c.docId) : null;
+    const hay = c ? [c.quote, c.memo, d ? footnote(d, c.page) : '', `카드 ${c.no}`].join(' ').toLowerCase() : '';
+    const show = (!q || hay.includes(q)) && (!S.notesUnused || a.dataset.used === '0');
+    a.hidden = !show; if (show) n++;
+  }
+  const el = $('#notes-count'); if (el) el.textContent = q || S.notesUnused ? `${n}장 보임` : '';
+}
+ON_INPUT.push((t) => { if (t.id !== 'notes-q') return false; S.notesQ = t.value; notesFilter(); return true; });
+ACT['notes-unused'] = (el) => { S.notesUnused = !S.notesUnused; el.classList.toggle('on', S.notesUnused); el.setAttribute('aria-pressed', S.notesUnused ? 'true' : 'false'); notesFilter(); };
+function cardHTML(c, p) {
+  const d = c.docId ? docOf(c.docId) : null, uses = p ? cardUses(p, c) : [];
+  return `<article class="card" data-id="${c.id}" data-used="${uses.length ? 1 : 0}">
     ${c.quote ? `<blockquote>“${esc(c.quote)}”</blockquote>` : ''}
     ${c.docId ? `<div class="src">${esc(footnote(d, c.page))}${d ? ` <button class="linkish" data-act="card-open">원문 ${esc(where(d, c.page).ui)}</button>` : ''}</div>` : ''}
+    ${p ? `<div class="use${uses.length ? '' : ' none'}">${uses.length ? `쓴 곳: ${uses.map(esc).join(' · ')}` : '아직 집필·논증 설계도에 쓰지 않음'}</div>` : ''}
     <label class="sr" for="memo-${c.id}">메모</label><textarea id="memo-${c.id}" data-card-memo="${c.id}" rows="2" placeholder="${c.docId ? '이 인용에 대한 내 생각' : '메모'}">${esc(c.memo || '')}</textarea>
     <div class="card-tools"><span class="n">카드 ${c.no}</span><button data-act="card-up" title="위로" aria-label="위로">↑</button><button data-act="card-down" title="아래로" aria-label="아래로">↓</button>${c.docId ? '<button data-act="card-cite">인용 복사</button>' : ''}<button data-act="card-del" class="del">지우기</button></div>
   </article>`;
@@ -503,7 +527,7 @@ async function notesExport(kind) {
   download(`${name}.docx`, buildDocx({ title: p.title, subtitle: `${kdate()} 노트`, sections, creator: '안요환' }), DOCX_MIME);
 }
 Object.assign(ACT, {
-  'card-new': async () => { const nc = await addCard('', null, 0); viewNotes(); const ta = nc && $(`[data-card-memo="${nc.id}"]`); if (ta) ta.focus(); },
+  'card-new': async () => { const nc = await addCard('', null, 0); S.notesQ = ''; S.notesUnused = false; viewNotes(); const ta = nc && $(`[data-card-memo="${nc.id}"]`); if (ta) ta.focus(); },
   'card-open': (el) => { const c = cardOf(el); if (c) openDoc(c.docId, c.page, []); },
   'card-cite': (el) => { const c = cardOf(el); if (c) copyText(citeText(c.quote, docOf(c.docId), c.page), '인용문과 각주를 복사했습니다.'); },
   'card-del': async (el) => {
