@@ -3725,4 +3725,48 @@ for pm in itertools.permutations(range(6)):
     x = dict(zip('갑을병정무기', pm))
     if x['을'] < 3 and (x['기'] // 3) != (x['병'] // 3) and x['기'] // 3 == x['을'] // 3 and x['기'] % 3 == x['을'] % 3 + 1 and (x['갑'] // 3) != (x['병'] // 3) and x['무'] % 3 != 1 and x['병'] % 3 != 1: st_.append(x)
 by_text('L-BO04', list(zip(['갑은 앞줄 왼쪽', '병은 뒷줄 왼쪽', '기는 앞줄 가운데', '무는 갑의', '정은 뒷줄 가운데'], [all(x['갑'] == 0 for x in st_), all(x['병'] == 3 for x in st_), all(x['기'] == 1 for x in st_), all(x['무'] == x['갑'] + 3 for x in st_), all(x['정'] == 4 for x in st_)])))
+# ================= S-BP / D-BP / L-BP (5급 실전, independent re-solve from the rendered options) =================
+def camp_(res, mon, nights, ppl, el):
+    b = sum(40000 if d in '금토' else 30000 for d in nights) * (F(3, 2) if mon in (7, 8) else 1)
+    return b * (F(4, 5) if res else 1) + 5000 * max(0, ppl - 4) * len(nights) + (5000 * len(nights) if el else 0)
+pick('S-BP01', f'{int(camp_(1, 7, "금토", 5, 1) + camp_(0, 6, "목금", 4, 0) + camp_(1, 8, "일", 6, 1) + camp_(0, 9, "토", 3, 1)):,}원')
+pots_ = [s for s in itertools.product(range(3), repeat=5) if all(s[i] != s[i + 1] for i in range(4))]
+combo('S-BP02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(pots_) == 48, sum(len(set(s)) == 2 for s in pots_) == 6, sum(s[0] == s[-1] for s in pots_) == 24, sum(s.count(0) == 3 for s in pots_) == 4]) if t])
+can_apply_ = lambda months, age: months >= (6 if age >= 65 else 12)
+plots_per_house_ok_ = lambda n: n <= 1
+longest_ = lambda term, ext_times, ext_len: term + ext_times * ext_len
+inputs_ok_ = lambda used: not (set(used) & {'화학 비료', '화학 농약'})
+can_reclaim_ = lambda idle_months: idle_months > 3
+by_text('S-BP03', list(zip(['같은 세대인 부부', '처음 분양받은 사람', '퇴비와 함께라면', '2개월 동안', '갑구에 8개월째'], [plots_per_house_ok_(2), longest_(1, 1, 1) >= 3, inputs_ok_(['퇴비', '화학 비료']), can_reclaim_(2), can_apply_(8, 70)])))
+salt_a_, salt_b_ = F(300 * 10, 100), F(200 * 4, 100)
+combo('S-BP04', [l for l, t in zip('ㄱㄴㄷㄹ', [(salt_a_ + salt_b_) / 500 * 100 == F(76, 10), salt_a_ / 250 * 100 == F(125, 10), (salt_b_ + salt_a_ / 3) / 300 * 100 == 6, salt_a_ / F(4, 100) - 300 == 400]) if t])
+fd_ = [(3000, 25, 200, 0), (1500, 12, 150, 0), (1000, 8, 100, 0), (1200, 5, 300, 0), (2500, 3, 80, 1), (5000, 30, 450, 0), (2000, 4, 50, 1), (1500, 22, 520, 0)]
+best5_ = min(sum(fd_[i][0] for i in s) for n in range(1, 9) for s in itertools.combinations(range(8), n)
+             if sum(fd_[i][1] for i in s) >= 40 and sum(fd_[i][2] for i in s) <= 700 and any(fd_[i][3] for i in s))
+pick('S-BP05', f'{best5_:,}원')
+rd_ = [(100, 2000), (108, 2100), (112, 2240), (120, 2300)]; sh_ = [F(a, b) for a, b in rd_]; sec_ = {'기업': (90, 30), '공공': (18, 5), '대학': (12, 10)}
+only('D-BP01', [not x for x in [all(rd_[i][0] > rd_[i - 1][0] for i in (1, 2, 3)), sh_.index(max(sh_)) == 3, all(sh_[i] > sh_[i - 1] for i in (1, 2, 3)), F(90, 120) == F(3, 4), max(sec_, key=lambda k: F(*sec_[k])) == '공공']], 'false statements')
+pt_ = {'가': (2000, 2200, 40), '나': (400, 500, 10), '다': (1000, 1150, 20), '라': (600, 630, 18), '마': (300, 330, 6)}
+mp_ = [m for m in itertools.permutations(pt_) if pt_[m[0]][1] - pt_[m[0]][0] == max(b - a for a, b, c in pt_.values()) and F(pt_[m[1]][1], pt_[m[1]][0]) == max(F(b, a) for a, b, c in pt_.values())
+       and F(pt_[m[2]][1], pt_[m[2]][2]) == min(F(b, c) for a, b, c in pt_.values()) and pt_[m[3]][1] > pt_[m[4]][1]]
+ok(len(mp_) == 1, f'D-BP02 {mp_}'); pick('D-BP02', ', '.join(mp_[0]))
+ga3_ = F(1800, 150 * F(1, 2)); na3_ = F(2000, 25 * F(8, 10)); da3_ = F(2700 * 100, 120 * 30); ra3_ = F(1500 * 100, 300 * 10)
+th_ = {'1관': (200, 20, 2400), '2관': (150, ga3_, 1800), '3관': (na3_, 25, 2000), '4관': (120, 30, 2700), '5관': (300, 10, 1500)}
+oc_ = {k: F(v, s * n) for k, (s, n, v) in th_.items()}
+by_text('D-BP03', list(zip(['(가)는 (나)보다', '좌석 점유율이 가장 높은', '상영 1회당', '다섯 상영관을', '(다)와 (라)의'],
+        [ga3_ > na3_, max(oc_, key=oc_.get) == max(th_, key=lambda k: th_[k][2]), max(th_, key=lambda k: F(th_[k][2], th_[k][1])) == '1관',
+         F(sum(v for s, n, v in th_.values()), sum(s * n for s, n, v in th_.values())) >= F(65, 100), da3_ - ra3_ == 25])))
+hh_ = [2000, 2050, 2100, 2160]; rr_ = [30, 32, 34, 35]; on_ = [F(h * r, 100) for h, r in zip(hh_, rr_)]; ot_ = [h - o for h, o in zip(hh_, on_)]; dd_ = [on_[i] - on_[i - 1] for i in (1, 2, 3)]
+combo('D-BP04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(x > 0 for x in dd_), dd_[1] == max(dd_) and dd_.count(max(dd_)) == 1, all(ot_[i] < ot_[i - 1] for i in (1, 2, 3)), on_[3] / on_[0] >= F(5, 4)]) if t])
+pw_ = {'석탄': (200, 180), '가스': (150, 160), '원자력': (180, 185), '재생에너지': (50, 70), '기타': (20, 25)}; s24_ = sum(a for a, b in pw_.values()); s25_ = sum(b for a, b in pw_.values())
+combo('D-BP05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(pw_, key=lambda k: pw_[k][1]) == '원자력', F(70, s25_) >= F(1, 10), max(pw_, key=lambda k: F(pw_[k][1], pw_[k][0])) == '재생에너지', F(200, s24_) - F(180, s25_) >= F(5, 100)]) if t])
+pick('L-BP01', '감축 비용이 배출권 가격보다 낮은 기업은 배출권을 사기보다 직접 줄이는 편이 이익이다.')
+cut_ = lambda cost, price: 40 if cost < price else 0
+combo('L-BP02', [l for l, t in zip('ㄱㄴㄷㄹ', [cut_(2, 6) == 40 and 80 - (100 - cut_(2, 6)) == 20, (100 - cut_(8, 6) - 80) * 6 == 120, cut_(2, 6) + cut_(5, 6) + cut_(8, 6) > 3 * (100 - 80), cut_(5, 4) == 40]) if t])
+combo('L-BP03', ['ㄱ', 'ㄷ'])
+ws_ = [dict(zip('ABCDE', b)) for b in itertools.product([0, 1], repeat=5)]
+base_ = lambda w: imp(w['A'], w['B']) and imp(w['B'] and w['C'], w['D']) and not w['D'] and (w['A'] or w['E'])
+by_text('L-BP04', list(zip(['예산이 증액된다', '전담 인력을 늘리면', '예산이 증액되면', '다른 사업을 줄이지', '전담 인력을 늘리지'],
+        [all(w['E'] for w in ws_ if base_(w) and ex(w)) for ex in [lambda w: w['C'], lambda w: imp(w['B'], w['A']), lambda w: imp(w['C'], w['A']), lambda w: imp(not w['D'], not w['C']), lambda w: imp(not w['B'], not w['C'])]])))
+combo('L-BP05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
