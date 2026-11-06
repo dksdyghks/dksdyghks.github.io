@@ -3818,4 +3818,55 @@ fm_ = [x for x in fl_ if x['인사'] > x['재무'] and x['홍보'] in (1, 5) and
 by_text('L-BQ04', list(zip(['인사는 4층', '기획은 5층', '재무는 3층', '감사는 기획보다', '홍보와 재무는'],
         [all(x['인사'] >= 4 for x in fm_), all(x['기획'] == 5 for x in fm_), all(x['재무'] == 3 for x in fm_), all(x['감사'] < x['기획'] for x in fm_), all(abs(x['홍보'] - x['재무']) == 1 for x in fm_)])))
 combo('L-BQ05', ['ㄱ', 'ㄴ'])
+# ================= S-BR / D-BR / L-BR (5급 실전, independent re-solve from the rendered options) =================
+def trip_(days, car, nights, cap, fare):
+    lodge = sum(20000 if n == 0 else min(n, cap) for n in nights)
+    return days * (12500 if car else 25000) + days * 25000 + lodge + (0 if car else fare)
+pick('S-BR01', f'{trip_(2, False, [120000], 100000, 100000) + trip_(3, True, [60000, 60000], 70000, 0) + trip_(2, False, [0], 70000, 50000) + trip_(1, False, [], 70000, 40000):,}원')
+sg_ = [s for k in range(1, 5) for s in itertools.permutations('RBYG', k)]
+combo('S-BR02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(sg_) == 64, sum('R' not in s for s in sg_) == 16, sum(s[0] == 'R' for s in sg_) == 18, sum('RB' in ''.join(s) or 'BR' in ''.join(s) for s in sg_) == 22]) if t])
+work_ok_ = lambda age, permit: age >= 15 or permit
+day_cap_ = lambda agreed: 7 + agreed
+week_cap_ = lambda agreed: 35 + 5 * agreed
+night_ok_ = lambda age, consent, approval: age >= 18 or (consent and approval)
+file_with_ = {'동의서': '사업장'}
+only('S-BR03', [not work_ok_(14, True), day_cap_(1) >= 9, night_ok_(17, True, False), file_with_['동의서'] == '고용노동부장관', week_cap_(1) >= 40])
+import datetime as dt_
+dw_ = lambda m, d: dt_.date(2027, m, d).weekday()
+combo('S-BR04', [l for l, t in zip('ㄱㄴㄷㄹ', [dw_(3, 1) == 0, dw_(12, 31) == 5, sum(dt_.date.fromordinal(o).weekday() == 4 for o in range(dt_.date(2027, 1, 1).toordinal(), dt_.date(2028, 1, 1).toordinal())) == 53,
+      sum(dw_(10, d) == 0 for d in range(1, 32)) == 5]) if t])
+tw_ = [(0, 30), (4, 10), (7, 20), (12, 15), (20, 25)]
+allowed_ = [x for x in range(21) if not (8 <= x <= 11) and x not in [q for q, _ in tw_]]
+sumd_ = lambda x: sum(p * abs(x - q) for q, p in tw_)
+bx_ = min(allowed_, key=sumd_); ok([x for x in allowed_ if sumd_(x) == sumd_(bx_)] == [bx_], 'S-BR05 unique best spot')
+pick('S-BR05', f'가 마을에서 동쪽으로 {bx_}km')
+fy_ = [(370, 90), (360, 95), (380, 100), (350, 105)]; ft_ = {'연근해': (90, 40, 40), '양식': (230, 30, 25), '원양': (25, 30, 2), '내수면': (5, 5, 3)}
+only('D-BR01', [not x for x in [max(range(4), key=lambda i: fy_[i][0]) == 2, all(fy_[i][1] * fy_[i - 1][0] > fy_[i - 1][1] * fy_[i][0] for i in (1, 2, 3)), 230 * 100 >= 60 * 350,
+     max(ft_, key=lambda k: F(ft_[k][1], ft_[k][0])) == '원양', max(ft_, key=lambda k: F(ft_[k][1], ft_[k][2])) == '원양']], 'false statements')
+rv_ = {'가': (1200, 300, 60), '나': (800, 100, 50), '다': (1500, 500, 100), '라': (300, 120, 40), '마': (500, 200, 20)}
+mr_ = [m for m in itertools.permutations(rv_) if rv_[m[0]][0] == max(v[0] for v in rv_.values()) and F(rv_[m[1]][0], rv_[m[1]][1]) == max(F(a, b) for a, b, c in rv_.values())
+       and F(rv_[m[2]][0], rv_[m[2]][2]) == min(F(a, c) for a, b, c in rv_.values()) and rv_[m[3]][1] > rv_[m[4]][1]]
+ok(len(mr_) == 1, f'D-BR02 {mr_}'); pick('D-BR02', ', '.join(mr_[0]))
+g_ = F(288 * 10 ** 6, 400 * 4000); n_ = F(570 * 10 ** 6, 190 * 5000); d_ = F(330 * 10 ** 6, 300 * 200); r_ = F(800 * 180 * 4500, 10 ** 6)
+sc_ = {'A': (500, 180, 450), 'B': (400, g_, 288), 'C': (n_, 190, 570), 'D': (300, 200, 330), 'E': (800, 180, r_)}; un_ = {k: F(c * 10 ** 6, s * dd) for k, (s, dd, c) in sc_.items()}
+by_text('D-BR03', list(zip(['(가)는 A의', '1식 단가가 가장 높은', '(라)는 700', '다섯 학교를', '(나)는 (가)의'],
+        [g_ == 180, max(un_, key=un_.get) == max(sc_, key=lambda k: sc_[k][0]), r_ >= 700, F(sum(c for s, dd, c in sc_.values()) * 10 ** 6, sum(s * dd for s, dd, c in sc_.values())) >= 5000, n_ >= 4 * g_])))
+pt_ = [50, 55, 58, 60]; sh_ = [20, 22, 25, 24]; wl_ = [F(p * 100, s) for p, s in zip(pt_, sh_)]; ot_ = [w - p for w, p in zip(wl_, pt_)]
+combo('D-BR04', [l for l, t in zip('ㄱㄴㄷㄹ', [min(range(4), key=lambda i: wl_[i]) == 2 and sorted(wl_)[0] < sorted(wl_)[1], all(ot_[i] < ot_[i - 1] for i in (1, 2, 3)),
+      max((1, 2, 3), key=lambda i: F(pt_[i], pt_[i - 1])) == 1, wl_[3] == wl_[0]]) if t])
+fo_ = {'A': (120, 150), 'B': (80, 84), 'C': (60, 90), 'D': (40, 36), 'E': (100, 140)}; s25_ = sum(b for a, b in fo_.values())
+combo('D-BR05', [l for l, t in zip('ㄱㄴㄷㄹ', [F(150, s25_) >= F(3, 10), max(fo_, key=lambda k: F(fo_[k][1], fo_[k][0])) == 'C', sum(b < a for a, b in fo_.values()) == 1, max(fo_, key=lambda k: fo_[k][1] - fo_[k][0]) == 'C']) if t])
+pick('L-BR01', '같은 금액의 소득공제라도 한계세율이 높은 사람일수록 세금이 더 많이 줄어든다.')
+def tx_(b): return F(6, 100) * min(b, 1000) + F(15, 100) * max(0, min(b, 4000) - 1000) + F(24, 100) * max(0, b - 4000)
+mg_ = lambda b: F(tx_(b + 1) - tx_(b))
+combo('L-BR02', [l for l, t in zip('ㄱㄴㄷㄹ', [tx_(3000) == 360, tx_(5000) / 5000 == mg_(3000), (tx_(5000) - tx_(4900)) - (tx_(3000) - tx_(2900)) == 9, tx_(5000) >= F(5, 2) * tx_(3000)]) if t])
+combo('L-BR03', ['ㄱ', 'ㄴ'])
+rg_ = list(itertools.product((0, 1), repeat=4)); ws_ = []
+for occ in itertools.product((0, 1), repeat=16):
+    w = [r for r, o in zip(rg_, occ) if o]
+    if not any(a and not b for a, b, c, d in w) and any(b and c for a, b, c, d in w) and not any(c and d for a, b, c, d in w) and not any(d and not a for a, b, c, d in w) and any(d for a, b, c, d in w): ws_.append(w)
+by_text('L-BR04', list(zip(['공무원 시험을 준비하는 수강생 가운데', '법학을 전공한 수강생은 모두', '공무원 시험을 준비하는 수강생은 모두', 'PSAT를 공부하는 수강생은 모두', 'PSAT를 공부하는 수강생 가운데'],
+        [all(any(a and c for a, b, c, d in w) for w in ws_), all(not any(c and not b for a, b, c, d in w) for w in ws_), all(not any(a and not d for a, b, c, d in w) for w in ws_),
+         all(not any(b and not c for a, b, c, d in w) for w in ws_), all(any(b and d for a, b, c, d in w) for w in ws_)])))
+combo('L-BR05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
