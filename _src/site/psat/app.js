@@ -346,6 +346,8 @@
       default: return b.h ? `<p>${b.h}</p>` : '';
     }
   }
+  // 채점 뒤 '문제 다시 보기'의 지문에만 문단 번호를 붙여, 해설의 'N문단'을 바로 찾게 한다(풀 때는 실제 시험처럼 번호가 없다). 각주(p.fn)는 세지 않는다.
+  const paraCount = (b) => (String(b.h || '').match(/<p(?![^>]*\bfn\b)[\s>]/g) || []).length;
   function questionHTML(q, o) {
     const graded = o && o.graded;
     const opts = q.options.map((x, i) => {
@@ -363,7 +365,7 @@
     const fold = !graded && !(o && o.review) && q.setNo > 1 && q.set && S.lastSetDone === q.set;   // 바로 앞에서 같은 지문의 문항을 풀었을 때만
     return `<div class="qhead">${tags.join('')}</div>
       <p class="stem"><span class="no">${o && o.no ? `${o.no}.` : ''}</span><span>${stemHTML(q.stem)}</span></p>
-      <div class="body">${(q.body || []).map((b) => (fold && b.t === 'passage' ? `<details class="pass-fold"><summary>앞 문항과 같은 지문입니다 · 펼쳐 보기</summary>${blockHTML(b, q)}</details>` : blockHTML(b, q))).join('')}</div>
+      <div class="body">${(q.body || []).map((b) => (fold && b.t === 'passage' ? `<details class="pass-fold"><summary>앞 문항과 같은 지문입니다 · 펼쳐 보기</summary>${blockHTML(b, q)}</details>` : graded && b.t === 'passage' && paraCount(b) >= 2 ? blockHTML(b, q).replace('<div class="passage', '<div class="passage pnum') : blockHTML(b, q))).join('')}</div>
       <ol class="opts${graded ? ' graded' : ''}" aria-label="선택지">${opts}</ol>`;
   }
 
