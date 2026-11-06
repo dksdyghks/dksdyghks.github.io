@@ -3677,4 +3677,52 @@ combo('L-BN03', ['ㄱ', 'ㄹ']); combo('L-BN05', ['ㄱ', 'ㄴ', 'ㄷ'])
 dy_ = [dict(zip(['국어', '영어', '수학', '과학', '사회'], pm)) for pm in itertools.permutations(range(5))]
 dy_ = [x for x in dy_ if x['국어'] != 1 and x['사회'] != 0 and x['국어'] == x['영어'] + 1 and x['과학'] == x['국어'] + 1]
 by_text('L-BN04', list(zip(['수학 특강은 월요일', '사회 특강은 금요일', '영어 특강은 화요일', '과학 특강은 목요일', '국어 특강은 목요일'], [all(x['수학'] == 0 for x in dy_), all(x['사회'] == 4 for x in dy_), all(x['영어'] == 1 for x in dy_), all(x['과학'] == 3 for x in dy_), all(x['국어'] == 3 for x in dy_)])))
+# ================= S-BO / D-BO / L-BO (5급 실전, independent re-solve from the rendered options) =================
+def ev_(kind, kwh, start, stay, dis):
+    e = F({'급속': 320, '완속': 200}[kind] * kwh)
+    if kind == '완속' and start is not None and (start >= 23 or start < 7): e = e * 7 / 10
+    if dis: e = e / 2
+    return e + (1000 * -(-max(0, stay - 10) // 10) if kind == '급속' else 0)
+pick('S-BO01', f'{int(ev_("급속", 40, None, 35, 0) + ev_("완속", 50, 23.5, 0, 0) + ev_("급속", 30, None, 8, 1) + ev_("완속", 20, 22.5, 0, 0)):,}원')
+nm_ = [a * 100 + b * 10 + c for a, b, c in itertools.permutations(range(5), 3) if a]
+combo('S-BO02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(nm_) == 48, sum(n % 2 == 0 for n in nm_) == 30, sum(n % 3 == 0 for n in nm_) == 20, max(nm_) - min(nm_) == 320]) if t])
+db_ok_ = lambda db, plaza: db <= (80 if plaza else 75)
+tm_ok_ = lambda s, h: s >= 10 and s + h <= 21 and h <= 2
+fee_ok_ = lambda kind: kind != '관람료'
+rep_ok_ = lambda days_before: days_before >= 3
+by_text('S-BO03', list(zip(['광장에서 음향', '공연일 2일 전', '오후 8시부터', '관람객에게 3천', '광장이 아닌'], [db_ok_(78, True), rep_ok_(2), tm_ok_(20, 2), fee_ok_('관람료'), db_ok_(78, False)])))
+mt_ = F(300, 200)
+combo('S-BO04', [l for l, t in zip('ㄱㄴㄷㄹ', [mt_ == F(3, 2), 120 * mt_ == 180, 300 - 80 * F(300, 120) == 50, (F(1, 2) + F(300 - 120 * F(1, 2), 200)) * 60 == 102]) if t])
+tm5_ = {'A': ('라', 5, 8), 'B': ('나', 3, 3), 'C': ('라', 5, 7), 'D': ('가', 9, 8), 'E': ('나', 4, 6), 'F': ('다', 8, 7)}
+bo5_ = max(sum(tm5_[x][2] for x in s) for k in range(1, 7) for s in itertools.combinations(tm5_, k)
+           if len({tm5_[x][0] for x in s}) == k and ('E' not in s or 'F' in s) and sum(tm5_[x][1] for x in s) <= 20)
+pick('S-BO05', f'{bo5_ // 10}만' + (f' {bo5_ % 10}천' if bo5_ % 10 else '') + ' 명')
+yr_ = [(300, 240), (330, 250), (360, 260), (351, 270)]; ln_ = {'1': (30, 90, 25), '2': (50, 120, 45), '3': (40, 60, 35), '4': (60, 45, 50), '5': (90, 36, 60)}
+ps_ = [F(a, b) for a, b in yr_]
+only('D-BO01', [not x for x in [yr_[0][0] < yr_[1][0] < yr_[2][0] > yr_[3][0], ps_.index(max(ps_)) == 2, max(ln_, key=lambda k: ln_[k][1]) == max(ln_, key=lambda k: F(ln_[k][1], ln_[k][0])),
+     max(ln_, key=lambda k: F(ln_[k][1], ln_[k][2])) == '1', 2 * (ln_['1'][1] + ln_['2'][1]) >= yr_[3][0]]], 'false statements')
+mu_ = {'가': (120, 300, 150), '나': (80, 50, 40), '다': (200, 500, 200), '라': (75, 120, 30), '마': (30, 90, 20)}
+mm_ = [m for m in itertools.permutations(mu_) if mu_[m[0]][0] == max(v[0] for v in mu_.values()) and F(mu_[m[1]][0], mu_[m[1]][2]) == max(F(v[0], v[2]) for v in mu_.values())
+       and F(mu_[m[2]][1], mu_[m[2]][2]) == max(F(v[1], v[2]) for v in mu_.values()) and mu_[m[3]][1] > mu_[m[4]][1]]
+ok(len(mm_) == 1, f'D-BO02 {mm_}'); pick('D-BO02', ', '.join(mm_[0]))
+ga_ = 18 * 4; na_ = 132 // 22; da_ = F(136, 8); ra_ = F(75, 3)
+fm_ = {'A': (5, 100, 3000), 'B': (4, ga_, 3500), 'C': (na_, 132, 2800), 'D': (8, 136, 3200), 'E': (3, 75, 4200)}
+yl_ = {k: F(b, a) for k, (a, b, c) in fm_.items()}; rv_ = {k: b * c for k, (a, b, c) in fm_.items()}; rh_ = {k: F(rv_[k], fm_[k][0]) for k in fm_}
+by_text('D-BO03', list(zip(['ha당 생산량이 가장 많은', '(가)와 (나)를', '(다)는 (라)보다', '재배 면적 1ha당', '다섯 농가를'],
+        [max(yl_, key=yl_.get) == max(rv_, key=rv_.get), ga_ + na_ >= 80, da_ > ra_, max(rh_, key=rh_.get) == 'E', sum(v[1] for v in fm_.values()) >= 20 * sum(v[0] for v in fm_.values())])))
+rg_ = [300, 330, 360, 375]; rt_ = [60, 66, 72, 75]; es_ = [F(r * 100, p) for r, p in zip(rg_, rt_)]; un_ = [e - r for e, r in zip(es_, rg_)]; up_ = [rt_[i] - rt_[i - 1] for i in (1, 2, 3)]
+combo('D-BO04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(set(es_)) == 1, all(un_[i] < un_[i - 1] for i in (1, 2, 3)), up_[2] > max(up_[:2]), es_[3] * F(8, 10) - rg_[3] == 25]) if t])
+lg_ = {'A': (10000, 6000, 100), 'B': (5000, 2000, 40), 'C': (8000, 2400, 50), 'D': (3000, 1500, 20), 'E': (4000, 800, 16)}
+id_ = {k: F(b, a) for k, (a, b, c) in lg_.items()}; tt_ = F(sum(b for a, b, c in lg_.values()), sum(a for a, b, c in lg_.values()))
+combo('D-BO05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(id_, key=id_.get) == min(lg_, key=lambda k: F(lg_[k][0], lg_[k][2])), tt_ >= F(4, 10), max(lg_, key=lambda k: F(lg_[k][1], lg_[k][2])) == 'D',
+      3 * sum(lg_[k][0] for k in lg_ if id_[k] < tt_) >= 2 * sum(a for a, b, c in lg_.values())]) if t])
+pick('L-BO01', '순보험료는 보험금에 사고 확률을 곱한 값이다.')
+nt_ = lambda p: p * 1000
+combo('L-BO02', [l for l, t in zip('ㄱㄴㄷㄹ', [nt_(F(6, 100)) == 6 * nt_(F(1, 100)), F(800 * nt_(F(1, 100)) + 200 * nt_(F(6, 100)), 1000) == 20, nt_(F(1, 100)) * F(6, 5) == 12, F(400 * nt_(F(1, 100)) + 200 * nt_(F(6, 100)), 600) <= 25]) if t])
+combo('L-BO03', ['ㄱ', 'ㄴ']); combo('L-BO05', ['ㄱ', 'ㄴ'])
+st_ = []
+for pm in itertools.permutations(range(6)):
+    x = dict(zip('갑을병정무기', pm))
+    if x['을'] < 3 and (x['기'] // 3) != (x['병'] // 3) and x['기'] // 3 == x['을'] // 3 and x['기'] % 3 == x['을'] % 3 + 1 and (x['갑'] // 3) != (x['병'] // 3) and x['무'] % 3 != 1 and x['병'] % 3 != 1: st_.append(x)
+by_text('L-BO04', list(zip(['갑은 앞줄 왼쪽', '병은 뒷줄 왼쪽', '기는 앞줄 가운데', '무는 갑의', '정은 뒷줄 가운데'], [all(x['갑'] == 0 for x in st_), all(x['병'] == 3 for x in st_), all(x['기'] == 1 for x in st_), all(x['무'] == x['갑'] + 3 for x in st_), all(x['정'] == 4 for x in st_)])))
 print('ALL OK' if ok_all else 'SOME FAILED')
