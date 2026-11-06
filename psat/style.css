@@ -452,3 +452,12 @@ td.slowt { color: var(--pen); }
   .switch::after { top: 4px; left: 4px; width: 26px; height: 26px; }
   .switch[aria-checked="true"]::after { transform: translateX(20px); }
 }
+
+.pass-fold { margin: 0 0 14px; border: 1px solid var(--rule); border-radius: 12px; background: var(--sheet); }
+.pass-fold > summary { cursor: pointer; padding: 12px 14px; font-size: .875rem; font-weight: 600; color: var(--ink-2); list-style: none; }
+.pass-fold > summary::-webkit-details-marker { display: none; }
+.pass-fold > summary::before { content: '▸ '; color: var(--gold-ink); }
+.pass-fold[open] > summary::before { content: '▾ '; }
+.pass-fold[open] > summary { border-bottom: 1px solid var(--rule); }
+.pass-fold > .passage { margin: 12px; }
+@media (pointer: coarse) { .pass-fold > summary { min-height: 44px; display: flex; align-items: center; } }

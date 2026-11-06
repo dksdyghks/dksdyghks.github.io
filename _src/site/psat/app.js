@@ -356,9 +356,10 @@
     if (q.p5) tags.push('<span class="tag p5" title="5급 공채 PSAT 실전·심화 수준으로 직접 출제한 정예 문항">5급 실전</span>');
     if (q.lv) tags.push(`<span class="tag">난이도 ${P.LEVELS[q.lv]}</span>`);
     if (q.set && q.setOf) tags.push(`<span class="tag">1지문 ${q.setOf}문항 · ${q.setNo}/${q.setOf}</span>`);
+    const fold = !graded && !(o && o.review) && q.setNo > 1 && q.set && S.lastSetDone === q.set;   // 바로 앞에서 같은 지문의 문항을 풀었을 때만
     return `<div class="qhead">${tags.join('')}</div>
       <p class="stem"><span class="no">${o && o.no ? `${o.no}.` : ''}</span><span>${stemHTML(q.stem)}</span></p>
-      <div class="body">${(q.body || []).map((b) => blockHTML(b, q)).join('')}</div>
+      <div class="body">${(q.body || []).map((b) => (fold && b.t === 'passage' ? `<details class="pass-fold"><summary>앞 문항과 같은 지문입니다 · 펼쳐 보기</summary>${blockHTML(b, q)}</details>` : blockHTML(b, q))).join('')}</div>
       <ol class="opts${graded ? ' graded' : ''}" aria-label="선택지">${opts}</ol>`;
   }
 
@@ -524,6 +525,7 @@
   /* one answer into the record: statistics, seen, level, 오답노트(복습 일정) */
   function recordAnswer(q, choice, ms, mode, isReview) {
     const ok = choice === q.answer, at = Date.now();
+    S.lastSetDone = q.set || null;   // 방금 푼 문항의 지문 묶음: 같은 지문의 다음 문항에서 지문을 접어 둔다
     const e = { qid: q.id, h: seenKey(q), subj: q.subject, type: q.type, ok, choice, ans: q.answer, ms: Math.round(ms), at, mode };
     addToStats(e);
     S.seen.add(e.h);
