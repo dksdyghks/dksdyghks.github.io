@@ -348,6 +348,18 @@
   }
   // 채점 뒤 '문제 다시 보기'의 지문에만 문단 번호를 붙여, 해설의 'N문단'을 바로 찾게 한다(풀 때는 실제 시험처럼 번호가 없다). 각주(p.fn)는 세지 않는다.
   const paraCount = (b) => (String(b.h || '').match(/<p(?![^>]*\bfn\b)[\s>]/g) || []).length;
+  // 해설 속 'N문단'을 누르면 '문제 다시 보기'를 펼치고 그 문단으로 옮겨 잠깐 강조한다. 태그 밖의 글자만 바꾸고, 지문에 없는 번호는 그대로 둔다.
+  function paraLinks(html, q) {
+    const ps = (q.body || []).filter((b) => b.t === 'passage'); const n = ps.length === 1 ? paraCount(ps[0]) : 0;
+    if (n < 2) return html;
+    return html.split(/(<[^>]+>)/).map((seg) => (seg.startsWith('<') ? seg : seg.replace(/(\d+)문단/g, (m, k) => (+k >= 1 && +k <= n ? `<button type="button" class="plink" data-act="goto-para" data-n="${k}">${m}</button>` : m)))).join('');
+  }
+  function gotoPara(k) {
+    const d = $('details.reshow'); if (d) d.open = true;
+    const p = $$('.passage.pnum p:not(.fn)')[k - 1]; if (!p) return;
+    p.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    p.classList.remove('flash'); void p.offsetWidth; p.classList.add('flash');
+  }
   function questionHTML(q, o) {
     const graded = o && o.graded;
     const opts = q.options.map((x, i) => {
@@ -599,7 +611,7 @@
         <div class="qcol"><details class="reshow"${wide ? ' open' : ''}><summary>문제 다시 보기</summary><div class="sheet">${questionHTML(q, { graded: true, choice: c.choice, no: c.no, review: c.review })}</div></details></div>
         <div class="exp"><article class="sheet">
           <h3>해설</h3>
-          <div class="exp-body">${(q.explain || []).map((b) => blockHTML(b, q, c.choice)).join('')}</div>
+          <div class="exp-body">${paraLinks((q.explain || []).map((b) => blockHTML(b, q, c.choice)).join(''), q)}</div>
           <div class="src-line">${src}<br><span style="font-size:.75rem">문항 번호 ${esc(q.id)}</span></div>
           ${!c.ok ? `<div class="cause-row"><span class="subj-meta">틀린 이유</span>${CAUSES.map((x) => `<button class="chip${rec && rec.cause === x ? ' on' : ''}" data-act="cause" data-v="${x}">${x}</button>`).join('')}</div>` : ''}
           <div class="tools-row">
@@ -1210,6 +1222,7 @@
       case 'next': next(); break;
       case 'same-type': sameType(); break;
       case 'star': toggleStar(); break;
+      case 'goto-para': gotoPara(+el.dataset.n); break;
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
       case 'help': viewHelp(); break;
       case 'memo': { const w = $('.memo-wrap'); w.classList.toggle('hide'); if (!w.classList.contains('hide')) $('#memo').focus(); break; }

@@ -142,6 +142,12 @@ main { max-width: calc(var(--wrap) + 48px); margin: 0 auto; padding: 8px var(--g
 .passage p { margin: 0; text-indent: .6em; }
 .passage p + p { margin-top: .45em; }
 .passage p.noind, .passage .noind p { text-indent: 0; }
+/* 해설의 'N문단' 바로가기: 글자처럼 보이되 누를 수 있게(폰에서 누르기 쉽도록 위아래 여백) */
+.plink { display: inline; padding: 2px 0; border: 0; background: none; font: inherit; color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+.plink:focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; border-radius: 3px; }
+.passage p.flash { animation: paraFlash 1.6s ease-out; border-radius: 4px; }
+@keyframes paraFlash { 0%, 35% { background: color-mix(in srgb, var(--pen) 16%, transparent); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .passage p.flash { animation: none; background: color-mix(in srgb, var(--pen) 12%, transparent); } }
 /* 채점 뒤 지문 문단 번호: 해설의 'N문단' 찾기용 */
 .passage.pnum { counter-reset: para; }
 .passage.pnum p:not(.fn) { counter-increment: para; }
