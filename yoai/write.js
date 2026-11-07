@@ -2,14 +2,14 @@
    개요의 장·절마다 논증 설계도의 주장과 노트 카드를 배치하고, 본문 초고에 〔카드 n〕을 넣으면 내보낼 때 그 자리가 각주가 된다.
    각주는 박사학위논문의 양식을 따르고, 두 번째부터는 ‘앞의 논문’으로 줄인다.
    원고 점검은 사용자가 고른 원고와 서재만 읽는다. 원고는 저장하지 않으며, 바깥으로 아무것도 보내지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=270b97453d';
-import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=270b97453d';
-import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=270b97453d';
-import { readHangul } from './hwp.js?v=270b97453d';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=270b97453d';
-import { buildDocx, DOCX_MIME } from './docx.js?v=270b97453d';
-import { BASE, PORTRAIT, excluded } from './profile.js?v=270b97453d';
-import { projCards } from './research.js?v=270b97453d';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=6a59583b17';
+import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=6a59583b17';
+import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=6a59583b17';
+import { readHangul } from './hwp.js?v=6a59583b17';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=6a59583b17';
+import { buildDocx, DOCX_MIME } from './docx.js?v=6a59583b17';
+import { BASE, PORTRAIT, excluded } from './profile.js?v=6a59583b17';
+import { projCards } from './research.js?v=6a59583b17';
 
 const AUTHOR = '안요환';
 const ROMAN = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ'];
@@ -99,6 +99,7 @@ export function viewWrite() {
   UI.view().innerHTML = `<div class="page wide">
     <div class="notes-head"><h1>집필</h1><div class="tools">${out.length ? '<button class="btn primary" data-act="w-export">내보내기</button>' : ''}<button class="btn" data-act="sec-add" data-lv="1">+ 장</button></div></div>
     ${out.length ? `<p class="w-total" id="w-total">${totalLabel(out)}</p>` : ''}
+    ${resumeHTML(p, out, nums)}
     ${out.length >= 3 ? `<label class="w-jump"><span>장·절로 가기</span><select id="w-jump"><option value="">— 고르세요 —</option>${out.map((x, i) => `<option value="${x.id}">${'\u3000'.repeat(Math.max(0, (x.lv || 1) - 1))}${esc(nums[i])} ${esc(short(x.title || '(제목 없음)', 28))} · ${fmt(counts(x.text)[0])}자</option>`).join('')}</select></label>` : ''}
     <p class="sub">장·절을 세우고, 논증 설계도의 주장과 노트 카드를 배치합니다. <b>내보내기</b>를 누르면 개요·초고·배치한 자료가 한글 파일(.hwpx)이 되고, 〔카드 n〕과 연결한 근거는 박사학위논문 양식의 <b>진짜 각주</b>가 됩니다. 같은 문헌이 다시 나오면 ‘앞의 논문’으로 줄입니다.</p>
     ${qa}
@@ -139,14 +140,35 @@ function totalLabel(out) {
   return `초고 합계 <b>${fmt(a)}자</b> · 공백 제외 ${fmt(b)}자`;
 }
 let lastCaret = { id: '', pos: -1 };
-document.addEventListener('focusout', (e) => { const t = e.target; if (t && t.dataset && 'secText' in t.dataset) lastCaret = { id: t.closest('[data-sec]').dataset.sec, pos: t.selectionStart }; });
+// 이어 쓰기: 마지막으로 쓰던 장·절과 커서 자리를 이 기기에 적어 두고, 집필 화면 위에 그 자리로 바로 가는 단추를 둔다(글 내용은 적지 않는다).
+const resumeKey = (p) => `yoai:resume:${p.id}`;
+function rememberCaret(t) {
+  const box = t.closest('[data-sec]'); if (!box || !S.project) return;
+  lastCaret = { id: box.dataset.sec, pos: t.selectionStart };
+  try { localStorage.setItem(resumeKey(S.project), JSON.stringify(lastCaret)); } catch (e) { /* 저장소를 못 쓰면 이어 쓰기만 빠진다 */ }
+}
+function readResume(p) { try { const r = JSON.parse(localStorage.getItem(resumeKey(p)) || 'null'); return r && r.id ? r : null; } catch (e) { return null; } }
+function resumeHTML(p, out, nums) {
+  const r = readResume(p); if (!r) return '';
+  const i = out.findIndex((x) => x.id === r.id); if (i < 0) return '';
+  return `<button type="button" class="btn ghost w-resume" data-act="w-resume">이어 쓰기 · ${esc(nums[i])} ${esc(short(out[i].title || '(제목 없음)', 22))}</button>`;
+}
+ACT['w-resume'] = () => {
+  const r = readResume(S.project); if (!r) return;
+  const box = $(`[data-sec="${r.id}"]`), ta = box && $('[data-sec-text]', box); if (!ta) return;
+  const pos = Math.max(0, Math.min(r.pos >= 0 ? r.pos : ta.value.length, ta.value.length));
+  ta.focus({ preventScroll: true }); ta.setSelectionRange(pos, pos);
+  const rect = ta.getBoundingClientRect(), frac = ta.value.length ? pos / ta.value.length : 0;
+  window.scrollTo({ top: Math.max(0, window.scrollY + rect.top + rect.height * frac - window.innerHeight / 3) });
+};
+document.addEventListener('focusout', (e) => { const t = e.target; if (t && t.dataset && 'secText' in t.dataset) rememberCaret(t); });
 let secT = 0;
 const saveSoon = () => { clearTimeout(secT); secT = setTimeout(() => saveProject(S.project), 500); };
 ON_INPUT.push((t) => {
   const box = t.closest && t.closest('[data-sec]'); if (!box || !t.dataset || !('secText' in t.dataset || 'secTitle' in t.dataset)) return false;
   const s = secOf(box.dataset.sec); if (!s) return true;
   if ('secText' in t.dataset) {
-    s.text = t.value; fitDraft(t);
+    s.text = t.value; fitDraft(t); rememberCaret(t);
     const c = box.querySelector(`[data-sec-count="${s.id}"]`); if (c) c.textContent = countLabel(s.text);
     const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
     const tot = document.getElementById('w-total'); if (tot && S.project) tot.innerHTML = totalLabel(S.project.outline || []);

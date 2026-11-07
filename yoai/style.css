@@ -365,6 +365,7 @@ details.proj[open] { padding-bottom: 6px; }
 .we-warn { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--red-wash); color: var(--ink); font-size: .875rem; line-height: 1.6; }
 .we-warn b { color: var(--red); }
 .we-warn ul { margin: 6px 0 0; padding-left: 1.1em; }
+.w-resume { margin: 2px 0 10px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sec-fn { margin: 1px 2px 0; text-align: right; font-size: .75rem; color: var(--muted); }
 .sec-fn:empty { display: none; }
 .sec-fn .fn-bad { color: var(--red); font-weight: 600; }
