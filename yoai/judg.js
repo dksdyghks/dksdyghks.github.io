@@ -2,12 +2,12 @@
    사실관계 · 소송의 경과 · 판결이유 · 쟁점의 초안으로 펼친다. 사용자가 고친 정리는 그 문헌의 기록(judg)에 남고,
    논문의 ‘대상 판결’ 장 모양(심급 판결은 각주)으로 한글·Word·마크다운으로 내보내거나, 노트 카드·판례 평석 연구로 옮긴다.
    판결문 밖의 정보는 쓰지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, JUDG, $, $$, esc, uid, toast, kdate, saveCard, saveProject, logEvent, docOf, docPages, updateDoc, addFiles, modal, confirmBox, download, safeName, copyText, libLoad } from './core.js?v=f50af4622e';
-import { analyzeJudgment, isJudgment, defaultEdit, excerptOf, judgmentItems, linkJudgments, OMIT } from './judgment.js?v=f50af4622e';
-import { toHwpxBlocks, toDocx, toMd, skeleton, nextCardNo } from './write.js?v=f50af4622e';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=f50af4622e';
-import { DOCX_MIME } from './docx.js?v=f50af4622e';
-import { projCards } from './research.js?v=f50af4622e';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, JUDG, $, $$, esc, uid, toast, kdate, saveCard, saveProject, logEvent, docOf, docPages, updateDoc, addFiles, modal, confirmBox, download, safeName, copyText, libLoad } from './core.js?v=156eec6014';
+import { analyzeJudgment, isJudgment, defaultEdit, excerptOf, judgmentItems, linkJudgments, OMIT } from './judgment.js?v=156eec6014';
+import { toHwpxBlocks, toDocx, toMd, skeleton, nextCardNo } from './write.js?v=156eec6014';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=156eec6014';
+import { DOCX_MIME } from './docx.js?v=156eec6014';
+import { projCards } from './research.js?v=156eec6014';
 
 const AUTHOR = '안요환';
 let CUR = null; // { id, a, e }

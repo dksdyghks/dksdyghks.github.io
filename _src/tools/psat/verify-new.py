@@ -3976,4 +3976,54 @@ by_text('L-BT04', list(zip(['갑은 광주에', '정은 비행기를', '병은 �
         [all(c['갑'] == '광주' for c, t in mw_), all(t['정'] == '비행기' for c, t in mw_), all(c['병'] == '강릉' for c, t in mw_), all(c['을'] == '부산' for c, t in mw_),
          all([x for x in c if c[x] == '광주'][0] in ('갑', '정') for c, t in mw_)])))
 combo('L-BT05', ['ㄱ', 'ㄴ'])
+# ================= S-BU / D-BU / L-BU (5급 실전, independent re-solve from the rendered options) =================
+def due_(amount, months):
+    if months <= 0: return F(amount)
+    extra = F(amount * 3, 100) + (0 if amount < 1000000 else F(amount * 12, 1000) * min(months, 60))
+    return amount + extra
+pick('S-BU01', f'{int(due_(800000, 3) + due_(2000000, 2) + due_(1500000, 0) + due_(5000000, 70)):,}원')
+sh_ = list(itertools.permutations(range(5)))           # 책 0 = A, 1 = B
+pa_ = lambda o, b: o.index(b)
+combo('S-BU02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(sh_) == 120, sum(abs(pa_(o, 0) - pa_(o, 1)) == 1 for o in sh_) == 48, sum(0 < pa_(o, 0) < 4 for o in sh_) == 60, sum(abs(pa_(o, 0) - pa_(o, 1)) == 2 for o in sh_) == 36]) if t])
+minor_ = lambda a: a < 13
+needs_adult_ = lambda ages: any(map(minor_, ages))
+sign_on_ = lambda kids: kids > 0
+duty_ = {'운전자': {'하차 확인 장치 작동'}}
+edu_year_ = lambda first: first + 2
+only('S-BU03', [not x for x in [needs_adult_([12]), '하차 확인 장치 작동' in duty_['운전자'], sign_on_(0), not needs_adult_([13]), edu_year_(2024) == 2026]], 'false statements')
+def ang_(h, m):
+    d = abs(F(30 * h) + F(m, 2) - 6 * m) % 360
+    return min(d, 360 - d)
+first_meet_after_12_ = F(360, F(11, 2))
+combo('S-BU04', [l for l, t in zip('ㄱㄴㄷㄹ', [ang_(3, 0) == 90, ang_(3, 30) == 85, first_meet_after_12_ >= 60, F(60, F(11, 2)) == 10]) if t])
+fz_ = {'A': (400, 120, 8, 1), 'B': (350, 90, 6, 1), 'C': (500, 155, F(1, 2), 1), 'D': (450, 100, 10, 3), 'E': (420, 130, 7, 2), 'F': (600, 200, 5, 1)}
+ok_fz_ = [k for k, (c, p, e, g) in fz_.items() if c >= 400 and p <= 150 and g <= 2]
+pick('S-BU05', min(ok_fz_, key=lambda k: fz_[k][1] + 5 * fz_[k][2]))
+fy_ = [(630, 450), (629, 480), (628, 500), (627, 490)]; ow_ = {'국유림': (165, 160), '공유림': (50, 30), '사유림': (412, 300)}
+only('D-BU01', [not x for x in [all(fy_[i][0] < fy_[i - 1][0] for i in (1, 2, 3)), max(range(4), key=lambda i: fy_[i][1]) == 2, all(F(fy_[i][1], fy_[i][0]) > F(fy_[i - 1][1], fy_[i - 1][0]) for i in (1, 2, 3)),
+     F(ow_['사유림'][0], sum(v[0] for v in ow_.values())) >= F(65, 100), max(ow_, key=lambda k: F(ow_[k][1], ow_[k][0])) == '국유림']], 'false statements')
+il_ = {'가': (12, 60, 6), '나': (5, 40, 12), '다': (20, 100, 10), '라': (3, 30, 3), '마': (8, 16, 4)}
+mi_ = [m for m in itertools.permutations(il_) if il_[m[0]][0] == max(v[0] for v in il_.values()) and F(il_[m[1]][0], il_[m[1]][1]) == max(F(a, b) for a, b, c in il_.values())
+       and F(il_[m[2]][2], il_[m[2]][0]) == max(F(c, a) for a, b, c in il_.values()) and il_[m[3]][1] > il_[m[4]][1]]
+ok(len(mi_) == 1, f'D-BU02 {mi_}'); pick('D-BU02', ', '.join(mi_[0]))
+g_ = 15 * 1400; n_ = F(36000 * 100, 90); d_ = F(12000 * 100, 20000); r_ = F(45000, 1800)
+vx_ = {'A': (50000, 40000, 20), 'B': (30000, g_, 15), 'C': (n_, 36000, 24), 'D': (20000, 12000, 10), 'E': (60000, 45000, r_)}
+vr_ = {k: F(b, a) for k, (a, b, c) in vx_.items()}; vp_ = {k: F(b, c) for k, (a, b, c) in vx_.items()}
+by_text('D-BU03', list(zip(['접종률이 가장 높은', '(다)는 (라)의', '다섯 지역을', '(가)는 (나)의', '접종 기관이 가장 적은'],
+        [max(vr_, key=vr_.get) == max(vp_, key=vp_.get), d_ >= 3 * r_, F(sum(b for a, b, c in vx_.values()), sum(a for a, b, c in vx_.values())) >= F(4, 5), 2 * g_ >= n_, min(vx_, key=lambda k: vx_[k][2]) == 'B'])))
+pk_ = [F(30), F(168, 5), F(36), F(39)]; pe_ = [60, 70, 72, 78]; pp_ = [p / q for p, q in zip(pk_, pe_)]
+combo('D-BU04', [l for l, t in zip('ㄱㄴㄷㄹ', [min(range(4), key=lambda i: pp_[i]) == 1, max((1, 2, 3), key=lambda i: pe_[i] - pe_[i - 1]) == 1, max((1, 2, 3), key=lambda i: pk_[i] / pk_[i - 1]) == 3, pk_[3] / pk_[0] == F(13, 10)]) if t])
+sp_ = {'10': (92, 95), '20': (99, 99), '30': (97, 98), '60': (80, 90), '70+': (40, 60)}
+miss_drop_ = lambda k: F(sp_[k][1] - sp_[k][0], 100 - sp_[k][0])          # 미보유율 감소율 = (미보유 감소분) ÷ (처음 미보유율)
+combo('D-BU05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(sp_, key=lambda k: sp_[k][1] - sp_[k][0]) == '70+', all(b >= a for a, b in sp_.values()), max(sp_, key=miss_drop_) == '70+',
+      (sp_['10'][0] - sp_['70+'][0]) - (sp_['10'][1] - sp_['70+'][1]) >= 20]) if t])
+pick('L-BU01', '소득이 적은 가구일수록 소득에서 부가가치세가 차지하는 비율이 높아진다.')
+tx_ = lambda base: F(base, 10)
+combo('L-BU02', [l for l, t in zip('ㄱㄴㄷㄹ', [tx_(160) == 16, tx_(160) / 200 > tx_(300) / 600, tx_(300) >= 2 * tx_(160), tx_(160 - 40) / 200 == F(6, 100)]) if t])
+combo('L-BU03', ['ㄱ', 'ㄴ'])
+wd_ = [dict(zip('ABCDE', b)) for b in itertools.product([0, 1], repeat=5)]
+ok_w_ = [w for w in wd_ if imp(w['A'], w['B']) and imp(not w['C'], not w['B']) and not (w['C'] and w['D']) and (w['A'] or w['D']) and imp(w['E'], w['D'])]
+by_text('L-BU04', list(zip(['B를 시행한다', 'E를 시행하지 않는다', 'A와 D 가운데', 'C를 시행한다', 'D를 시행하면'],
+        [all(w['B'] for w in ok_w_), all(not w['E'] for w in ok_w_), all(w['A'] != w['D'] for w in ok_w_), all(w['C'] for w in ok_w_), all(imp(w['D'], w['E']) for w in ok_w_)])))
+combo('L-BU05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
