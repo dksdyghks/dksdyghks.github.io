@@ -4026,4 +4026,57 @@ ok_w_ = [w for w in wd_ if imp(w['A'], w['B']) and imp(not w['C'], not w['B']) a
 by_text('L-BU04', list(zip(['B를 시행한다', 'E를 시행하지 않는다', 'A와 D 가운데', 'C를 시행한다', 'D를 시행하면'],
         [all(w['B'] for w in ok_w_), all(not w['E'] for w in ok_w_), all(w['A'] != w['D'] for w in ok_w_), all(w['C'] for w in ok_w_), all(imp(w['D'], w['E']) for w in ok_w_)])))
 combo('L-BU05', ['ㄱ', 'ㄴ'])
+# ================= S-BV / D-BV / L-BV (5급 실전, independent re-solve from the rendered options) =================
+def back_(price, days_before, booked_today):
+    if days_before == 0: return 0
+    if booked_today and days_before >= 2: return price
+    cut = 0 if days_before >= 10 else F(1, 10) if days_before >= 7 else F(1, 5) if days_before >= 3 else F(3, 10)
+    return price * (1 - cut)
+pick('S-BV01', f'{int(back_(80000, 8, 0) + back_(60000, 5, 1) + back_(100000, 2, 0) + back_(50000, 0, 0)):,}원')
+grp_ = {frozenset([frozenset(c), frozenset(set(range(6)) - set(c))]) for c in itertools.combinations(range(6), 3)}   # 0·1·2 남학생(0 = 갑, 1 = 을, 2 = 병)
+tog_ = lambda sp, a, b: any({a, b} <= t for t in sp)
+combo('S-BV02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(grp_) == 10, sum(tog_(sp, 0, 1) for sp in grp_) == 4, sum(all(t & {0, 1, 2} and t - {0, 1, 2} for t in sp) for sp in grp_) == 8,
+      sum(tog_(sp, 0, 1) and not tog_(sp, 0, 2) for sp in grp_) == 4]) if t])
+walk_ok_ = lambda age: age < 13 or age >= 65
+bike_kinds_ = {'페달 보조'}
+cross_rule_ = {'횡단보도': '내려서 끌고 감'}
+sidewalk_first_ = {'보도': '보행자'}
+lane_rule_ = {'자전거도로 있음': '자전거도로'}
+only('S-BV03', [walk_ok_(15), '페달 보조' in bike_kinds_, cross_rule_['횡단보도'] == '타고 건넘', walk_ok_(70) and sidewalk_first_['보도'] == '자전거', lane_rule_['자전거도로 있음'] == '차도 오른쪽'])
+f_, s_ = 45, 15
+combo('S-BV04', [l for l, t in zip('ㄱㄴㄷㄹ', [F(f_ + 5, s_ + 5) == F(5, 2), F(f_ + 10, s_ + 10) == 2, F(f_ - 10, s_ - 10) == 7, f_ + s_ + 2 * 20 == 100]) if t])
+rt_ = {'A': (12, 55, 1, 92), 'B': (8, 70, 0, 95), 'C': (9, 50, 2, 93), 'D': (10, 45, 1, 85), 'E': (14, 40, 0, 97), 'F': (15, 35, 1, 99)}
+pick('S-BV05', min((k for k, (c, t, x, p) in rt_.items() if t <= 60 and x <= 1 and p >= 90), key=lambda k: rt_[k][0]))
+yv_ = [(160, 60), (180, 55), (200, 60), (210, 60)]; dg_ = [F(a * r, 100) for a, r in yv_]; nd_ = [a - d for (a, r), d in zip(yv_, dg_)]
+cv_ = {'가': (80, 50), '나': (60, 36), '다': (30, 21), '라': (25, 10), '기타': (15, 9)}
+only('D-BV01', [not x for x in [all(yv_[i][0] > yv_[i - 1][0] for i in (1, 2, 3)), all(dg_[i] > dg_[i - 1] for i in (1, 2, 3)), all(nd_[i] > nd_[i - 1] for i in (1, 2, 3)),
+     F(cv_['가'][0], sum(v[0] for v in cv_.values())) >= F(1, 3), max(cv_, key=lambda k: F(cv_[k][1], cv_[k][0])) == '다']], 'false statements')
+fc_ = {'가': (200, 20, 125), '나': (300, 45, 100), '다': (600, 150, 400), '라': (100, 30, 80), '마': (500, 100, 250)}
+mf_ = [m for m in itertools.permutations(fc_) if fc_[m[0]][0] == max(v[0] for v in fc_.values()) and F(fc_[m[1]][0], fc_[m[1]][2]) == max(F(a, c) for a, b, c in fc_.values())
+       and F(fc_[m[2]][1], fc_[m[2]][0]) == min(F(b, a) for a, b, c in fc_.values()) and fc_[m[3]][2] > fc_[m[4]][2]]
+ok(len(mf_) == 1, f'D-BV02 {mf_}'); pick('D-BV02', ', '.join(mf_[0]))
+g_ = 150 * 6; n_ = F(1200, 4); d_ = F(700 * 4000, 10000); r_ = F(1000, 250)
+pk_ = {'A': (200, 1000, 300), 'B': (150, g_, 270), 'C': (n_, 1200, 330), 'D': (100, 700, d_), 'E': (250, 1000, 250)}
+tu_ = {k: F(b, a) for k, (a, b, c) in pk_.items()}; fe_ = {k: F(c * 10000, b) for k, (a, b, c) in pk_.items()}
+by_text('D-BV03', list(zip(['회전율이 가장 높은', '(가)는 (나)의', '(다)는 300', '다섯 주차장을', '1대당 요금이 가장 낮은'],
+        [max(tu_, key=tu_.get) == max(pk_, key=lambda k: pk_[k][2]), g_ == 3 * n_, d_ >= 300, F(sum(b for a, b, c in pk_.values()), sum(a for a, b, c in pk_.values())) >= 5, min(fe_, key=fe_.get) == 'C'])))
+pr_ = [60, 62, 64, 65]; ur_ = [85, 86, 88, 90]; bl_ = [F(p * u, 100) for p, u in zip(pr_, ur_)]; ls_ = [p - b for p, b in zip(pr_, bl_)]
+combo('D-BV04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(bl_[i] > bl_[i - 1] for i in (1, 2, 3)), all(ls_[i] < ls_[i - 1] for i in (1, 2, 3)), max((1, 2, 3), key=lambda i: ls_[i - 1] - ls_[i]) == 3, ls_[3] <= ls_[0] * F(2, 3)]) if t])
+tv_ = {'10': ((60, 90), (30, 150)), '20': ((80, 100), (40, 140)), '40': ((150, 40), (120, 80)), '60': ((240, 10), (230, 30))}
+combo('D-BV05', [l for l, t in zip('ㄱㄴㄷㄹ', [all(b[0] < a[0] and b[1] > a[1] for a, b in tv_.values()), max(tv_, key=lambda k: sum(tv_[k][1])) == '60',
+      max(tv_, key=lambda k: F(tv_[k][1][1], tv_[k][0][1])) == '10', sum(tv_['20'][1]) > sum(tv_['20'][0])]) if t])
+pick('L-BV01', '이미 낸 돈 가운데 환불받을 수 있는 부분은 매몰비용이 아니다.')
+oc_ = lambda fee, forgone: fee + max(forgone)
+same_cost_out_ = lambda a, b: a != b
+sunk_ = lambda refundable: not refundable
+combo('L-BV02', [l for l, t in zip('ㄱㄴㄷㄹ', [oc_(1000, [3000]) == 4000, same_cost_out_(1200, 1200), sunk_(False), oc_(1000, [3000, 3500]) == 4500]) if t])
+combo('L-BV03', ['ㄱ', 'ㄴ'])
+kk_ = []
+for b in itertools.product([True, False], repeat=4):
+    x = dict(zip('갑을병정', b))
+    st = [not x['을'], x['병'] == x['정'], sum(b) == 2, not (x['갑'] and x['병'])]
+    if all(s == v for s, v in zip(st, b)): kk_.append(x)
+by_text('L-BV04', list(zip(['을은 정직한', '정직한 사람은 세', '병과 정은 같은', '갑과 병은 정직한', '정은 정직한'],
+        [all(x['을'] for x in kk_), all(sum(x.values()) == 3 for x in kk_), all(x['병'] == x['정'] for x in kk_), all(x['갑'] and x['병'] for x in kk_), all(x['정'] for x in kk_)])))
+combo('L-BV05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
