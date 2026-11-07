@@ -4422,4 +4422,57 @@ ok(len(kn_) == 1, f'L-CB04 {kn_}')
 by_text('L-CB04', list(zip(['갑은 진실족', '진실족은 두 사람', '병은 진실족', '네 사람 가운데', '정은 진실족'],
         [kn_[0]['갑'], sum(kn_[0].values()) == 2, kn_[0]['병'], [k for k, x in kn_[0].items() if x] == ['을'], kn_[0]['정']])))
 combo('L-CB05', ['ㄱ', 'ㄴ', 'ㄷ'])
+# ================= S-CC / D-CC / L-CC (5급 실전, independent re-solve from the rendered options) =================
+def speed_fine_(limit, speed, school, early):
+    over = speed - limit
+    amt = 40000 if over <= 20 else 70000 if over <= 40 else 100000
+    amt *= 2 if school else 1
+    return amt * F(4, 5) if early else amt
+pick('S-CC01', f'{int(speed_fine_(60, 75, False, True) + speed_fine_(30, 55, True, False) + speed_fine_(100, 145, False, True) + speed_fine_(80, 120, False, False)):,}원')
+rolls_ = [(r, b) for r in range(1, 7) for b in range(1, 7)]
+combo('S-CC02', [l for l, t in zip('ㄱㄴㄷㄹ', [len([1 for r, b in rolls_ if r + b == 7]) == 6, len([1 for r, b in rolls_ if (r + b) % 2 == 0]) == 18, len([1 for r, b in rolls_ if (r * b) % 2 == 0]) == 24,
+       len([1 for r, b in rolls_ if abs(r - b) == 2]) == 10]) if t])
+def parcel_pay_(loss, declared=None, cash=False):
+    if cash and declared is None: return 0
+    return declared if declared is not None else min(loss, 500000)
+damage_days_ok_ = lambda d: d <= 14
+loss_claim_days_ = 365
+by_text('S-CC03', list(zip(['가액을 신고하지 않고', '가액을 100만 원으로', '물품을 받은 날부터 20일', '종류와 가액을 신고하지 않고', '물품을 잃어버린 경우'],
+        [parcel_pay_(800000) == 800000, parcel_pay_(1000000, declared=1000000) == 1000000, damage_days_ok_(20), parcel_pay_(300000, cash=True) == 300000, loss_claim_days_ <= 14])))
+va_, vb_ = 4, 6
+t_meet_ = F(10, va_ + vb_); t_catch_ = F(2, vb_ - va_); t_late_ = F(1, 2) + F(10 - va_ * F(1, 2), va_ + vb_)
+combo('S-CC04', [l for l, t in zip('ㄱㄴㄷㄹ', [t_meet_ * 60 == 70, va_ * t_meet_ == 4, t_catch_ == 1, t_late_ * 60 == 78]) if t])
+co_ = {'A': (30, 4), 'B': (30, 6), 'C': (20, 3), 'D': (12, 4), 'E': (10, 2), 'F': (24, 3)}
+okco_ = [c for n in range(1, 4) for c in itertools.combinations(co_, n) if sum(co_[x][1] for x in c) >= 12 and not {'B', 'D'} <= set(c)]
+pick('S-CC05', f'{min(sum(co_[x][0] for x in c) for c in okco_)}만 원')
+np_ = [(3800, 2), (4000, 3), (4200, 4), (4100, 5)]; fo_ = [F(a * r, 100) for a, r in np_]; dm_ = [a - f for (a, r), f in zip(np_, fo_)]
+pk_ = {'가': 900, '나': 800, '다': 700, '라': 600, '기타': 1100}
+only('D-CC01', [not x for x in [all(np_[i][0] > np_[i - 1][0] for i in (1, 2, 3)), all(fo_[i] > fo_[i - 1] for i in (1, 2, 3)), max(range(4), key=lambda i: dm_[i]) == 2, fo_[3] / fo_[0] >= F(5, 2),
+     F(pk_['가'] + pk_['나'], sum(pk_.values())) >= F(2, 5)]], 'false statements')
+rs_ = {'가': (400, 800, 100), '나': (500, 2000, 125), '다': (200, 900, 80), '라': (300, 1500, 200), '마': (100, 1200, 25)}
+mr_ = [m for m in itertools.permutations(rs_) if rs_[m[0]][0] == max(v[0] for v in rs_.values()) and F(rs_[m[1]][0], rs_[m[1]][1]) == max(F(a, b) for a, b, c in rs_.values())
+       and F(rs_[m[2]][0], rs_[m[2]][2]) == min(F(a, c) for a, b, c in rs_.values()) and rs_[m[3]][1] > rs_[m[4]][1]]
+ok(len(mr_) == 1, f'D-CC02 {mr_}'); pick('D-CC02', ', '.join(mr_[0]))
+wg_ = F(450, 75); wn_ = 50 * 10; wd_ = F(200 * 10000, 400); wr_ = F(700 * 2000, 10000)
+sw_ = {'A': (600, 8, 3000), 'B': (450, wg_, 4000), 'C': (wn_, 10, 3600), 'D': (400, 5, wd_), 'E': (700, 7, 2000)}
+lane_ = {k: F(a, b) for k, (a, b, c) in sw_.items()}; rev_ = {k: F(a * c, 10000) for k, (a, b, c) in sw_.items()}
+by_text('D-CC03', list(zip(['레인당 이용객이 가장 많은', '(가)는 D의', '(나)는 A의', '다섯 수영장을', '(라)는 A의'],
+        [max(lane_, key=lane_.get) == max(rev_, key=rev_.get), wg_ - sw_['D'][1] >= 2, wn_ > sw_['A'][0], F(sum(rev_.values()) * 10000, sum(a for a, b, c in sw_.values())) >= 3500, wr_ < rev_['A']])))
+cl_ = [10000, 12000, 11000, 13000]; pr2_ = [50, 55, 60, 52]; pl2_ = [F(c * r, 100) for c, r in zip(cl_, pr2_)]; np2_ = [c - p for c, p in zip(cl_, pl2_)]
+combo('D-CC04', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(4), key=lambda i: pl2_[i]) == 3 and pl2_.count(max(pl2_)) == 1, pl2_[1] == pl2_[2], all(np2_[i] > np2_[i - 1] for i in (1, 2, 3)), pl2_[3] >= pl2_[0] * F(7, 5)]) if t])
+dr_ = {'A': (1000, 25000), 'B': (400, 8000), 'C': (300, 9000), 'D': (200, 3000), 'E': (100, 2800)}; pt_ = {k: F(d, p * 10) for k, (p, d) in dr_.items()}
+whole_ = F(sum(d for p, d in dr_.values()), sum(p for p, d in dr_.values()) * 10)
+combo('D-CC05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(pt_, key=pt_.get) == 'C', max(pt_, key=pt_.get) == max(dr_, key=lambda k: dr_[k][1]), whole_ >= F(5, 2), sorted(k for k in pt_ if pt_[k] < whole_) == ['B', 'D']]) if t])
+pick('L-CC01', '출산이 줄어들면 한동안 총부양비가 낮아질 수 있다.')
+dep_ = lambda y, o, w: (F(y * 100, w), F(o * 100, w))
+pop_ = {2000: (1000, 300, 3000), 2025: (600, 800, 3200)}            # 유소년, 고령, 생산연령
+y0_, o0_ = dep_(*pop_[2000]); y1_, o1_ = dep_(*pop_[2025])
+aging_ = lambda yr: F(pop_[yr][1] * 100, pop_[yr][0])
+combo('L-CC02', [l for l, t in zip('ㄱㄴㄷㄹ', [y1_ + o1_ < y0_ + o0_, o1_ / o0_ == F(5, 2), aging_(2025) > 100, y1_ < 20]) if t])
+combo('L-CC03', ['ㄱ', 'ㄷ'])
+asg_ = [dict(zip('갑을병정', pm)) for pm in itertools.permutations(['국어', '영어', '수학', '사회'])]
+asg_ok_ = [a for a in asg_ if (a['병'] != '국어' or a['을'] == '수학') and a['갑'] in ('영어', '사회') and a['정'] in ('영어', '수학') and (a['정'] != '영어' or a['을'] == '국어')]
+by_text('L-CC04', list(zip(['을은 국어', '갑은 사회', '정은 수학', '병은 영어', '갑이 영어를'],
+        [all(a['을'] == '국어' for a in asg_ok_), all(a['갑'] == '사회' for a in asg_ok_), all(a['정'] == '수학' for a in asg_ok_), all(a['병'] == '영어' for a in asg_ok_), all(a['갑'] != '영어' or a['병'] == '수학' for a in asg_ok_)])))
+combo('L-CC05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
