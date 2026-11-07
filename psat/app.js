@@ -529,6 +529,8 @@
     saveCur();
     viewQuiz();
   }
+  // 계산 메모: 폰에는 시험지 여백이 없으므로 문항마다 메모 칸을 둔다(이 기기, 이번 사용 동안만 기억). 채점 뒤 해설 위에 다시 보여 준다.
+  const SCRATCH = new Map();
   function viewQuiz() {
     const c = S.cur, q = c.q;
     const inSet = c.ctx && c.ctx.mode === 'set' && S.set && !S.set.done, later = inSet ? (S.set.later || []).length : 0;
@@ -536,6 +538,7 @@
     const crumb = inSet ? `<span class="crumb-x"><b>실전 세트</b> · ${SUBJ[q.subject].name} · </span>푼 문항 <b>${S.set.results.length}/${S.set.n}</b>${later ? ` · 넘긴 ${later}` : ''}${c.deferred ? ' · <b>넘겼던 문항</b>' : ''}` : `<b>${SUBJ[q.subject].name}</b>${c.ctx && c.ctx.type ? ` · ${esc(typeShort(q.subject, c.ctx.type))}` : ''}${c.ctx && c.ctx.mode === 'review' ? ' · 복습' : ''}${c.ctx && c.ctx.p5 ? ' · 5급 실전 정예' : ''}`;
     paint(shell(crumb, `
       <article class="sheet fade-in" aria-label="문제">${questionHTML(q, { choice: c.choice, no: c.no, review: c.review })}</article>
+      <details class="scratch"${SCRATCH.get(q.id) ? ' open' : ''}><summary>계산 메모 <span class="m">시험지 여백처럼 쓰는 곳 · 채점 뒤 해설에서 다시 보입니다</span></summary><label class="sr" for="scratch">계산 메모</label><textarea id="scratch" rows="4" placeholder="예: 60 × 1.5 = 90, (가) = 1,800 ÷ 75 …" autocomplete="off" spellcheck="false">${esc(SCRATCH.get(q.id) || '')}</textarea></details>
       <div class="actions">
         <button class="btn ghost" data-act="home" title="기록하지 않고 처음 화면으로 나갑니다">나가기</button>
         ${canLater ? '<button class="btn ghost" data-act="later" title="이 문항을 넘기고, 남은 문항을 다 푼 뒤에 다시 풉니다(쓴 시간과 고른 답은 그대로) · 단축키 L">넘기기</button>' : ''}
@@ -621,6 +624,7 @@
       <div class="exp-layout${wide ? ' two' : ''}">
         <div class="qcol"><details class="reshow"${wide ? ' open' : ''}><summary>문제 다시 보기</summary><div class="sheet">${questionHTML(q, { graded: true, choice: c.choice, no: c.no, review: c.review })}</div></details></div>
         <div class="exp"><article class="sheet">
+          ${SCRATCH.get(q.id) ? `<details class="scratch-x" open><summary>풀 때 쓴 계산 메모</summary><pre>${esc(SCRATCH.get(q.id))}</pre></details>` : ''}
           <h3>해설</h3>
           <div class="exp-body">${paraLinks((q.explain || []).map((b) => blockHTML(b, q, c.choice)).join(''), q)}</div>
           <div class="src-line">${src}<br><span style="font-size:.75rem">문항 번호 ${esc(q.id)}</span></div>
@@ -1277,6 +1281,7 @@
   let memoTimer = 0;
   document.addEventListener('input', (e) => {
     if (!S.cur) return;
+    if (e.target.id === 'scratch') { const v = e.target.value; if (v.trim()) SCRATCH.set(S.cur.q.id, v); else SCRATCH.delete(S.cur.q.id); return; }
     if (e.target.id === 'memo' || e.target.id === 'flag') {
       const rec = ensureRec(S.cur.q); rec[e.target.id] = e.target.value;
       clearTimeout(memoTimer); memoTimer = setTimeout(() => { putRec(rec); const b = $(`[data-act="${e.target.id}"]`); if (b) b.classList.toggle('on', !!rec[e.target.id]); }, 400);
