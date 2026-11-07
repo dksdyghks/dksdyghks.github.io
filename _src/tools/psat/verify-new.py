@@ -4475,4 +4475,52 @@ asg_ok_ = [a for a in asg_ if (a['병'] != '국어' or a['을'] == '수학') and
 by_text('L-CC04', list(zip(['을은 국어', '갑은 사회', '정은 수학', '병은 영어', '갑이 영어를'],
         [all(a['을'] == '국어' for a in asg_ok_), all(a['갑'] == '사회' for a in asg_ok_), all(a['정'] == '수학' for a in asg_ok_), all(a['병'] == '영어' for a in asg_ok_), all(a['갑'] != '영어' or a['병'] == '수학' for a in asg_ok_)])))
 combo('L-CC05', ['ㄱ', 'ㄴ'])
+# ================= S-CD / D-CD / L-CD (5급 실전, independent re-solve from the rendered options) =================
+def lecture_pay_(hours, start_hour, wrote, km):
+    fee = 50000 * hours * (F(6, 5) if start_hour >= 19 else 1)
+    return fee + (100000 if wrote else 0) + (30000 if km >= 50 else 0)
+pick('S-CD01', f'{int(lecture_pay_(3, 10, True, 30) + lecture_pay_(2, 19, False, 80) + lecture_pay_(1, 10, True, 60) + lecture_pay_(1, 15, False, 50)):,}원')
+three_ = [int(''.join(map(str, t))) for t in itertools.permutations([1, 2, 3, 4, 5], 3)]
+combo('S-CD02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(three_) == 60, len([n for n in three_ if n % 2 == 0]) == 24, len([n for n in three_ if n > 300]) == 36, len([n for n in three_ if n % 3 == 0]) == 18]) if t])
+bike_ = {'자전거도로 없을 때': '오른쪽 가장자리', '보도 허용': lambda age: age < 13 or age >= 65, '음주 범칙금': 30000, '측정 불응 범칙금': 100000, '밤 등화': {'전조등', '미등'}}
+by_text('S-CD03', list(zip(['자전거도로가 없는', '40세인 사람은', '술에 취한 상태로', '70세인 사람은', '밤에 자전거를'],
+        [bike_['자전거도로 없을 때'] == '가운데', bike_['보도 허용'](40), bike_['음주 범칙금'] == 100000, bike_['보도 허용'](70), bike_['밤 등화'] == {'미등'}])))
+chain_ = lambda price, rates: price * functools_reduce_(rates)
+def functools_reduce_(rates):
+    m = F(1)
+    for r in rates: m *= F(100 + r, 100)
+    return m
+base_ = 100000
+combo('S-CD04', [l for l, t in zip('ㄱㄴㄷㄹ', [chain_(base_, [-20, -10]) == 72000, chain_(base_, [10, -10]) == 99000, chain_(base_, [-30]) == chain_(base_, [-20, -10]), chain_(chain_(base_, [-25]), [25]) == base_]) if t])
+cg_ = {'A': (45, 90, True), 'B': (25, 70, True), 'C': (40, 45, True), 'D': (45, 40, False), 'E': (35, 45, False), 'F': (35, 30, False)}
+okcg_ = [c for n in range(0, 7) for c in itertools.combinations(cg_, n) if sum(cg_[x][0] for x in c) <= 100 and sum(cg_[x][2] for x in c) <= 1 and not {'B', 'E'} <= set(c)]
+pick('S-CD05', f'{max(sum(cg_[x][1] for x in c) for c in okcg_)}만 원')
+yp_ = [(900, 45), (880, 46), (860, 47), (850, 46)]; ye_ = [F(a * r, 100) for a, r in yp_]; yn_ = [a - e for (a, r), e in zip(yp_, ye_)]
+ind_ = {'숙박·음식': 80, '도소매': 70, '제조': 120, '정보통신': 40, '기타': 81}
+only('D-CD01', [not x for x in [all(yp_[i][0] < yp_[i - 1][0] for i in (1, 2, 3)), max(range(4), key=lambda i: yp_[i][1]) == 2, all(ye_[i] < ye_[i - 1] for i in (1, 2, 3)), all(yn_[i] < yn_[i - 1] for i in (1, 2, 3)),
+     max(ind_, key=ind_.get) == '제조' and F(ind_['숙박·음식'] + ind_['도소매'], sum(ind_.values())) < F(2, 5)]], 'false statements')
+pw_ = {'가': (500, 1500, 300), '나': (300, 1200, 100), '다': (800, 4000, 400), '라': (600, 2400, 150), '마': (200, 1200, 60)}
+mp2_ = [m for m in itertools.permutations(pw_) if pw_[m[0]][1] == max(v[1] for v in pw_.values()) and F(pw_[m[1]][1], pw_[m[1]][0]) == max(F(b, a) for a, b, c in pw_.values())
+        and F(pw_[m[2]][1], pw_[m[2]][2]) == min(F(b, c) for a, b, c in pw_.values()) and pw_[m[3]][0] > pw_[m[4]][0]]
+ok(len(mp2_) == 1, f'D-CD02 {mp2_}'); pick('D-CD02', ', '.join(mp2_[0]))
+vg_ = F(1500 * 90, 100); vn_ = F(1750 * 100, 70); vd_ = F(1020, 170); vr_ = F(2100, 10)
+vc_ = {'A': (2000, 1600, 8), 'B': (1500, vg_, 9), 'C': (vn_, 1750, 7), 'D': (1200, 1020, vd_), 'E': (3000, 2100, 10)}
+rate_ = {k: F(b * 100, a) for k, (a, b, c) in vc_.items()}; per2_ = {k: F(b, c) for k, (a, b, c) in vc_.items()}
+by_text('D-CD03', list(zip(['(가)와 D의', '접종률이 가장 높은', '(나)는 A와 B의', '다섯 보건소를', '(다)는 A의'],
+        [vg_ + vc_['D'][1] > vc_['E'][1], max(rate_, key=rate_.get) == max(per2_, key=per2_.get), vn_ > vc_['A'][0] + vc_['B'][0], F(sum(b for a, b, c in vc_.values()) * 100, sum(a for a, b, c in vc_.values())) >= 80, vd_ > vc_['A'][2]])))
+im_ = [150, 160, 170, 175]; bn_ = [60, 65, 62, 70]; bq_ = [F(i * b, 100) for i, b in zip(im_, bn_)]; oq_ = [i - b for i, b in zip(im_, bq_)]
+combo('D-CD04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(oq_[i] < oq_[i - 1] for i in (1, 2, 3)), max(range(4), key=lambda i: oq_[i]) == 2, max(range(1, 4), key=lambda i: bq_[i] - bq_[i - 1]) == 3, bq_[3] / bq_[0] >= F(13, 10)]) if t])
+jr_ = {'공학': (70, 75), '자연': (60, 63), '인문': (50, 48), '사회': (55, 57), '예체능': (45, 51)}; rise_ = {k: (a, b) for k, (a, b) in jr_.items() if b > a}
+combo('D-CD05', [l for l, t in zip('ㄱㄴㄷㄹ', [len(rise_) == 4, max(rise_, key=lambda k: rise_[k][1] - rise_[k][0]) == '공학', max(rise_, key=lambda k: F(rise_[k][1] - rise_[k][0], rise_[k][0])) == '예체능',
+       F(jr_['공학'][1], jr_['인문'][1]) >= F(8, 5)]) if t])
+pick('L-CD01', '손익분기점을 넘어선 뒤에는 하나를 더 팔 때마다 이익이 단위당 공헌이익만큼 늘어난다.')
+be_ = lambda fixed, price, var: F(fixed, price - var)
+profit_ = lambda q, fixed, price, var: q * (price - var) - fixed
+combo('L-CD02', [l for l, t in zip('ㄱㄴㄷㄹ', [be_(3000000, 10000, 4000) == 500, profit_(800, 3000000, 10000, 4000) == 1800000, be_(3000000, 12000, 4000) == 375, be_(3600000, 10000, 4000) == 550]) if t])
+combo('L-CD03', ['ㄱ', 'ㄴ', 'ㄷ'])
+rk_ = [dict(zip('ABCD', pm)) for pm in itertools.permutations(range(1, 5))]
+rk_ok_ = [r for r in rk_ if (r['A'] == 1) != (r['B'] == 3) and (r['C'] == 1) != (r['D'] == 2) and (r['D'] == 3) != (r['A'] == 2)]
+ok(len(rk_ok_) == 1, f'L-CD04 {rk_ok_}')
+by_text('L-CD04', list(zip(['A는 1등', 'B는 3등', 'D는 2등', 'C는 2등', 'A는 3등'], [rk_ok_[0]['A'] == 1, rk_ok_[0]['B'] == 3, rk_ok_[0]['D'] == 2, rk_ok_[0]['C'] == 2, rk_ok_[0]['A'] == 3])))
+combo('L-CD05', ['ㄱ', 'ㄷ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
