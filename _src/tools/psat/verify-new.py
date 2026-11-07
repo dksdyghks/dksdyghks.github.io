@@ -4079,4 +4079,53 @@ for b in itertools.product([True, False], repeat=4):
 by_text('L-BV04', list(zip(['을은 정직한', '정직한 사람은 세', '병과 정은 같은', '갑과 병은 정직한', '정은 정직한'],
         [all(x['을'] for x in kk_), all(sum(x.values()) == 3 for x in kk_), all(x['병'] == x['정'] for x in kk_), all(x['갑'] and x['병'] for x in kk_), all(x['정'] for x in kk_)])))
 combo('L-BV05', ['ㄱ', 'ㄴ'])
+# ================= S-BW / D-BW / L-BW (5급 실전, independent re-solve from the rendered options) =================
+won_by_rank_ = {1: 200, 2: 300}
+def baby_(ranks, months): s = sum(won_by_rank_.get(r, 500) for r in ranks); return F(s, 2) if months < 12 else F(s)
+tb_ = baby_([1], 36) + baby_([2], 6) + baby_([3, 4], 24) + baby_([2], 14)
+pick('S-BW01', f'{int(tb_) // 1000}천{int(tb_) % 1000}만 원')
+tp_ = ['m1', 'm2', 'm3', 'cheese', 'mush', 'olive']
+sel_ = [c for k in (2, 3) for c in itertools.combinations(tp_, k)]
+meat_n_ = lambda c: sum(x.startswith('m') and x != 'mush' for x in c)
+combo('S-BW02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(sel_) == 35, sum('cheese' in c for c in sel_) == 15, sum(meat_n_(c) == 1 for c in sel_) == 16, sum(meat_n_(c) == 0 for c in sel_) == 4]) if t])
+def wd_(days, differs=False, months=0, opened=False, for_check=True, copy=False):
+    if differs: return months <= 3
+    return days <= 7 and not (opened and (copy or not for_check))
+only('S-BW03', [not x for x in [wd_(5), wd_(3, opened=True), wd_(10), not wd_(2, opened=True, copy=True), wd_(60, differs=True, months=2)]], 'false statements')
+dn_ = F(45, 12 + 3); upst_ = F(45, 12 - 3)
+combo('S-BW04', [l for l, t in zip('ㄱㄴㄷㄹ', [dn_ == 3, upst_ == 4, F(90, dn_ + upst_) == 12, dn_ + upst_ - F(90, 12) == F(1, 2)]) if t])
+av_ = {'갑': {9, 11, 13, 15, 16}, '을': {10, 11, 14, 15, 16}, '병': {9, 10, 11, 14, 15}, '정': {11, 13, 14, 15, 16}, '무': {10, 11, 14, 15, 16}, '기': {9, 10, 11, 13, 14}}
+okt_ = [t for t in (9, 10, 11, 13, 14, 15, 16) if t in av_['갑'] and t not in (11, 15)]
+bt_ = max(okt_, key=lambda t: sum(t in v for v in av_.values()))
+ok(sorted(sum(t in v for v in av_.values()) for t in okt_)[-1] > sorted(sum(t in v for v in av_.values()) for t in okt_)[-2], 'S-BW05 unique best slot')
+pick('S-BW05', f'{bt_}시')
+ey_ = [(500, 56), (520, 55), (540, 55), (550, 52)]; ei_ = [F(a * r, 100) for a, r in ey_]; en_ = [a - i for (a, r), i in zip(ey_, ei_)]
+us_ = {'산업': 286, '일반': 150, '주택': 80, '농사': 24, '교육': 10}
+only('D-BW01', [not x for x in [all(ey_[i][0] > ey_[i - 1][0] for i in (1, 2, 3)), max(range(4), key=lambda i: ei_[i]) == 2, all(en_[i] > en_[i - 1] for i in (1, 2, 3)),
+     all(ei_[i] > ei_[i - 1] for i in (1, 2, 3)), F(us_['일반'], us_['주택']) >= F(3, 2)]], 'false statements')
+cb_ = {'가': (20, 200, 70), '나': (8, 60, 45), '다': (12, 150, 50), '라': (30, 400, 80), '마': (15, 90, 40)}
+mc_ = [m for m in itertools.permutations(cb_) if cb_[m[0]][2] == max(v[2] for v in cb_.values()) and F(cb_[m[1]][2], cb_[m[1]][1]) == max(F(c, b) for a, b, c in cb_.values())
+       and F(cb_[m[2]][1], cb_[m[2]][0]) == min(F(b, a) for a, b, c in cb_.values()) and cb_[m[3]][0] > cb_[m[4]][0]]
+ok(len(mc_) == 1, f'D-BW02 {mc_}'); pick('D-BW02', ', '.join(mc_[0]))
+g_ = F(400 * 1500, 10000); n_ = F(900000, 1800); d_ = F(600, 75); r_ = 84 * 15
+wf_ = {'A': (500, 100, 10), 'B': (400, g_, 12), 'C': (n_, 90, 8), 'D': (300, 75, d_), 'E': (600, 84, 15)}
+pa_ = {k: F(b * 10000, a) for k, (a, b, c) in wf_.items()}; tm_ = {k: b * c for k, (a, b, c) in wf_.items()}
+by_text('D-BW03', list(zip(['AP당 접속이 가장 많은', '(가)는 (다)의', '(나)는 A의', '다섯 지역을', '(라)는 A의'],
+        [max(pa_, key=pa_.get) == max(tm_, key=tm_.get), g_ >= 7 * d_, n_ > wf_['A'][0], F(sum(tm_.values()), sum(b for a, b, c in wf_.values())) >= 11, r_ >= tm_['A'] * F(13, 10)])))
+su_ = [80, 90, 100, 95]; ra_ = [90, 85, 88, 96]; oc_ = [F(s * r, 100) for s, r in zip(su_, ra_)]; va_ = [s - o for s, o in zip(su_, oc_)]
+combo('D-BW04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(oc_[i] > oc_[i - 1] for i in (1, 2, 3)), max(range(4), key=lambda i: va_[i]) == 1, all(oc_[i] < oc_[i - 1] for i in (1, 2, 3) if su_[i] < su_[i - 1]), oc_[3] / oc_[0] >= F(5, 4)]) if t])
+gn_ = {'A': (1200, 1500), 'B': (800, 760), 'C': (600, 880), 'D': (400, 420), 'E': (1000, 920)}; g25_ = sum(b for a, b in gn_.values())
+combo('D-BW05', [l for l, t in zip('ㄱㄴㄷㄹ', [3 * gn_['A'][1] >= g25_, max(gn_, key=lambda k: F(gn_[k][1], gn_[k][0])) == 'C', sum(b < a for a, b in gn_.values()) == 2, max(gn_, key=lambda k: gn_[k][1] - gn_[k][0]) == 'C']) if t])
+pick('L-BW01', '한계비용이 평균비용보다 낮으면 생산을 하나 늘릴 때 평균비용은 낮아진다.')
+tc_ = lambda n: 600 + 2 * min(n, 100) + 5 * max(0, n - 100)
+av2_ = lambda n: F(tc_(n), n)
+combo('L-BW02', [l for l, t in zip('ㄱㄴㄷㄹ', [av2_(100) == 8, av2_(200) < av2_(100), av2_(101) > av2_(100), min(av2_(n) for n in range(1, 20001)) > 5]) if t])
+combo('L-BW03', ['ㄱ', 'ㄴ'])
+od_ = []
+for pm in itertools.permutations(range(1, 6)):
+    x = dict(zip('갑을병정무', pm))
+    if x['갑'] < x['을'] and x['병'] != 3 and x['정'] - x['무'] == 1 and x['병'] < x['갑']: od_.append(x)
+by_text('L-BW04', list(zip(['갑은 두 번째', '을은 마지막', '무는 네 번째', '병은 첫 번째', '정은 갑보다'],
+        [all(x['갑'] == 2 for x in od_), all(x['을'] == 5 for x in od_), all(x['무'] == 4 for x in od_), all(x['병'] == 1 for x in od_), all(x['정'] > x['갑'] for x in od_)])))
+combo('L-BW05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
