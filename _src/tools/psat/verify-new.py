@@ -4185,4 +4185,68 @@ lr4_ = [k for k, f in st4_.items() if not f(cu4_[0])]
 by_text('L-BX04', list(zip(['범인은 을이다', '갑은 거짓을', '거짓을 말한 사람은', '정은 거짓을', '범인은 참을'],
         [cu4_[0] == '을', '갑' in lr4_, lr4_ == ['병', '무'], '정' in lr4_, cu4_[0] not in lr4_])))
 combo('L-BX05', ['ㄱ', 'ㄴ'])
+# ================= S-BY / D-BY / L-BY (5급 실전, independent re-solve from the rendered options) =================
+import datetime as dtm_
+day_ = lambda m, d: dtm_.date(2026, m, d)
+def overdue_(due, ret): return [due + dtm_.timedelta(k) for k in range(1, (ret - due).days + 1)]
+def late_fee_(books, due, ret, reduced):
+    days = sum(1 for d in overdue_(due, ret) if d.weekday() != 0)      # 월요일 휴관일은 빼고 센다
+    per_book = min(200 * days, 5000)
+    return per_book * books * (F(1, 2) if reduced else 1)
+tot_ = late_fee_(2, day_(11, 3), day_(11, 10), False) + late_fee_(1, day_(11, 5), day_(11, 12), True) + late_fee_(2, day_(10, 31), day_(12, 1), False) + late_fee_(3, day_(11, 14), day_(11, 17), True)
+pick('S-BY01', f'{int(tot_):,}원')
+games_ = list(itertools.combinations(range(6), 2))
+def pts_(winner):
+    s = [0] * 6
+    for g in games_:
+        if winner[g] is None: s[g[0]] += 1; s[g[1]] += 1
+        else: s[winner[g]] += 3
+    return s
+draw_all_ = {g: None for g in games_}
+nobody_loses_ = all(draw_all_[g] is None for g in games_)
+circ_ = {g: (g[0] if g[1] == 5 else (g[0] if (g[1] - g[0]) in (1, 2) else g[1])) for g in games_}
+draws_ = [d for d in range(16) if 3 * (15 - d) + 2 * d == 40]
+combo('S-BY02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(games_) == 15, not nobody_loses_, draws_ == [5], sorted(pts_(circ_)).count(9) < 5]) if t])
+last_day_ = lambda start, n: start + dtm_.timedelta(n)        # 첫날 불산입
+max_ext_ = 1                                                   # 기간을 늘리는 것은 한 차례에 한한다
+deem_ = lambda decided: '결정함' if decided else '비공개'          # 기간 안에 결정하지 않으면 비공개 결정으로 본다
+by_text('S-BY03', list(zip(['4월 1일에 청구를 받은 공공기관이 결정 기간을 한 차례', '4월 1일에 청구를 받은 공공기관이 기간을 늘리지', '공공기관은 부득이한 사유가', '공공기관이 결정 기간 이내에', '5월 1일에 비공개'],
+        [dtm_.date(2026, 4, 21) <= last_day_(dtm_.date(2026, 4, 1), 20), dtm_.date(2026, 4, 11) > last_day_(dtm_.date(2026, 4, 1), 10), max_ext_ >= 2, deem_(False) == '공개',
+         dtm_.date(2026, 6, 3) <= last_day_(dtm_.date(2026, 5, 1), 30)])))
+off_ = {'A': 9, 'B': 1, 'C': -4}
+hrs_ = lambda c: set(range(9 - off_[c], 18 - off_[c]))           # 일하는 시간(협정 세계시, 1시간 단위 칸)
+combo('S-BY04', [l for l, t in zip('ㄱㄴㄷㄹ', [len(hrs_('A') & hrs_('B')) >= 1, len(hrs_('A') & hrs_('B') & hrs_('C')) >= 1, len(hrs_('B') & hrs_('C')) == 4,
+       sorted(h + off_['B'] for h in hrs_('A') & hrs_('B')) == [9]]) if t])
+hr_ = {'甲': (2, 6, 2, 8), '乙': (2, 5, 7, 4), '丙': (7, 9, 6, 2), '丁': (5, 7, 7, 3)}
+best_ = min(sum(hr_[w][t] for w, t in zip('甲乙丙丁', pm)) for pm in itertools.permutations(range(4))
+            if pm[0] != 0 and not (pm[1] == 1 and pm[2] == 3) and all(hr_[w][t] < 7 for w, t in zip('甲乙丙丁', pm)))
+pick('S-BY05', f'{best_}시간')
+na25_ = {'가국': 400, '나국': 300, '다국': 250, '라국': 200, '기타': 100}
+tv_ = [(800, 1500), (1000, 1400), (1200, 1350), (1250, 1300)]; sp_ = [a * b for a, b in tv_]; dsp_ = [sp_[i] - sp_[i - 1] for i in (1, 2, 3)]
+only('D-BY01', [not x for x in [all(tv_[i][0] > tv_[i - 1][0] for i in (1, 2, 3)), all(tv_[i][1] < tv_[i - 1][1] for i in (1, 2, 3)), all(d > 0 for d in dsp_), dsp_[1] < dsp_[0], F(na25_['가국'] + na25_['나국'], sum(na25_.values())) >= F(1, 2)]], 'false statements')
+mu_ = {'가': (50, 100, 200), '나': (30, 40, 90), '다': (20, 50, 120), '라': (60, 150, 240), '마': (10, 20, 30)}
+mm_ = [m for m in itertools.permutations(mu_) if mu_[m[0]][0] == max(v[0] for v in mu_.values()) and F(mu_[m[1]][0], mu_[m[1]][1]) == max(F(a, b) for a, b, c in mu_.values())
+       and F(mu_[m[2]][2], mu_[m[2]][0]) == max(F(c, a) for a, b, c in mu_.values()) and mu_[m[3]][1] > mu_[m[4]][1]]
+ok(len(mm_) == 1, f'D-BY02 {mm_}'); pick('D-BY02', ', '.join(mm_[0]))
+ga_ = F(360 * 10000, 800); na_ = 80 * 15; da_ = F(600, 120); ra_ = F(1500 * 3000, 10000)
+sc_ = {'A': (1000, 4000, 10), 'B': (800, ga_, 10), 'C': (na_, 3500, 15), 'D': (600, 5000, da_), 'E': (1500, 3000, 12)}
+fee_ = {k: F(a * b, 10000) for k, (a, b, c) in sc_.items()}; pc_ = {k: F(a, c) for k, (a, b, c) in sc_.items()}
+by_text('D-BY03', list(zip(['1식 단가가 가장 높은', '(가)는 A의', '(나)는 A와 B의', '다섯 학교 전체의', '(라)는 A의'],
+        [max(sc_, key=lambda k: sc_[k][1]) == max(pc_, key=pc_.get), ga_ - sc_['A'][1] >= 1000, na_ > sc_['A'][0] + sc_['B'][0], F(sum(fee_.values()) * 10000, sum(a for a, b, c in sc_.values())) >= 4000, ra_ > fee_['A']])))
+ev_ = [300, 400, 550, 700]; ch_ = [120, 180, 240, 300]; r_ = [F(e, c) for e, c in zip(ev_, ch_)]
+combo('D-BY04', [l for l, t in zip('ㄱㄴㄷㄹ', [min(range(4), key=lambda i: r_[i]) == 1, ev_[3] >= 2 * ev_[0], all(ev_[i + 1] - ev_[i] > ev_[i] - ev_[i - 1] for i in (1, 2)),
+       all(F(ch_[i + 1], ch_[i]) > F(ch_[i], ch_[i - 1]) for i in (1, 2))]) if t])
+rd_ = {'20대': (75, 68), '30대': (70, 60), '40대': (60, 52), '50대': (50, 45), '60대 이상': (35, 38)}
+dn_ = [k for k, (a, b) in rd_.items() if b < a]
+combo('D-BY05', [l for l, t in zip('ㄱㄴㄷㄹ', [len(dn_) == 4, max(dn_, key=lambda k: F(rd_[k][0] - rd_[k][1], rd_[k][0])) == max(dn_, key=lambda k: rd_[k][0] - rd_[k][1]),
+       F(rd_['20대'][1], rd_['60대 이상'][1]) >= 2, all(min(rd_, key=lambda k: rd_[k][1]) == k for k, (a, b) in rd_.items() if b > a)]) if t])
+pick('L-BY01', '순현재가치가 0보다 작은 사업은 하지 않는 편이 낫다.')
+npv_ = lambda flows, r=F(1, 10): sum(F(a) / (1 + r) ** y for y, a in flows)
+pa_, pb_, pc2_ = [(0, -200), (1, 110), (2, 121)], [(0, -100), (2, F(1452, 10))], [(0, -100), (1, 55), (2, F(484, 10))]
+combo('L-BY02', [l for l, t in zip('ㄱㄴㄷㄹ', [npv_(pa_) > 0, npv_(pb_) == 20, sum(a for y, a in pc2_) > 0 and npv_(pc2_) < 0, npv_(pc2_, F(5, 100)) > npv_(pc2_)]) if t])
+combo('L-BY03', ['ㄱ', 'ㄴ', 'ㄷ'])
+ok4_ = [set(s) for s in itertools.combinations('갑을병정무', 3) if ('무' not in s or '병' in s) and ('을' in s or '갑' in s) and ('갑' not in s or '정' in s) and ('을' in s or '무' in s)]
+by_text('L-BY04', list(zip(['을은 출장을', '갑은 출장을', '정은 출장을', '병과 무는', '무와 갑'],
+        [all('을' in g for g in ok4_), all('갑' not in g for g in ok4_), all('정' in g for g in ok4_), all(('병' in g) == ('무' in g) for g in ok4_), all('무' in g or '갑' in g for g in ok4_)])))
+combo('L-BY05', ['ㄱ', 'ㄷ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
