@@ -88,6 +88,7 @@ export function viewWrite() {
         <span class="node-tools">${s.lv < 3 ? `<button data-act="sec-add" data-lv="${s.lv + 1}" title="이 아래에 ${s.lv === 1 ? '절' : '항'} 추가">+ ${s.lv === 1 ? '절' : '항'}</button>` : ''}<button data-act="sec-lv" data-d="-1" title="한 단계 위로" aria-label="한 단계 위로"${s.lv === 1 ? ' disabled' : ''}>←</button><button data-act="sec-lv" data-d="1" title="한 단계 아래로" aria-label="한 단계 아래로"${s.lv === 3 || i === 0 ? ' disabled' : ''}>→</button><button data-act="sec-up" aria-label="위로" title="위로">↑</button><button data-act="sec-down" aria-label="아래로" title="아래로">↓</button><button data-act="sec-del" class="del" aria-label="지우기" title="지우기">×</button></span></div>
       <label class="sr" for="sx-${s.id}">초고</label><textarea id="sx-${s.id}" data-sec-text rows="${Math.min(14, Math.max(3, String(s.text || '').split('\n').length + 1))}" placeholder="${esc(s.hint || '초고나 쓸 내용의 메모. 카드를 누르면 커서 자리에 〔카드 n〕이 들어가고, 내보낼 때 그 자리가 각주가 됩니다.')}">${esc(s.text || '')}</textarea>
       <div class="sec-count" data-sec-count="${s.id}" aria-live="polite">${countLabel(s.text)}</div>
+      <div class="sec-fn" data-sec-fn="${s.id}" aria-live="polite">${fnLabel(s.text)}</div>
       <div class="sec-refs">${cl.map((n) => `<span class="ref claim"><span title="${esc(n.text)}">주장 · ${esc(short(n.text || '이름 없는 주장', 34))}</span><button data-act="sec-unclaim" data-id="${n.id}" aria-label="빼기" title="빼기">×</button></span>`).join('')}
         ${cs.map((c) => { const d = c.docId ? docOf(c.docId) : null; return `<span class="ref kcard"><button class="ins" data-act="sec-ins" data-no="${c.no}" title="본문 커서 자리에 〔카드 ${c.no}〕 넣기">카드 ${c.no} · ${esc(short(c.quote || c.memo || (d ? `${d.author || d.title} ${where(d, c.page).ui}` : '메모'), 26))}</button><button data-act="sec-uncard" data-id="${c.id}" aria-label="빼기" title="빼기">×</button></span>`; }).join('')}
         <button class="ref-add" data-act="sec-place">+ 주장·카드 배치</button></div></section>`;
@@ -113,6 +114,15 @@ const bodyOf = (t) => String(t || '').replace(/〔\s*카드\s*\d+\s*〕/g, '');
 const counts = (t) => { const b = bodyOf(t); return [b.replace(/\n/g, '').length, b.replace(/\s/g, '').length]; };
 const fmt = (n) => n.toLocaleString('ko-KR');
 function countLabel(t) { const [a, b] = counts(t); return a ? `${fmt(a)}자 · 공백 제외 ${fmt(b)}자` : ''; }
+// 각주 점검: 〔카드 n〕 가운데 없는 카드(지운 카드·잘못 친 번호)와 출처 문헌이 없는 메모 카드는 내보낼 때 각주 없이 빠지므로, 쓰는 동안 바로 알려 준다.
+const hasSrc = (c) => !!(c && c.docId && docOf(c.docId));
+function fnLabel(t) {
+  const p = S.project, ns = [...String(t || '').matchAll(CARD_MARK)].map((m) => +m[1]); if (!p || !ns.length) return '';
+  const miss = [], nosrc = []; let good = 0;
+  for (const n of ns) { const c = cardByNo(p, n); if (!c) miss.includes(n) || miss.push(n); else if (!hasSrc(c)) nosrc.includes(n) || nosrc.push(n); else good++; }
+  const bad = [...miss.map((n) => `〔카드 ${n}〕 없는 카드`), ...nosrc.map((n) => `〔카드 ${n}〕 출처 없는 메모`)];
+  return `각주 ${fmt(good)}곳${bad.length ? `<span class="fn-bad"> · ${esc(bad.join(' · '))} — 내보낼 때 이 자리는 각주 없이 빠집니다</span>` : ''}`;
+}
 function totalLabel(out) {
   let a = 0, b = 0; for (const x of out) { const [i, j] = counts(x.text); a += i; b += j; }
   return `초고 합계 <b>${fmt(a)}자</b> · 공백 제외 ${fmt(b)}자`;
@@ -127,6 +137,7 @@ ON_INPUT.push((t) => {
   if ('secText' in t.dataset) {
     s.text = t.value;
     const c = box.querySelector(`[data-sec-count="${s.id}"]`); if (c) c.textContent = countLabel(s.text);
+    const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
     const tot = document.getElementById('w-total'); if (tot && S.project) tot.innerHTML = totalLabel(S.project.outline || []);
   } else s.title = t.value;
   saveSoon(); return true;
@@ -175,6 +186,7 @@ ACT['sec-ins'] = (el) => {
   const mark = `〔카드 ${el.dataset.no}〕`;
   const pos = lastCaret.id === s.id && lastCaret.pos >= 0 ? lastCaret.pos : ta.value.length;
   ta.value = ta.value.slice(0, pos) + mark + ta.value.slice(pos); s.text = ta.value; saveSoon();
+  const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
   lastCaret = { id: s.id, pos: pos + mark.length };
   ta.focus(); ta.setSelectionRange(pos + mark.length, pos + mark.length);
 };
