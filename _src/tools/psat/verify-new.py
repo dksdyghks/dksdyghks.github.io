@@ -3926,4 +3926,54 @@ ok(cand_ == ['을'], f'L-BS04 culprit {cand_}')
 by_text('L-BS04', list(zip(['정이 거짓을', '화분을 깨뜨린 사람은 정', '화분을 깨뜨린 사람은 을', '갑이 거짓을', '무가 거짓을'],
         [all(not st_(c)[3] for c in cand_), cand_ == ['정'], cand_ == ['을'], all(not st_(c)[0] for c in cand_), all(not st_(c)[4] for c in cand_)])))
 combo('L-BS05', ['ㄱ', 'ㄴ'])
+# ================= S-BT / D-BT / L-BT (5급 실전, independent re-solve from the rendered options) =================
+def vou_(poor, dis, age, used_share):
+    basic = F(35) if used_share is None or used_share >= F(3, 5) else F(35, 2)
+    return min(basic + 15 * poor + 10 * dis + 5 * (age >= 65), F(50))
+tv_ = vou_(1, 1, 40, None) + vou_(0, 0, 70, F(2, 5)) + vou_(0, 1, 50, F(4, 5)) + vou_(0, 0, 30, None)
+pick('S-BT01', f'{int(tv_ * 10000):,}원')
+rc_ = [(a, b, c, d) for a in range(4) for b in range(a + 1, 4) for c in range(5) for d in range(c + 1, 5)]
+combo('S-BT02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(rc_) == 60, sum(b - a == d - c for a, b, c, d in rc_) == 18, sum((b - a) * (d - c) == 1 for a, b, c, d in rc_) == 12,
+      sum((b - a) * (d - c) == 2 for a, b, c, d in rc_) == 17]) if t])
+def car_ok_(months, km, serious=None, fixes=0, again=False, days=0, fault=False):
+    if fault or months > 12 or km > 20000: return False
+    return (serious is not None and again and fixes >= (2 if serious else 3)) or days > 30
+only('S-BT03', [car_ok_(18, 10000, True, 2, True), car_ok_(6, 5000, True, 1, True), car_ok_(6, 5000, False, 2, True), car_ok_(6, 5000, True, 2, True, fault=True), car_ok_(8, 15000, days=35)])
+pc_ = 20000; pr_ = pc_ * F(15, 10)
+combo('S-BT04', [l for l, t in zip('ㄱㄴㄷㄹ', [pr_ == 30000, pr_ * F(8, 10) - pc_ == 4000, pr_ * F(7, 10) < pc_, (80 * pr_ + 20 * pr_ / 2) / (100 * pc_) - 1 == F(2, 5)]) if t])
+st_ = {'甲': [6, 7, 7, 8], '乙': [1, 4, 4, 9], '丙': [5, 2, 7, 4], '丁': [7, 3, 1, 6]}
+fl_ = lambda r: (r + 1) // 2
+best_ = max(sum(st_[k][r - 1] for k, r in zip(st_, pm)) for pm in itertools.permutations([1, 2, 3, 4])
+            if fl_(pm[0]) == 1 and fl_(pm[1]) != fl_(pm[2]) and pm[3] != 4)
+pick('S-BT05', str(best_))
+ry_ = [(20, 50), (22, 60), (25, 64), (26, 60)]; sd_ = [F(a * r, 100) for a, r in ry_]
+rgn_ = {'서울': (8, 75), '제주': (6, 60), '부산': (5, 70), '강원': (4, 40), '기타': (3, 30)}
+only('D-BT01', [not x for x in [all(ry_[i][0] > ry_[i - 1][0] for i in (1, 2, 3)), max(range(4), key=lambda i: sd_[i]) == 2, max(range(4), key=lambda i: ry_[i][1]) == 2, F(rgn_['서울'][0], sum(v[0] for v in rgn_.values())) >= F(1, 3), F(rgn_['서울'][0] * rgn_['서울'][1], 100) / sd_[3] >= F(35, 100)]], 'false statements')
+mk_ = {'가': (300, 750, 25), '나': (120, 360, 8), '다': (400, 720, 30), '라': (150, 225, 15), '마': (200, 120, 10)}
+mm_ = [m for m in itertools.permutations(mk_) if mk_[m[0]][1] == max(v[1] for v in mk_.values()) and F(mk_[m[1]][1], mk_[m[1]][0]) == max(F(b, a) for a, b, c in mk_.values())
+       and F(mk_[m[2]][1], mk_[m[2]][2]) == min(F(b, c) for a, b, c in mk_.values()) and mk_[m[3]][0] > mk_[m[4]][0]]
+ok(len(mm_) == 1, f'D-BT02 {mm_}'); pick('D-BT02', ', '.join(mm_[0]))
+g_ = F(20000, 80); n_ = F(27000, 180); d_ = F(18000 * 2, 1000); r_ = F(72000, 18000)
+bs_ = {'A': (100, 20000, 60), 'B': (80, 20000, 50), 'C': (n_, 27000, 81), 'D': (60, 18000, d_), 'E': (120, 18000, 72)}
+pk_ = {k: F(c * 1000, b) for k, (a, b, c) in bs_.items()}; pv_ = {k: F(c * 1000, a) for k, (a, b, c) in bs_.items()}
+by_text('D-BT03', list(zip(['(가)는 (나)보다', '1km당 승객이 가장 많은', '(다)는 50', '다섯 회사를', '차량 1대당 승객이'],
+        [g_ > n_, max(pk_, key=pk_.get) == max(bs_, key=lambda k: bs_[k][0]), d_ >= 50, F(sum(c for a, b, c in bs_.values()) * 1000, sum(b for a, b, c in bs_.values())) >= 3, max(pv_, key=pv_.get) == 'A'])))
+sm_ = [1300, 900, 1400, 1600]; sp_ = [20, 15, 20, 25]; to_ = [F(s * 100, p) for s, p in zip(sm_, sp_)]; re_ = [t - s for t, s in zip(to_, sm_)]
+combo('D-BT04', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(4), key=lambda i: to_[i]) == 2, all(re_[i] < re_[i - 1] for i in (1, 2, 3)), max((1, 2, 3), key=lambda i: F(sm_[i], sm_[i - 1])) == 2, to_[3] < to_[2] < to_[2] + sm_[3] - sm_[2]]) if t])
+ic_ = {'농업': (1200, 1000), '농외': (1800, 2100), '이전': (1000, 1400), '비경상': (200, 300)}; a_ = sum(x for x, y in ic_.values()); b_ = sum(y for x, y in ic_.values())
+combo('D-BT05', [l for l, t in zip('ㄱㄴㄷㄹ', [F(1000, b_) >= F(1, 5), max(ic_, key=lambda k: F(ic_[k][1], ic_[k][0])) == '이전', [k for k, (x, y) in ic_.items() if y < x] == ['농업'], F(2100, b_) - F(1800, a_) >= F(2, 100)]) if t])
+pick('L-BT01', '환율이 오른 직후에는 무역수지가 나빠졌다가 시간이 지나며 좋아질 수 있다.')
+combo('L-BT02', [l for l, t in zip('ㄱㄴㄷㄹ', [F(15000, 1200) == F(25, 2) and F(15000, 1500) == 10, F(25, 2) * 1500 - 15000 == 3750, 5 * (1500 - 1200) == 1500, 2000 * (1500 - 1200) == 500000]) if t])
+combo('L-BT03', ['ㄱ', 'ㄴ'])
+mw_ = []
+for cs in itertools.permutations(['부산', '광주', '대구', '강릉']):
+    for ts in itertools.permutations(['KTX', '버스', '자가용', '비행기']):
+        c, t = dict(zip('갑을병정', cs)), dict(zip('갑을병정', ts))
+        if c['갑'] == '부산' or t['갑'] == '비행기' or t['을'] != '자가용' or c['병'] not in ('대구', '강릉') or t['정'] == 'KTX': continue
+        if any(c[x] == '광주' and t[x] != '버스' for x in c) or any(t[x] == '비행기' and c[x] == '강릉' for x in c): continue
+        mw_.append((c, t))
+by_text('L-BT04', list(zip(['갑은 광주에', '정은 비행기를', '병은 강릉에', '을은 부산에', '광주에 간 사람은'],
+        [all(c['갑'] == '광주' for c, t in mw_), all(t['정'] == '비행기' for c, t in mw_), all(c['병'] == '강릉' for c, t in mw_), all(c['을'] == '부산' for c, t in mw_),
+         all([x for x in c if c[x] == '광주'][0] in ('갑', '정') for c, t in mw_)])))
+combo('L-BT05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
