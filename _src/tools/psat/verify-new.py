@@ -4249,4 +4249,59 @@ ok4_ = [set(s) for s in itertools.combinations('갑을병정무', 3) if ('무' n
 by_text('L-BY04', list(zip(['을은 출장을', '갑은 출장을', '정은 출장을', '병과 무는', '무와 갑'],
         [all('을' in g for g in ok4_), all('갑' not in g for g in ok4_), all('정' in g for g in ok4_), all(('병' in g) == ('무' in g) for g in ok4_), all('무' in g or '갑' in g for g in ok4_)])))
 combo('L-BY05', ['ㄱ', 'ㄷ'])
+# ================= S-BZ / D-BZ / L-BZ (5급 실전, independent re-solve from the rendered options) =================
+import datetime as dtz_
+def water_use_(m3):                                   # 20㎥까지 500원, 40㎥까지 800원, 그 위 1,200원
+    tiers = [(20, 500), (40, 800), (10 ** 9, 1200)]; fee, prev = 0, 0
+    for cap, rate in tiers:
+        fee += max(0, min(m3, cap) - prev) * rate; prev = cap
+    return fee
+def water_bill_(mm, m3, kids):
+    u = water_use_(m3); paid = u * F(4, 5) if kids >= 3 else u
+    return {15: 1000, 20: 2000}[mm] + paid + u * F(3, 10)
+pick('S-BZ01', f'{int(water_bill_(15, 18, 1) + water_bill_(20, 35, 3) + water_bill_(15, 45, 0) + water_bill_(20, 25, 4)):,}원')
+codes_ = list(itertools.product(range(10), repeat=4))
+combo('S-BZ02', [l for l, t in zip('ㄱㄴㄷㄹ', [sum(all(c[i] != c[i + 1] for i in range(3)) for c in codes_) == 7290, sum(len(set(c)) == 4 for c in codes_) == 5040,
+       sum(len(set(c)) == 4 and c[0] > 0 for c in codes_) == 4320, sum(list(c) == sorted(set(c)) and len(set(c)) == 4 for c in codes_) == 120]) if t])
+def vol_hours_(act, trip, far):                       # 하루 8시간 상한, 다른 시·도면 이동 1시간까지 더함
+    return min(act, 8) + (min(trip, 1) if far else 0)
+edu_hours_ = lambda h: min(h, 4)
+by_text('S-BZ03', list(zip(['하루에 10시간', '거주지와 같은 시·도에서 5시간', '한 해에 사전 교육을', '거주지와 다른 시·도에서 5시간', '거주지와 다른 시·도에서 6시간'],
+        [vol_hours_(10, 0, False) == 10, vol_hours_(5, 1, False) == 6, edu_hours_(6) == 6, vol_hours_(5, 2, True) == 7, vol_hours_(6, 2, True) == 7])))
+wk_ = lambda d: '월화수목금토일'[d.weekday()]
+yr_days_ = [dtz_.date(2026, 1, 1) + dtz_.timedelta(k) for k in range((dtz_.date(2027, 1, 1) - dtz_.date(2026, 1, 1)).days)]
+combo('S-BZ04', [l for l, t in zip('ㄱㄴㄷㄹ', [wk_(yr_days_[-1]) == '목', [wk_(d) for d in yr_days_].count('목') == 52, wk_(yr_days_[-1] + dtz_.timedelta(1)) == '금', wk_(dtz_.date(2026, 3, 1)) == '토']) if t])
+md_ = {'A': (12, 20, '신문'), 'B': (20, 25, '신문'), 'C': (20, 60, '라디오'), 'D': (24, 45, '라디오'), 'E': (30, 30, '온라인'), 'F': (40, 25, '온라인')}
+okmd_ = [c for n in range(3, 7) for c in itertools.combinations(md_, n) if sum(md_[x][1] for x in c) >= 100 and not ({'신문', '라디오'} <= {md_[x][2] for x in c})]
+pick('S-BZ05', f'{min(sum(md_[x][0] for x in c) for c in okmd_)}백만 원')
+ar_ = [(730, 520), (710, 530), (700, 515), (690, 540)]; pr_ = [F(a * b, 1000) for a, b in ar_]
+rg_ = {'갑': 80, '을': 75, '병': 70, '정': 60, '기타': F(876, 10)}
+only('D-BZ01', [not x for x in [all(ar_[i][0] < ar_[i - 1][0] for i in (1, 2, 3)), all(pr_[i] < pr_[i - 1] for i in (1, 2, 3)), max(range(4), key=lambda i: ar_[i][1]) == 3,
+     min(range(4), key=lambda i: pr_[i]) == 2, F(rg_['갑'] + rg_['을'], sum(rg_.values())) >= F(2, 5)]], 'false statements')
+ct_ = {'가': (100, 500, 20), '나': (60, 400, 15), '다': (40, 100, 12), '라': (120, 300, 18), '마': (30, 300, 6)}
+mc2_ = [m for m in itertools.permutations(ct_) if ct_[m[0]][0] == max(v[0] for v in ct_.values()) and F(ct_[m[1]][0], ct_[m[1]][1]) == min(F(a, b) for a, b, c in ct_.values())
+        and F(ct_[m[2]][2], ct_[m[2]][0]) == max(F(c, a) for a, b, c in ct_.values()) and ct_[m[3]][1] > ct_[m[4]][1]]
+ok(len(mc2_) == 1, f'D-BZ02 {mc2_}'); pick('D-BZ02', ', '.join(mc2_[0]))
+lg_ = F(15) * F(16, 10); ln_ = F(25) / F(10, 10); ld_ = F(18, 2); lr_ = F(36, 12)
+lb_ = {'A': (20, 30, 10), 'B': (15, lg_, 8), 'C': (ln_, 25, 5), 'D': (10, 18, ld_), 'E': (30, 36, 12)}
+to_ = {k: F(b, a) for k, (a, b, c) in lb_.items()}; pp_ = {k: F(b, c) for k, (a, b, c) in lb_.items()}
+by_text('D-BZ03', list(zip(['(나)는 다섯 도서관의', '장서 회전율이 가장 높은', '(다)는 A의', '다섯 도서관을 합하여', '(라)는 B의'],
+        [sorted((a for a, b, c in lb_.values()), reverse=True)[1] == ln_ and sorted((a for a, b, c in lb_.values()), reverse=True)[0] != ln_, max(to_, key=to_.get) == max(pp_, key=pp_.get),
+         ld_ > lb_['A'][2], F(sum(b for a, b, c in lb_.values()), sum(a for a, b, c in lb_.values())) >= F(3, 2), lr_ > pp_['B']])))
+gen_ = [500, 520, 540, 560]; rr_ = [60, 62, 65, 60]; rc_ = [F(g * r, 100) for g, r in zip(gen_, rr_)]; nr_ = [g - r for g, r in zip(gen_, rc_)]
+combo('D-BZ04', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(4), key=lambda i: rc_[i]) == 2, max(range(4), key=lambda i: nr_[i]) == 3, all(nr_[i] < nr_[i - 1] for i in (1, 2, 3)), rc_[3] >= rc_[0] * F(11, 10)]) if t])
+bt_ = {'A': (2000, 1800), 'B': (1500, 1560), 'C': (1200, 1020), 'D': (800, 840), 'E': (500, 380)}
+s20_, s25_ = sum(a for a, b in bt_.values()), sum(b for a, b in bt_.values()); dn2_ = {k: F(a - b, a) for k, (a, b) in bt_.items() if b < a}
+combo('D-BZ05', [l for l, t in zip('ㄱㄴㄷㄹ', [len(dn2_) == 3, max(dn2_, key=dn2_.get) == 'E', F(s20_ - s25_, s20_) >= F(7, 100), F(bt_['A'][1], s25_) < F(bt_['A'][0], s20_)]) if t])
+pick('L-BZ01', '사회적 비용은 사적 비용에 외부비용을 더한 것이다.')
+mc_ = list(range(4, 12))                               # 단위별 사적 비용 4, 5, …, 11만 원
+made_ = lambda extra: len([c for c in mc_ if c + extra <= 10])
+combo('L-BZ02', [l for l, t in zip('ㄱㄴㄷㄹ', [made_(0) == 7, made_(3) == 4, made_(0) - made_(3) == 4, made_(5) > made_(3)]) if t])
+combo('L-BZ03', ['ㄴ', 'ㄷ', 'ㄹ'])
+lab_ = {'A': lambda p: p in 'BC', 'B': lambda p: p != 'A', 'C': lambda p: p == 'D', 'D': lambda p: p != 'C'}
+where_ = [p for p in 'ABCD' if sum(f(p) for f in lab_.values()) == 2]
+ok(len(where_) == 1, f'L-BZ04 {where_}')
+by_text('L-BZ04', list(zip(['상품은 B에', '상품은 C에', 'A에 붙은 말은', 'D에 붙은 말은', '참인 말이 붙은'],
+        [where_[0] == 'B', where_[0] == 'C', not lab_['A'](where_[0]), lab_['D'](where_[0]), [k for k, f in lab_.items() if f(where_[0])] == ['A', 'C']])))
+combo('L-BZ05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
