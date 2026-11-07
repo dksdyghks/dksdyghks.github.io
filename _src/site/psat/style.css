@@ -436,6 +436,9 @@ table.st td .btn { min-height: 30px; }
 .omr-close { margin-left: auto; }
 .mock .actions .btn { white-space: nowrap; }
 .mock .actions { gap: 6px; }
+.prevmsg { margin: 4px 0 0; font-size: .8125rem; color: var(--muted); }
+.prevmsg.again { color: var(--pen); font-weight: 600; }
+.prevmsg.fixed { color: var(--ok); }
 @media (max-width: 400px) { .mock .actions .btn { padding: 0 10px; font-size: .875rem; min-width: 0; } }   /* 좁은 폰(320px)에서도 네 버튼이 한 줄에 들어가게 */
 .omr-h span { font-size: .8125rem; color: var(--muted); }
 .omr-sub { font-size: .75rem; font-weight: 700; color: var(--muted); margin: 10px 0 6px; }

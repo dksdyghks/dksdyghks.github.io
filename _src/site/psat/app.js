@@ -632,6 +632,8 @@
     if (skip) c.choice = -1;
     stopTimer();
     const q = c.q;
+    const before = S.items.get(q.id);   // 지난번 기록(이번 답을 적기 전): 다시 풀 때 지난번에 고른 답과 견주어 보여 준다
+    c.prev = before && before.lastAt && before.lastOk === false && before.lastChoice >= 0 ? { choice: before.lastChoice, at: before.lastAt } : null;
     const { ok, lvMsg } = recordAnswer(q, c.choice, c.ms, c.review ? 'review' : (c.ctx && c.ctx.mode === 'note' ? 'note' : 'new'), c.review);
     c.ok = ok; c.phase = 'x'; c.lvMsg = lvMsg;
     saveCur();
@@ -647,6 +649,14 @@
       ? '<svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="17" style="stroke-dasharray:110;stroke-dashoffset:0"/></svg>'
       : '<svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><path d="M13 37 L35 11"/></svg>';
   }
+  // 다시 푼 문항: 지난번에 틀리며 고른 답과 이번 답을 견주어, 같은 함정에 또 걸렸는지 고쳤는지 한 줄로 알려 준다.
+  function prevNote(c, q) {
+    const pv = c.prev; if (!pv || c.choice < 0) return '';
+    const when = md(dayKey(pv.at));
+    if (!c.ok && c.choice === pv.choice) return `<p class="prevmsg again">지난번(${when})에도 ${pv.choice + 1}번을 골랐습니다. 같은 함정에 두 번 걸렸으니 해설의 ${pv.choice + 1}번 풀이를 먼저 보세요.</p>`;
+    if (c.ok) return `<p class="prevmsg fixed">지난번(${when})에는 ${pv.choice + 1}번을 골랐는데 이번에는 바로잡았습니다.</p>`;
+    return `<p class="prevmsg">지난번(${when})에는 ${pv.choice + 1}번, 이번에는 ${c.choice + 1}번을 골랐습니다.</p>`;
+  }
   function viewExplain() {
     const c = S.cur, q = c.q, rec = S.items.get(q.id);
     const wide = window.matchMedia('(min-width: 1180px)').matches;
@@ -657,7 +667,7 @@
     const crumb = `<b>${SUBJ[q.subject].name}</b> · 해설`;
     paint(shell(crumb, `
       <div class="${wide ? '' : 'narrow'}">
-      <section class="verdict fade-in">${verdictSVG(c.ok)}<div><h2>${title}</h2><p>${sub}</p>${c.lvMsg ? `<p class="lvmsg">${esc(c.lvMsg)}</p>` : ''}</div></section>
+      <section class="verdict fade-in">${verdictSVG(c.ok)}<div><h2>${title}</h2><p>${sub}</p>${prevNote(c, q)}${c.lvMsg ? `<p class="lvmsg">${esc(c.lvMsg)}</p>` : ''}</div></section>
       <div class="exp-layout${wide ? ' two' : ''}">
         <div class="qcol"><details class="reshow"${wide ? ' open' : ''}><summary>문제 다시 보기</summary><div class="sheet">${questionHTML(q, { graded: true, choice: c.choice, no: c.no, review: c.review })}</div></details></div>
         <div class="exp"><article class="sheet">
