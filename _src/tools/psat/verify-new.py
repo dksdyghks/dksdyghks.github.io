@@ -3869,4 +3869,61 @@ by_text('L-BR04', list(zip(['공무원 시험을 준비하는 수강생 가운�
         [all(any(a and c for a, b, c, d in w) for w in ws_), all(not any(c and not b for a, b, c, d in w) for w in ws_), all(not any(a and not d for a, b, c, d in w) for w in ws_),
          all(not any(b and not c for a, b, c, d in w) for w in ws_), all(any(b and d for a, b, c, d in w) for w in ws_)])))
 combo('L-BR05', ['ㄱ', 'ㄴ'])
+# ================= S-BS / D-BS / L-BS (5급 실전, independent re-solve from the rendered options) =================
+def fn_(times, self_pay, poor):
+    base = 20 if times == 1 else 40 if times == 2 else 80
+    best_cut = max([0] + ([F(1, 5)] if self_pay else []) + ([F(1, 2)] if poor else []))
+    return base * (1 - best_cut)
+pick('S-BS01', f'{int(fn_(2, 1, 0) + fn_(1, 1, 1) + fn_(3, 0, 1) + fn_(4, 0, 0))}만 원')
+grp_ = list(itertools.combinations(range(7), 3)); wm_ = {4, 5, 6}
+combo('S-BS02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(grp_) == 35, sum(bool(set(g) & wm_) for g in grp_) == 32, sum(not {0, 1} <= set(g) for g in grp_) == 30,
+      sum(bool(set(g) & wm_) and bool(set(g) - wm_) for g in grp_) == 31]) if t])
+in_window_ = lambda m: 2 <= m <= 6
+again_ok_ = lambda used, limit: used < limit
+refuse_ = lambda unpaid_terms, family_moves: unpaid_terms >= 2 or family_moves
+cap_ = lambda rent: rent * F(21, 20)
+only('S-BS03', [not x for x in [in_window_(3), not again_ok_(1, 1), refuse_(0, True), cap_(100) >= 105, refuse_(1, False)]], 'false statements')
+pr_ = 50000
+combo('S-BS04', [l for l, t in zip('ㄱㄴㄷㄹ', [pr_ * F(8, 10) * F(9, 10) == 36000, pr_ * F(8, 10) * F(9, 10) - pr_ * F(7, 10) == 1000, pr_ * F(9, 10) * F(8, 10) == pr_ * F(8, 10) * F(9, 10),
+      pr_ * F(8, 10) - 5000 == (pr_ - 5000) * F(8, 10)]) if t])
+tk_ = {'A': (2, 2, 5), 'B': (2, 9, 4), 'C': (1, 10, 8), 'D': (1, 10, 8), 'E': (1, 2, 9), 'F': (4, 6, 2)}
+def run_(order):
+    t = 0
+    for i, k in enumerate(order):
+        if k == 'C' and 'A' not in order[:i]: return False
+        t += tk_[k][0]
+        if t > tk_[k][1]: return False
+    return t <= 8
+best5_ = max(sum(tk_[k][2] for k in s) for n in range(1, 7) for s in itertools.combinations(tk_, n) if any(run_(o) for o in itertools.permutations(s)))
+pick('S-BS05', str(best5_))
+ev_ = [F(a * r, 100) for a, r in [(2500, 6), (2550, 8), (2600, 10), (2625, 12)]]; ei_ = [ev_[i] - ev_[i - 1] for i in (1, 2, 3)]
+kd_ = {'하이브리드': (200, 30), '전기': (100, 22), '수소': (5, 1), '기타': (10, 2)}
+tt_ = [2500, 2550, 2600, 2625]
+only('D-BS01', [not x for x in [all(tt_[i] > tt_[i - 1] for i in (1, 2, 3)), min(ei_) >= 50, max((1, 2, 3), key=lambda i: ei_[i - 1]) == 3, F(100, ev_[3]) >= F(3, 10), max(kd_, key=lambda k: F(kd_[k][1], kd_[k][0] - kd_[k][1])) == '전기']], 'false statements')
+bc_ = {'가': (300, 3, 60), '나': (120, 1, 20), '다': (500, 5, 125), '라': (80, 2, 40), '마': (150, 4, 25)}
+mb_ = [m for m in itertools.permutations(bc_) if bc_[m[0]][0] == max(v[0] for v in bc_.values()) and F(bc_[m[1]][0], bc_[m[1]][1]) == max(F(a, b) for a, b, c in bc_.values())
+       and F(bc_[m[2]][0], bc_[m[2]][2]) == min(F(a, c) for a, b, c in bc_.values()) and bc_[m[3]][1] > bc_[m[4]][1]]
+ok(len(mb_) == 1, f'D-BS02 {mb_}'); pick('D-BS02', ', '.join(mb_[0]))
+g_ = F(6000 * 8, 100); n_ = F(300 * 100, 4); d_ = F(240 * 2); r_ = F(400, 160)
+hb_ = {'10대': (4000, 400, 500), '20대': (6000, g_, 720), '30대': (n_, 300, 450), '40대': (8000, 240, d_), '50대': (8000, 160, 400)}
+hr_ = {k: F(b, a) for k, (a, b, c) in hb_.items()}; hp_ = {k: F(c, b) for k, (a, b, c) in hb_.items()}
+by_text('D-BS03', list(zip(['(가)와 (다)는', '헌혈률이 가장 높은', '(나)는 40대', '다섯 연령대를', '(라)는 10대의'],
+        [g_ == d_, max(hr_, key=hr_.get) == max(hp_, key=hp_.get), n_ > 8000, F(sum(b for a, b, c in hb_.values()), sum(a for a, b, c in hb_.values())) >= F(5, 100), r_ > 2 * hp_['10대']])))
+v25_ = [160, 150, 450, 60, 360]; gr_ = [-20, 25, 50, 20, -10]; v24_ = [F(v * 100, 100 + g) for v, g in zip(v25_, gr_)]; df_ = [a - b for a, b in zip(v25_, v24_)]
+combo('D-BS04', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(5), key=lambda i: v24_[i]) == 4, max(range(5), key=lambda i: df_[i]) == 2, sum(-d for d in df_ if d < 0) == 70, F(sum(v25_), sum(v24_)) >= F(11, 10)]) if t])
+rd_ = {'20': (78, 74), '30': (65, 60), '40': (58, 52), '50': (48, 45), '60+': (30, 33)}
+combo('D-BS05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(rd_, key=lambda k: rd_[k][0] - rd_[k][1]) == '40', [k for k, (a, b) in rd_.items() if b > a] == ['60+'], max(rd_, key=lambda k: F(rd_[k][0] - rd_[k][1], rd_[k][0])) == '40',
+      (rd_['20'][0] - rd_['60+'][0]) - (rd_['20'][1] - rd_['60+'][1]) >= 10]) if t])
+pick('L-BS01', '일할 의사가 있더라도 지난 4주 동안 일자리를 찾지 않은 사람은 실업자로 분류되지 않는다.')
+uem_ = lambda emp, un: F(un, emp + un)
+st0_ = (570, 30, 400); stq_ = (570, 20, 410)          # (취업자, 실업자, 비경제활동인구): 처음 / 실업자 10만 명이 구직 포기
+emr_ = lambda st: F(st[0], sum(st))
+combo('L-BS02', [l for l, t in zip('ㄱㄴㄷㄹ', [uem_(570, 30) == F(1, 20), uem_(570, 20) < F(4, 100), emr_(st0_) == emr_(stq_), uem_(570, 60) >= F(1, 10)]) if t])
+combo('L-BS03', ['ㄱ', 'ㄴ'])
+def st_(c): a = c == '을'; b = c == '정'; return [a, b, c != '병', not b, c != '갑']
+cand_ = [c for c in '갑을병정무' if st_(c).count(False) == 1]
+ok(cand_ == ['을'], f'L-BS04 culprit {cand_}')
+by_text('L-BS04', list(zip(['정이 거짓을', '화분을 깨뜨린 사람은 정', '화분을 깨뜨린 사람은 을', '갑이 거짓을', '무가 거짓을'],
+        [all(not st_(c)[3] for c in cand_), cand_ == ['정'], cand_ == ['을'], all(not st_(c)[0] for c in cand_), all(not st_(c)[4] for c in cand_)])))
+combo('L-BS05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
