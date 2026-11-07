@@ -108,7 +108,18 @@ export function viewWrite() {
       ${looseCards.length ? `<p class="sub">노트 카드 ${looseCards.length}개: ${looseCards.slice(0, 30).map((c) => `카드 ${c.no}`).join(', ')}${looseCards.length > 30 ? ' …' : ''}</p>` : ''}
       <p class="sub">장·절의 <b>+ 주장·카드 배치</b>로 넣으세요. 배치하지 않은 자료는 내보낼 때 빠집니다.</p></section>` : ''}
   </div>`;
+  $$('[data-sec-text]').forEach(fitDraft);
 }
+// 초고 칸은 글 길이만큼 늘어난다: 폰에서 작은 칸 안을 따로 스크롤하지 않고 화면 전체를 넘기며 쓰고 읽는다. 늘리는 동안 화면 위치가 튀지 않게 스크롤 자리를 지킨다.
+function fitDraft(ta) {
+  if (!ta || !ta.isConnected) return;
+  const y = window.scrollY;
+  ta.style.height = 'auto';
+  ta.style.height = `${ta.scrollHeight + 2}px`;
+  if (window.scrollY !== y) window.scrollTo(0, y);
+}
+let fitT = 0;
+window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => $$('[data-sec-text]').forEach(fitDraft), 150); });
 // 초고 글자 수: 〔카드 n〕 표시는 내보낼 때 각주 번호가 되므로 세지 않는다. 공백 포함·제외를 함께 보여 준다.
 const bodyOf = (t) => String(t || '').replace(/〔\s*카드\s*\d+\s*〕/g, '');
 const counts = (t) => { const b = bodyOf(t); return [b.replace(/\n/g, '').length, b.replace(/\s/g, '').length]; };
@@ -135,7 +146,7 @@ ON_INPUT.push((t) => {
   const box = t.closest && t.closest('[data-sec]'); if (!box || !t.dataset || !('secText' in t.dataset || 'secTitle' in t.dataset)) return false;
   const s = secOf(box.dataset.sec); if (!s) return true;
   if ('secText' in t.dataset) {
-    s.text = t.value;
+    s.text = t.value; fitDraft(t);
     const c = box.querySelector(`[data-sec-count="${s.id}"]`); if (c) c.textContent = countLabel(s.text);
     const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
     const tot = document.getElementById('w-total'); if (tot && S.project) tot.innerHTML = totalLabel(S.project.outline || []);
@@ -185,7 +196,7 @@ ACT['sec-ins'] = (el) => {
   const box = el.closest('[data-sec]'), ta = $('[data-sec-text]', box), s = secOf(box.dataset.sec); if (!ta || !s) return;
   const mark = `〔카드 ${el.dataset.no}〕`;
   const pos = lastCaret.id === s.id && lastCaret.pos >= 0 ? lastCaret.pos : ta.value.length;
-  ta.value = ta.value.slice(0, pos) + mark + ta.value.slice(pos); s.text = ta.value; saveSoon();
+  ta.value = ta.value.slice(0, pos) + mark + ta.value.slice(pos); s.text = ta.value; saveSoon(); fitDraft(ta);
   const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
   lastCaret = { id: s.id, pos: pos + mark.length };
   ta.focus(); ta.setSelectionRange(pos + mark.length, pos + mark.length);

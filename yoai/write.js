@@ -2,14 +2,14 @@
    개요의 장·절마다 논증 설계도의 주장과 노트 카드를 배치하고, 본문 초고에 〔카드 n〕을 넣으면 내보낼 때 그 자리가 각주가 된다.
    각주는 박사학위논문의 양식을 따르고, 두 번째부터는 ‘앞의 논문’으로 줄인다.
    원고 점검은 사용자가 고른 원고와 서재만 읽는다. 원고는 저장하지 않으며, 바깥으로 아무것도 보내지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=4148927541';
-import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=4148927541';
-import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=4148927541';
-import { readHangul } from './hwp.js?v=4148927541';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=4148927541';
-import { buildDocx, DOCX_MIME } from './docx.js?v=4148927541';
-import { BASE, PORTRAIT, excluded } from './profile.js?v=4148927541';
-import { projCards } from './research.js?v=4148927541';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=3df5a91a1f';
+import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=3df5a91a1f';
+import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=3df5a91a1f';
+import { readHangul } from './hwp.js?v=3df5a91a1f';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=3df5a91a1f';
+import { buildDocx, DOCX_MIME } from './docx.js?v=3df5a91a1f';
+import { BASE, PORTRAIT, excluded } from './profile.js?v=3df5a91a1f';
+import { projCards } from './research.js?v=3df5a91a1f';
 
 const AUTHOR = '안요환';
 const ROMAN = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ'];
@@ -108,7 +108,18 @@ export function viewWrite() {
       ${looseCards.length ? `<p class="sub">노트 카드 ${looseCards.length}개: ${looseCards.slice(0, 30).map((c) => `카드 ${c.no}`).join(', ')}${looseCards.length > 30 ? ' …' : ''}</p>` : ''}
       <p class="sub">장·절의 <b>+ 주장·카드 배치</b>로 넣으세요. 배치하지 않은 자료는 내보낼 때 빠집니다.</p></section>` : ''}
   </div>`;
+  $$('[data-sec-text]').forEach(fitDraft);
 }
+// 초고 칸은 글 길이만큼 늘어난다: 폰에서 작은 칸 안을 따로 스크롤하지 않고 화면 전체를 넘기며 쓰고 읽는다. 늘리는 동안 화면 위치가 튀지 않게 스크롤 자리를 지킨다.
+function fitDraft(ta) {
+  if (!ta || !ta.isConnected) return;
+  const y = window.scrollY;
+  ta.style.height = 'auto';
+  ta.style.height = `${ta.scrollHeight + 2}px`;
+  if (window.scrollY !== y) window.scrollTo(0, y);
+}
+let fitT = 0;
+window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => $$('[data-sec-text]').forEach(fitDraft), 150); });
 // 초고 글자 수: 〔카드 n〕 표시는 내보낼 때 각주 번호가 되므로 세지 않는다. 공백 포함·제외를 함께 보여 준다.
 const bodyOf = (t) => String(t || '').replace(/〔\s*카드\s*\d+\s*〕/g, '');
 const counts = (t) => { const b = bodyOf(t); return [b.replace(/\n/g, '').length, b.replace(/\s/g, '').length]; };
@@ -135,7 +146,7 @@ ON_INPUT.push((t) => {
   const box = t.closest && t.closest('[data-sec]'); if (!box || !t.dataset || !('secText' in t.dataset || 'secTitle' in t.dataset)) return false;
   const s = secOf(box.dataset.sec); if (!s) return true;
   if ('secText' in t.dataset) {
-    s.text = t.value;
+    s.text = t.value; fitDraft(t);
     const c = box.querySelector(`[data-sec-count="${s.id}"]`); if (c) c.textContent = countLabel(s.text);
     const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
     const tot = document.getElementById('w-total'); if (tot && S.project) tot.innerHTML = totalLabel(S.project.outline || []);
@@ -185,7 +196,7 @@ ACT['sec-ins'] = (el) => {
   const box = el.closest('[data-sec]'), ta = $('[data-sec-text]', box), s = secOf(box.dataset.sec); if (!ta || !s) return;
   const mark = `〔카드 ${el.dataset.no}〕`;
   const pos = lastCaret.id === s.id && lastCaret.pos >= 0 ? lastCaret.pos : ta.value.length;
-  ta.value = ta.value.slice(0, pos) + mark + ta.value.slice(pos); s.text = ta.value; saveSoon();
+  ta.value = ta.value.slice(0, pos) + mark + ta.value.slice(pos); s.text = ta.value; saveSoon(); fitDraft(ta);
   const f = box.querySelector(`[data-sec-fn="${s.id}"]`); if (f) f.innerHTML = fnLabel(s.text);
   lastCaret = { id: s.id, pos: pos + mark.length };
   ta.focus(); ta.setSelectionRange(pos + mark.length, pos + mark.length);
