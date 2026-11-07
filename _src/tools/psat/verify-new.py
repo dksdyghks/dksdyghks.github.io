@@ -4128,4 +4128,61 @@ for pm in itertools.permutations(range(1, 6)):
 by_text('L-BW04', list(zip(['갑은 두 번째', '을은 마지막', '무는 네 번째', '병은 첫 번째', '정은 갑보다'],
         [all(x['갑'] == 2 for x in od_), all(x['을'] == 5 for x in od_), all(x['무'] == 4 for x in od_), all(x['병'] == 1 for x in od_), all(x['정'] > x['갑'] for x in od_)])))
 combo('L-BW05', ['ㄱ', 'ㄴ'])
+# ================= S-BX / D-BX / L-BX (5급 실전, independent re-solve from the rendered options) =================
+def room_fee_(start, end, weekend, nonprofit, hvac):
+    base = sum(30000 if h >= 18 else 20000 for h in range(start, end))
+    base = base * F(3, 2) if weekend else base
+    base = base * F(3, 5) if nonprofit else base
+    return base + (5000 * (end - start) if hvac else 0)
+tot_ = room_fee_(14, 17, False, False, True) + room_fee_(17, 20, False, True, False) + room_fee_(10, 12, True, False, True) + room_fee_(18, 20, True, True, True)
+pick('S-BX01', f'{int(tot_):,}원')
+pl_ = list(itertools.permutations(range(1, 6), 3))
+adj_ = lambda s: any(abs(a - b) == 1 for a, b in itertools.combinations(s, 2))
+combo('S-BX02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(pl_) == 60, sum(not adj_(s) for s in pl_) == 3, sum(max(s) - min(s) == 2 for s in pl_) == 12, sum(3 not in s for s in pl_) == 24]) if t])
+def mv_fine_(late_months, excuse=False):
+    if excuse or late_months <= 0: return 0
+    return 10000 if late_months < 3 else (20000 if late_months < 6 else 30000)
+in_time_ = lambda day: day <= 14                          # 이사한 날부터 14일 이내
+can_file_ = lambda is_head, head_filed: is_head or not head_filed   # 세대주가 하지 않으면 세대원도 가능
+by_text('S-BX03', list(zip(['이사한 날부터 20일째', '세대주가 아닌 세대원은', '정당한 사유가 있더라도', '신고 기한이 지나고 7개월', '신고 기한이 지나고 4개월'],
+        [in_time_(20), not any(can_file_(False, h) for h in (True, False)), mv_fine_(2, excuse=True) > 0, mv_fine_(7) == 50000, mv_fine_(4) == 20000])))
+deps_ = lambda iv, t0=0, t1=180: [t for t in range(t0, t1 + 1) if t % iv == 0]
+both_ = sorted(set(deps_(12)) & set(deps_(18)))
+tri_ = [t for t in range(1, 1000) if t % 12 == 0 and t % 18 == 0 and t % 15 == 0][0]
+combo('S-BX04', [l for l, t in zip('ㄱㄴㄷㄹ', [both_[1] == 36, len(both_) == 5, tri_ == 180, len(deps_(12)) == 15]) if t])
+cr_ = {'A': (4, 10, '수'), 'B': (2, 15, '수'), 'C': (2, 18, '화'), 'D': (3, 15, '월'), 'E': (3, 30, '목'), 'F': (3, 24, '월')}
+feas_ = [c for n in range(1, 7) for c in itertools.combinations(cr_, n) if sum(cr_[x][0] for x in c) >= 9 and len({cr_[x][2] for x in c}) == n and ('D' not in c or 'B' in c)]
+pick('S-BX05', f'{min(sum(cr_[x][1] for x in c) for c in feas_)}만 원')
+yr_ = [(500, 80), (450, 84), (400, 90), (420, 85)]; stx_ = [F(a * r, 100) for a, r in yr_]; unx_ = [a - s for (a, r), s in zip(yr_, stx_)]
+ty_ = {'아파트': (320, 280), '다세대': (50, 40), '단독': (40, 30), '기타': (10, 7)}
+only('D-BX01', [not x for x in [all(unx_[i] < unx_[i - 1] for i in (1, 2, 3)), max(range(4), key=lambda i: yr_[i][0]) == 0, all(stx_[i] < stx_[i - 1] for i in (1, 2, 3)),
+     F(280, 320) >= F(17, 20), min(ty_, key=lambda k: F(ty_[k][1], ty_[k][0])) == '기타']], 'false statements')
+un_ = {'가': (400, 200, 600), '나': (300, 150, 360), '다': (630, 400, 900), '라': (100, 80, 250), '마': (150, 50, 200)}
+mu_ = [m for m in itertools.permutations(un_) if un_[m[0]][2] == max(v[2] for v in un_.values()) and F(un_[m[1]][2], un_[m[1]][1]) == max(F(c, b) for a, b, c in un_.values())
+       and F(un_[m[2]][0], un_[m[2]][2]) == min(F(a, c) for a, b, c in un_.values()) and un_[m[3]][0] > un_[m[4]][0]]
+ok(len(mu_) == 1, f'D-BX02 {mu_}'); pick('D-BX02', ', '.join(mu_[0]))
+ga3_ = F(480 * 100, 2400); na3_ = 25 * 80; da3_ = F(1800, 90); ra3_ = F(3600 * 15, 100)
+er_ = {'A': (3000, 20, 30), 'B': (2400, ga3_, 20), 'C': (na3_, 25, 25), 'D': (1800, 30, da3_), 'E': (3600, 15, 40)}
+ad3_ = {k: F(a * r, 100) for k, (a, r, b) in er_.items()}; pb3_ = {k: F(a, b) for k, (a, r, b) in er_.items()}
+by_text('D-BX03', list(zip(['입원율이 가장 높은', '(가)와 (다)는', '(나)는 A의', '다섯 병원을', '(라)는 A의'],
+        [max(er_, key=lambda k: er_[k][1]) == max(pb3_, key=pb3_.get), ga3_ == da3_, na3_ > 3000, F(sum(ad3_.values()) * 100, sum(a for a, r, b in er_.values())) >= 21, ra3_ > ad3_['A']])))
+px_ = [60, 70, 80, 84]; sh_ = [30, 33, 35, 40]; lc_ = [F(a * b, 100) for a, b in zip(px_, sh_)]; ot_ = [a - l for a, l in zip(px_, lc_)]; dlc_ = [lc_[i] - lc_[i - 1] for i in (1, 2, 3)]
+combo('D-BX04', [l for l, t in zip('ㄱㄴㄷㄹ', [all(d > 0 for d in dlc_), all(ot_[i] > ot_[i - 1] for i in (1, 2, 3)), max(range(3), key=lambda i: dlc_[i]) == 2, lc_[3] >= lc_[0] * F(9, 5)]) if t])
+rw_ = {'정보통신': (60, 45), '금융': (40, 30), '제조': (10, 12), '공공': (20, 14), '교육': (15, 18)}
+drp_ = {k: F(a - b, a) for k, (a, b) in rw_.items() if b < a}
+combo('D-BX05', [l for l, t in zip('ㄱㄴㄷㄹ', [len(drp_) == 3, max(rw_, key=lambda k: rw_[k][1]) == '정보통신', max(drp_, key=drp_.get) == '정보통신', sum(b - a for a, b in rw_.values() if b > a) == 5]) if t])
+pick('L-BX01', '좋은 차가 시장을 떠나면 사는 사람이 내려는 값도 낮아진다.')
+bp_ = lambda g: g * 1000 + (1 - g) * 500     # buyers average the two values by share
+def lemon_(g):                       # g: share of good cars; returns (price buyers pay, good cars stay)
+    pr = bp_(g)
+    return (pr, True) if pr >= 900 else (500, False)
+combo('L-BX02', [l for l, t in zip('ㄱㄴㄷㄹ', [bp_(F(1, 2)) == 750, not lemon_(F(1, 2))[1], lemon_(F(1, 2))[0] == 500 and lemon_(F(1, 2))[0] >= 400, lemon_(F(7, 10))[1]]) if t])
+combo('L-BX03', ['ㄱ', 'ㄴ'])
+st4_ = {'갑': lambda c: c in '을병', '을': lambda c: c != '을', '병': lambda c: c == '정', '정': lambda c: c not in '정갑', '무': lambda c: c == '갑'}
+cu4_ = [c for c in '갑을병정무' if sum(not f(c) for f in st4_.values()) == 2]
+ok(len(cu4_) == 1, f'L-BX04 culprits {cu4_}')
+lr4_ = [k for k, f in st4_.items() if not f(cu4_[0])]
+by_text('L-BX04', list(zip(['범인은 을이다', '갑은 거짓을', '거짓을 말한 사람은', '정은 거짓을', '범인은 참을'],
+        [cu4_[0] == '을', '갑' in lr4_, lr4_ == ['병', '무'], '정' in lr4_, cu4_[0] not in lr4_])))
+combo('L-BX05', ['ㄱ', 'ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
