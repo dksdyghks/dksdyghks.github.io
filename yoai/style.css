@@ -339,6 +339,10 @@ details.proj[open] { padding-bottom: 6px; }
 .notes-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
 .notes-filter input[type=search] { flex: 1 1 200px; min-width: 0; padding: 9px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); font-size: .9375rem; }
 .notes-filter .m { font-size: .8125rem; color: var(--muted); }
+.cgroup { display: flex; flex-direction: column; gap: 10px; }
+.cgroup + .cgroup { margin-top: 10px; }
+.cgroup-h { margin: 6px 2px 0; font: 600 .9375rem/1.45 var(--f-serif); color: var(--ink); overflow-wrap: anywhere; }
+.cgroup-h .m { font: 400 .75rem var(--f-sans); color: var(--muted); }
 .card .use { font-size: .75rem; color: var(--ink-2); margin: -2px 0 8px; }
 .card .use.none { color: var(--muted); }
 .card-tools { display: flex; align-items: center; gap: 4px; margin-top: 6px; }

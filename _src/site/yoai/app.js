@@ -460,10 +460,23 @@ function viewNotes() {
     <p class="sub">읽기 화면에서 글을 골라 <b>카드에 담기</b>를 누르면 쪽수와 함께 여기에 모입니다. 카드 번호는 바뀌지 않으며, 집필에서 〔카드 n〕으로 본문에 넣으면 그 자리가 각주가 됩니다.</p>
     <details class="proj"${p.memo ? ' open' : ''}><summary>연구 메모</summary><label class="field"><span>확정한 것, 미결 쟁점, 떠오른 생각</span><textarea data-pf="memo" rows="5">${esc(p.memo || '')}</textarea></label></details>
     ${cards.length > 1 ? `<div class="notes-filter"><label class="sr" for="notes-q">카드 찾기</label><input id="notes-q" type="search" placeholder="카드 찾기: 인용·메모·문헌" value="${esc(S.notesQ || '')}" autocomplete="off">
-      <button class="chip${S.notesUnused ? ' on' : ''}" data-act="notes-unused" aria-pressed="${S.notesUnused ? 'true' : 'false'}">아직 안 쓴 카드 ${cards.filter((c) => !cardUses(p, c).length).length}</button><span class="m" id="notes-count" aria-live="polite"></span></div>` : ''}
-    <div class="cards">${cards.map((c) => cardHTML(c, p)).join('') || '<p class="find-none">아직 카드가 없습니다. <b>찾기</b>에서 쪽을 열고, 글을 골라 <b>카드에 담기</b>를 누르세요.</p>'}</div></div>`;
+      <button class="chip${S.notesUnused ? ' on' : ''}" data-act="notes-unused" aria-pressed="${S.notesUnused ? 'true' : 'false'}">아직 안 쓴 카드 ${cards.filter((c) => !cardUses(p, c).length).length}</button><button class="chip${S.notesGroup ? ' on' : ''}" data-act="notes-group" aria-pressed="${S.notesGroup ? 'true' : 'false'}">문헌별로 묶기</button><span class="m" id="notes-count" aria-live="polite"></span></div>` : ''}
+    <div class="cards">${cardsHTML(cards, p) || '<p class="find-none">아직 카드가 없습니다. <b>찾기</b>에서 쪽을 열고, 글을 골라 <b>카드에 담기</b>를 누르세요.</p>'}</div></div>`;
   notesFilter();
 }
+// 문헌별로 묶기: 같은 문헌의 카드를 모아 쪽 순서로 보여 준다(메모 카드는 따로). 카드 번호와 저장된 순서는 바꾸지 않는다.
+function cardsHTML(cards, p) {
+  if (!S.notesGroup) return cards.map((c) => cardHTML(c, p)).join('');
+  const groups = new Map();
+  for (const c of cards) { const k = c.docId || ''; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
+  const pg = (c) => (Number.isFinite(+c.page) ? +c.page : 1e9);
+  return [...groups.entries()].sort((a, b) => (a[0] === '') - (b[0] === '')).map(([k, list]) => {
+    const d = k ? docOf(k) : null, name = d ? (d.title || '제목 없는 문헌') : '메모 카드';
+    list.sort((a, b) => pg(a) - pg(b) || (a.no || 0) - (b.no || 0));
+    return `<section class="cgroup"><h3 class="cgroup-h">${esc(name)}${d && d.author ? ` <span class="m">${esc(d.author)}</span>` : ''} <span class="m">${list.length}장</span></h3>${list.map((c) => cardHTML(c, p)).join('')}</section>`;
+  }).join('');
+}
+ACT['notes-group'] = () => { S.notesGroup = !S.notesGroup; viewNotes(); };
 // 카드를 쓴 곳: 집필의 장·절(배치했거나 본문에 〔카드 n〕을 넣은 곳)과 논증 설계도. 아무 데도 안 썼으면 빈 배열.
 function cardUses(p, c) {
   const out = [], nums = sectionNumbers(p.outline || []), tag = new RegExp(`〔\\s*카드\\s*${c.no}\\s*〕`);
@@ -480,6 +493,7 @@ function notesFilter() {
     const show = (!q || hay.includes(q)) && (!S.notesUnused || a.dataset.used === '0');
     a.hidden = !show; if (show) n++;
   }
+  for (const g of $$('.cards .cgroup')) g.hidden = !g.querySelector('.card:not([hidden])');
   const el = $('#notes-count'); if (el) el.textContent = q || S.notesUnused ? `${n}장 보임` : '';
 }
 ON_INPUT.push((t) => { if (t.id !== 'notes-q') return false; S.notesQ = t.value; notesFilter(); return true; });
