@@ -2,14 +2,14 @@
    개요의 장·절마다 논증 설계도의 주장과 노트 카드를 배치하고, 본문 초고에 〔카드 n〕을 넣으면 내보낼 때 그 자리가 각주가 된다.
    각주는 박사학위논문의 양식을 따르고, 두 번째부터는 ‘앞의 논문’으로 줄인다.
    원고 점검은 사용자가 고른 원고와 서재만 읽는다. 원고는 저장하지 않으며, 바깥으로 아무것도 보내지 않는다. */
-import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=0be9c5c95d';
-import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=0be9c5c95d';
-import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=0be9c5c95d';
-import { readHangul } from './hwp.js?v=0be9c5c95d';
-import { buildHwpx, HWPX_MIME } from './hwpx.js?v=0be9c5c95d';
-import { buildDocx, DOCX_MIME } from './docx.js?v=0be9c5c95d';
-import { BASE, PORTRAIT, excluded } from './profile.js?v=0be9c5c95d';
-import { projCards } from './research.js?v=0be9c5c95d';
+import { S, DB, ACT, ON_INPUT, ON_CHANGE, UI, $, $$, esc, uid, toast, kdate, kdt, saveProject, saveCard, docOf, docPages, citer, where, modal, confirmBox, download, safeName, libLoad, logEvent, pdfOpen, copyText } from './core.js?v=f50af4622e';
+import { noteCitations, buildRefList, parseRefList, compareRefs, docCitation, titleKey } from './lawtext.js?v=f50af4622e';
+import { fixGlyphs, bodyOfPages, sentencesOf, styleMetrics, similarSentences, manuscriptHeads, quotesIn, findQuote, notePages, noteChecks, noteKind, bodyChecks, COUNTER_RE, TOP_RE, caseCourt } from './lawtext.js?v=f50af4622e';
+import { readHangul } from './hwp.js?v=f50af4622e';
+import { buildHwpx, HWPX_MIME } from './hwpx.js?v=f50af4622e';
+import { buildDocx, DOCX_MIME } from './docx.js?v=f50af4622e';
+import { BASE, PORTRAIT, excluded } from './profile.js?v=f50af4622e';
+import { projCards } from './research.js?v=f50af4622e';
 
 const AUTHOR = '안요환';
 const ROMAN = ['Ⅰ', 'Ⅱ', 'Ⅲ', 'Ⅳ', 'Ⅴ', 'Ⅵ', 'Ⅶ', 'Ⅷ', 'Ⅸ', 'Ⅹ', 'Ⅺ', 'Ⅻ'];
@@ -98,6 +98,7 @@ export function viewWrite() {
   UI.view().innerHTML = `<div class="page wide">
     <div class="notes-head"><h1>집필</h1><div class="tools">${out.length ? '<button class="btn primary" data-act="w-export">내보내기</button>' : ''}<button class="btn" data-act="sec-add" data-lv="1">+ 장</button></div></div>
     ${out.length ? `<p class="w-total" id="w-total">${totalLabel(out)}</p>` : ''}
+    ${out.length >= 3 ? `<label class="w-jump"><span>장·절로 가기</span><select id="w-jump"><option value="">— 고르세요 —</option>${out.map((x, i) => `<option value="${x.id}">${'\u3000'.repeat(Math.max(0, (x.lv || 1) - 1))}${esc(nums[i])} ${esc(short(x.title || '(제목 없음)', 28))} · ${fmt(counts(x.text)[0])}자</option>`).join('')}</select></label>` : ''}
     <p class="sub">장·절을 세우고, 논증 설계도의 주장과 노트 카드를 배치합니다. <b>내보내기</b>를 누르면 개요·초고·배치한 자료가 한글 파일(.hwpx)이 되고, 〔카드 n〕과 연결한 근거는 박사학위논문 양식의 <b>진짜 각주</b>가 됩니다. 같은 문헌이 다시 나오면 ‘앞의 논문’으로 줄입니다.</p>
     ${qa}
     ${out.length ? `<div class="outline">${out.map(sec).join('')}</div>` : `<section class="box empty-start"><h2 class="bh">개요를 세웁니다</h2><p>그동안의 논문에서 되풀이된 흐름(서론 → 현황 → 판례 → 비교법 → 개선방안 → 결론)으로 시작하거나, 빈 장부터 세울 수 있습니다.</p><ol class="plain">${PORTRAIT.flow.map((x) => `<li>${esc(x)}</li>`).join('')}</ol><div class="tools-row"><button class="btn primary" data-act="w-template">내 논문 틀로 시작</button><button class="btn" data-act="sec-add" data-lv="1">빈 장 하나로 시작</button></div></section>`}
@@ -465,6 +466,13 @@ async function startCheck(src) {
   const out = $('#ck-out'); if (out) out.innerHTML = '<p class="sub">원고를 읽고 점검하는 중… 서재가 크면 몇십 초 걸릴 수 있습니다.</p>';
   try { await runCheck(src); } catch (e) { toast('점검하지 못했습니다: ' + (e.message || e)); } finally { checking = false; if (S.view === 'check') viewCheck(); }
 }
+// 장·절 바로가기: 고른 장·절로 옮겨 제목 칸에 커서를 둔다(폰에서 긴 개요를 일일이 넘기지 않도록).
+ON_CHANGE.push((t) => {
+  if (t.id !== 'w-jump') return false;
+  const box = t.value && document.querySelector(`[data-sec="${t.value}"]`);
+  if (box) { box.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); const ti = box.querySelector('[data-sec-title]'); if (ti) ti.focus({ preventScroll: true }); }
+  t.value = ''; return true;
+});
 ON_CHANGE.push((t) => {
   if (t.id === 'ck-file') { const f = t.files && t.files[0]; t.value = ''; if (f) startCheck({ file: f }); return true; }
   if (t.id === 'ck-doc') { if (t.value) startCheck({ docId: t.value }); return true; }
