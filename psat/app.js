@@ -370,6 +370,41 @@
     const on = set.has(i); btn.closest('li').classList.toggle('struck', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false'); btn.setAttribute('aria-label', `${i + 1}번 선지 ${on ? '되살리기' : '지우기'}`);
   }
+  // 지문 밑줄: 시험지에 펜으로 긋듯 문장을 누르면 밑줄이 그어지고, 다시 누르면 지워진다. 1지문 2문항은 지문 단위로 기억하여 둘째 문항에도 그대로 보이고,
+  // 채점 뒤 '문제 다시 보기'에도 보여 어디에 주목했는지 돌아볼 수 있다(이 기기, 이번 사용 동안만). 태그가 문장 경계에 걸친 문단은 건드리지 않는다.
+  const MARKS = new Map();
+  const markKey = (q) => q.set || q.id;
+  const VOID = /^<(br|img|hr|wbr)\b/i;
+  const balanced = (h) => { let d = 0; for (const t of h.match(/<[^>]+>/g) || []) { if (VOID.test(t) || /\/>$/.test(t)) continue; d += t[1] === '/' ? -1 : 1; if (d < 0) return false; } return d === 0; };
+  function markPassage(html, q, live) {
+    const on = MARKS.get(markKey(q)) || new Set(); let pi = -1;
+    return html.replace(/<p(\s[^>]*)?>([\s\S]*?)<\/p>/g, (m, attrs, inner) => {
+      if (attrs && /\bfn\b/.test(attrs)) return m;
+      pi++;
+      const out = []; let cur = '';
+      for (const seg of inner.split(/(<[^>]+>)/)) {
+        if (seg.startsWith('<')) { cur += seg; continue; }
+        let last = 0;
+        for (const mm of seg.matchAll(/[.?!][”’"')]*(\s+)/g)) { const end = mm.index + mm[0].length - mm[1].length; cur += seg.slice(last, end); out.push(cur, mm[1]); cur = ''; last = mm.index + mm[0].length; }
+        cur += seg.slice(last);
+      }
+      if (cur) out.push(cur);
+      const sents = out.filter((x, i) => i % 2 === 0);
+      if (!sents.length || !sents.every((x) => balanced(x))) return m;
+      let si = -1;
+      const body = out.map((x, i) => { if (i % 2) return x; si++; const k = `${pi}.${si}`; return `<span class="sn${on.has(k) ? ' on' : ''}"${live ? ` data-act="mark" data-k="${k}"` : ''}>${x}</span>`; }).join('');
+      return `<p${attrs || ''}>${body}</p>`;
+    });
+  }
+  function toggleMark(el) {
+    const q = S.view === 'mock' && S.mock ? S.mock.items[S.mock.i].q : S.cur && S.cur.q; if (!q) return;
+    const key = markKey(q); if (!MARKS.has(key)) MARKS.set(key, new Set());
+    const set = MARKS.get(key), k = el.dataset.k;
+    if (set.has(k)) set.delete(k); else set.add(k);
+    el.classList.toggle('on', set.has(k));
+    if (!S.settings.markSeen) { S.settings.markSeen = true; saveSettings(); }
+    $$('.mark-hint').forEach((x) => x.remove());
+  }
   function questionHTML(q, o) {
     const graded = o && o.graded;
     const opts = q.options.map((x, i) => {
@@ -388,7 +423,7 @@
     const fold = !graded && !(o && o.review) && q.setNo > 1 && q.set && S.lastSetDone === q.set;   // 바로 앞에서 같은 지문의 문항을 풀었을 때만
     return `<div class="qhead">${tags.join('')}</div>
       <p class="stem"><span class="no">${o && o.no ? `${o.no}.` : ''}</span><span>${stemHTML(q.stem)}</span></p>
-      <div class="body">${(q.body || []).map((b) => (fold && b.t === 'passage' ? `<details class="pass-fold"><summary>앞 문항과 같은 지문입니다 · 펼쳐 보기</summary>${blockHTML(b, q)}</details>` : graded && b.t === 'passage' && paraCount(b) >= 2 ? blockHTML(b, q).replace('<div class="passage', '<div class="passage pnum') : blockHTML(b, q))).join('')}</div>
+      <div class="body">${(q.body || []).map((b) => { const ph = b.t === 'passage' ? markPassage(blockHTML(b, q), q, !graded) : blockHTML(b, q); return fold && b.t === 'passage' ? `<details class="pass-fold"><summary>앞 문항과 같은 지문입니다 · 펼쳐 보기</summary>${ph}</details>` : graded && b.t === 'passage' && paraCount(b) >= 2 ? ph.replace('<div class="passage', '<div class="passage pnum') : ph; }).join('')}${!graded && !S.settings.markSeen && (q.body || []).some((b) => b.t === 'passage') ? '<p class="mark-hint">지문의 문장을 누르면 밑줄이 그어지고, 다시 누르면 지워집니다.</p>' : ''}</div>
       <ol class="opts${graded ? ' graded' : ''}" aria-label="선택지">${opts}</ol>`;
   }
 
@@ -1239,6 +1274,7 @@
       case 'star': toggleStar(); break;
       case 'goto-para': gotoPara(+el.dataset.n); break;
       case 'strike': toggleStrike(+el.dataset.i); break;
+      case 'mark': toggleMark(el); break;
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
       case 'help': viewHelp(); break;
       case 'memo': { const w = $('.memo-wrap'); w.classList.toggle('hide'); if (!w.classList.contains('hide')) $('#memo').focus(); break; }

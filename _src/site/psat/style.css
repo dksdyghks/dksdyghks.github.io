@@ -208,6 +208,9 @@ table.t td.l, table.t th.l { text-align: left; }
 .scratch-x pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 .875rem/1.6 ui-monospace, Menlo, Consolas, monospace; color: var(--ink-2); }
 .opts li { display: flex; align-items: flex-start; gap: 2px; }
 .opts li > .opt { flex: 1; min-width: 0; }
+.sheet .sn[data-act] { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.sheet .sn.on { text-decoration: underline; text-decoration-color: var(--pen); text-decoration-thickness: 2px; text-underline-offset: 4px; text-decoration-skip-ink: none; }
+.mark-hint { margin: 6px 0 0; font-size: .8125rem; color: var(--muted); }
 .opt-x { flex: none; width: 40px; height: 40px; margin-top: 3px; border: 0; border-radius: 10px; background: none; color: var(--faint); font-size: 1.125rem; line-height: 1; cursor: pointer; }
 .opt-x:hover { background: var(--chip); color: var(--ink-2); }
 .opt-x:focus-visible { outline: 2px solid var(--pen); outline-offset: -2px; }
