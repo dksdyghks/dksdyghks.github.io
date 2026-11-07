@@ -282,14 +282,29 @@ function toMd(p, items) {
   const body = items.map((it) => { const t = it.text.replace(/〔@(\d+)〕/g, (_, k) => { foot.push(it.notes[+k]); return `[^${++n}]`; }); return it.t === 'h1' ? `## ${t}` : it.t === 'h2' ? `### ${t}` : it.t === 'h3' ? `#### ${t}` : it.t === 'quote' ? `> ${t}` : t; }).join('\n\n');
   return `# ${p.title}\n\n${body}\n\n${foot.map((f, i) => `[^${i + 1}]: ${f}`).join('\n')}\n`;
 }
+// 내보내기 전 점검: 각주가 되지 못하는 〔카드 n〕(없는 카드·출처 없는 메모 카드)을 장·절별로 모아 보여 주고, 그 자리로 바로 가게 한다.
+function badMarks(p) {
+  const nums = sectionNumbers(p.outline || []), out = [];
+  (p.outline || []).forEach((s, i) => {
+    const bad = [];
+    for (const mm of String(s.text || '').matchAll(CARD_MARK)) { const n = +mm[1], c = cardByNo(p, n), why = !c ? '없는 카드' : !hasSrc(c) ? '출처 없는 메모' : ''; if (why && !bad.some((b) => b.n === n)) bad.push({ n, why }); }
+    if (bad.length) out.push({ id: s.id, label: `${nums[i]} ${short(s.title || '(제목 없음)', 20)}`, bad });
+  });
+  return out;
+}
 ACT['w-export'] = () => {
-  const p = S.project;
-  const m = modal(`<h2>내보내기</h2><p class="sub">개요와 초고, 배치한 자료를 한 파일로 냅니다. 각주는 박사학위논문 양식이고, 두 번째부터 ‘앞의 논문’으로 줄입니다. 판례 각주의 선고일은 서재 문헌에 적힌 것을 쓰고, 찾지 못하면 ○로 비워 둡니다.</p>
+  const p = S.project, bad = badMarks(p);
+  const warn = bad.length ? `<div class="we-warn" role="alert"><b>각주가 되지 못하는 표시 ${bad.reduce((a, x) => a + x.bad.length, 0)}곳</b> — 그대로 내보내면 이 자리는 각주 없이 빠집니다.<ul>${bad.map((x) => `<li><button type="button" class="linkish" data-goto-sec="${x.id}">${esc(x.label)}</button>: ${x.bad.map((b) => `〔카드 ${b.n}〕 ${b.why}`).join(', ')}</li>`).join('')}</ul></div>` : '';
+  const m = modal(`<h2>내보내기</h2>${warn}<p class="sub">개요와 초고, 배치한 자료를 한 파일로 냅니다. 각주는 박사학위논문 양식이고, 두 번째부터 ‘앞의 논문’으로 줄입니다. 판례 각주의 선고일은 서재 문헌에 적힌 것을 쓰고, 찾지 못하면 ○로 비워 둡니다.</p>
     <label class="ck"><input type="checkbox" id="we-claims" checked> 배치한 주장·근거·반론을 골격으로 넣기(▶ 주장, · 근거 …)</label>
     <label class="ck"><input type="checkbox" id="we-refs" checked> 인용한 서재 문헌으로 참고문헌 붙이기(국내자료 단행본·학술연구, 국외자료, 가나다순)</label>
     <label class="ck"><input type="checkbox" id="we-cards" checked> 배치한 카드의 인용문과 메모 넣기(본문에 〔카드 n〕으로 쓴 카드는 각주로만)</label>
     <div class="modal-foot"><button class="btn" data-close>닫기</button><button class="btn" data-fmt="md">마크다운</button><button class="btn" data-fmt="docx">Word(.docx)</button><button class="btn primary" data-fmt="hwpx">한글(.hwpx)</button></div>
     <p class="sub">한글 2014 이후(한컴오피스·한글 뷰어)에서 .hwpx를 엽니다. 열리지 않으면 Word 파일을 한글에서 불러오세요(각주도 함께 옵니다).</p>`);
+  $$('[data-goto-sec]', m.el).forEach((b) => b.addEventListener('click', () => {
+    m.close(); const box = $(`[data-sec="${b.dataset.gotoSec}"]`); if (!box) return;
+    box.scrollIntoView({ block: 'start' }); const ta = $('[data-sec-text]', box); if (ta) ta.focus({ preventScroll: true });
+  }));
   $$('[data-fmt]', m.el).forEach((b) => b.addEventListener('click', async () => {
     const fmt = b.dataset.fmt, opt = { claims: $('#we-claims', m.el).checked, cards: $('#we-cards', m.el).checked, refs: $('#we-refs', m.el).checked };
     try {
