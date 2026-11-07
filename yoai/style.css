@@ -357,6 +357,8 @@ details.proj[open] { padding-bottom: 6px; }
 .sec-t { flex: 1; min-width: 160px; border: 1px solid transparent; border-radius: 8px; background: none; padding: 5px 8px; font-weight: 600; font-size: .9375rem; }
 .sec-t:hover, .sec-t:focus { border-color: var(--rule-2); background: var(--panel); }
 .sec.lv1 .sec-t { font: 600 1rem/1.4 var(--f-serif); }
+.sec-count { margin: 3px 2px 0; text-align: right; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1em; }
+.w-total { margin: -4px 0 10px; font-size: .8125rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .sec textarea { background: var(--panel); font-family: var(--f-serif); font-size: .9375rem; line-height: 1.85; }
 .empty-start p { font-size: .875rem; color: var(--ink-2); margin: 0 0 8px; }
 

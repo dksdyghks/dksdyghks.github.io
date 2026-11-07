@@ -87,6 +87,7 @@ export function viewWrite() {
       <div class="sec-h"><span class="sec-n">${nums[i]}</span><label class="sr" for="st-${s.id}">제목</label><input id="st-${s.id}" class="sec-t" data-sec-title value="${esc(s.title || '')}" placeholder="${s.lv === 1 ? '장 제목' : '절 제목'}">
         <span class="node-tools">${s.lv < 3 ? `<button data-act="sec-add" data-lv="${s.lv + 1}" title="이 아래에 ${s.lv === 1 ? '절' : '항'} 추가">+ ${s.lv === 1 ? '절' : '항'}</button>` : ''}<button data-act="sec-lv" data-d="-1" title="한 단계 위로" aria-label="한 단계 위로"${s.lv === 1 ? ' disabled' : ''}>←</button><button data-act="sec-lv" data-d="1" title="한 단계 아래로" aria-label="한 단계 아래로"${s.lv === 3 || i === 0 ? ' disabled' : ''}>→</button><button data-act="sec-up" aria-label="위로" title="위로">↑</button><button data-act="sec-down" aria-label="아래로" title="아래로">↓</button><button data-act="sec-del" class="del" aria-label="지우기" title="지우기">×</button></span></div>
       <label class="sr" for="sx-${s.id}">초고</label><textarea id="sx-${s.id}" data-sec-text rows="${Math.min(14, Math.max(3, String(s.text || '').split('\n').length + 1))}" placeholder="${esc(s.hint || '초고나 쓸 내용의 메모. 카드를 누르면 커서 자리에 〔카드 n〕이 들어가고, 내보낼 때 그 자리가 각주가 됩니다.')}">${esc(s.text || '')}</textarea>
+      <div class="sec-count" data-sec-count="${s.id}" aria-live="polite">${countLabel(s.text)}</div>
       <div class="sec-refs">${cl.map((n) => `<span class="ref claim"><span title="${esc(n.text)}">주장 · ${esc(short(n.text || '이름 없는 주장', 34))}</span><button data-act="sec-unclaim" data-id="${n.id}" aria-label="빼기" title="빼기">×</button></span>`).join('')}
         ${cs.map((c) => { const d = c.docId ? docOf(c.docId) : null; return `<span class="ref kcard"><button class="ins" data-act="sec-ins" data-no="${c.no}" title="본문 커서 자리에 〔카드 ${c.no}〕 넣기">카드 ${c.no} · ${esc(short(c.quote || c.memo || (d ? `${d.author || d.title} ${where(d, c.page).ui}` : '메모'), 26))}</button><button data-act="sec-uncard" data-id="${c.id}" aria-label="빼기" title="빼기">×</button></span>`; }).join('')}
         <button class="ref-add" data-act="sec-place">+ 주장·카드 배치</button></div></section>`;
@@ -96,6 +97,7 @@ export function viewWrite() {
       ${p.gap ? `<div><span class="lbl">차별성</span><p>${esc(p.gap)}</p></div>` : ''}<div class="tools-row"><button class="linkish" data-act="go" data-v="arg">논증 설계도에서 고치기</button></div></section>`;
   UI.view().innerHTML = `<div class="page wide">
     <div class="notes-head"><h1>집필</h1><div class="tools">${out.length ? '<button class="btn primary" data-act="w-export">내보내기</button>' : ''}<button class="btn" data-act="sec-add" data-lv="1">+ 장</button></div></div>
+    ${out.length ? `<p class="w-total" id="w-total">${totalLabel(out)}</p>` : ''}
     <p class="sub">장·절을 세우고, 논증 설계도의 주장과 노트 카드를 배치합니다. <b>내보내기</b>를 누르면 개요·초고·배치한 자료가 한글 파일(.hwpx)이 되고, 〔카드 n〕과 연결한 근거는 박사학위논문 양식의 <b>진짜 각주</b>가 됩니다. 같은 문헌이 다시 나오면 ‘앞의 논문’으로 줄입니다.</p>
     ${qa}
     ${out.length ? `<div class="outline">${out.map(sec).join('')}</div>` : `<section class="box empty-start"><h2 class="bh">개요를 세웁니다</h2><p>그동안의 논문에서 되풀이된 흐름(서론 → 현황 → 판례 → 비교법 → 개선방안 → 결론)으로 시작하거나, 빈 장부터 세울 수 있습니다.</p><ol class="plain">${PORTRAIT.flow.map((x) => `<li>${esc(x)}</li>`).join('')}</ol><div class="tools-row"><button class="btn primary" data-act="w-template">내 논문 틀로 시작</button><button class="btn" data-act="sec-add" data-lv="1">빈 장 하나로 시작</button></div></section>`}
@@ -105,6 +107,15 @@ export function viewWrite() {
       <p class="sub">장·절의 <b>+ 주장·카드 배치</b>로 넣으세요. 배치하지 않은 자료는 내보낼 때 빠집니다.</p></section>` : ''}
   </div>`;
 }
+// 초고 글자 수: 〔카드 n〕 표시는 내보낼 때 각주 번호가 되므로 세지 않는다. 공백 포함·제외를 함께 보여 준다.
+const bodyOf = (t) => String(t || '').replace(/〔\s*카드\s*\d+\s*〕/g, '');
+const counts = (t) => { const b = bodyOf(t); return [b.replace(/\n/g, '').length, b.replace(/\s/g, '').length]; };
+const fmt = (n) => n.toLocaleString('ko-KR');
+function countLabel(t) { const [a, b] = counts(t); return a ? `${fmt(a)}자 · 공백 제외 ${fmt(b)}자` : ''; }
+function totalLabel(out) {
+  let a = 0, b = 0; for (const x of out) { const [i, j] = counts(x.text); a += i; b += j; }
+  return `초고 합계 <b>${fmt(a)}자</b> · 공백 제외 ${fmt(b)}자`;
+}
 let lastCaret = { id: '', pos: -1 };
 document.addEventListener('focusout', (e) => { const t = e.target; if (t && t.dataset && 'secText' in t.dataset) lastCaret = { id: t.closest('[data-sec]').dataset.sec, pos: t.selectionStart }; });
 let secT = 0;
@@ -112,7 +123,11 @@ const saveSoon = () => { clearTimeout(secT); secT = setTimeout(() => saveProject
 ON_INPUT.push((t) => {
   const box = t.closest && t.closest('[data-sec]'); if (!box || !t.dataset || !('secText' in t.dataset || 'secTitle' in t.dataset)) return false;
   const s = secOf(box.dataset.sec); if (!s) return true;
-  if ('secText' in t.dataset) s.text = t.value; else s.title = t.value;
+  if ('secText' in t.dataset) {
+    s.text = t.value;
+    const c = box.querySelector(`[data-sec-count="${s.id}"]`); if (c) c.textContent = countLabel(s.text);
+    const tot = document.getElementById('w-total'); if (tot && S.project) tot.innerHTML = totalLabel(S.project.outline || []);
+  } else s.title = t.value;
   saveSoon(); return true;
 });
 ACT['w-template'] = async () => {
