@@ -4304,4 +4304,66 @@ ok(len(where_) == 1, f'L-BZ04 {where_}')
 by_text('L-BZ04', list(zip(['상품은 B에', '상품은 C에', 'A에 붙은 말은', 'D에 붙은 말은', '참인 말이 붙은'],
         [where_[0] == 'B', where_[0] == 'C', not lab_['A'](where_[0]), lab_['D'](where_[0]), [k for k, f in lab_.items() if f(where_[0])] == ['A', 'C']])))
 combo('L-BZ05', ['ㄱ', 'ㄴ'])
+# ================= S-CA / D-CA / L-CA (5급 실전, independent re-solve from the rendered options) =================
+room_cap_ = lambda city: 100000 if city == '서울' else 70000
+def trip_pay_(city, days, room, car_days):
+    allowance = sum(25000 if d >= car_days else 12500 for d in range(days))
+    return allowance + 30000 * days + (days - 1) * min(room, room_cap_(city))
+pick('S-CA01', f'{trip_pay_("서울", 3, 120000, 0) + trip_pay_("부산", 2, 60000, 2) + trip_pay_("대전", 1, 0, 1):,}원')
+def ways_(n):                                         # 한 칸·두 칸 걸음의 순서를 모두 만든다
+    out = [[]]
+    res = []
+    while out:
+        w = out.pop()
+        s = sum(w)
+        if s == n: res.append(tuple(w)); continue
+        for st in (1, 2):
+            if s + st <= n: out.append(w + [st])
+    return res
+w6_ = ways_(6)
+combo('S-CA02', [l for l, t in zip('ㄱㄴㄷㄹ', [len(ways_(5)) == 8, len(w6_) == 13, sum(w.count(2) == 2 for w in w6_) == 4, sum('22' not in ''.join(map(str, w)) for w in w6_) == 8]) if t])
+def camp_fee_(price, before, storm=False):           # 7일 전까지 0, 6~3일 전 30%, 2일 전~당일 50%, 기상 특보 0
+    if storm: return 0
+    rate = F(0) if before >= 7 else F(3, 10) if before >= 3 else F(1, 2)
+    return price * rate
+can_change_free_ = lambda before: before >= 3
+by_text('S-CA03', list(zip(['이용일 5일 전에', '이용료가 4만 원인', '기상 특보가', '이용일 2일 전에', '이용료가 6만 원인'],
+        [camp_fee_(50000, 5) == 0, camp_fee_(40000, 1) == 12000, camp_fee_(50000, 0, storm=True) == 25000, can_change_free_(2), camp_fee_(60000, 4) == 18000])))
+def hands_(t):                                        # t분 뒤(12시 기준) 두 바늘 사이 작은 각
+    d = abs(F(t, 2) - 6 * F(t)) % 360
+    return min(d, 360 - d)
+overlaps_ = [t for t in (F(k * 720, 11) for k in range(30)) if t < 1440]
+combo('S-CA04', [l for l, t in zip('ㄱㄴㄷㄹ', [hands_(180) == 90, hands_(210) == 90, 65 < overlaps_[1] < 66 and hands_(overlaps_[1]) == 0, len(overlaps_) == 24]) if t])
+tn_ = {'A': (18, 12, '가'), 'B': (12, 5, '가'), 'C': (16, 10, '나'), 'D': (8, 5, '나'), 'E': (10, 12, '다'), 'F': (15, 10, '다')}
+oktn_ = [c for n in range(1, 7) for c in itertools.combinations(tn_, n) if sum(tn_[x][1] for x in c) >= 20 and not {'C', 'E'} <= set(c) and len({tn_[x][2] for x in c}) >= 2]
+pick('S-CA05', f'{min(sum(tn_[x][0] for x in c) for c in oktn_)}만 원')
+os_ = [(200, 70), (220, 72), (240, 75), (250, 76)]; mb_ = [F(a * r, 100) for a, r in os_]; nm_ = [a - m for (a, r), m in zip(os_, mb_)]
+ct5_ = {'음식 서비스': 30, '가전': 35, '의류': 40, '여행': 25}
+only('D-CA01', [not x for x in [all(os_[i][0] > os_[i - 1][0] for i in (1, 2, 3)), all(mb_[i] > mb_[i - 1] for i in (1, 2, 3)), all(nm_[i] > nm_[i - 1] for i in (1, 2, 3)),
+     mb_[3] / mb_[0] >= F(13, 10), ct5_['의류'] > ct5_['가전'] and ct5_['음식 서비스'] + ct5_['여행'] > ct5_['의류']]], 'false statements')
+pt_ = {'가': (900, 30, 3000), '나': (500, 10, 2500), '다': (700, 25, 1400), '라': (300, 12, 2000), '마': (400, 20, 1000)}
+mp_ = [m for m in itertools.permutations(pt_) if pt_[m[0]][0] == max(v[0] for v in pt_.values()) and F(pt_[m[1]][0], pt_[m[1]][1]) == max(F(a, b) for a, b, c in pt_.values())
+       and F(pt_[m[2]][0], pt_[m[2]][2]) == min(F(a, c) for a, b, c in pt_.values()) and pt_[m[3]][1] > pt_[m[4]][1]]
+ok(len(mp_) == 1, f'D-CA02 {mp_}'); pick('D-CA02', ', '.join(mp_[0]))
+gg_ = F(1800, 300); gn_ = 45 * 10; gd_ = F(200, 40); gr_ = 600 * 3
+gy_ = {'A': (400, 5, 8), 'B': (300, gg_, 5), 'C': (gn_, 4, 10), 'D': (200, 8, gd_), 'E': (600, 3, 12)}
+gi_ = {k: a * b for k, (a, b, c) in gy_.items()}; gp_ = {k: F(a, c) for k, (a, b, c) in gy_.items()}
+by_text('D-CA03', list(zip(['월 회비가 가장 비싼', '(가)는 A의', '(나)는 A와 B의', '(라)는 C의', '다섯 시설을'],
+        [max(gy_, key=lambda k: gy_[k][1]) == max(gp_, key=gp_.get), gg_ - gy_['A'][1] >= 2, gn_ > gy_['A'][0] + gy_['B'][0], gr_ == gi_['C'], F(sum(gi_.values()), sum(a for a, b, c in gy_.values())) >= 5])))
+tv_ = [400, 420, 450, 460]; tr_ = [25, 24, 22, 23]; tk_ = [F(v * r, 100) for v, r in zip(tv_, tr_)]; ot_ = [v - t for v, t in zip(tv_, tk_)]
+combo('D-CA04', [l for l, t in zip('ㄱㄴㄷㄹ', [max(range(4), key=lambda i: tk_[i]) == 3, all(tk_[i] > tk_[i - 1] for i in (1, 2, 3)), all(ot_[i] > ot_[i - 1] for i in (1, 2, 3)), ot_[3] >= ot_[0] * F(6, 5)]) if t])
+rd_ = {'A': (100, F(4)), 'B': (60, F(2)), 'C': (45, F(3)), 'D': (30, F(3, 2)), 'E': (20, F(5, 2))}; gd2_ = {k: F(a * 100) / r for k, (a, r) in rd_.items()}
+combo('D-CA05', [l for l, t in zip('ㄱㄴㄷㄹ', [max(gd2_, key=gd2_.get) == 'B', max(rd_, key=lambda k: rd_[k][1]) == max(gd2_, key=gd2_.get), gd2_['C'] / gd2_['E'] < 2,
+       F(sum(a for a, r in rd_.values()) * 100, 1) / sum(gd2_.values()) < 3]) if t])
+pick('L-CA01', '두 나라와 두 물건만 있을 때, 한 나라가 두 물건 모두에서 비교우위를 가질 수는 없다.')
+hr_ = {'갑국': (10, 5), '을국': (30, 10)}                # 쌀 1톤, 옷 1벌에 드는 시간
+rice_oc_ = {c: F(r, c_) for c, (r, c_) in hr_.items()}; cloth_oc_ = {c: F(c_, r) for c, (r, c_) in hr_.items()}
+combo('L-CA02', [l for l, t in zip('ㄱㄴㄷㄹ', [all(hr_['갑국'][i] < hr_['을국'][i] for i in (0, 1)), min(rice_oc_, key=rice_oc_.get) == '갑국', cloth_oc_['을국'] == 3,
+       min(rice_oc_.values()) < F(5, 2) < max(rice_oc_.values())]) if t])
+combo('L-CA03', ['ㄱ', 'ㄴ', 'ㄷ'])
+duty_ = [dict(zip('갑을병정무', pm)) for pm in itertools.permutations(range(5))]
+duty_ok_ = [a for a in duty_ if abs(a['병'] - a['을']) != 1 and a['갑'] == a['병'] + 1 and abs(a['을'] - a['무']) != 1 and a['정'] < a['을']]
+by_text('L-CA04', list(zip(['갑은 수요일', '무는 월요일', '정은 목요일', '병은 화요일', '을은 금요일'],
+        [all(a['갑'] == 2 for a in duty_ok_), all(a['무'] == 0 for a in duty_ok_), all(a['정'] == 3 for a in duty_ok_), all(a['병'] != 1 for a in duty_ok_), all(a['을'] == 4 for a in duty_ok_)])))
+combo('L-CA05', ['ㄴ'])
 print('ALL OK' if ok_all else 'SOME FAILED')
