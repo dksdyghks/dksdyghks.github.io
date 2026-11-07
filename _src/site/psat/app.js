@@ -360,13 +360,24 @@
     p.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     p.classList.remove('flash'); void p.offsetWidth; p.classList.add('flash');
   }
+  // 소거법: 풀면서 아니라고 본 선지를 지워 둔다(문항마다 기억, 채점 뒤에는 보이지 않음). 선지를 고르는 것과는 따로 움직인다.
+  const STRUCK = new Map();
+  const struckOf = (q) => { if (!STRUCK.has(q.id)) STRUCK.set(q.id, new Set()); return STRUCK.get(q.id); };
+  function toggleStrike(i) {
+    const q = S.view === 'mock' && S.mock ? S.mock.items[S.mock.i].q : S.cur && S.cur.q; if (!q) return;
+    const set = struckOf(q); if (set.has(i)) set.delete(i); else set.add(i);
+    const btn = document.querySelector(`.opt-x[data-i="${i}"]`); if (!btn) return;
+    const on = set.has(i); btn.closest('li').classList.toggle('struck', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false'); btn.setAttribute('aria-label', `${i + 1}번 선지 ${on ? '되살리기' : '지우기'}`);
+  }
   function questionHTML(q, o) {
     const graded = o && o.graded;
     const opts = q.options.map((x, i) => {
       let cls = 'opt';
       if (!graded && o && o.choice === i) cls += ' sel';
       if (graded) { if (i === q.answer) cls += ' correct'; else if (i === o.choice) cls += ' miss'; else cls += ' dim'; }
-      return `<li><button type="button" class="${cls}" data-i="${i}" ${graded ? 'tabindex="-1" aria-disabled="true"' : ''} aria-pressed="${!graded && o && o.choice === i ? 'true' : 'false'}"><span class="n" aria-hidden="true">${i + 1}</span><span class="x">${x}</span><span class="sr">${i + 1}번${graded && i === q.answer ? ' (정답)' : ''}${graded && i === o.choice && i !== q.answer ? ' (고른 답)' : ''}</span></button></li>`;
+      const off = !graded && struckOf(q).has(i);
+      return `<li${off ? ' class="struck"' : ''}><button type="button" class="${cls}" data-i="${i}" ${graded ? 'tabindex="-1" aria-disabled="true"' : ''} aria-pressed="${!graded && o && o.choice === i ? 'true' : 'false'}"><span class="n" aria-hidden="true">${i + 1}</span><span class="x">${x}</span><span class="sr">${i + 1}번${graded && i === q.answer ? ' (정답)' : ''}${graded && i === o.choice && i !== q.answer ? ' (고른 답)' : ''}</span></button>${graded ? '' : `<button type="button" class="opt-x" data-act="strike" data-i="${i}" aria-pressed="${off ? 'true' : 'false'}" aria-label="${i + 1}번 선지 ${off ? '되살리기' : '지우기'}" title="소거법: 아닌 선지를 지워 둡니다">×</button>`}</li>`;
     }).join('');
     const tags = [`<span class="tag">${esc(SUBJ[q.subject].name)} · ${esc(typeShort(q.subject, q.type))}</span>`];
     if (o && o.review) tags.push('<span class="tag rev">복습</span>');
@@ -1223,6 +1234,7 @@
       case 'same-type': sameType(); break;
       case 'star': toggleStar(); break;
       case 'goto-para': gotoPara(+el.dataset.n); break;
+      case 'strike': toggleStrike(+el.dataset.i); break;
       case 'cause': { if (!S.cur) break; const rec = ensureRec(S.cur.q); rec.cause = rec.cause === el.dataset.v ? '' : el.dataset.v; putRec(rec); $$('[data-act="cause"]').forEach((b) => b.classList.toggle('on', b.dataset.v === rec.cause)); break; }
       case 'help': viewHelp(); break;
       case 'memo': { const w = $('.memo-wrap'); w.classList.toggle('hide'); if (!w.classList.contains('hide')) $('#memo').focus(); break; }
