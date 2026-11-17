@@ -231,7 +231,7 @@ THESIS_URL = {
 }
 
 KCI = {'법조': 'excellent', '군사과학논집': 'other', 'Ewha Law Review': 'other'}
-KCI_TXT = {'excellent': ('KCI 우수등재', 'KCI Excellent Accredited'), 'listed': ('KCI 등재', 'KCI Accredited'), 'other': ('기타', 'Non-KCI')}
+KCI_TXT = {'excellent': ('KCI 우수등재', 'KCI Excellent Accredited'), 'listed': ('KCI 등재', 'KCI Accredited'), 'other': ('', '')}  # non-KCI journals carry no label
 
 LINK_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>'
 
@@ -263,6 +263,7 @@ def view(lang):
     DOT = '<span class="dot" aria-hidden="true">·</span>'  # rides at the end of the item before it, so no line starts with it
     def glue(text, badge, after=''):
         """The badge stays with the last word; a closing parenthetical such as (한국헌법학회 et al.) moves as one piece."""
+        badge_html = f'<span class="badge">{e(badge)}</span>' if badge else ''
         text = text.rstrip().replace(' et al.', '\u00a0et\u00a0al.').replace(' 등)', '\u00a0등)').replace(' 외)', '\u00a0외)')
         text = re.sub(r'\b(Vol\.|No\.|통권) ', '\\1\u00a0', text)  # "No. 1", "통권 제24호" never split
         text = re.sub(r'(제\d+집) 통권', '\\1\u00a0통권', text)  # the journal's own "제74집 통권" stays in one piece
@@ -272,7 +273,7 @@ def view(lang):
             if ' ' in paren:  # "(Korean Constitutional Law Association et al.)"
                 i = paren.rfind(' ')
                 return (f'{e(text[:k])}<wbr><span class="nwd">{e(paren[:i + 1])}<span class="nw">{e(paren[i + 1:])}'
-                        f'<span class="badge">{e(badge)}</span>{after}</span></span>')
+                        f'{badge_html}{after}</span></span>')
         sep = ' ' if ' ' in text else '·'  # author lists like 조정흠·이의섭·안요환 break after a middle dot
         i = text.rfind(sep)
         head, tail = (text[:i + 1], text[i + 1:]) if i >= 0 else ('', text)
@@ -280,7 +281,7 @@ def view(lang):
         if j > 0:
             head, tail, brk = head + tail[:j], tail[j:], '<wbr>'
         head_html = e(head) if sep == ' ' else e(head).replace('·', '·<wbr>')
-        return f'{head_html}{brk}<span class="nw">{e(tail)}<span class="badge">{e(badge)}</span>{after}</span>'
+        return f'{head_html}{brk}<span class="nw">{e(tail)}{badge_html}{after}</span>'
 
     def nowidow(t):
         """Keep the last two words together (typographic widow control) when they are short."""
