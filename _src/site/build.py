@@ -35,6 +35,9 @@ STATEMENT = {
     'en': ('Julius von\u00a0Kirchmann once dismissed the scientific worth of jurisprudence: \n“Three corrective words by the legislator, \rand entire libraries become waste\u00a0paper.”',
            'Yet precisely because jurisprudence has worth as a science, ', 'I believe my research will lead the\u00a0legislator to set those three words\u00a0right.'),
 }
+BIO = {  # a short introduction under the statement ('\n' = line break on wide screens)
+    'ko': '안요환 교수는 공군사관학교에서 법학을 가르치고 있다. 헌법 전공자로서 입법정책, 정치관계법, 행정법 분야의 전문가이며 선거관리 분야에 특히 많은 관심을 갖고 있다. 법학이 학문으로서 가치가 있기에 \n자신의 연구는 결국 입법권자로 하여금 문제의 세\u00a0마디를 바로잡도록 할 것이라 믿는다.',
+}
 TEACHING = {
     'ko': ['법학개론', '융합캡스톤', '행정법', '항공우주법', '헌법과 민주시민'],
     'en': ['Introduction to Law', 'Capstone Design', 'Administrative Law', 'Aviation and Space Law', 'Constitutional Law'],
@@ -134,6 +137,9 @@ PROJECTS = [  # newest first: (period, ko title, ko sponsor, en title, en sponso
     ((2021, 8), '외국의 재선거와 보궐선거', '중앙선거관리위원회', 'Re-elections and By-elections in Foreign Countries', 'National Election Commission'),
 ]
 TALKS = [  # newest first: (y,m,d, ko role, en role, ko title, ko venue, en title, en venue)
+    (2026, 11, 20, '발표', 'Presenter', '민간투자법상 감독명령 관련 판례에 대한 고찰', '한국공공계약법학회 제11회 세미나',
+     'A Review of Case Law on Supervisory Orders under the Act on Public-Private Partnerships in Infrastructure',
+     '11th Seminar, Korean Society of Public Contract Law'),
     (2025, 8, 28, '발표', 'Presenter', '우주법제의 헌법적 쟁점',
      '제7회 한국헌법학자대회(한국헌법학회 et al.)',
      'Constitutional Issues in Space Legislation of Korea',
@@ -362,7 +368,8 @@ def view(lang):
       f'<div class="fields-block"><span class="fields-label" id="{sid("fields")}">{e(L["fields"])}</span>'
       f'<ul class="fields" aria-labelledby="{sid("fields")}">' + ''.join(f'<li>{e(f)}</li>' for f in P['fields']) + '</ul></div>')
     w('</div>')
-    w(f'<div class="stmt"><p class="s1">{br(s1)}</p><p class="s2">{e(s2a)}<br class="br-t"><strong>{e(s2b)}</strong></p></div>')
+    bio = f'<p class="s3">{br(BIO[lang])}</p>' if lang in BIO else ''
+    w(f'<div class="stmt"><p class="s1">{br(s1)}</p><p class="s2">{e(s2a)}<br class="br-t"><strong>{e(s2b)}</strong></p>{bio}</div>')
     w('</div></div></header>')
 
     # pill bar (tablet and phone)
@@ -580,7 +587,7 @@ NOT_FOUND = f"""<!doctype html>
 """
 Path('/home/user/dksdyghks.github.io/404.html').write_text(NOT_FOUND)
 
-# the two apps behind the doors (송공: psat/, YO아이: yoai/) — each folder stands alone
+# the app behind the door (송공: psat/) — the folder stands alone
 import hashlib, shutil
 try:  # 송공's passage face, cut to the letters 송공 shows: rebuilt only when those letters change
     import serif_subset
@@ -593,7 +600,7 @@ if fsrc.exists():  # self-hosted web fonts shared by the homepage and both apps
     if fdst.exists():
         shutil.rmtree(fdst)
     shutil.copytree(fsrc, fdst)
-for app in ('psat', 'yoai'):
+for app in ('psat',):
     src = Path('/home/user/yohan-ahn') / app
     if not src.exists():
         continue
@@ -608,16 +615,29 @@ for app in ('psat', 'yoai'):
     for p in files:
         if p.suffix == '.html':
             (dst / p.name).write_text(p.read_text().replace('__V__', ver))
-        elif app == 'yoai' and p.suffix == '.js' and p.name not in ('pdf.js', 'pdf.worker.js', 'sw.js', 'gate.js'):
-            # version every module's relative imports, so a returning browser never mixes an old helper with a new one
-            # (every module asks for the same address, so they all share one copy of core.js)
-            txt = _re.sub(r"(['\"])\./((?:app|core|research|write|zip|hwp|hwpx|lawtext|profile|docx|judgment|judg|pdf|pdf\.worker)\.js)\1", lambda m: f"{m.group(1)}./{m.group(2)}?v={ver}{m.group(1)}", p.read_text())
-            (dst / p.name).write_text(txt)
         else:
             shutil.copy2(p, dst / p.name)
-    for sub in (p for p in src.iterdir() if p.is_dir() and not p.name.startswith(('_', '.'))):  # e.g. yoai/vendor: fixed-version third-party code
+    for sub in (p for p in src.iterdir() if p.is_dir() and not p.name.startswith(('_', '.'))):  # fixed-version third-party code, if any
         shutil.copytree(sub, dst / sub.name)
     print('copied', app, len(files), 'files, version', ver)
+# YO아이 was closed (2026-11). Its old address keeps only a service worker that, on the next visit of a phone or computer
+# where YO아이 was installed, deletes YO아이's saved copies and unregisters itself, so the closed app no longer opens from cache.
+# (Records a visitor kept in their own browser storage are left as they are; nothing is read or sent.)
+ydst = Path('/home/user/dksdyghks.github.io/yoai')
+if ydst.exists():
+    shutil.rmtree(ydst)
+ydst.mkdir(parents=True)
+(ydst / 'sw.js').write_text("""/* YO아이 has been closed. This worker removes YO아이's saved copies and unregisters itself. */
+'use strict';
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    for (const k of await caches.keys()) if (k.startsWith('yoai-')) await caches.delete(k);
+    await self.registration.unregister();
+    for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate('/');
+  })());
+});
+""")
 print('built', len(artifact), len(page))
 
 # keep the sources beside the site, in _src/ (Jekyll does not publish folders starting with _), so a fresh workspace can
@@ -627,7 +647,9 @@ sdst.mkdir(parents=True, exist_ok=True)
 for name in ('build.py', 'taegukgi.py', 'topicmap.py', 'serif_subset.py', 'home_fonts.py', 'style.css', 'script.js',
              'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py'):
     shutil.copy2(Path('/home/user/yohan-ahn') / name, sdst / name)
-for app in ('psat', 'yoai'):
+if (sdst / 'yoai').exists():  # YO아이 was closed: its sources are no longer kept
+    shutil.rmtree(sdst / 'yoai')
+for app in ('psat',):
     if (sdst / app).exists():
         shutil.rmtree(sdst / app)
     shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__'))

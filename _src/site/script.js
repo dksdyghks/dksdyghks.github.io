@@ -170,7 +170,6 @@
 
   buttons.forEach(function (b) {
     b.addEventListener('click', function () {
-      root.classList.add('ready');
       if (document.startViewTransition && !calm) document.startViewTransition(function () { switchTo(b.dataset.lang); });
       else switchTo(b.dataset.lang);
     });
@@ -181,9 +180,6 @@
     var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
     if (target) { showNow(target); requestAnimationFrame(function () { target.scrollIntoView(); revealInView(visibleView()); }); }
   }
-
-  // The signature-style name is written in once, on first load.
-  setTimeout(function () { root.classList.add('ready'); }, 1900);
 
   var ticking = false;
   window.addEventListener('scroll', function () {
