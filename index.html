@@ -232,11 +232,7 @@ button { font: inherit; }
 }
 @media (min-width: 1200px) {
   #view-ko .hero-grid { grid-template-columns: auto minmax(0, 1fr); gap: 56px; }
-  /* English: research fields in two rows (1 + 2, as on phones) so the statement can be set larger with room to breathe;
-     the quote breaks at its phrase boundary and the closing sentence is balanced over two lines */
   #view-en .hero-grid { grid-template-columns: auto minmax(0, 1fr); gap: 56px; }
-  #view-en .fields { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 7px; }
-  #view-en .fields li:first-child { grid-column: 1 / -1; justify-self: start; }
   #view-en .fields li { font-size: 0.875rem; padding: 8px 11px; }
   #view-en .stmt { max-width: none; }
   #view-en .stmt p { font-size: 1rem; line-height: 1.75; }
@@ -422,20 +418,19 @@ button { font: inherit; }
   .id { column-gap: 18px; align-items: center; }
   .photo { width: 104px; height: 139px; border-radius: 15px; grid-row: 1; align-self: center; }
   .fields-block { grid-column: 1 / -1; grid-row: 2; margin-top: 20px; }
-  #view-en .fields { display: grid; grid-template-columns: auto auto; justify-content: start; }
-  #view-en .fields li:first-child { grid-column: 1 / -1; justify-self: start; }
   .flag { width: 27px; height: 18px; margin-bottom: 10px; }
   .fields-block { margin-top: 14px; gap: 6px; }
   .fields { gap: 6px; }
   .fields li { font-size: 0.875rem; padding: 8px 11px; }
-  #view-en .fields li { font-size: 0.8125rem; padding: 7px 9px; }
+  #view-en .fields { gap: 4px; }
+  #view-en .fields li { font-size: 0.78125rem; padding: 7px 6px; }   /* the three English fields fit on one line on a 390px phone */
   .stmt p { font-size: 1rem; }
   #view-en .stmt p { font-size: 0.9375rem; }
   .nav-links a { font-size: 0.875rem; padding: 7px 11px; }
   .lang-btn.on-dark { font-size: 0.9375rem; padding: 10px 16px 10px 13px; }
 }
 
-/* Small phones (360px class): keep "Yohan Ahn" on one line and the fields in two rows */
+/* Small phones (360px class): keep "Yohan Ahn" on one line; the fields wrap where they must */
 @media (max-width: 380px) {
   .id { column-gap: 14px; }
   #view-en .name { font-size: min(3rem, 12vw); }
