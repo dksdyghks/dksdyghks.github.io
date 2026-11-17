@@ -31,8 +31,7 @@ EPIGRAPH_CITE = {
 }
 STATEMENT = {
     'ko': ('', '', ''),  # 한국어 화면에는 소개 문단을 두지 않는다
-    'en': ('Julius von\u00a0Kirchmann once dismissed the scientific worth of jurisprudence: \n“Three corrective words by the legislator, \rand entire libraries become waste\u00a0paper.”',
-           'Yet precisely because jurisprudence has worth as a science, ', 'I believe my research will lead the\u00a0legislator to set those three words\u00a0right.'),
+    'en': ('', '', ''),  # no statement in the English view either
 }
 TEACHING = {
     'ko': ['법학개론', '융합캡스톤', '행정법', '항공우주법', '헌법과 민주시민'],
