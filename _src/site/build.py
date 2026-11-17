@@ -31,7 +31,7 @@ EPIGRAPH_CITE = {
 }
 STATEMENT = {
     'ko': ('안요환 교수는 공군사관학교에서 법학을 가르치고 있다. 헌법 전공자로서 입법정책, 정치관계법, 행정법 분야의 전문가이며 선거관리 분야에 특히 많은 관심을 갖고 있다.',
-           '법학이 학문으로서 가치가 있기에 ', '자신의 연구는 결국 입법권자로 하여금 문제의 세\u00a0마디를 바로잡도록 할 것이라\u00a0믿는다.'),
+           '', ''),
     'en': ('Julius von\u00a0Kirchmann once dismissed the scientific worth of jurisprudence: \n“Three corrective words by the legislator, \rand entire libraries become waste\u00a0paper.”',
            'Yet precisely because jurisprudence has worth as a science, ', 'I believe my research will lead the\u00a0legislator to set those three words\u00a0right.'),
 }
@@ -365,7 +365,8 @@ def view(lang):
       f'<div class="fields-block"><span class="fields-label" id="{sid("fields")}">{e(L["fields"])}</span>'
       f'<ul class="fields" aria-labelledby="{sid("fields")}">' + ''.join(f'<li>{e(f)}</li>' for f in P['fields']) + '</ul></div>')
     w('</div>')
-    w(f'<div class="stmt"><p class="s1">{br(s1)}</p><p class="s2">{e(s2a)}<br class="br-t"><strong>{e(s2b)}</strong></p></div>')
+    s2 = f'<p class="s2">{e(s2a)}<br class="br-t"><strong>{e(s2b)}</strong></p>' if s2b else ''
+    w(f'<div class="stmt"><p class="s1">{br(s1)}</p>{s2}</div>')
     w('</div></div></header>')
 
     # pill bar (tablet and phone)
