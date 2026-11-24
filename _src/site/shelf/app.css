@@ -149,6 +149,11 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .uploads .n { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uploads .s { font-size: 12px; color: var(--faint); white-space: nowrap; }
 .uploads li.error .s { color: var(--danger); }
+.uploads li.error .n { grid-column: 1 / 3; }
+.uploads li.error .s { grid-column: 1 / 3; grid-row: 2; white-space: normal; }
+.uploads li.error [data-retry] { grid-column: 3; grid-row: 1 / 3; }
+.up-note { margin: 0 0 6px; padding: 8px 14px 0; font-size: 13px; line-height: 1.5; color: var(--danger); }
+.up-note b { font-weight: 700; }
 .uploads li.dup .s { color: var(--accent); }
 .uploads .upbar { grid-column: 1 / -1; height: 3px; border-radius: 3px; background: var(--chip); overflow: hidden; display: block; }
 .uploads .upbar b { display: block; height: 100%; background: var(--accent); transition: width .2s; }
@@ -466,3 +471,5 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 
 .pick-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .up-sum { margin: 0 0 6px; padding: 0 14px; font-size: 13px; color: var(--muted); }
+
+.kv-note { margin: -2px 0 8px; font-size: 12.5px; color: var(--muted); }

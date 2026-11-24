@@ -401,6 +401,7 @@ async function inbox(req, env, ctx, dev, url) {
   const head = new TextDecoder('latin1').decode(new Uint8Array(buf, 0, Math.min(1024, buf.byteLength)));
   if (buf.byteLength < 16 || !head.includes('%PDF-')) return err('not_pdf', 415);
   const id = (await sha256hex(buf)).slice(0, 24);
+  if (!(await env.BUCKET.head('files/' + id + '.pdf')) && !(await roomFor(env, buf.byteLength))) return err('full', 507);
   let name = cleanName(url.searchParams.get('name') || '', 200).replace(/[\\/]+/g, ' ').trim();
   if (name && !/\.pdf$/i.test(name)) name += '.pdf';
   if (!(await env.BUCKET.head('files/' + id + '.pdf'))) await env.BUCKET.put('files/' + id + '.pdf', buf, { httpMetadata: { contentType: 'application/pdf' } });
@@ -451,12 +452,22 @@ async function getFile(req, env, id, headOnly) {
   return new Response(o.body, { status: 200, headers: { ...base, 'content-length': String(size) } });
 }
 
+/* ---------------- staying inside the free tier ----------------
+   R2 charges only past 10GB stored; the shelf takes new PDFs only while all of them (the trash included, which
+   still takes space until it is emptied) stay under 9GB, so thumbnails, page texts, marks and backups always fit. */
+function capBytes(env) { const c = Number(env.CAP_BYTES); return c > 0 ? c : 9 * 1024 ** 3; }
+async function roomFor(env, bytes) {
+  const { idx } = await loadIndex(env);
+  return idx.files.reduce((s, f) => s + (f.size || 0), 0) + bytes <= capBytes(env);
+}
+
 async function putFile(req, env, id) {
   const key = 'files/' + id + '.pdf';
   const len = Number(req.headers.get('content-length') || 0);
   if (!len) return err('length_required', 411);
   const have = await env.BUCKET.head(key);
   if (have && have.size === len) { await req.body?.cancel?.(); return json({ ok: true, size: have.size, existed: true }); }   // the same bytes are already there
+  if (!(await roomFor(env, len))) return err('full', 507);   // the unread body is simply dropped
   const o = await env.BUCKET.put(key, req.body, { httpMetadata: { contentType: 'application/pdf' } });
   if (!o) return err('write_failed', 500);
   if (o.size !== len) { await env.BUCKET.delete(key); return err('incomplete', 400); }
@@ -467,6 +478,10 @@ async function multipart(req, env, id, rest) {
   const key = 'files/' + id + '.pdf';
   const m = req.method;
   if (rest.length === 0 && m === 'POST') {
+    const body = await readJSON(req, 4096).catch(() => ({}));
+    const size = Number(body && body.size);
+    if (!(size > 0)) return err('size_required', 411);
+    if (!(await roomFor(env, size))) return err('full', 507);
     const up = await env.BUCKET.createMultipartUpload(key, { httpMetadata: { contentType: 'application/pdf' } });
     return json({ uploadId: up.uploadId });
   }

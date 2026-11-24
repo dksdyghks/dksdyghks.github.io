@@ -73,6 +73,7 @@ function showSetup() {
 
 /* ================= sign-in ================= */
 function showLogin(message) {
+  syncOn = false; clearTimeout(pullT); pullT = null;   // nothing goes to the server until the PIN is in
   if (S.reader) { S.reader.destroy(); S.reader = null; }
   let pin = '', busy = false;
   document.body.innerHTML = `<div class="gate"><div class="gate-card" role="dialog" aria-label="연구실 책장 로그인">
@@ -118,26 +119,41 @@ async function startLibrary() {
   await refresh(true);
   syncMarksAll();
   pushState();
-  window.addEventListener('online', async () => { await flushOps(); refresh(); syncMarksAll(); pushState(); renderOffline(); });
-  window.addEventListener('offline', renderOffline);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
-    flushOps(); syncMarksAll(); pushState(); pull();
-  });
+  if (!wired) {   // once per page, even after signing in again
+    wired = true;
+    window.addEventListener('online', async () => { if (!syncOn) return; await flushOps(); refresh(); syncMarksAll(); pushState(); renderOffline(); });
+    window.addEventListener('offline', () => { if (syncOn) renderOffline(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || !syncOn) return;
+      lastTouch = Date.now(); if (!pullT) pullLoop();
+      flushOps(); syncMarksAll(); pushState(); pull();
+    });
+    window.addEventListener('popstate', onPop);
+  }
+  syncOn = true; lastTouch = Date.now();
   pullLoop();
-  window.addEventListener('popstate', onPop);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
   if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
 }
 
 const syncTags = { lib: '', state: '', marks: '', marksId: '' };
-let pullT = null, pulling = false;
+let pullT = null, pulling = false, syncOn = false, wired = false;
+let lastTouch = Date.now();
 function pullLoop() {
-  clearTimeout(pullT);
-  pullT = setTimeout(async () => { await pull(); pullLoop(); }, S.readerId ? 3000 : 8000);
+  clearTimeout(pullT); pullT = null;
+  if (!syncOn) return;
+  const idle = Date.now() - lastTouch;
+  if (idle > 15 * 60e3) return;   // asleep until someone touches the screen again
+  pullT = setTimeout(async () => { await pull(); pullLoop(); }, idle > 3 * 60e3 ? 30000 : S.readerId ? 3000 : 8000);
 }
+function touched() {
+  const asleep = !pullT;
+  lastTouch = Date.now();
+  if (asleep && syncOn && !document.hidden) { pull(); pullLoop(); }
+}
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, touched, { passive: true, capture: true }));
 async function pull() {
-  if (pulling || document.hidden || !navigator.onLine) return;
+  if (!syncOn || pulling || document.hidden || !navigator.onLine) return;
   pulling = true;
   try {
     const id = S.readerId || '';
@@ -322,6 +338,7 @@ function renderTabsBtn() {
 }
 // the papers open as tabs; only the one in front is drawn, the others keep just their place
 const MAX_TABS = 8;
+const CAP = 9 * 1024 ** 3;   // the server takes PDFs only up to this, so the shelf never leaves R2's free tier
 function pruneTabs() {
   const before = S.tabs.length;
   S.tabs = S.tabs.filter((t) => { const f = fileById(t.id); return f && !f.trashed && !folderTrashed(f.folder); });
@@ -372,9 +389,8 @@ function renderTree() {
 }
 
 function renderUsage() {
-  const used = S.index.files.reduce((s, f) => s + (f.size || 0), 0), free = 10 * 1024 ** 3;
-  const over = used - free;
-  $('.usage-t').textContent = over > 0 ? `${size(used)} 사용 · 넘은 만큼 월 약 $${(over / 1024 ** 3 * 0.015).toFixed(2)}` : `${size(used)} 사용 · 무료 10GB`;
+  const used = S.index.files.reduce((s, f) => s + (f.size || 0), 0), free = CAP;
+  $('.usage-t').textContent = `${size(used)} / 9GB` + (used >= CAP ? ' · 가득 참' : used >= CAP * 0.9 ? ' · 거의 참' : '');
   $('.usage-bar i').style.width = Math.min(100, 100 * used / free) + '%';
   const n = liveFiles().length, have = liveFiles().filter((f) => S.cached.has(f.id)).length;
   $('.usage-d').textContent = n ? (have >= n ? `이 기기에 모두 있음 · ${n}편` : `이 기기에 ${have} / ${n}편`) : '';
@@ -714,6 +730,7 @@ function uploadBox() {
   $('.pick-file', box).onclick = () => { closeSheet(); $('.file-in').click(); };
   $('.pick-dir', box).onclick = () => { closeSheet(); $('.dir-in').click(); };
 }
+const FULL_MSG = '자리가 없습니다';   // the panel says once, above the rows, what to do
 async function upload(fileList) {
   const pdfs = fileList.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
   const skipped = fileList.length - pdfs.length;
@@ -741,6 +758,7 @@ async function uploadOne(u) {
     if (!/%PDF-/.test(new TextDecoder('latin1').decode(new Uint8Array(buf, 0, Math.min(1024, buf.byteLength))))) { set('error', { msg: 'PDF 파일이 아닙니다' }); return; }
     const id = await pdfkit.sha256id(buf);
     u.id = id;
+    if (!fileById(id) && S.index.files.reduce((s, f) => s + (f.size || 0), 0) + buf.byteLength > CAP) { set('error', { msg: FULL_MSG, full: true }); return; }
     const have = fileById(id);
     if (have && !have.trashed && !folderTrashed(have.folder)) { set('dup', { msg: `이미 있습니다${have.folder ? ' · ' + ((folderById(have.folder) || {}).name || '') : ''}` }); return; }
     let doc;
@@ -782,7 +800,7 @@ async function uploadOne(u) {
     set('done');
     render();
   } catch (e) {
-    set('error', { msg: api.isOffline(e) ? '인터넷 연결이 끊겼습니다' : e.code === 'too_large' ? '파일이 너무 큽니다' : '올리지 못했습니다' });
+    set('error', { msg: api.isOffline(e) ? '인터넷 연결이 끊겼습니다' : e.code === 'full' ? FULL_MSG : e.code === 'too_large' ? '파일이 너무 큽니다' : '올리지 못했습니다', full: e.code === 'full' });
   }
 }
 function renderUploads() {
@@ -792,13 +810,14 @@ function renderUploads() {
   const label = { wait: '기다리는 중', read: '확인하는 중', up: '올리는 중', index: '본문 색인 중', done: '완료', dup: '', error: '' };
   box.hidden = false;
   box.innerHTML = `<div class="up-h"><b>${active ? `올리는 중 ${S.uploads.length - active}/${S.uploads.length}` : '올리기 끝'}</b>${active ? '' : '<button class="ib" data-x aria-label="닫기">' + I.close + '</button>'}</div>
+    ${S.uploads.some((u) => u.status === 'error' && u.full) ? '<p class="up-note">무료 한도 9GB가 찼습니다. 휴지통을 비우거나 안 읽을 논문을 지운 뒤 <b>다시</b>를 누르세요.</p>' : ''}
     ${S.uploads.length > 30 ? `<p class="up-sum">${S.uploads.filter((u) => u.status === 'done').length}편 완료${S.uploads.filter((u) => u.status === 'dup').length ? ` · 이미 있던 ${S.uploads.filter((u) => u.status === 'dup').length}편` : ''}${S.uploads.filter((u) => u.status === 'error').length ? ` · 실패 ${S.uploads.filter((u) => u.status === 'error').length}편` : ''}${active ? ` · 남은 ${active}편` : ''}</p>` : ''}
     <ul>${(S.uploads.length > 30 ? S.uploads.filter((u) => !['done', 'dup', 'wait'].includes(u.status)).concat(S.uploads.filter((u) => u.status === 'wait').slice(0, 3)) : S.uploads).map((u) => `<li class="${u.status}"><span class="n">${esc(stem(u.name))}</span><span class="s">${u.msg ? esc(u.msg) : label[u.status]}${u.status === 'up' || u.status === 'index' ? ' ' + Math.round(u.p * 100) + '%' : ''}</span>${u.status === 'error' ? `<button class="btn small" data-retry="${u.key}">다시</button>` : ''}<i class="upbar"><b style="width:${u.status === 'done' || u.status === 'dup' ? 100 : Math.round((u.status === 'up' ? u.p * 0.9 : u.status === 'index' ? 0.9 + u.p * 0.1 : 0) * 100)}%"></b></i></li>`).join('')}</ul>`;
   clearTimeout(S.upT);
   if (!active && S.uploads.every((u) => u.status === 'done')) S.upT = setTimeout(() => { if (S.uploads.every((u) => u.status === 'done')) { S.uploads = []; renderUploads(); } }, 5000);
   box.onclick = (e) => {
     if (e.target.closest('[data-x]')) { S.uploads = []; renderUploads(); return; }
-    const r = e.target.closest('[data-retry]'); if (r) { const u = S.uploads.find((x) => x.key === r.dataset.retry); if (u) { u.status = 'wait'; u.msg = ''; u.p = 0; renderUploads(); pumpUploads(); } }
+    const r = e.target.closest('[data-retry]'); if (r) { const u = S.uploads.find((x) => x.key === r.dataset.retry); if (u) { u.status = 'wait'; u.msg = ''; u.full = false; u.p = 0; renderUploads(); pumpUploads(); } }
   };
 }
 
@@ -1031,7 +1050,7 @@ async function settings() {
   const local = await store.filesSize().catch(() => 0);
   const est = await store.estimate();
   const box = sheet(`<h2>설정</h2>
-    <section><h3>저장 공간</h3><p class="kv"><span>책장 서버</span><b>${size(used)} / 무료 10GB${used > 10 * 1024 ** 3 ? ` · 넘은 만큼 월 약 $${((used - 10 * 1024 ** 3) / 1024 ** 3 * 0.015).toFixed(2)}` : ''}</b></p><p class="kv"><span>이 기기에 받아 둔 파일</span><b>${size(local)}</b></p>
+    <section><h3>저장 공간</h3><p class="kv"><span>책장 서버</span><b>${size(used)} / 9GB</b></p><p class="kv-note">무료 한도(10GB) 안에서만 쓰도록 9GB까지만 올립니다. 휴지통에 있는 것도 비우기 전까지는 자리를 차지합니다.</p><p class="kv"><span>이 기기에 받아 둔 파일</span><b>${size(local)}</b></p>
       ${est && est.quota ? `<p class="kv"><span>이 기기에서 쓸 수 있는 공간</span><b>약 ${size(est.quota)}</b></p>` : ''}
       <div class="keep" role="radiogroup" aria-label="이 기기에 받아 두기"><p class="keep-h">이 기기에 받아 두기 <small>인터넷 없이도 읽을 수 있습니다</small></p>
         ${[['all', '모든 논문'], ['recent', '최근 30일'], ['opened', '열어 본 것만']].map(([k, t]) => `<label class="opt"><input type="radio" name="keep" value="${k}" ${keepMode() === k ? 'checked' : ''}><span>${t}</span></label>`).join('')}

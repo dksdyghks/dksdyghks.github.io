@@ -91,7 +91,7 @@ ok(/content-range/.test(r.headers.get('access-control-expose-headers')), 'range 
 // multipart (a big book)
 const big = Buffer.concat([Buffer.from('%PDF-1.4\n'), crypto.randomBytes(11 * 1024 * 1024)]);
 const bid = hex(big);
-x = await j(await call(`/files/${bid}/mpu`, { method: 'POST' }, T)); const up = x.body.uploadId;
+x = await j(await call(`/files/${bid}/mpu`, { method: 'POST', body: JSON.stringify({ size: big.length }) }, T)); const up = x.body.uploadId;
 const parts = [];
 for (let i = 0, n = 1; i < big.length; i += 5 * 1024 * 1024, n++) { const p = await j(await call(`/files/${bid}/mpu/${encodeURIComponent(up)}/${n}`, { method: 'PUT', body: big.subarray(i, i + 5 * 1024 * 1024) }, T)); parts.push(p.body); }
 x = await j(await call(`/files/${bid}/mpu/${encodeURIComponent(up)}/complete`, { method: 'POST', body: JSON.stringify({ parts }) }, T));
@@ -167,6 +167,22 @@ ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' 
   await call('/devices/' + sk.id, { method: 'DELETE' }, T);
   ok((await call('/inbox', { method: 'POST', body: pdf }, SK)).status === 401, 'a removed share key no longer works');
   await ops([{ op: 'trashFile', id: hex(pdf) }, { op: 'emptyTrash' }]);
+}
+{ // never past the free tier: no new PDF once the shelf would pass the cap
+  env.CAP_BYTES = String(1024 * 1024);   // a tiny cap (1 MB) for this test only; the test PDF is 2 MB
+  const big = Buffer.concat([Buffer.from('%PDF-1.4\n'), crypto.randomBytes(2 * 1024 * 1024)]);
+  let y = await call('/files/' + hex(big), { method: 'PUT', body: big, headers: { 'content-type': 'application/pdf' } }, T);
+  ok(y.status === 507 && (await y.json()).error === 'full', 'a PDF past the cap is refused (full)');
+  y = await call('/files/' + hex(big) + '/mpu', { method: 'POST', body: JSON.stringify({ size: big.length }) }, T);
+  ok(y.status === 507, 'a large upload past the cap is refused before it starts');
+  y = await call('/files/' + hex(big) + '/mpu', { method: 'POST', body: JSON.stringify({}) }, T);
+  ok(y.status === 411, 'a large upload must say its size');
+  const skr = (await j(await call('/devices/sharekey', { method: 'POST', body: JSON.stringify({}) }, T))).body; const sk = skr.token;
+  y = await call('/inbox', { method: 'POST', body: big }, sk);
+  ok(y.status === 507, 'the share menu is refused past the cap too');
+  ok(!(await bucket.head('files/' + hex(big) + '.pdf')), 'nothing was stored');
+  await call('/devices/' + skr.device.id, { method: 'DELETE' }, T);
+  delete env.CAP_BYTES;
 }
 { // the trash keeps a paper for 7 days, then lets it go at the next change
   const id7 = hex(Buffer.from('seven days'));

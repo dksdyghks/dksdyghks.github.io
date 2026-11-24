@@ -14,6 +14,14 @@ export function setSignedOutHandler(fn) { onSignedOut = fn; }
 export async function loadToken() { token = (await store.get('kv', 'token')) || null; return token; }
 export function hasToken() { return !!token; }
 export function authHeader() { return token ? { authorization: 'Bearer ' + token } : {}; }
+// the server refused the token a request went out with: sign out once (a late answer to an older token, or a
+// second refusal while the sign-in screen is already up, changes nothing)
+async function signedOut(sent) {
+  if (!sent || token !== sent) return;
+  token = null;
+  await store.del('kv', 'token');
+  onSignedOut();
+}
 
 export class ApiError extends Error {
   constructor(code, status, extra = {}) { super(code); this.code = code; this.status = status; Object.assign(this, extra); }
@@ -22,6 +30,8 @@ export const isOffline = (e) => e && e.code === 'offline';
 
 async function call(path, { method = 'GET', body, headers = {}, raw = false, signal } = {}) {
   if (!base()) throw new ApiError('no_server', 0);
+  const sent = token;
+  if (!sent && path !== '/login') throw new ApiError('auth', 401);   // not signed in: nothing to ask the server yet
   let r;
   try {
     r = await fetch(base() + '/api' + path, {
@@ -33,7 +43,7 @@ async function call(path, { method = 'GET', body, headers = {}, raw = false, sig
     if (e && e.name === 'AbortError') throw e;
     throw new ApiError('offline', 0);
   }
-  if (r.status === 401 && path !== '/login') { token = null; await store.del('kv', 'token'); onSignedOut(); throw new ApiError('auth', 401); }
+  if (r.status === 401 && path !== '/login') { await signedOut(sent); throw new ApiError('auth', 401); }
   if (raw) { if (!r.ok) throw new ApiError('http_' + r.status, r.status); return r; }
   let data = null;
   try { data = await r.json(); } catch (e) { /* not JSON */ }
@@ -86,14 +96,16 @@ export async function download(path, onProgress, signal) {
 // Upload with progress (fetch cannot report upload progress, XMLHttpRequest can)
 function xhrPut(url, blob, onProgress, contentType) {
   return new Promise((resolve, reject) => {
+    const sent = token;
+    if (!sent) { reject(new ApiError('auth', 401)); return; }
     const x = new XMLHttpRequest();
     x.open('PUT', url);
-    if (token) x.setRequestHeader('authorization', 'Bearer ' + token);
+    x.setRequestHeader('authorization', 'Bearer ' + sent);
     x.setRequestHeader('content-type', contentType);
     x.upload.onprogress = (e) => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
     x.onload = () => {
       let d = null; try { d = JSON.parse(x.responseText); } catch (e) { /* ignore */ }
-      if (x.status === 401) { token = null; store.del('kv', 'token'); onSignedOut(); reject(new ApiError('auth', 401)); return; }
+      if (x.status === 401) { signedOut(sent); reject(new ApiError('auth', 401)); return; }
       if (x.status >= 200 && x.status < 300) resolve(d || {}); else reject(new ApiError((d && d.error) || 'http_' + x.status, x.status));
     };
     x.onerror = () => reject(new ApiError('offline', 0));
@@ -107,7 +119,7 @@ export async function uploadFile(id, blob, onProgress) {
   if (!base()) throw new ApiError('no_server', 0);
   if (blob.size <= 95 * 1024 * 1024) return xhrPut(fileUrl(id), blob, onProgress, 'application/pdf');
   // big files go up in 50 MB parts
-  const { uploadId } = await call('/files/' + id + '/mpu', { method: 'POST' });
+  const { uploadId } = await call('/files/' + id + '/mpu', { method: 'POST', body: { size: blob.size } });
   const parts = [];
   try {
     for (let off = 0, n = 1; off < blob.size; off += PART, n++) {

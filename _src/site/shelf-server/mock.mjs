@@ -104,6 +104,8 @@ export function serve(port, env) {
       const request = new Request(url, { method: req.method, headers: req.headers, body: hasBody ? Readable.toWeb(req) : undefined, duplex: 'half' });
       const pending = [];
       const r = await worker.fetch(request, env, { waitUntil: (p) => pending.push(p) });
+      // like Cloudflare, read away a body the worker did not want (an early refusal), so the connection stays usable
+      if (hasBody && !request.bodyUsed) { try { await request.arrayBuffer(); } catch (e) { /* already gone */ } }
       const headers = {}; r.headers.forEach((v, k) => { headers[k] = v; });
       res.writeHead(r.status, headers);
       if (r.body && req.method !== 'HEAD') { for await (const chunk of r.body) res.write(chunk); }
