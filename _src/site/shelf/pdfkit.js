@@ -128,7 +128,7 @@ export async function flattenWithMarks(bytes, marks, onProgress) {
       for (const r of m.rects) {
         const x = r[0] * c.width, y = r[1] * c.height, w = r[2] * c.width, h = r[3] * c.height;
         ctx.save();
-        if (m.kind === 'hl') { ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.5; ctx.fillStyle = m.color; ctx.fillRect(x, y - h * 0.06, w, h * 1.12); }
+        if (m.kind === 'hl') { ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.45; ctx.fillStyle = m.color; ctx.fillRect(x, y - h * 0.06, w, h * 1.12); }
         else { ctx.fillStyle = m.color; const t = Math.max(2, h * 0.08); ctx.fillRect(x, y + h - t, w, t); }
         ctx.restore();
       }

@@ -18,8 +18,8 @@ import * as PDFLib from './vendor/pdf-lib-1.17.1/pdf-lib.esm.min.js';
 const { PDFDocument, PDFName, PDFString, PDFHexString, PDFArray, PDFDict, PDFNumber, PDFRef, ParseSpeeds } = PDFLib;
 
 export const MARK_COLORS = Object.freeze({
-  hl: Object.freeze({ yellow: '#FFD84D', green: '#8EE0A6', sky: '#8EC5FF' }),
-  ul: Object.freeze({ red: '#E5484D', blue: '#2F6FEB' }),
+  hl: Object.freeze({ yellow: '#FFE461', green: '#A8E9B8', sky: '#ABD3FF', pink: '#FFB3CC', violet: '#CCBAFF', orange: '#FFC78E' }),
+  ul: Object.freeze({ red: '#E5484D', blue: '#2F6FEB', green: '#1E9E5A', ink: '#3A4150' }),
 });
 
 const HL_OPACITY = 0.45;          // fill opacity of a highlight (with Multiply)

@@ -4,9 +4,22 @@
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
 import { lib, pageItems } from './pdfkit.js';
 
-export const HL = ['#FFD84D', '#8EE0A6', '#8EC5FF'];
-export const UL = ['#E5484D', '#2F6FEB'];
+// Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
+// soft tints: butter, mint, sky, pink, lilac, apricot.
+export const HL = ['#FFE461', '#A8E9B8', '#ABD3FF', '#FFB3CC', '#CCBAFF', '#FFC78E'];
+const HL_NAMES = ['노랑', '초록', '하늘', '분홍', '보라', '주황'];
+export const UL = ['#E5484D', '#2F6FEB', '#1E9E5A', '#3A4150'];
+
+// ★ △ ✕ drawn the way one marks a printed cover with a pen (a five-line star, an open triangle, a cross)
+export function gradeSVG(v) {
+  if (v > 0) return '<svg viewBox="0 0 24 24" class="pen"><path d="M12.1 2.9L17.4 19.4L3.3 9.3L20.7 9.1L6.6 19.5L12.6 3.6"/></svg>'.repeat(v);
+  if (v === -2) return '<svg viewBox="0 0 24 24" class="pen"><path d="M12.3 3.8L20.6 19.2L3.6 19.4L12.8 4.6"/></svg>';
+  if (v === -1) return '<svg viewBox="0 0 24 24" class="pen"><path d="M5 5.2L19.2 19M18.8 4.8L5.3 19.3"/></svg>';
+  return '';
+}
+const UL_NAMES = ['빨강', '파랑', '초록', '먹색'];
 const GAP = 14;
+const END_H = 300;   // the '끝까지 읽었습니다' card after the last page, with room for the floating tools
 const MAX_PIXELS = 12e6;   // per canvas (Safari's hard limit is 16.7M)
 const KEEP = 2;            // pages kept rendered beyond the visible ones
 
@@ -16,6 +29,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const uid = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 const ICON = {
+  star: '<svg viewBox="0 0 24 24" class="sf"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg>',
   list: '<svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>',
@@ -127,6 +141,11 @@ export class Reader {
       this.pagesEl.appendChild(p.el);
       this.pages.push(p);
     }
+    this.endEl = el('div', 'rd-end');
+    this.endEl.innerHTML = `<div class="rd-grade" role="group" aria-label="표시">${[1, 2, 3].map((n) => `<button type="button" data-star="${n}" aria-label="별 ${n}개">${gradeSVG(1)}</button>`).join('')}<span class="sep"></span><button type="button" data-star="-2" aria-label="세모">${gradeSVG(-2)}</button><button type="button" data-star="-1" aria-label="엑스">${gradeSVG(-1)}</button></div>`;
+    this.endEl.onclick = (e) => { const b = e.target.closest('[data-star]'); if (!b) return; const n = Number(b.dataset.star); const v = n === this.stars ? 0 : n; this.setStars(v); this.o.onRate && this.o.onRate(v); };   // the same choice again clears it
+    this.pagesEl.appendChild(this.endEl);
+    this.setStars(this.o.stars || 0);
     this.layout();
     this.drawAllMarks();
     const to = this.o.at || {};
@@ -178,6 +197,7 @@ export class Reader {
       p.el.style.width = p.cw + 'px'; p.el.style.height = p.ch + 'px';
       p.el.style.setProperty('--scale-factor', this.scale);
     }
+    if (this.endEl) { this.endEl.style.width = Math.min(520, Math.max(...this.pages.map((p) => p.cw))) + 'px'; y += END_H; }
     this.pagesEl.style.height = y + 'px';
     this.pagesEl.style.width = Math.max(...this.pages.map((p) => p.cw)) + 2 * (this.scroller.clientWidth > 700 ? 28 : 10) + 'px';
   }
@@ -317,6 +337,27 @@ export class Reader {
   }
 
   /* ---------------- marks ---------------- */
+  setStars(v) {
+    this.stars = v;
+    if (!this.endEl) return;
+    this.endEl.querySelectorAll('[data-star]').forEach((b) => { const n = Number(b.dataset.star); const on = n < 0 ? v === n : v > 0 && n <= v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    // the same mark on the first page, top right, as on the printed cover
+    const p0 = this.pages[0];
+    if (p0) { let c = p0.el.querySelector('.pg-cover'); if (!c) { c = el('div', 'pg-cover'); p0.el.appendChild(c); } c.innerHTML = gradeSVG(v); c.dataset.g = v; }
+  }
+  // opened from the list with a saved place: continue there, or go back to the first page
+  askResume(label) {
+    const box = el('div', 'rd-resume');
+    box.innerHTML = `<button type="button" class="go-on">이어 읽기 <em>${esc(label)}</em></button><button type="button" class="from-start">처음부터</button>`;
+    this.root.appendChild(box);
+    const done = () => { box.remove(); this.scroller.removeEventListener('scroll', onScroll); };
+    const start = this.scroller.scrollTop;
+    const onScroll = () => { if (Math.abs(this.scroller.scrollTop - start) > 240) done(); };
+    setTimeout(() => this.scroller.addEventListener('scroll', onScroll, { passive: true }), 900);
+    box.querySelector('.go-on').onclick = done;
+    box.querySelector('.from-start').onclick = () => { done(); this.scrollToPage(0, 0, false); };
+    this.resumeBox = box;
+  }
   marks() { return this.allMarks.filter((m) => !m.del); }
   drawAllMarks() { for (const p of this.pages) this.drawMarks(p); }
   drawMarks(p) {
@@ -431,7 +472,8 @@ export class Reader {
   toggleColors() {
     const box = this.$('.rd-colors');
     const list = this.tool === 'ul' ? UL : HL, cur = this.tool === 'ul' ? this.ulColor : this.hlColor;
-    box.innerHTML = list.map((c) => `<button data-color="${c}" class="${c === cur ? 'on' : ''}" style="--c:${c}" aria-label="색"><i></i></button>`).join('');
+    const names = this.tool === 'ul' ? UL_NAMES : HL_NAMES;
+    box.innerHTML = list.map((c, i) => `<button data-color="${c}" class="${c === cur ? 'on' : ''}" style="--c:${c}" aria-label="${names[i]}"><i></i></button>`).join('');
     box.dataset.kind = this.tool;
     box.hidden = !box.hidden;
   }
@@ -454,7 +496,7 @@ export class Reader {
     this.ro.observe(s);
 
     // Pencil: no scrolling or system selection with the stylus — it marks
-    s.addEventListener('touchstart', (e) => { if ([...e.changedTouches].some((t) => t.touchType === 'stylus')) e.preventDefault(); }, { passive: false });
+    s.addEventListener('touchstart', (e) => { if (e.target.closest && e.target.closest('.rd-end')) return; if ([...e.changedTouches].some((t) => t.touchType === 'stylus')) e.preventDefault(); }, { passive: false });
     s.addEventListener('touchmove', (e) => { if ([...e.changedTouches].some((t) => t.touchType === 'stylus')) e.preventDefault(); }, { passive: false });
 
     s.addEventListener('pointerdown', (e) => { const tl = e.target.closest && e.target.closest('.textLayer'); if (tl && this.tool === 'read' && e.pointerType !== 'pen') { this.root.querySelectorAll('.textLayer.selecting').forEach((x) => x.classList.remove('selecting')); tl.classList.add('selecting'); } this.down(e); });
@@ -527,6 +569,7 @@ export class Reader {
   }
 
   down(e) {
+    if (e.target.closest && e.target.closest('.rd-end')) return;
     this.tapStart = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
     if (e.button && e.button !== 0) return;
     const pen = e.pointerType === 'pen';
@@ -688,8 +731,8 @@ export class Reader {
     if (!rect.width && !rect.height) return;
     this.selRange = r.cloneRange();
     const pop = this.$('.rd-pop');
-    pop.innerHTML = `<div class="pop-row">${HL.map((c) => `<button data-mk="hl" data-c="${c}" style="--c:${c}" aria-label="형광펜"><i class="sw"></i></button>`).join('')}
-      <span class="sep"></span>${UL.map((c) => `<button data-mk="ul" data-c="${c}" style="--c:${c}" aria-label="밑줄"><i class="uw"></i></button>`).join('')}
+    pop.innerHTML = `<div class="pop-row">${HL.map((c, i) => `<button data-mk="hl" data-c="${c}" style="--c:${c}" aria-label="형광펜 ${HL_NAMES[i]}"><i class="sw"></i></button>`).join('')}</div>
+      <div class="pop-row">${UL.map((c, i) => `<button data-mk="ul" data-c="${c}" style="--c:${c}" aria-label="밑줄 ${UL_NAMES[i]}"><i class="uw"></i></button>`).join('')}
       <span class="sep"></span><button data-act="copy">${ICON.copy}<span>복사</span></button></div>`;
     pop.onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
@@ -708,8 +751,9 @@ export class Reader {
   markPop(m, x, y) {
     const pop = this.$('.rd-pop');
     const list = m.kind === 'ul' ? UL : HL;
-    pop.innerHTML = `<div class="pop-row">${list.map((c) => `<button data-c="${c}" class="${c === m.color ? 'on' : ''}" style="--c:${c}" aria-label="색"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}"></i></button>`).join('')}
-      <span class="sep"></span><button data-act="swap">${m.kind === 'ul' ? ICON.hl + '<span>형광펜으로</span>' : ICON.ul + '<span>밑줄로</span>'}</button>
+    const names = m.kind === 'ul' ? UL_NAMES : HL_NAMES;
+    pop.innerHTML = `<div class="pop-row">${list.map((c, i) => `<button data-c="${c}" class="${c === m.color ? 'on' : ''}" style="--c:${c}" aria-label="${names[i]}"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}"></i></button>`).join('')}</div>
+      <div class="pop-row"><button data-act="swap">${m.kind === 'ul' ? ICON.hl + '<span>형광펜으로</span>' : ICON.ul + '<span>밑줄로</span>'}</button>
       <button data-act="copy">${ICON.copy}<span>복사</span></button><button data-act="del" class="danger">${ICON.trash}<span>지우기</span></button></div>`;
     pop.onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
@@ -848,9 +892,11 @@ export class Reader {
       this.$('.rd-panel .seg [data-tab="marks"]').textContent = ms.length ? `밑줄 ${ms.length}` : '밑줄';
       box.innerHTML = ms.length ? '<ul class="mlist">' + ms.map((m) => `<li><button data-mark="${m.id}"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${m.color}"></i><span>${esc(m.text)}</span><em>${this.label(m.p)}${this.unit()}</em></button></li>`).join('') + '</ul>'
         : '<p class="empty">아직 밑줄이 없습니다.<br>형광펜이나 밑줄을 켜고 글자 위를 드래그하세요.</p>';
+      if (ms.length) box.insertAdjacentHTML('beforeend', '<div class="mfoot"><button type="button" class="btn ghost danger" data-clear>밑줄 모두 지우기</button></div>');
     }
   }
   panelClick(e) {
+    if (e.target.closest('[data-clear]')) { this.o.onClearAll && this.o.onClearAll(); return; }
     const t = e.target.closest('[data-toc]');
     if (t) { const x = this.outline[Number(t.dataset.toc)]; this.scrollToPage(x.page, x.y && this.pages[x.page] ? x.y / this.pages[x.page].h : 0); if (innerWidth < 900) this.action('panel'); return; }
     const m = e.target.closest('[data-mark]');

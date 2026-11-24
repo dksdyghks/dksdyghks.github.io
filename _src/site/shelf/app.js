@@ -5,7 +5,7 @@ import * as api from './api.js';
 import * as store from './store.js';
 import * as pdfkit from './pdfkit.js';
 import * as A from './analyze.js';
-import { Reader } from './reader.js';
+import { Reader, gradeSVG } from './reader.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -25,6 +25,10 @@ const I = {
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+  star: '<svg viewBox="0 0 24 24"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
+  nope: '<svg viewBox="0 0 24 24" class="nx"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+  tri: '<svg viewBox="0 0 24 24" class="nx"><path d="M12 5.5L19.5 18.5h-15z"/></svg>',
+  starFill: '<svg viewBox="0 0 24 24" class="sf"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
@@ -114,24 +118,59 @@ async function startLibrary() {
   await refresh(true);
   syncMarksAll();
   pushState();
-  window.addEventListener('online', () => { refresh(); syncMarksAll(); pushState(); renderOffline(); });
+  window.addEventListener('online', async () => { await flushOps(); refresh(); syncMarksAll(); pushState(); renderOffline(); });
   window.addEventListener('offline', renderOffline);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
-    refresh(); syncMarksAll();
-    const id = S.readerId;
-    if (id && S.reader) loadMarks(id).then((m) => { if (S.reader && S.readerId === id) S.reader.setRemoteMarks(m); }).catch(() => {});
+    flushOps(); syncMarksAll(); pushState(); pull();
   });
-  setInterval(() => { if (!document.hidden) refresh(); }, 60000);
+  pullLoop();
   window.addEventListener('popstate', onPop);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
-  if (m && fileById(m[1])) openFile(m[1], { replace: true });
+  if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
+}
+
+const syncTags = { lib: '', state: '', marks: '', marksId: '' };
+let pullT = null, pulling = false;
+function pullLoop() {
+  clearTimeout(pullT);
+  pullT = setTimeout(async () => { await pull(); pullLoop(); }, S.readerId ? 3000 : 8000);
+}
+async function pull() {
+  if (pulling || document.hidden || !navigator.onLine) return;
+  pulling = true;
+  try {
+    const id = S.readerId || '';
+    const r = await api.sync({ lib: syncTags.lib, state: syncTags.state, marks: id, mtag: id && id === syncTags.marksId ? syncTags.marks : '' });
+    if (r.lib) {
+      S.index = r.lib; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
+      if (S.reader) { renderUsage(); const f = fileById(S.readerId); if (f) S.reader.setStars(f.stars || 0); } else render();
+      setTimeout(prefetch, 800);
+    }
+    if (r.libTag) syncTags.lib = r.libTag;
+    if (r.state) { mergeState(r.state); await store.put('kv', 'state', S.state); if (!S.reader) render(); }
+    if (r.stateTag) syncTags.state = r.stateTag;
+    if (id && r.marks && S.readerId === id) await takeMarks(id, r.marks.marks || []);
+    if (id && r.marksTag && S.readerId === id) { syncTags.marks = r.marksTag; syncTags.marksId = id; }
+  } catch (e) { /* offline or busy: the next round */ } finally { pulling = false; }
+}
+// marks from another device, merged with this device's own (nothing is dropped: each mark keeps its newest version)
+async function takeMarks(id, remote) {
+  const local = (await store.get('marks', id)) || { marks: [], pending: false };
+  let merged = mergeMarks(remote, local.marks);
+  if (S.reader && S.readerId === id) {
+    if (S.reader.drag) return;   // in the middle of a stroke: next round
+    merged = mergeMarks(merged, S.reader.allMarks);
+    const sig = (l) => l.map((m) => m.id + ':' + m.t).sort().join(',');
+    if (sig(merged) !== sig(S.reader.allMarks)) S.reader.setRemoteMarks(merged);
+  }
+  await store.put('marks', id, { marks: merged, pending: local.pending });
 }
 
 async function refresh(first) {
   try {
     const [idx, st] = await Promise.all([api.library(), api.getState()]);
-    S.index = idx; await store.put('kv', 'index', idx);
+    S.index = idx; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
     mergeState(st); await store.put('kv', 'state', S.state);
     if (S.reader) { renderUsage(); } else render();
     setTimeout(prefetch, 1500);
@@ -168,13 +207,12 @@ function renderShell() {
       <nav class="views">
         <button data-view="home">${I.home}<span>내 책장</span></button>
         <button data-view="recent">${I.clock}<span>최근 읽은 것</span></button>
-        <button data-view="trash">${I.trash}<span>휴지통</span></button>
       </nav>
       <div class="tree-h">폴더</div>
       <div class="tree"></div>
       <div class="rail-foot">
-        <div class="usage"><div class="usage-t"></div><div class="usage-bar"><i></i></div></div>
-        <button class="settings-btn">${I.gear}<span>설정</span></button>
+        <div class="usage"><div class="usage-t"></div><div class="usage-bar"><i></i></div><div class="usage-d"></div></div>
+        <div class="foot-row"><button class="settings-btn">${I.gear}<span>설정</span></button><button class="trash-btn" aria-label="휴지통">${I.trash}<span>휴지통</span></button></div>
       </div>
     </aside>
     <div class="scrim"></div>
@@ -193,11 +231,12 @@ function renderShell() {
     <input type="file" class="file-in" accept="application/pdf,.pdf" multiple hidden>
   </div>`;
   const app = $('.app');
-  $('.up-btn').onclick = () => $('.file-in').click();
+  $('.up-btn').onclick = () => uploadBox();
   $('.file-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); closeRail(); };
   $('.views').onclick = (e) => { const b = e.target.closest('[data-view]'); if (!b) return; S.view = { kind: b.dataset.view, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.settings-btn').onclick = () => { closeRail(); settings(); };
+  $('.trash-btn').onclick = () => { S.view = { kind: 'trash', folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.menu-btn').onclick = () => app.classList.toggle('rail-open');
   $('.scrim').onclick = closeRail;
   const fin = $('.find input');
@@ -223,6 +262,7 @@ function renderOffline() { const o = $('.offline'); if (o) o.hidden = navigator.
 function render() {
   if (!$('.app')) return;
   for (const b of document.querySelectorAll('.views [data-view]')) b.classList.toggle('on', !S.q && b.dataset.view === S.view.kind && !(S.view.kind === 'home' && S.view.folder));
+  $('.trash-btn').classList.toggle('on', !S.q && S.view.kind === 'trash');
   renderTree(); renderUsage(); renderCrumbs(); renderTools();
   const c = $('.content');
   if (S.q) { renderSearch(c); return; }
@@ -243,6 +283,8 @@ function renderUsage() {
   const used = S.index.files.reduce((s, f) => s + (f.size || 0), 0), free = 10 * 1024 ** 3;
   $('.usage-t').textContent = `${size(used)} 사용 · 무료 10GB`;
   $('.usage-bar i').style.width = Math.min(100, 100 * used / free) + '%';
+  const n = liveFiles().length, have = liveFiles().filter((f) => S.cached.has(f.id)).length;
+  $('.usage-d').textContent = n ? (have >= n ? `이 기기에 모두 있음 · ${n}편` : `이 기기에 ${have} / ${n}편`) : '';
 }
 
 function renderCrumbs() {
@@ -265,17 +307,17 @@ function renderTools() {
   if (S.q) { t.innerHTML = ''; return; }
   if (S.view.kind === 'trash') {
     const any = S.index.files.some((f) => f.trashed) || S.index.folders.some((f) => f.trashed);
-    t.innerHTML = `<span class="hint">휴지통의 파일은 30일 뒤 자동으로 지워집니다</span>${any ? '<button class="btn danger" data-t="empty">휴지통 비우기</button>' : ''}`;
+    t.innerHTML = `<span class="hint">휴지통의 파일은 7일 동안 보관된 뒤 자동으로 지워집니다</span>${any ? '<button class="btn danger" data-t="empty">휴지통 비우기</button>' : ''}`;
     return;
   }
   if (S.view.kind === 'recent') { t.innerHTML = ''; return; }
-  const label = { added: '최근 올린 순', name: '이름순', opened: '최근 읽은 순' }[S.sort];
+  const label = { added: '최근 올린 순', name: '이름순', opened: '최근 읽은 순', stars: '★ 순' }[S.sort];
   t.innerHTML = `<button class="btn" data-t="newfolder">${I.newfolder}<span>새 폴더</span></button><button class="btn" data-t="upload">${I.up}<span>올리기</span></button><span class="sp"></span><button class="btn ghost" data-t="select">${I.select}<span>선택</span></button><button class="btn ghost" data-t="sort">${I.sort}<span>${label}</span></button>`;
 }
 
 function sorted(files) {
   const opened = (f) => (S.state.files[f.id] && S.state.files[f.id].at) || 0;
-  const by = { added: (a, b) => b.added - a.added, name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }), opened: (a, b) => opened(b) - opened(a) || b.added - a.added }[S.sort];
+  const by = { added: (a, b) => b.added - a.added, name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }), opened: (a, b) => opened(b) - opened(a) || b.added - a.added, stars: (a, b) => gradeRank(b.stars) - gradeRank(a.stars) || b.added - a.added }[S.sort];
   return files.slice().sort(by);
 }
 
@@ -285,7 +327,7 @@ function renderFolder(c, folder) {
   let html = '';
   if (!folder) {
     const resume = liveFiles().map((f) => ({ f, s: S.state.files[f.id] })).filter((x) => x.s && !x.s.done && x.f.pages && x.s.page < x.f.pages - 1).sort((a, b) => b.s.at - a.s.at).slice(0, 4);
-    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<button class="card" data-open="${f.id}"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}"></span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>`).join('')}</div>`;
+    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<button class="card" data-open="${f.id}" data-resume="1"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>`).join('')}</div>`;
   }
   if (!folders.length && !files.length) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
@@ -304,16 +346,17 @@ function folderRow(f) {
 
 function fileRow(f, extra = '') {
   const s = S.state.files[f.id];
-  const prog = s && f.pages ? Math.round(100 * (s.done ? 1 : (s.page + 1) / f.pages)) : 0;
   const sel = S.select && S.select.files.has(f.id);
   const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
-  return `<div class="row file ${sel ? 'sel' : ''}" data-file="${f.id}">${S.select ? `<span class="ck">${I.check}</span>` : ''}
-    <span class="thumb" data-thumb="${f.thumb ? f.id : ''}"></span>
+  return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${S.select ? `<span class="ck">${I.check}</span>` : ''}
+    <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span>
     <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}</span>${extra}</span>
-    ${prog ? `<span class="prog" title="읽은 곳">${prog}%</span>` : ''}
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
+
+function gradeRank(v) { return v > 0 ? v : v === -2 ? 0.5 : v === -1 ? -1 : 0; }   // ★★★ ★★ ★ △ (none) ✕
+function coverMark(v) { return v ? `<i class="cover-mark" aria-label="${v > 0 ? '별 ' + v + '개' : v === -2 ? '세모' : '엑스'}">${gradeSVG(v)}</i>` : ''; }
 
 function renderRecent(c) {
   const list = liveFiles().filter((f) => S.state.files[f.id]).sort((a, b) => S.state.files[b.id].at - S.state.files[a.id].at).slice(0, 60);
@@ -325,8 +368,8 @@ function renderTrash(c) {
   const topFiles = files.filter((f) => f.trashed && !folderTrashed(f.folder));
   if (!fs.length && !topFiles.length) { c.innerHTML = `<div class="empty-big">${I.trash}<p>휴지통이 비어 있습니다</p></div>`; return; }
   c.innerHTML = '<div class="list">' +
-    fs.map((f) => `<div class="row folder"><span class="ficon">${I.folder}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${date(f.trashed)}에 버림</span></span><button class="btn small" data-restore-folder="${f.id}">되살리기</button><button class="btn small danger ghost" data-purge-folder="${f.id}">영구 삭제</button></div>`).join('') +
-    topFiles.map((f) => `<div class="row file"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}"></span><span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${size(f.size)} · ${date(f.trashed)}에 버림</span></span><button class="btn small" data-restore="${f.id}">되살리기</button><button class="btn small danger ghost" data-purge="${f.id}">영구 삭제</button></div>`).join('') + '</div>';
+    fs.map((f) => `<div class="row folder"><span class="ficon">${I.folder}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${date(f.trashed)}에 버림 · ${keepLeft(f.trashed)}</span></span><button class="btn small" data-restore-folder="${f.id}">되살리기</button><button class="btn small danger ghost" data-purge-folder="${f.id}">영구 삭제</button></div>`).join('') +
+    topFiles.map((f) => `<div class="row file"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}"></span><span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${size(f.size)} · ${date(f.trashed)}에 버림 · ${keepLeft(f.trashed)}</span></span><button class="btn small" data-restore="${f.id}">되살리기</button><button class="btn small danger ghost" data-purge="${f.id}">영구 삭제</button></div>`).join('') + '</div>';
 }
 
 /* ---------- search: names at once, then the text of every page ---------- */
@@ -407,14 +450,14 @@ async function loadThumb(span) {
 /* ---------- clicks in the list ---------- */
 function onContentClick(e) {
   const t = e.target;
-  const up = t.closest('[data-t="upload"]'); if (up) { $('.file-in').click(); return; }
+  const up = t.closest('[data-t="upload"]'); if (up) { uploadBox(); return; }
   const r = t.closest('[data-restore]'); if (r) { doOps([{ op: 'restoreFile', id: r.dataset.restore }], '되살렸습니다'); return; }
   const rf = t.closest('[data-restore-folder]'); if (rf) { doOps([{ op: 'restoreFolder', id: rf.dataset.restoreFolder }], '되살렸습니다'); return; }
   const p = t.closest('[data-purge]'); if (p) { confirmBox('영구 삭제', '이 파일과 밑줄을 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFile', id: p.dataset.purge }], '지웠습니다')); return; }
   const pf = t.closest('[data-purge-folder]'); if (pf) { confirmBox('영구 삭제', '이 폴더와 안의 파일을 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFolder', id: pf.dataset.purgeFolder }], '지웠습니다')); return; }
   const mm = t.closest('[data-menu]'); if (mm) { const b = mm.getBoundingClientRect(); fileMenu(mm.dataset.menu, b.right, b.bottom); return; }
   const fm = t.closest('[data-fmenu]'); if (fm) { const b = fm.getBoundingClientRect(); folderMenu(fm.dataset.fmenu, b.right, b.bottom); return; }
-  const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : {}); return; }
+  const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : sn.dataset.resume ? { resume: true } : {}); return; }
   const row = t.closest('.row');
   if (!row) return;
   if (S.select) {
@@ -436,12 +479,12 @@ function startSelect(first) {
 async function onTools(e) {
   const b = e.target.closest('[data-t]'); if (!b) return;
   const t = b.dataset.t;
-  if (t === 'upload') $('.file-in').click();
+  if (t === 'upload') uploadBox();
   else if (t === 'newfolder') {
     const name = await promptBox('새 폴더', '폴더 이름', '', '만들기');
     if (name) doOps([{ op: 'addFolder', folder: { id: 'f_' + rid(10), name, parent: S.view.folder || null } }]);
   } else if (t === 'sort') {
-    const k = await menu(b.getBoundingClientRect(), [['added', '최근 올린 순'], ['opened', '최근 읽은 순'], ['name', '이름순']], S.sort);
+    const k = await menu(b.getBoundingClientRect(), [['added', '최근 올린 순'], ['opened', '최근 읽은 순'], ['stars', '★ 순'], ['name', '이름순']], S.sort);
     if (k) { S.sort = k; render(); }
   } else if (t === 'select') startSelect();
   else if (t === 'endsel') { S.select = null; render(); }
@@ -461,14 +504,65 @@ async function onTools(e) {
 
 async function fileMenu(id, x, y) {
   const f = fileById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['open', '열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ['trash', '휴지통으로', 'danger']]);
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
+  if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
   if (k === 'open') openFile(id);
+  else if (k === 'start') openFile(id, { page: 0 });
   else if (k === 'rename') { const n = await promptBox('이름 바꾸기', '파일 이름', stem(f.name), '바꾸기'); if (n) doOps([{ op: 'updateFile', id, set: { name: n.endsWith('.pdf') ? n : n + '.pdf' } }]); }
   else if (k === 'move') { const to = await pickFolder('옮길 곳'); if (to !== undefined) doOps([{ op: 'updateFile', id, set: { folder: to } }], '옮겼습니다'); }
   else if (k === 'dl') exportPdf(f, { marks: true, mode: 'download' });
   else if (k === 'print') exportPdf(f, { marks: true, mode: 'print' });
   else if (k === 'orig') exportPdf(f, { marks: false, mode: 'download' });
+  else if (k === 'clear') clearAllMarks(f);
   else if (k === 'trash') doOps([{ op: 'trashFile', id }], '휴지통으로 옮겼습니다');
+}
+
+/* ---------- ★ △ ✕ on the cover (works offline too: kept here and sent when the internet is back) ---------- */
+async function rate(id, n) {
+  const f = fileById(id); if (!f) return;
+  const op = { op: 'updateFile', id, set: { stars: n } };
+  f.stars = n; f.rated = n ? Date.now() : null;           // shown at once
+  if (S.reader && S.readerId === id) S.reader.setStars(n);
+  render();
+  const q = ((await store.get('kv', 'pendingOps')) || []).filter((x) => !(x.op === 'updateFile' && x.id === id && 'stars' in x.set));
+  q.push(op); await store.put('kv', 'pendingOps', q); await store.put('kv', 'index', S.index);
+  flushOps();
+}
+let flushing = null;
+async function flushOps() {   // changes made without internet, in order; the server copy wins for everything else
+  if (flushing || !navigator.onLine) return flushing;
+  flushing = (async () => {
+    try {
+      const q = (await store.get('kv', 'pendingOps')) || [];
+      if (!q.length) return;
+      const r = await api.ops(q);
+      const now = (await store.get('kv', 'pendingOps')) || [];
+      await store.put('kv', 'pendingOps', now.slice(q.length));
+      S.index = r.index; applyPending(now.slice(q.length)); await store.put('kv', 'index', S.index); syncTags.lib = '';
+      if (S.reader) renderUsage(); else render();
+    } catch (e) { /* kept; sent later */ } finally { flushing = null; }
+  })();
+  return flushing;
+}
+function applyPending(q) { for (const o of q || []) if (o.op === 'updateFile') { const f = fileById(o.id); if (f && 'stars' in o.set) f.stars = o.set.stars; } }
+
+/* ---------- clear every mark in a file (the PDF itself is untouched); undo from the toast ---------- */
+async function clearAllMarks(f) {
+  const all = await loadMarks(f.id);
+  const live = all.filter((m) => !m.del);
+  if (!live.length) { toast('지울 밑줄이 없습니다'); return; }
+  if (!await confirmBox('밑줄 모두 지우기', `「${stem(f.name)}」의 형광펜과 밑줄 ${live.length}개를 모두 지웁니다. PDF 원본은 그대로입니다.`, '모두 지우기', true)) return;
+  const t = Date.now();
+  const next = all.map((m) => (m.del ? m : { id: m.id, del: true, t }));
+  await saveMarks(f.id, next);
+  if (S.reader && S.readerId === f.id) S.reader.setRemoteMarks(next);
+  toast(`밑줄 ${live.length}개를 지웠습니다`, 9000, { label: '되돌리기', fn: async () => {
+    const rec = await store.get('marks', f.id);
+    const back = mergeMarks(rec ? rec.marks : next, live.map((m) => ({ ...m, t: Date.now() })));
+    await saveMarks(f.id, back);
+    if (S.reader && S.readerId === f.id) S.reader.setRemoteMarks(back);
+    toast('되돌렸습니다');
+  } });
 }
 async function folderMenu(id, x, y) {
   const f = folderById(id); if (!f) return;
@@ -495,6 +589,17 @@ async function doOps(ops, done) {
 }
 
 /* ================= upload ================= */
+function uploadBox() {
+  if (!matchMedia('(hover: hover) and (pointer: fine)').matches) { $('.file-in').click(); return; }   // iPad, phone: the system picker
+  const where = S.view.kind === 'home' && S.view.folder ? folderPath(S.view.folder).map((f) => f.name).join(' › ') : '내 책장';
+  const box = sheet(`<h2>PDF 올리기</h2><div class="drop-zone" tabindex="0">${I.up}<p>PDF를 여기로 끌어다 놓으세요</p><button class="btn primary pick">파일 고르기</button></div><p class="drop-where">올릴 곳 · ${esc(where)}</p>`);
+  const z = $('.drop-zone', box);
+  const has = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  z.ondragenter = z.ondragover = (e) => { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); z.classList.add('over'); };
+  z.ondragleave = (e) => { if (!z.contains(e.relatedTarget)) z.classList.remove('over'); };
+  z.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); const fs = [...(e.dataTransfer?.files || [])]; closeSheet(); if (fs.length) upload(fs); };
+  $('.pick', box).onclick = () => { closeSheet(); $('.file-in').click(); };
+}
 async function upload(fileList) {
   const pdfs = fileList.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
   const skipped = fileList.length - pdfs.length;
@@ -613,10 +718,14 @@ async function openFile(id, at = {}) {
       onPrefs: (p) => { S.prefs = { ...S.prefs, ...p }; store.put('kv', 'prefs', S.prefs); },
       onPosition: (pos) => savePosition(id, pos, doc.numPages),
       onShare: (btn) => shareMenu(f, btn),
+      stars: f.stars || 0,
+      onRate: (v) => rate(id, v),
+      onClearAll: () => clearAllMarks(fileById(id) || f),
       toast,
     });
     S.reader.docRef = doc;
     await S.reader.start();
+    if (at.page == null && !at.resume && s && s.page > 0) S.reader.askResume(S.reader.label(s.page) + S.reader.unit());
     if (!index && f.text) textOf(f).then((t) => { if (S.reader && S.readerId === id) S.reader.setIndex(t); }).catch(() => {});
   } catch (e) {
     host.remove(); S.readerId = null;
@@ -702,7 +811,7 @@ const markTimers = new Map();
 async function saveMarks(id, list) {
   await store.put('marks', id, { marks: list, pending: true });
   clearTimeout(markTimers.get(id));
-  markTimers.set(id, setTimeout(() => pushMarks(id), 1200));
+  markTimers.set(id, setTimeout(() => pushMarks(id), 500));
 }
 async function pushMarks(id) {
   const rec = await store.get('marks', id);
@@ -728,7 +837,7 @@ function savePosition(id, pos, pages, now) {
   if (Number.isInteger(pos.o)) S.state.files[id].o = pos.o;
   stateDirty.add(id);
   store.put('kv', 'state', S.state);
-  clearTimeout(stateT); stateT = setTimeout(pushState, now ? 0 : 2500);
+  clearTimeout(stateT); stateT = setTimeout(pushState, now ? 0 : 1500);
 }
 async function pushState() {
   const ids = [...stateDirty]; if (!ids.length || !navigator.onLine) return;
@@ -746,19 +855,29 @@ async function prefetch() {
 }
 async function prefetchRun() {
   for (const f of liveFiles().filter((x) => x.text)) {   // page texts are small: always kept, for search
-    if (S.reader || !navigator.onLine || document.hidden) return;
+    if (!navigator.onLine || document.hidden) return;
     if (await store.has('texts', f.id)) continue;
     try { await textOf(f); } catch (e) { break; }
   }
-  if (S.prefs.prefetch === false) return;
+  const mode = keepMode();
+  if (mode === 'opened') return;
   const since = Date.now() - 30 * 86400e3;
-  const todo = liveFiles().filter((f) => f.added > since && !S.cached.has(f.id)).sort((a, b) => b.added - a.added);
-  let budget = 600 * 1024 * 1024;
+  const todo = liveFiles().filter((f) => (mode === 'all' || f.added > since || ((S.state.files[f.id] || {}).at || 0) > since) && !S.cached.has(f.id)).sort((a, b) => b.added - a.added);
+  const est = await store.estimate().catch(() => null);
+  let budget = mode === 'all' ? (est && est.quota ? est.quota * 0.8 - (est.usage || 0) : 8 * 1024 ** 3) : 600 * 1024 * 1024;
   for (const f of todo) {
-    if (S.reader || !navigator.onLine || document.hidden) break;
+    if (!navigator.onLine || document.hidden) break;
+    if (S.readerId && !S.cached.has(S.readerId)) { await new Promise((r) => setTimeout(r, 1500)); continue; }   // the open paper first
     if (f.size > budget) continue;
-    try { await getBytes(f); budget -= f.size; render(); } catch (e) { break; }
+    try { await getBytes(f); budget -= f.size; renderUsage(); if (!S.reader) render(); } catch (e) { break; }
   }
+}
+// an iPad keeps every paper (readable without internet), a phone the last 30 days, a computer only what was opened
+function keepMode() {
+  if (S.prefs.keep) return S.prefs.keep;
+  const iPad = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;   // iPadOS reports itself as a Mac
+  const touch = iPad || matchMedia('(pointer: coarse)').matches;
+  return !touch ? 'opened' : Math.min(screen.width, screen.height) < 600 ? 'recent' : 'all';
 }
 
 /* ================= settings ================= */
@@ -769,11 +888,13 @@ async function settings() {
   const box = sheet(`<h2>설정</h2>
     <section><h3>저장 공간</h3><p class="kv"><span>책장 서버</span><b>${size(used)} / 무료 10GB</b></p><p class="kv"><span>이 기기에 받아 둔 파일</span><b>${size(local)}</b></p>
       ${est && est.quota ? `<p class="kv"><span>이 기기에서 쓸 수 있는 공간</span><b>약 ${size(est.quota)}</b></p>` : ''}
-      <label class="sw"><input type="checkbox" class="pf" ${S.prefs.prefetch === false ? '' : 'checked'}><span>최근 30일 새 파일을 미리 받아 두기</span></label>
+      <div class="keep" role="radiogroup" aria-label="이 기기에 받아 두기"><p class="keep-h">이 기기에 받아 두기 <small>인터넷 없이도 읽을 수 있습니다</small></p>
+        ${[['all', '모든 논문'], ['recent', '최근 30일'], ['opened', '열어 본 것만']].map(([k, t]) => `<label class="sw"><input type="radio" name="keep" value="${k}" ${keepMode() === k ? 'checked' : ''}><span>${t}</span></label>`).join('')}
+        <p class="keep-n">${S.cached.size} / ${liveFiles().length}편 받아 둠</p></div>
       <button class="btn ghost clear-local">이 기기에 받아 둔 파일 비우기</button></section>
     <section><h3>로그인된 기기</h3><ul class="devs"><li class="none">불러오는 중…</li></ul></section>
     <section class="foot"><button class="btn danger ghost signout">이 기기에서 로그아웃</button><p class="ver">연구실 책장 ${esc(VERSION)}</p></section>`);
-  $('.pf', box).onchange = (e) => { S.prefs.prefetch = e.target.checked; store.put('kv', 'prefs', S.prefs); if (e.target.checked) prefetch(); };
+  $('.keep', box).onchange = (e) => { if (e.target.name !== 'keep') return; S.prefs.keep = e.target.value; store.put('kv', 'prefs', S.prefs); prefetch(); };
   $('.clear-local', box).onclick = async () => {
     if (!(await confirmBox('받아 둔 파일 비우기', '이 기기에 받아 둔 사본만 지웁니다. 책장 서버의 파일과 밑줄은 그대로입니다.', '비우기'))) return;
     await store.clear('files'); S.cached = new Set(); render(); closeSheet(); toast('비웠습니다');
@@ -798,9 +919,12 @@ async function settings() {
 
 /* ================= small UI parts ================= */
 let toastT = null;
-function toast(msg, ms = 2600) {
+function toast(msg, ms = 2600, action) {
   const t = $('.toast') || (() => { const x = el('div', 'toast'); document.body.appendChild(x); return x; })();
   t.textContent = msg; t.hidden = false; t.classList.add('in');
+  t.classList.toggle('has-act', !!action);
+  t.classList.toggle('over-tools', !!document.querySelector('.reader-host'));
+  if (action) { const b = el('button', 'toast-act'); b.type = 'button'; b.textContent = action.label; b.onclick = () => { hideToast(); action.fn(); }; t.appendChild(b); }
   clearTimeout(toastT); toastT = setTimeout(hideToast, ms);
 }
 function hideToast() { const t = $('.toast'); if (t) { t.classList.remove('in'); t.hidden = true; } }
@@ -853,10 +977,14 @@ function pickFolder(title, avoid = new Set()) {
     box.closest('.sheet-wrap').addEventListener('click', (e) => { if (e.target.classList.contains('sheet-wrap') || e.target.closest('.sheet-x')) resolve(undefined); });
   });
 }
+function marksRow(v) {
+  const b = (g, on, label) => `<button data-k="g:${g}" class="${on ? 'on' : ''}" aria-label="${label}">${gradeSVG(g > 0 ? 1 : g)}</button>`;
+  return `<div class="menu-marks" role="group" aria-label="표시">${b(1, v >= 1, '별 1개')}${b(2, v >= 2, '별 2개')}${b(3, v >= 3, '별 3개')}<span class="sep"></span>${b(-2, v === -2, '세모')}${b(-1, v === -1, '엑스')}</div><hr>`;
+}
 function menu(rect, items, current) {
   return new Promise((resolve) => {
     document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
-    const w = el('div', 'menu-wrap', `<div class="menu" role="menu">${items.map(([k, label, cls]) => k === '-' ? '<hr>' : `<button data-k="${k}" class="${cls || ''} ${k === current ? 'on' : ''}" role="menuitem">${esc(label)}</button>`).join('')}</div>`);
+    const w = el('div', 'menu-wrap', `<div class="menu" role="menu">${items.map(([k, label, cls]) => k === '-' ? '<hr>' : k === 'marks' ? marksRow(label) : `<button data-k="${k}" class="${cls || ''} ${k === current ? 'on' : ''}" role="menuitem">${esc(label)}</button>`).join('')}</div>`);
     document.body.appendChild(w);
     const m = $('.menu', w), W = innerWidth, H = innerHeight;
     const mw = m.offsetWidth, mh = m.offsetHeight;
@@ -872,6 +1000,7 @@ function menu(rect, items, current) {
 /* ================= formats ================= */
 function size(b) { if (!b) return '0MB'; if (b < 1024 * 1024) return Math.max(1, Math.round(b / 1024)) + 'KB'; if (b < 1024 ** 3) return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + 'MB'; return (b / 1024 ** 3).toFixed(1) + 'GB'; }
 function date(t) { if (!t) return ''; const d = new Date(t), n = new Date(); return d.getFullYear() === n.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`; }
+function keepLeft(t) { const d = Math.ceil((t + 7 * 86400e3 - Date.now()) / 86400e3); return d > 1 ? `${d}일 뒤 완전히 지워짐` : '곧 완전히 지워짐'; }   // the server keeps the trash for 7 days
 function pageOf(s, pages) { const o = Number.isInteger(s.o) ? s.o : null; return o == null ? `${s.page + 1} / ${pages}쪽` : `${s.page + 1 + o} / ${pages + o}면`; }   // same numbers as the reader
 function ago(t) { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s < 90) return '방금'; if (s < 3600) return Math.round(s / 60) + '분 전'; if (s < 86400) return Math.round(s / 3600) + '시간 전'; if (s < 86400 * 7) return Math.round(s / 86400) + '일 전'; return date(t); }
 function stem(n) { return String(n || '').replace(/\.pdf$/i, ''); }

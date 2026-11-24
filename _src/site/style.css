@@ -445,15 +445,17 @@ button { font: inherit; }
 .edu-ttl .ext { background: var(--card); }
 
 /* Courses taught at the current post: the same soft panel as a thesis under 학력 (a small label, then the names in the serif).
-   The names run on in one line, a hairline before each; the hairline that would open a new line is clipped off. */
+   The names sit in even columns (three on a wide screen, two on a phone; English, with longer names, two and one), a small dot before each. */
 .courses { margin-top: 12px; padding: 12px 16px 13px; border-radius: 12px; background: var(--chip); display: flex; flex-direction: column; gap: 4px; }
 .courses-head { font-size: 0.8125rem; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
-.course-list { display: flex; flex-wrap: wrap; gap: 2px 0; margin-left: -12px; overflow: hidden; }
+.course-list { display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 5px 34px; }
+#view-en .course-list { grid-template-columns: repeat(2, auto); }
+@media (max-width: 520px) { .course-list { grid-template-columns: repeat(2, auto); column-gap: 24px; } #view-en .course-list { grid-template-columns: auto; } }
 .course-list li {
-  display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; margin-left: -1px;
-  border-left: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  display: flex; align-items: center; gap: 8px; min-width: 0;
   font-family: var(--f-serif-ko); font-size: 1rem; font-weight: 600; line-height: 1.55; letter-spacing: -0.02em; color: var(--ink-2);
 }
+.course-list li::before { content: ""; flex: none; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .4; }
 #view-en .course-list li { font-family: var(--f-serif-en); letter-spacing: 0; }
 .course-list .badge { margin-left: 0; font-family: var(--f-sans); letter-spacing: 0; color: var(--muted); background: var(--card); box-shadow: none; }
 
@@ -590,5 +592,4 @@ button { font: inherit; }
   .rows > li, .pubs > li { padding-block: 11px; }
   .edu > li { padding-block: 10px; }
   .courses { background: none; box-shadow: inset 0 0 0 1px #CCCCCC; }
-  .course-list li { border-color: #999999; }
 }

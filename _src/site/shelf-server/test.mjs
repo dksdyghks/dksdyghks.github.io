@@ -53,6 +53,14 @@ x = await ops([{ op: 'addFile', file: { id: hex(Buffer.from('z')), name: 'x.pdf'
 ok(x.body.results[0].error === 'no_folder', 'unknown folder refused');
 x = await ops([{ op: 'moveFolder', id: 'f_aaaaaaaaaa', parent: 'f_bbbbbbbbbb' }]);
 ok(x.body.results[0].error === 'cycle', 'a folder cannot move into its own child');
+x = await ops([{ op: 'updateFile', id, set: { stars: 2 } }]);
+ok(x.body.index.files[0].stars === 2 && x.body.index.files[0].rated > 0, 'two stars kept with the time');
+x = await ops([{ op: 'updateFile', id, set: { stars: 7 } }]);
+ok(x.body.index.files[0].stars === 0 && x.body.index.files[0].rated === null, 'out-of-range stars clear the rating');
+x = await ops([{ op: 'updateFile', id, set: { stars: -1 } }]);
+ok(x.body.index.files[0].stars === -1, '✕ (no need to come back) kept as -1');
+x = await ops([{ op: 'updateFile', id, set: { stars: -2 } }]);
+ok(x.body.index.files[0].stars === -2, '△ (skim once more) kept as -2');
 x = await ops([{ op: 'updateFile', id, set: { name: '  기본권   제한의 한계.pdf ', folder: 'f_aaaaaaaaaa' } }]);
 ok(x.body.index.files[0].name === '기본권 제한의 한계.pdf' && x.body.index.files[0].folder === 'f_aaaaaaaaaa', 'rename + move (name tidied)');
 // concurrent writers: no update is lost
@@ -117,6 +125,27 @@ ok(x.body.files[id].page === 5, 'older reading position does not overwrite a new
 x = await ops([{ op: 'trashFile', id }, { op: 'emptyTrash' }]);
 await new Promise((ok2) => setTimeout(ok2, 100));
 ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' + id + '.json')) && !(await bucket.head('meta/' + id + '/thumb.jpg')), 'emptying the trash deletes the PDF, marks and thumbnail');
+{ // one cheap request tells a device what changed since the versions it holds
+  let y = await j(await call('/sync', {}, T));
+  ok(y.status === 200 && y.body.lib && y.body.libTag && y.body.stateTag !== undefined, 'sync with nothing held returns the library and its version');
+  const tag = y.body.libTag;
+  y = await j(await call('/sync?lib=' + tag + '&state=' + (y.body.stateTag || ''), {}, T));
+  ok(!y.body.lib && !y.body.state && y.body.libTag === tag, 'nothing changed -> nothing sent');
+  await ops([{ op: 'addFolder', folder: { id: 'f_dddddddddd', name: '바뀜', parent: null } }]);
+  y = await j(await call('/sync?lib=' + tag, {}, T));
+  ok(y.body.lib && y.body.libTag !== tag && y.body.lib.folders.some((f) => f.id === 'f_dddddddddd'), 'after a change the new library comes back');
+}
+{ // the trash keeps a paper for 7 days, then lets it go at the next change
+  const id7 = hex(Buffer.from('seven days'));
+  x = await ops([{ op: 'addFile', file: { id: id7, name: '지난 논문.pdf', folder: null, size: 10 } }, { op: 'trashFile', id: id7 }]);
+  const age = async (days) => { const ix = await (await bucket.get('lib/index.json')).json(); ix.files.find((f) => f.id === id7).trashed = Date.now() - days * 86400e3; await bucket.put('lib/index.json', JSON.stringify(ix)); };
+  await age(6.5);
+  x = await ops([{ op: 'addFolder', folder: { id: 'f_cccccccccc', name: '빈 폴더', parent: null } }]);
+  ok(x.body.index.files.some((f) => f.id === id7 && f.trashed), 'still in the trash after 6.5 days');
+  await age(7.2);
+  x = await ops([{ op: 'renameFolder', id: 'f_cccccccccc', name: '빈 폴더 2' }]);
+  ok(!x.body.index.files.some((f) => f.id === id7), 'gone from the trash after 7 days');
+}
 ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'file gone from the library');
 
 // devices: sign another device out, then sign out

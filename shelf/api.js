@@ -62,6 +62,7 @@ export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: lis
 export const getMarks = (id) => call('/marks/' + id);
 export const putMarks = (id, marks) => call('/marks/' + id, { method: 'PUT', body: { marks } });
 export const getState = () => call('/state');
+export const sync = (q) => call('/sync?' + new URLSearchParams(q));
 export const putState = (files) => call('/state', { method: 'PUT', body: { files } });
 
 export function fileUrl(id) { return base() + '/api/files/' + id; }

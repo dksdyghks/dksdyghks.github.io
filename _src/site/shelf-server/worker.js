@@ -18,7 +18,7 @@ const ID = /^[0-9a-f]{24}$/;
 const FOLDER_ID = /^f_[0-9a-z]{10}$/;
 const MAX_JSON = 4 * 1024 * 1024;
 const MAX_META = 25 * 1024 * 1024;
-const TRASH_DAYS = 30;
+const TRASH_DAYS = 7;   // a deleted paper waits in the trash this long before it is really gone
 const MARK_COLORS = /^#[0-9A-Fa-f]{6}$/;
 
 export default {
@@ -99,6 +99,9 @@ async function route(req, env, ctx) {
         if (!ID.test(p[2] || '')) return err('bad_id', 400);
         if (m === 'GET') return await getMarks(env, p[2]);
         if (m === 'PUT') return await putMarks(req, env, p[2]);
+        break;
+      case 'sync':
+        if (m === 'GET') return await pull(env, url);
         break;
       case 'state':
         if (m === 'GET') return await getState(env);
@@ -267,6 +270,7 @@ function apply(idx, ops, dev, now) {
         if ('folder' in s) { if (!validFolder(s.folder ?? null)) { r = { ok: false, error: 'no_folder' }; break; } f.folder = s.folder ?? null; }
         for (const k of ['pages']) if (k in s) f[k] = Math.max(0, Number(s[k]) || 0);
         for (const k of ['thumb', 'text']) if (k in s) f[k] = !!s[k];
+        if ('stars' in s) { const v = Math.round(Number(s.stars)); f.stars = (v >= 1 && v <= 3) || v === -1 || v === -2 ? v : 0; f.rated = f.stars ? now : null; }   // after reading: 1–3 stars, -2 = △ (unclear; skim once more), -1 = ✕ (no need to come back); 0 clears
         f.modified = now;
         r.file = f;
         break;
@@ -326,7 +330,7 @@ function apply(idx, ops, dev, now) {
     }
     results.push(r);
   }
-  // the trash empties itself after 30 days
+  // the trash empties itself after TRASH_DAYS (checked whenever the library changes)
   const old = now - TRASH_DAYS * 86400e3;
   const oldFolders = idx.folders.filter((f) => f.trashed && f.trashed < old).map((f) => f.id);
   const gone = new Set(); for (const id of oldFolders) for (const d of descendants(idx, id)) gone.add(d);
@@ -498,6 +502,25 @@ async function putMarks(req, env, id) {
     return json(next);
   }
   return err('busy', 409);
+}
+
+/* ---------------- what changed (asked every few seconds while the app is open on a device) ----------------
+   The device sends the versions it already has; only what differs comes back. Usually that is nothing. */
+async function pull(env, url) {
+  const q = url.searchParams, out = {};
+  const look = async (key, have, name) => {
+    const h = await env.BUCKET.head(key);
+    if (!h) return;
+    out[name + 'Tag'] = h.etag;
+    if (h.etag === have) return;
+    const o = await env.BUCKET.get(key);
+    if (o) { out[name] = await o.json(); out[name + 'Tag'] = o.etag; }
+  };
+  await look('lib/index.json', q.get('lib') || '', 'lib');
+  await look('state.json', q.get('state') || '', 'state');
+  const id = q.get('marks');
+  if (id && ID.test(id)) await look('marks/' + id + '.json', q.get('mtag') || '', 'marks');
+  return json(out);
 }
 
 /* ---------------- reading positions ---------------- */
