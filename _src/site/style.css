@@ -346,6 +346,21 @@ button { font: inherit; }
 .meta .dot { color: var(--faint); margin-left: 8px; }
 .meta .pg { margin-left: 4px; }  /* with the space before it, the same 8px as between the other items */
 
+/* Institutions: one quiet row of logos after the last card, each on a translucent tile; a click opens the institution's site */
+.orgs { display: flex; flex-wrap: nowrap; justify-content: center; gap: 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+.orgs a {
+  display: flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 14px;
+  background: color-mix(in srgb, #FFFFFF 62%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, #FFFFFF 85%, transparent), 0 1px 2px #2B23120A;
+  transition: transform .15s, background-color .15s;
+}
+.orgs img { width: auto; height: auto; max-width: 66%; max-height: 66%; display: block; }
+@media (hover: hover) { .orgs a:hover { transform: translateY(-2px); background: #FFFFFF; } }
+:root[data-theme="dark"] .orgs a { background: color-mix(in srgb, #FFFFFF 90%, transparent); box-shadow: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .orgs a { background: color-mix(in srgb, #FFFFFF 90%, transparent); box-shadow: none; } }
+@media (max-width: 760px) {
+  .orgs { gap: 8px; margin-top: 22px; padding: 0 20px; }
+  .orgs a { width: min(46px, calc((100vw - 80px) / 6)); height: min(46px, calc((100vw - 80px) / 6)); border-radius: 12px; }
+}
 /* No footer: the page ends with the last card; room is left below it for the floating buttons */
 .view > .main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 /* A small confirmation after copying (bottom centre, above the floating buttons on phones) */
@@ -422,7 +437,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .orgs, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }

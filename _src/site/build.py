@@ -148,6 +148,19 @@ TALKS = [  # newest first: (y,m,d, ko role, en role, ko title, ko venue, en titl
      'Aviation Under the Serious Accidents Punishment Act',
      '70th Conference, Korean Society of Air & Space Law and Policy'),
 ]
+# institutions shown as a row of logos at the very end (page order: education, then appointments); each opens its website
+ORGS = [  # (logo file in logos/, ko name, en name, website)
+    ('sogang.png', '서강대학교', 'Sogang University', 'https://www.sogang.ac.kr/'),
+    ('uq.svg', 'The University of Queensland', 'The University of Queensland', 'https://www.uq.edu.au/'),
+    ('yonsei.svg', '연세대학교', 'Yonsei University', 'https://www.yonsei.ac.kr/'),
+    ('afa.png', '공군사관학교', 'Republic of Korea Air Force Academy', 'https://www.afa.ac.kr/'),
+    ('nec.png', '중앙선거관리위원회', 'National Election Commission', 'https://www.nec.go.kr/'),
+    ('nars.png', '국회입법조사처', 'National Assembly Research Service', 'https://www.nars.go.kr/'),
+]
+def logo_url(name):
+    import hashlib
+    return f'logos/{name}?v={hashlib.sha256((Path(__file__).parent / "logos" / name).read_bytes()).hexdigest()[:8]}'
+
 AWARDS = [((2024, 5, 16), '최우수 논문상', '이화여자대학교 법학전문대학원',
            'Best Paper Award', 'Ewha Womans University School of Law')]
 
@@ -465,6 +478,10 @@ def view(lang):
                     f'<p class="sub-line">{e(ks if ko else es)}</p></div></li>' for y, kt, ks, et, es in AWARDS)
     card('awards', f'<ol class="rows">{items}</ol>')
 
+    site_lbl = '홈페이지' if ko else 'website'
+    w(f'<ul class="orgs" aria-label="{"학력·경력 기관" if ko else "Institutions"}">' +
+      ''.join(f'<li><a href="{u}" target="_blank" rel="noopener" title="{e(k if ko else en)}" aria-label="{e(k if ko else en)} {site_lbl}">'
+              f'<img src="{logo_url(f)}" alt="" width="40" height="40" loading="lazy" decoding="async"></a></li>' for f, k, en, u in ORGS) + '</ul>')
     w('</div></div></main>')
     top_lbl = '맨 위로' if ko else 'Back to top'
     w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{UP}</button>{switch("lang-fab")}</div>')
@@ -602,6 +619,10 @@ if fsrc.exists():  # self-hosted web fonts shared by the homepage and both apps
     if fdst.exists():
         shutil.rmtree(fdst)
     shutil.copytree(fsrc, fdst)
+ldst = Path('/home/user/dksdyghks.github.io/logos')  # institution logos for the row at the end of the page
+if ldst.exists():
+    shutil.rmtree(ldst)
+shutil.copytree(Path('/home/user/yohan-ahn/logos'), ldst)
 for app in ('psat',):
     src = Path('/home/user/yohan-ahn') / app
     if not src.exists():
@@ -649,6 +670,9 @@ sdst.mkdir(parents=True, exist_ok=True)
 for name in ('build.py', 'taegukgi.py', 'topicmap.py', 'serif_subset.py', 'home_fonts.py', 'style.css', 'script.js',
              'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py'):
     shutil.copy2(Path('/home/user/yohan-ahn') / name, sdst / name)
+if (sdst / 'logos').exists():
+    shutil.rmtree(sdst / 'logos')
+shutil.copytree(Path('/home/user/yohan-ahn/logos'), sdst / 'logos')
 if (sdst / 'yoai').exists():  # YO아이 was closed: its sources are no longer kept
     shutil.rmtree(sdst / 'yoai')
 for app in ('psat',):
