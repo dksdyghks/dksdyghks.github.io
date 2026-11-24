@@ -82,8 +82,9 @@
   // Pill bar: fade an edge only while more pills are hidden beyond it.
   function edges(bar) {
     var max = bar.scrollWidth - bar.clientWidth;
-    bar.classList.toggle('fade-l', max > 1 && bar.scrollLeft > 2);
-    bar.classList.toggle('fade-r', max > 1 && bar.scrollLeft < max - 2);
+    var box = bar.parentNode;
+    box.classList.toggle('fade-l', max > 1 && bar.scrollLeft > 2);
+    box.classList.toggle('fade-r', max > 1 && bar.scrollLeft < max - 2);
   }
 
   // Contents rail: the gold marker slides to the current section.

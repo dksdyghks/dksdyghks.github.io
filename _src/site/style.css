@@ -223,13 +223,19 @@ button { font: inherit; }
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
   background: var(--bg);  /* opaque: nothing scrolling underneath shows through as a smudge */
   border-bottom: 1px solid var(--rule);
+  box-shadow: 0 -2px 0 var(--bg);  /* closes any hairline seam above the bar while it is stuck */
 }
 .nav-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); height: var(--nav-h); display: flex; align-items: center; }
 .nav-links { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
 .nav-links::-webkit-scrollbar { display: none; }
-.nav-links.fade-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent); }
-.nav-links.fade-l { -webkit-mask-image: linear-gradient(to right, transparent, #000 44px); mask-image: linear-gradient(to right, transparent, #000 44px); }
-.nav-links.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent); }
+/* Edge fades are painted over the bar (not a mask on the scrolling row, which Safari can leave behind as streaks while scrolling) */
+.nav-in { position: relative; }
+.nav-in::before, .nav-in::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 44px; z-index: 1; pointer-events: none; opacity: 0; transition: opacity .15s;
+}
+.nav-in::before { left: var(--gutter-l); background: linear-gradient(to right, var(--bg), transparent); }
+.nav-in::after { right: var(--gutter-r); background: linear-gradient(to left, var(--bg), transparent); }
+.nav-in.fade-l::before, .nav-in.fade-r::after { opacity: 1; }
 .nav-links a { white-space: nowrap; font-size: 0.9375rem; font-weight: 500; color: var(--muted); padding: 8px 14px; border-radius: 999px; transition: color .15s, background-color .15s; }
 @media (hover: hover) { .nav-links a:not(.on):hover { color: var(--ink); background: var(--chip); } }
 .nav-links a.on { color: var(--card); background: var(--ink); font-weight: 600; }
