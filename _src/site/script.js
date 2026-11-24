@@ -177,8 +177,20 @@
     });
   });
 
+  // Back to top: the launcher lifts off and leaves a gold trail up the screen, then lands back in its circle
+  function launch(b) {
+    b.classList.remove('back'); b.classList.add('launch');
+    var r = b.getBoundingClientRect(), t = document.createElement('div');
+    t.className = 'launch-trail'; t.setAttribute('aria-hidden', 'true');
+    t.style.left = (r.left + r.width / 2) + 'px'; t.style.height = Math.max(0, r.top + 6) + 'px';
+    document.body.appendChild(t);
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 900);
+    setTimeout(function () { b.classList.remove('launch'); b.classList.add('back'); }, 900);
+    setTimeout(function () { b.classList.remove('back'); }, 1400);
+  }
   document.querySelectorAll('.top-fab').forEach(function (b) {
     b.addEventListener('click', function () {
+      if (!calm) launch(b);
       window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
       var h = visibleView().querySelector('.name');  // keyboard and screen-reader users land at the top too
       if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
@@ -210,6 +222,25 @@
       setTimeout(function () { b.classList.remove('ok'); }, 1600);
     }, function () { say(root.lang === 'ko' ? '복사하지 못했습니다' : 'Could not copy'); });
   });
+
+  // With a mouse: a soft light follows the pointer over the hero and brightens the preamble around it
+  if (!calm && window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    root.classList.add('glow');
+    document.querySelectorAll('.hero').forEach(function (h) {
+      var near = h.querySelector('.preamble.near'), frame = 0, last = null;
+      function paint() {
+        frame = 0; if (!last) return;
+        var r = h.getBoundingClientRect();
+        h.style.setProperty('--mx', (last.x - r.left) + 'px'); h.style.setProperty('--my', (last.y - r.top) + 'px');
+        if (near) { var q = near.getBoundingClientRect(); near.style.setProperty('--px', (last.x - q.left) + 'px'); near.style.setProperty('--py', (last.y - q.top) + 'px'); }
+      }
+      h.addEventListener('pointermove', function (e) {
+        last = { x: e.clientX, y: e.clientY }; h.classList.add('lit');
+        if (!frame) frame = requestAnimationFrame(paint);
+      }, { passive: true });
+      h.addEventListener('pointerleave', function () { h.classList.remove('lit'); });
+    });
+  }
 
   setLang(initialLang(), false);
   if (location.hash.length > 1) {

@@ -267,7 +267,11 @@ LINK_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" 
 
 MAIL = 'yhahn0128@sogang.ac.kr'
 MAIL_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg>'
-UP = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>'
+ROCKET = ('<svg class="rocket" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">'  # the back-to-top button: a small launcher
+          '<path class="flame" d="M10.1 18.4h3.8c0 2.4-1.1 3.9-1.9 5-.8-1.1-1.9-2.6-1.9-5z"/>'
+          '<path fill="currentColor" d="M8 12.6l-3.1 3.3V18.3L8 17.1zM16 12.6l3.1 3.3V18.3L16 17.1z"/>'
+          '<path fill="currentColor" d="M12 1.8c2.7 2.1 4.2 5.2 4.2 8.9v6.6H7.8v-6.6c0-3.7 1.5-6.8 4.2-8.9z"/>'
+          '<circle class="win" cx="12" cy="9.6" r="1.8"/><rect fill="currentColor" x="9.7" y="17.3" width="4.6" height="1.5" rx=".5"/></svg>')
 GLOBE = '<svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>'
 
 ROLE_TXT = {'sole': ('단독', 'Sole author'), 'first': ('주저자', 'First author'), 'corr': ('교신저자', 'Corresponding author')}
@@ -386,7 +390,9 @@ def view(lang):
     # hero
     s1, s2a, s2b = STATEMENT[lang]
     br = lambda t: e(t).replace('\n', '<br class="br-d">').replace('\r', '<br class="br-w">')
-    w(f'<header class="hero" id="{sid("intro")}"><div class="preamble" aria-hidden="true">{e(PREAMBLE)} {e(PREAMBLE)}</div><div class="hero-in">')
+    w(f'<header class="hero" id="{sid("intro")}"><div class="hero-glow" aria-hidden="true"></div>'
+      f'<div class="preamble" aria-hidden="true">{e(PREAMBLE)} {e(PREAMBLE)}</div>'
+      f'<div class="preamble near" aria-hidden="true">{e(PREAMBLE)} {e(PREAMBLE)}</div><div class="hero-in">')
     mail_lbl = ('이메일 보내기: ' if ko else 'Send an email: ') + MAIL
     copy_lbl = '이메일 주소 복사' if ko else 'Copy email address'
     w(f'<div class="hero-top"><div class="contact"><a class="mail" href="mailto:{MAIL}" aria-label="{mail_lbl}" title="{mail_lbl}">{MAIL_ICON}<span>{MAIL}</span></a>'
@@ -502,7 +508,7 @@ def view(lang):
     # (the list is in time order; the line behind it and the ring on the last tile say so quietly)
     w('</div></div></main>')
     top_lbl = '맨 위로' if ko else 'Back to top'
-    w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{UP}</button>{switch("lang-fab")}</div>')
+    w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{ROCKET}</button>{switch("lang-fab")}</div>')
     w('</div>')
     return '\n'.join(out)
 
