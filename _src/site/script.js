@@ -185,6 +185,38 @@
     });
   });
 
+  // Copy (e-mail address, citations) with a short confirmation
+  var toast = document.querySelector('.toast'), toastTimer = 0;
+  function say(msg) {
+    if (!toast) return;
+    toast.textContent = msg; toast.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1800);
+  }
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise(function (ok, fail) {
+      var t = document.createElement('textarea');
+      t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t); t.select();
+      try { document.execCommand('copy') ? ok() : fail(); } catch (e) { fail(e); }
+      document.body.removeChild(t);
+    });
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-copy]');
+    if (!b) return;
+    copyText(b.dataset.copy).then(function () {
+      say(b.dataset.done); b.classList.add('ok');
+      setTimeout(function () { b.classList.remove('ok'); }, 1600);
+    }, function () { say(root.lang === 'ko' ? '복사하지 못했습니다' : 'Could not copy'); });
+  });
+  document.querySelectorAll('.print-btn').forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (io) document.querySelectorAll('.card:not(.in)').forEach(function (c) { c.classList.add('in', 'now'); });
+      window.print();
+    });
+  });
+
   setLang(initialLang(), false);
   if (location.hash.length > 1) {
     var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
