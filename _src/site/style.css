@@ -116,6 +116,16 @@ button { font: inherit; }
   mask-image: radial-gradient(70% 80% at 75% 15%, #000 0%, transparent 75%);
   opacity: .55;
 }
+/* The preamble of the Constitution as a faint serif pattern on the right of the hero, fading out toward the name */
+.hero::after { display: none; }
+.preamble {
+  position: absolute; inset: -6px -40px auto auto; width: min(760px, 70%); z-index: 0; pointer-events: none; user-select: none; -webkit-user-select: none;
+  font-family: var(--f-serif-ko); font-size: 14px; font-weight: 400; line-height: 2.05; letter-spacing: 0.02em; text-align: justify;
+  color: #FFFFFF; opacity: .085; word-break: keep-all;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(180deg, #000 55%, transparent 100%); -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(180deg, #000 55%, transparent 100%); mask-composite: intersect;
+}
+@media (max-width: 760px) { .preamble { width: 92%; inset: 0 -24px auto auto; font-size: 11px; line-height: 1.9; opacity: .07; } }
 .hero-in { position: relative; z-index: 1; max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 24px 64px; }
 .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 30px; }
 /* Email: a quiet glass pill opposite the language button; the address stays visible so it can be copied */
@@ -339,6 +349,12 @@ button { font: inherit; }
 
 /* Articles */
 .pub .sub { font-weight: 500; font-size: 0.9375rem; color: var(--muted); }
+/* Work titles (articles, theses, projects, talks, awards) are set in the serif, like a journal's table of contents */
+.pubs .ttl, .edu-ttl, [id$="projects"] .ttl, [id$="talks"] .ttl, [id$="awards"] .ttl { font-family: var(--f-serif-ko); font-weight: 600; letter-spacing: -0.02em; }
+#view-en .pubs .ttl, #view-en .edu-ttl, #view-en [id$="projects"] .ttl, #view-en [id$="talks"] .ttl, #view-en [id$="awards"] .ttl { font-family: var(--f-serif-en); letter-spacing: -0.005em; }
+.pubs .ttl { font-size: 1.125rem; line-height: 1.55; }
+#view-ko .pubs .sub { font-family: var(--f-serif-ko); font-weight: 400; }
+.laurel { width: 1.35em; height: 1.35em; vertical-align: -0.32em; margin-right: 6px; color: var(--mark); }
 .ttl .sp { word-spacing: 4px; }  /* the gap before a subtitle; it disappears when the subtitle starts a new line */
 .by { margin-top: 6px; font-size: 0.9375rem; color: var(--ink-2); }
 .meta { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -352,7 +368,9 @@ button { font: inherit; }
 .orgs::before {
   content: ""; position: absolute; top: 50%; height: 2px; margin-top: -1px; border-radius: 2px; pointer-events: none;
   left: calc(50% - (6 * var(--tile) + 5 * 20px) / 2 + var(--tile) / 2); right: calc(50% - (6 * var(--tile) + 5 * 20px) / 2 + var(--tile) / 2);
-  background: linear-gradient(90deg, #C9A15A00, #C9A15A59 45%, var(--mark));
+  background: linear-gradient(90deg, #C9A15A99, var(--mark));
+  height: 5px; margin-top: -2.5px; border-radius: 0;  /* a wedge: thin on the left (past), thicker on the right (present) */
+  clip-path: polygon(0 calc(50% - 0.6px), 100% 0, 100% 100%, 0 calc(50% + 0.6px));
 }
 .orgs li { position: relative; }
 .orgs a {
@@ -361,19 +379,19 @@ button { font: inherit; }
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   transition: transform .15s, background-color .15s;
 }
-.orgs li:last-child a { box-shadow: inset 0 0 0 1px #FFFFFFB3, 0 0 0 1.5px var(--mark); }
+.orgs li:last-child a { box-shadow: inset 0 0 0 1px #FFFFFFB3, 0 0 0 1px #C9A15AA6; }
 .orgs img { width: auto; height: auto; max-width: 66%; max-height: 66%; display: block; }
 @media (hover: hover) { .orgs a:hover { transform: translateY(-2px); background: #FFFFFFD9; } }
 /* dark screens: a lighter glass, so navy marks stay legible */
 :root[data-theme="dark"] .orgs a { background: #FFFFFFE6; box-shadow: none; }
-:root[data-theme="dark"] .orgs li:last-child a { box-shadow: 0 0 0 1.5px var(--mark); }
+:root[data-theme="dark"] .orgs li:last-child a { box-shadow: 0 0 0 1px #D9B77AA6; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .orgs a { background: #FFFFFFE6; box-shadow: none; }
-  :root:not([data-theme="light"]) .orgs li:last-child a { box-shadow: 0 0 0 1.5px var(--mark); }
+  :root:not([data-theme="light"]) .orgs li:last-child a { box-shadow: 0 0 0 1px #D9B77AA6; }
 }
 @media (max-width: 760px) {
   .orgs { gap: 12px; margin-top: 22px; padding: 0 20px; --tile: min(44px, calc((100vw - 40px - 60px) / 6)); }
-  .orgs::before { left: calc(50% - (6 * var(--tile) + 5 * 12px) / 2 + var(--tile) / 2); right: calc(50% - (6 * var(--tile) + 5 * 12px) / 2 + var(--tile) / 2); }
+  .orgs::before { left: calc(50% - (6 * var(--tile) + 5 * 12px) / 2 + var(--tile) / 2); right: calc(50% - (6 * var(--tile) + 5 * 12px) / 2 + var(--tile) / 2); height: 4px; margin-top: -2px; }
   .orgs a { border-radius: 12px; }
 }
 /* No footer: the page ends with the last card; room is left below it for the floating buttons */
@@ -452,7 +470,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .orgs, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .orgs, .preamble, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }

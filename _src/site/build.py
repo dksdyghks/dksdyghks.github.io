@@ -162,6 +162,22 @@ def logo_url(name):
     import hashlib
     return f'logos/{name}?v={hashlib.sha256((Path(__file__).parent / "logos" / name).read_bytes()).hexdigest()[:8]}'
 
+# 대한민국헌법 전문 (1987), set as a faint pattern on the right of the hero (decoration only: hidden from screen readers)
+PREAMBLE = ('유구한 역사와 전통에 빛나는 우리 대한국민은 3ㆍ1운동으로 건립된 대한민국임시정부의 법통과 불의에 항거한 4ㆍ19민주이념을 계'
+    '승하고, 조국의 민주개혁과 평화적 통일의 사명에 입각하여 정의ㆍ인도와 동포애로써 민족의 단결을 공고히 하고, 모든 사회적 폐습'
+    '과 불의를 타파하며, 자율과 조화를 바탕으로 자유민주적 기본질서를 더욱 확고히 하여 정치ㆍ경제ㆍ사회ㆍ문화의 모든 영역에 있어서'
+    ' 각인의 기회를 균등히 하고, 능력을 최고도로 발휘하게 하며, 자유와 권리에 따르는 책임과 의무를 완수하게 하여, 안으로는 국'
+    '민생활의 균등한 향상을 기하고 밖으로는 항구적인 세계평화와 인류공영에 이바지함으로써 우리들과 우리들의 자손의 안전과 자유와 행'
+    '복을 영원히 확보할 것을 다짐하면서 1948년 7월 12일에 제정되고 8차에 걸쳐 개정된 헌법을 이제 국회의 의결을 거쳐 국민'
+    '투표에 의하여 개정한다.')  # as published in 국가법령정보센터 (middle dots are ㆍ)
+LAUREL = ('<svg class="laurel" viewBox="0 0 32 32" aria-hidden="true"><g fill="currentColor">'
+    '<path d="M16 29c-4.6-1.2-8.6-4.6-10.3-9.3-1.2-3.4-1-7.2.6-10.4l.9.4c-1.5 3-1.7 6.6-.6 9.7 1.6 4.4 5.3 7.6 9.6 8.7z"/>'
+    '<path d="M16 29c4.6-1.2 8.6-4.6 10.3-9.3 1.2-3.4 1-7.2-.6-10.4l-.9.4c1.5 3 1.7 6.6.6 9.7-1.6 4.4-5.3 7.6-9.6 8.7z"/>'
+    + ''.join(f'<ellipse cx="{x}" cy="{y}" rx="{rx}" ry="{ry}" transform="rotate({a} {x} {y})"/><ellipse cx="{32 - x}" cy="{y}" rx="{rx}" ry="{ry}" transform="rotate({-a} {32 - x} {y})"/>'
+              for x, y, rx, ry, a in ((5.2, 9.6, 1.3, 2.6, -20), (4.6, 14.6, 1.3, 2.7, -50), (5.9, 19.6, 1.3, 2.7, -70), (9, 23.8, 1.3, 2.7, -95),
+                                      (8.4, 11.3, 1.1, 2.2, 25), (8.4, 16.6, 1.1, 2.2, 5), (10.6, 21.4, 1.1, 2.2, -20)))
+    + '</g></svg>')  # a small gold laurel before an award
+
 AWARDS = [((2024, 5, 16), '최우수 논문상', '이화여자대학교 법학전문대학원',
            'Best Paper Award', 'Ewha Womans University School of Law')]
 
@@ -370,7 +386,7 @@ def view(lang):
     # hero
     s1, s2a, s2b = STATEMENT[lang]
     br = lambda t: e(t).replace('\n', '<br class="br-d">').replace('\r', '<br class="br-w">')
-    w(f'<header class="hero" id="{sid("intro")}"><div class="hero-in">')
+    w(f'<header class="hero" id="{sid("intro")}"><div class="preamble" aria-hidden="true">{e(PREAMBLE)} {e(PREAMBLE)}</div><div class="hero-in">')
     mail_lbl = ('이메일 보내기: ' if ko else 'Send an email: ') + MAIL
     copy_lbl = '이메일 주소 복사' if ko else 'Copy email address'
     w(f'<div class="hero-top"><div class="contact"><a class="mail" href="mailto:{MAIL}" aria-label="{mail_lbl}" title="{mail_lbl}">{MAIL_ICON}<span>{MAIL}</span></a>'
@@ -475,7 +491,7 @@ def view(lang):
                      f'<p class="sub-line">{glue(kv if ko else ev, kr if ko else er)}</p></div></li>')
     card('talks', f'<ol class="rows">{"".join(items)}</ol>')
 
-    items = ''.join(f'<li><span class="when">{ym(*y) if isinstance(y, tuple) else y}</span><div><p class="ttl sm">{e(nowidow(kt if ko else et))}</p>'
+    items = ''.join(f'<li><span class="when">{ym(*y) if isinstance(y, tuple) else y}</span><div><p class="ttl sm">{LAUREL}{e(nowidow(kt if ko else et))}</p>'
                     f'<p class="sub-line">{e(ks if ko else es)}</p></div></li>' for y, kt, ks, et, es in AWARDS)
     card('awards', f'<ol class="rows">{items}</ol>')
 

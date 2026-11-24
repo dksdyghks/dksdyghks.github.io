@@ -49,7 +49,8 @@ class _Text(HTMLParser):
             self.view = a['id'][5:]
         if tag in self.VOID:
             return
-        self.stack.append('serif' if ('stmt' in cls or 'h' in cls) else 'sign' if 'name' in cls else None)
+        serif = {'stmt', 'h', 'ttl', 'edu-ttl', 'preamble'}  # statement, section headings, work titles, the preamble pattern
+        self.stack.append('serif' if serif & set(cls) else 'sign' if 'name' in cls else None)
 
     def handle_endtag(self, tag):
         if tag not in self.VOID and self.stack:
