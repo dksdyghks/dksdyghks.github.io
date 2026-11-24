@@ -177,14 +177,9 @@
     });
   });
 
-  // Back to top: the launcher lifts off and leaves a gold trail up the screen, then lands back in its circle
+  // Back to top: the launcher lifts off, then lands back in its circle
   function launch(b) {
     b.classList.remove('back'); b.classList.add('launch');
-    var r = b.getBoundingClientRect(), t = document.createElement('div');
-    t.className = 'launch-trail'; t.setAttribute('aria-hidden', 'true');
-    t.style.left = (r.left + r.width / 2) + 'px'; t.style.height = Math.max(0, r.top + 6) + 'px';
-    document.body.appendChild(t);
-    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 900);
     setTimeout(function () { b.classList.remove('launch'); b.classList.add('back'); }, 900);
     setTimeout(function () { b.classList.remove('back'); }, 1400);
   }

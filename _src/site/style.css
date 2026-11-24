@@ -251,8 +251,8 @@ button { font: inherit; }
   border: 0; border-radius: 999px; cursor: pointer; transition: transform .15s;
 }
 @media (hover: hover) { .top-fab:hover { transform: translateY(-1px); } }
-/* The back-to-top button is a small launcher: a flame flickers on hover; on a click it lifts off, leaves a gold trail
-   up the screen, and lands back in its circle (no motion at all for visitors who ask for less) */
+/* The back-to-top button is a small launcher: a flame flickers on hover; on a click it lifts off and lands back
+   in its circle (no motion at all for visitors who ask for less) */
 .top-fab { overflow: hidden; }
 .rocket { display: block; transition: transform .2s; }
 .rocket .win { fill: var(--ink); }
@@ -266,11 +266,6 @@ button { font: inherit; }
 @keyframes flick { from { transform: scaleY(.75); } to { transform: scaleY(1.1); } }
 @keyframes launch { 0% { transform: translateY(0); } 25% { transform: translateY(2px); } 100% { transform: translateY(-46px); } }
 @keyframes land { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
-.launch-trail {
-  position: fixed; z-index: 19; top: 0; width: 2px; margin-left: -1px; border-radius: 2px; pointer-events: none;
-  background: linear-gradient(to top, var(--mark), #C9A15A00); transform-origin: 50% 100%; animation: trail .85s ease-out forwards;
-}
-@keyframes trail { 0% { transform: scaleY(0); opacity: 1; } 55% { transform: scaleY(1); opacity: .9; } 100% { transform: scaleY(1); opacity: 0; } }
 @media (min-width: 1024px) {
   .fabs { right: max(28px, calc(env(safe-area-inset-right, 0px) + 28px)); bottom: 28px; }
   .lang-fab { font-size: 1.0625rem; padding: 13px 22px 13px 18px; }
@@ -512,7 +507,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .orgs, .preamble, .hero-glow, .launch-trail, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .orgs, .preamble, .hero-glow, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }
