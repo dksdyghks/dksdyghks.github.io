@@ -245,6 +245,19 @@ button { font: inherit; }
 @media (max-width: 760px) { .catwalk { width: 96px; height: 106px; } .cw-bubble { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .catwalk *, .catwalk { animation: none !important; transition: none !important; } }
 .top-fab { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Dark screens: the cats' heart eyes glow */
+:root[data-theme="dark"] .cw-eyes-heart { filter: url(#cw-glow); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cw-eyes-heart { filter: url(#cw-glow); } }
+/* Zooming in (browser zoom, or a pinch on a phone): a cat with a magnifier peeks up from the bottom edge for a moment */
+.peek { position: fixed; left: 0; top: 0; z-index: 22; width: 124px; height: 83px; pointer-events: none; transform-origin: 0 0; visibility: hidden; overflow: hidden; }
+.peek .pk { position: absolute; left: 0; bottom: 0; width: 100%; height: auto; display: block; transform: translateY(105%); transition: transform .45s cubic-bezier(.2, .9, .3, 1.25); }
+.peek.show { visibility: visible; }
+.peek.show .pk { transform: translateY(6%); }
+.peek .pk-mag { transform-box: fill-box; transform-origin: 80% 90%; }
+.peek.show .pk-mag { animation: pk-look 1.6s ease-in-out .5s infinite alternate; }
+@keyframes pk-look { from { transform: rotate(0deg) translate(0, 0); } to { transform: rotate(-6deg) translate(-3px, -2px); } }
+@media (max-width: 760px) { .peek { width: 104px; height: 70px; } }
+@media (prefers-reduced-motion: reduce) { .peek .pk, .peek .pk-mag { transition: none; animation: none; } }
 /* The Korean name (three syllables) is set a little larger and slightly spaced so it holds its own beside "Yohan Ahn";
    the negative right margin cancels the spacing after the last syllable. */
 #view-ko .name { font-size: clamp(4.875rem, 9.2vw, 7.1875rem); letter-spacing: 0.12em; margin-right: -0.12em; }
@@ -568,7 +581,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .fabs, .orgs, .preamble, .hero-glow, .catwalk, .photo-snow, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .orgs, .preamble, .hero-glow, .catwalk, .peek, .photo-snow, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }

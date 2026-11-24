@@ -421,6 +421,34 @@
       catPose(el, 1500, function () { catSleep(el); });
     });
   })();
+  // Zooming in (browser zoom on a computer, a pinch on a phone): the cat with a magnifier peeks up from the bottom edge
+  var peekTimer = 0;
+  function peekPlace(el) {  // stays at the bottom left of what the visitor sees, at its normal size, however far they zoom
+    var vv = window.visualViewport, s = vv ? vv.scale : 1, x = vv ? vv.offsetLeft : 0, y = vv ? vv.offsetTop : 0, h = vv ? vv.height : window.innerHeight;
+    el.style.transform = 'translate(' + (x + 14 / s) + 'px, ' + (y + h - el.offsetHeight / s) + 'px) scale(' + (1 / s) + ')';
+  }
+  function peekZoom() {
+    var el = document.querySelector('.peek'); if (!el || cat.busy) return;
+    peekPlace(el); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(peekTimer); peekTimer = setTimeout(function () { el.classList.remove('show'); }, 3400);
+  }
+  (function () {
+    var dpr = window.devicePixelRatio || 1, wait = 0, pinched = false;
+    var mouse = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+    window.addEventListener('resize', function () {
+      var d = window.devicePixelRatio || 1;
+      if (mouse && d > dpr * 1.1) { clearTimeout(wait); wait = setTimeout(peekZoom, 300); }  // browser zoom changes the pixel ratio
+      dpr = d;
+    });
+    var vv = window.visualViewport; if (!vv) return;
+    function follow() { var el = document.querySelector('.peek'); if (el && el.classList.contains('show')) peekPlace(el); }
+    vv.addEventListener('resize', function () {
+      if (vv.scale > 1.35 && !pinched) { pinched = true; peekZoom(); } else if (vv.scale < 1.08) pinched = false;
+      follow();
+    });
+    vv.addEventListener('scroll', follow);
+  })();
+
   (function () {
     var seq = [], word = ['KeyD', 'KeyB', 'KeyS', 'KeyT', 'KeyJ'];  // 윤서 on the Korean (두벌식) layout
     document.addEventListener('keydown', function (e) {

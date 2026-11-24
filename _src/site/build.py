@@ -521,7 +521,8 @@ FONT_PRETENDARD = '<link rel="stylesheet" href="/fonts/pretendard/pretendardvari
 FONT_FALLBACK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">\n'
 CATWALK = ('<div class="catwalk" aria-hidden="true">' + (Path(__file__).parent / 'catwalk.svg').read_text().strip()
            + '<span class="cw-bubble"></span></div>')  # the walking cat (easter egg), drawn in catwalk.svg
-BODY = view('ko') + '\n' + view('en') + '\n' + CATWALK + f'\n<script>\n{JS}</script>\n'
+PEEK = '<div class="peek" aria-hidden="true">' + (Path(__file__).parent / 'catpeek.svg').read_text().strip() + '</div>'  # the cat with a magnifier (on zoom)
+BODY = view('ko') + '\n' + view('en') + '\n' + CATWALK + PEEK + f'\n<script>\n{JS}</script>\n'
 
 import json as _json
 LD = {
@@ -694,7 +695,7 @@ print('built', len(artifact), len(page))
 sdst = Path('/home/user/dksdyghks.github.io/_src/site')
 sdst.mkdir(parents=True, exist_ok=True)
 for name in ('build.py', 'taegukgi.py', 'topicmap.py', 'serif_subset.py', 'home_fonts.py', 'style.css', 'script.js',
-             'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py', 'catwalk.svg'):
+             'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py', 'catwalk.svg', 'catpeek.svg'):
     shutil.copy2(Path('/home/user/yohan-ahn') / name, sdst / name)
 if (sdst / 'logos').exists():
     shutil.rmtree(sdst / 'logos')

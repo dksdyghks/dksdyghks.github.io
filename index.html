@@ -293,6 +293,19 @@ button { font: inherit; }
 @media (max-width: 760px) { .catwalk { width: 96px; height: 106px; } .cw-bubble { font-size: 14px; } }
 @media (prefers-reduced-motion: reduce) { .catwalk *, .catwalk { animation: none !important; transition: none !important; } }
 .top-fab { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* Dark screens: the cats' heart eyes glow */
+:root[data-theme="dark"] .cw-eyes-heart { filter: url(#cw-glow); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cw-eyes-heart { filter: url(#cw-glow); } }
+/* Zooming in (browser zoom, or a pinch on a phone): a cat with a magnifier peeks up from the bottom edge for a moment */
+.peek { position: fixed; left: 0; top: 0; z-index: 22; width: 124px; height: 83px; pointer-events: none; transform-origin: 0 0; visibility: hidden; overflow: hidden; }
+.peek .pk { position: absolute; left: 0; bottom: 0; width: 100%; height: auto; display: block; transform: translateY(105%); transition: transform .45s cubic-bezier(.2, .9, .3, 1.25); }
+.peek.show { visibility: visible; }
+.peek.show .pk { transform: translateY(6%); }
+.peek .pk-mag { transform-box: fill-box; transform-origin: 80% 90%; }
+.peek.show .pk-mag { animation: pk-look 1.6s ease-in-out .5s infinite alternate; }
+@keyframes pk-look { from { transform: rotate(0deg) translate(0, 0); } to { transform: rotate(-6deg) translate(-3px, -2px); } }
+@media (max-width: 760px) { .peek { width: 104px; height: 70px; } }
+@media (prefers-reduced-motion: reduce) { .peek .pk, .peek .pk-mag { transition: none; animation: none; } }
 /* The Korean name (three syllables) is set a little larger and slightly spaced so it holds its own beside "Yohan Ahn";
    the negative right margin cancels the spacing after the last syllable. */
 #view-ko .name { font-size: clamp(4.875rem, 9.2vw, 7.1875rem); letter-spacing: 0.12em; margin-right: -0.12em; }
@@ -616,7 +629,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .fabs, .orgs, .preamble, .hero-glow, .catwalk, .photo-snow, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .orgs, .preamble, .hero-glow, .catwalk, .peek, .photo-snow, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }
@@ -716,6 +729,7 @@ body { margin: 0; }
 <div class="fabs"><button type="button" class="top-fab" aria-label="Back to top" title="Back to top"><svg class="rocket" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path class="flame" d="M10.1 18.4h3.8c0 2.4-1.1 3.9-1.9 5-.8-1.1-1.9-2.6-1.9-5z"/><path fill="currentColor" d="M8 12.6l-3.1 3.3V18.3L8 17.1zM16 12.6l3.1 3.3V18.3L16 17.1z"/><path fill="currentColor" d="M12 1.8c2.7 2.1 4.2 5.2 4.2 8.9v6.6H7.8v-6.6c0-3.7 1.5-6.8 4.2-8.9z"/><circle class="win" cx="12" cy="9.6" r="1.8"/><rect fill="currentColor" x="9.7" y="17.3" width="4.6" height="1.5" rx=".5"/></svg></button></div>
 </div>
 <div class="catwalk" aria-hidden="true"><svg class="cw" viewBox="0 0 200 220" aria-hidden="true">
+<defs><filter id="cw-glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
 <ellipse class="cw-shadow" cx="100" cy="214" rx="46" ry="5" fill="#000" opacity=".13"/>
 <g class="cw-all">
 <path class="cw-tail" d="M138 178 C168 174 184 148 172 124 C166 112 152 110 150 120" fill="none" stroke="#F5C46C" stroke-width="13" stroke-linecap="round"/>
@@ -746,7 +760,28 @@ body { margin: 0; }
 <path d="M64 140 C26 120 14 66 40 32 C58 8 92 12 100 40"/><path d="M136 140 C174 120 186 66 160 32 C142 8 108 12 100 40"/>
 </g>
 </g>
-</svg><span class="cw-bubble"></span></div>
+</svg><span class="cw-bubble"></span></div><div class="peek" aria-hidden="true"><svg class="pk" viewBox="0 0 200 134" aria-hidden="true">
+<defs><clipPath id="pk-lens"><circle cx="124" cy="96" r="24"/></clipPath></defs>
+<g class="pk-head">
+<path d="M48 74 L54 26 Q56 18 64 22 L92 46 Z" fill="#F5C46C"/><path d="M57 60 L60 34 L80 50 Z" fill="#F2A98F"/>
+<path d="M152 74 L146 26 Q144 18 136 22 L108 46 Z" fill="#F5C46C"/><path d="M143 60 L140 34 L120 50 Z" fill="#F2A98F"/>
+<ellipse cx="100" cy="98" rx="62" ry="54" fill="#F5C46C"/>
+<g fill="none" stroke="#E2A94E" stroke-width="3.2" stroke-linecap="round"><path d="M91 50 L93 60"/><path d="M100 47 L100 58"/><path d="M109 50 L107 60"/></g>
+<ellipse cx="61" cy="117" rx="10" ry="6" fill="#F49A8A" opacity=".75"/><ellipse cx="139" cy="117" rx="10" ry="6" fill="#F49A8A" opacity=".75"/>
+<g class="cw-eyes-heart pk-eyes" fill="#E5323B"><path transform="translate(78 100) scale(12)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z"/><path transform="translate(122 100) scale(12)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z"/>
+<circle cx="73" cy="95" r="2.3" fill="#FFFFFF" opacity=".85"/><circle cx="117" cy="95" r="2.3" fill="#FFFFFF" opacity=".85"/></g>
+<path d="M96 110 L104 110 L100 114.5 Z" fill="#E9877A"/>
+<path d="M91 117 Q95.5 123 100 117.5 Q104.5 123 109 117" fill="none" stroke="#3B2A17" stroke-width="2.6" stroke-linecap="round"/>
+<g fill="none" stroke="#3B2A17" stroke-width="2" stroke-linecap="round" opacity=".75"><path d="M40 107 L60 110"/><path d="M38 115 L60 115"/><path d="M160 107 L140 110"/><path d="M162 115 L140 115"/></g>
+</g>
+<g class="pk-mag">
+<circle cx="124" cy="96" r="24" fill="#FFFFFF" opacity=".25"/>
+<g clip-path="url(#pk-lens)"><ellipse cx="124" cy="96" rx="30" ry="30" fill="#F5C46C"/><path class="cw-eyes-heart" transform="translate(123 99) scale(20)" d="M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z" fill="#E5323B"/></g>
+<circle cx="124" cy="96" r="24" fill="none" stroke="#C9A15A" stroke-width="6"/>
+<path d="M141 113 L166 138" stroke="#8C682A" stroke-width="10" stroke-linecap="round"/>
+<ellipse cx="160" cy="130" rx="12" ry="10" fill="#F5C46C"/>
+</g>
+</svg></div>
 <script>
 (function () {
   var root = document.documentElement;
@@ -1171,6 +1206,34 @@ body { margin: 0; }
       catPose(el, 1500, function () { catSleep(el); });
     });
   })();
+  // Zooming in (browser zoom on a computer, a pinch on a phone): the cat with a magnifier peeks up from the bottom edge
+  var peekTimer = 0;
+  function peekPlace(el) {  // stays at the bottom left of what the visitor sees, at its normal size, however far they zoom
+    var vv = window.visualViewport, s = vv ? vv.scale : 1, x = vv ? vv.offsetLeft : 0, y = vv ? vv.offsetTop : 0, h = vv ? vv.height : window.innerHeight;
+    el.style.transform = 'translate(' + (x + 14 / s) + 'px, ' + (y + h - el.offsetHeight / s) + 'px) scale(' + (1 / s) + ')';
+  }
+  function peekZoom() {
+    var el = document.querySelector('.peek'); if (!el || cat.busy) return;
+    peekPlace(el); void el.offsetWidth; el.classList.add('show');
+    clearTimeout(peekTimer); peekTimer = setTimeout(function () { el.classList.remove('show'); }, 3400);
+  }
+  (function () {
+    var dpr = window.devicePixelRatio || 1, wait = 0, pinched = false;
+    var mouse = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+    window.addEventListener('resize', function () {
+      var d = window.devicePixelRatio || 1;
+      if (mouse && d > dpr * 1.1) { clearTimeout(wait); wait = setTimeout(peekZoom, 300); }  // browser zoom changes the pixel ratio
+      dpr = d;
+    });
+    var vv = window.visualViewport; if (!vv) return;
+    function follow() { var el = document.querySelector('.peek'); if (el && el.classList.contains('show')) peekPlace(el); }
+    vv.addEventListener('resize', function () {
+      if (vv.scale > 1.35 && !pinched) { pinched = true; peekZoom(); } else if (vv.scale < 1.08) pinched = false;
+      follow();
+    });
+    vv.addEventListener('scroll', follow);
+  })();
+
   (function () {
     var seq = [], word = ['KeyD', 'KeyB', 'KeyS', 'KeyT', 'KeyJ'];  // 윤서 on the Korean (두벌식) layout
     document.addEventListener('keydown', function (e) {
