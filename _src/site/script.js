@@ -41,7 +41,8 @@
   // Cards rise in gently the first time they come into view.
   var io = null;
   // (desktop only: on phones content should simply be there as you swipe)
-  if (!calm && 'IntersectionObserver' in window && window.matchMedia && matchMedia('(min-width: 1024px)').matches) {
+  // (and only with a mouse or trackpad: on iPads, Safari can leave a card's edge behind as a line after the rise)
+  if (!calm && 'IntersectionObserver' in window && window.matchMedia && matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches) {
     root.classList.add('reveal');
     io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });

@@ -145,7 +145,7 @@ button { font: inherit; }
 
 /* ---------- Hero ---------- */
 .hero {
-  position: relative; overflow: hidden; color: var(--on-hero);
+  position: relative; overflow: hidden; isolation: isolate; color: var(--on-hero);  /* the grain's blending stays inside the hero */
   background:
     linear-gradient(90deg, transparent 4%, var(--hairline) 50%, transparent 96%) 50% 100% / 100% 1px no-repeat,
     radial-gradient(60% 90% at 88% -10%, color-mix(in srgb, var(--glow-1) 55%, transparent), transparent 70%),
@@ -271,7 +271,8 @@ button { font: inherit; }
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
   background: var(--bg);  /* opaque: nothing scrolling underneath shows through as a smudge */
   border-bottom: 1px solid var(--rule);
-  box-shadow: 0 -2px 0 var(--bg);  /* closes any hairline seam above the bar while it is stuck */
+  /* its own compositing layer: Safari on iPad otherwise leaves the bar's edge behind as a line while it slides and sticks */
+  -webkit-transform: translateZ(0); transform: translateZ(0); -webkit-backface-visibility: hidden; backface-visibility: hidden;
 }
 .nav-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); height: var(--nav-h); display: flex; align-items: center; }
 .nav-links { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
@@ -291,7 +292,7 @@ button { font: inherit; }
 /* ---------- Body layout ---------- */
 .main { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 32px 24px; }
 .layout { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 28px; align-items: start; }
-.toc-col { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 32px); }
+.toc-col { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 32px); -webkit-transform: translateZ(0); transform: translateZ(0); }
 .toc { position: relative; display: flex; flex-direction: column; }
 .toc::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--rule); }
 .toc a { position: relative; display: block; font-size: 0.9375rem; font-weight: 500; color: var(--muted); padding: 8px 12px 8px 20px; transition: color .2s; }
@@ -598,7 +599,8 @@ body { margin: 0; }
   // Cards rise in gently the first time they come into view.
   var io = null;
   // (desktop only: on phones content should simply be there as you swipe)
-  if (!calm && 'IntersectionObserver' in window && window.matchMedia && matchMedia('(min-width: 1024px)').matches) {
+  // (and only with a mouse or trackpad: on iPads, Safari can leave a card's edge behind as a line after the rise)
+  if (!calm && 'IntersectionObserver' in window && window.matchMedia && matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)').matches) {
     root.classList.add('reveal');
     io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
