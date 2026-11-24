@@ -463,3 +463,6 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .steps { margin: 12px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.55; }
 .steps b { font-weight: 700; }
 .mfoot .sp { flex: 1; }
+
+.pick-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.up-sum { margin: 0 0 6px; padding: 0 14px; font-size: 13px; color: var(--muted); }

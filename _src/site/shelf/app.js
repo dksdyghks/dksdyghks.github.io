@@ -268,10 +268,12 @@ function renderShell() {
     <div class="uploads" hidden></div>
     <div class="toast" hidden></div>
     <input type="file" class="file-in" accept="application/pdf,.pdf" multiple hidden>
+    <input type="file" class="dir-in" webkitdirectory multiple hidden>
   </div>`;
   const app = $('.app');
   $('.up-btn').onclick = () => uploadBox();
   $('.file-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); closeRail(); };
+  $('.dir-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); else toast('그 폴더에 PDF가 없습니다'); closeRail(); };
   $('.views').onclick = (e) => { const b = e.target.closest('[data-view]'); if (!b) return; S.view = { kind: b.dataset.view, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.settings-btn').onclick = () => { closeRail(); settings(); };
@@ -289,7 +291,7 @@ function renderShell() {
   const main = $('.main');
   main.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); main.classList.add('drop'); } });
   main.addEventListener('dragleave', (e) => { if (e.target === main || !main.contains(e.relatedTarget)) main.classList.remove('drop'); });
-  main.addEventListener('drop', (e) => { e.preventDefault(); main.classList.remove('drop'); const fs = [...(e.dataTransfer?.files || [])]; if (fs.length) upload(fs); });
+  main.addEventListener('drop', (e) => { e.preventDefault(); main.classList.remove('drop'); filesFromDrop(e.dataTransfer).then((fs) => { if (fs.length) upload(fs); }); });
   let lp = null;   // long press on a row starts selecting
   $('.content').addEventListener('pointerdown', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid]'); if (!row || e.pointerType === 'mouse') return; lp = setTimeout(() => { lp = null; startSelect(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); }, 550); });
   for (const t of ['pointerup', 'pointercancel', 'pointermove']) $('.content').addEventListener(t, (e) => { if (lp && (t !== 'pointermove' || Math.abs(e.movementY) > 3)) { clearTimeout(lp); lp = null; } });
@@ -371,7 +373,8 @@ function renderTree() {
 
 function renderUsage() {
   const used = S.index.files.reduce((s, f) => s + (f.size || 0), 0), free = 10 * 1024 ** 3;
-  $('.usage-t').textContent = `${size(used)} 사용 · 무료 10GB`;
+  const over = used - free;
+  $('.usage-t').textContent = over > 0 ? `${size(used)} 사용 · 넘은 만큼 월 약 $${(over / 1024 ** 3 * 0.015).toFixed(2)}` : `${size(used)} 사용 · 무료 10GB`;
   $('.usage-bar i').style.width = Math.min(100, 100 * used / free) + '%';
   const n = liveFiles().length, have = liveFiles().filter((f) => S.cached.has(f.id)).length;
   $('.usage-d').textContent = n ? (have >= n ? `이 기기에 모두 있음 · ${n}편` : `이 기기에 ${have} / ${n}편`) : '';
@@ -679,16 +682,37 @@ async function doOps(ops, done) {
 }
 
 /* ================= upload ================= */
+// files dropped in: a dropped folder is opened, and the folders inside it, for its PDFs
+function filesFromDrop(dt) {
+  if (!dt) return Promise.resolve([]);
+  const plain = [...(dt.files || [])];   // read now: the drop's data is gone once this handler returns
+  const entries = [...(dt.items || [])].filter((i) => i.kind === 'file' && i.webkitGetAsEntry).map((i) => i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.some((en) => en.isDirectory)) return Promise.resolve(plain);
+  const out = [];
+  const walk = async (en, depth) => {
+    if (out.length >= 5000 || depth > 12) return;
+    if (en.isFile) { if (/\.pdf$/i.test(en.name)) { try { out.push(await new Promise((res, rej) => en.file(res, rej))); } catch (e) { /* unreadable */ } } return; }
+    if (!en.isDirectory) return;
+    const r = en.createReader();
+    for (;;) {
+      const batch = await new Promise((res) => r.readEntries(res, () => res([])));
+      if (!batch.length) break;
+      for (const c of batch) await walk(c, depth + 1);
+    }
+  };
+  return (async () => { for (const en of entries) await walk(en, 0); if (!out.length) toast('넣은 폴더에 PDF가 없습니다'); return out; })();
+}
 function uploadBox() {
   if (!matchMedia('(hover: hover) and (pointer: fine)').matches) { $('.file-in').click(); return; }   // iPad, phone: the system picker
   const where = S.view.kind === 'home' && S.view.folder ? folderPath(S.view.folder).map((f) => f.name).join(' › ') : '내 책장';
-  const box = sheet(`<h2>PDF 올리기</h2><div class="drop-zone" tabindex="0">${I.up}<p>PDF를 여기로 끌어다 놓으세요</p><button class="btn primary pick-file">파일 고르기</button></div><p class="drop-where">올릴 곳 · ${esc(where)}</p>`);
+  const box = sheet(`<h2>PDF 올리기</h2><div class="drop-zone" tabindex="0">${I.up}<p>PDF를 여기로 끌어다 놓으세요</p><div class="pick-row"><button class="btn primary pick-file">파일 고르기</button><button class="btn pick-dir">폴더째 고르기</button></div></div><p class="drop-where">올릴 곳 · ${esc(where)}</p>`);
   const z = $('.drop-zone', box);
   const has = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
   z.ondragenter = z.ondragover = (e) => { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); z.classList.add('over'); };
   z.ondragleave = (e) => { if (!z.contains(e.relatedTarget)) z.classList.remove('over'); };
-  z.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); const fs = [...(e.dataTransfer?.files || [])]; closeSheet(); if (fs.length) upload(fs); };
+  z.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); const got = filesFromDrop(e.dataTransfer); closeSheet(); got.then((fs) => { if (fs.length) upload(fs); }); };
   $('.pick-file', box).onclick = () => { closeSheet(); $('.file-in').click(); };
+  $('.pick-dir', box).onclick = () => { closeSheet(); $('.dir-in').click(); };
 }
 async function upload(fileList) {
   const pdfs = fileList.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
@@ -768,7 +792,8 @@ function renderUploads() {
   const label = { wait: '기다리는 중', read: '확인하는 중', up: '올리는 중', index: '본문 색인 중', done: '완료', dup: '', error: '' };
   box.hidden = false;
   box.innerHTML = `<div class="up-h"><b>${active ? `올리는 중 ${S.uploads.length - active}/${S.uploads.length}` : '올리기 끝'}</b>${active ? '' : '<button class="ib" data-x aria-label="닫기">' + I.close + '</button>'}</div>
-    <ul>${S.uploads.map((u) => `<li class="${u.status}"><span class="n">${esc(stem(u.name))}</span><span class="s">${u.msg ? esc(u.msg) : label[u.status]}${u.status === 'up' || u.status === 'index' ? ' ' + Math.round(u.p * 100) + '%' : ''}</span>${u.status === 'error' ? `<button class="btn small" data-retry="${u.key}">다시</button>` : ''}<i class="upbar"><b style="width:${u.status === 'done' || u.status === 'dup' ? 100 : Math.round((u.status === 'up' ? u.p * 0.9 : u.status === 'index' ? 0.9 + u.p * 0.1 : 0) * 100)}%"></b></i></li>`).join('')}</ul>`;
+    ${S.uploads.length > 30 ? `<p class="up-sum">${S.uploads.filter((u) => u.status === 'done').length}편 완료${S.uploads.filter((u) => u.status === 'dup').length ? ` · 이미 있던 ${S.uploads.filter((u) => u.status === 'dup').length}편` : ''}${S.uploads.filter((u) => u.status === 'error').length ? ` · 실패 ${S.uploads.filter((u) => u.status === 'error').length}편` : ''}${active ? ` · 남은 ${active}편` : ''}</p>` : ''}
+    <ul>${(S.uploads.length > 30 ? S.uploads.filter((u) => !['done', 'dup', 'wait'].includes(u.status)).concat(S.uploads.filter((u) => u.status === 'wait').slice(0, 3)) : S.uploads).map((u) => `<li class="${u.status}"><span class="n">${esc(stem(u.name))}</span><span class="s">${u.msg ? esc(u.msg) : label[u.status]}${u.status === 'up' || u.status === 'index' ? ' ' + Math.round(u.p * 100) + '%' : ''}</span>${u.status === 'error' ? `<button class="btn small" data-retry="${u.key}">다시</button>` : ''}<i class="upbar"><b style="width:${u.status === 'done' || u.status === 'dup' ? 100 : Math.round((u.status === 'up' ? u.p * 0.9 : u.status === 'index' ? 0.9 + u.p * 0.1 : 0) * 100)}%"></b></i></li>`).join('')}</ul>`;
   clearTimeout(S.upT);
   if (!active && S.uploads.every((u) => u.status === 'done')) S.upT = setTimeout(() => { if (S.uploads.every((u) => u.status === 'done')) { S.uploads = []; renderUploads(); } }, 5000);
   box.onclick = (e) => {
@@ -1006,7 +1031,7 @@ async function settings() {
   const local = await store.filesSize().catch(() => 0);
   const est = await store.estimate();
   const box = sheet(`<h2>설정</h2>
-    <section><h3>저장 공간</h3><p class="kv"><span>책장 서버</span><b>${size(used)} / 무료 10GB</b></p><p class="kv"><span>이 기기에 받아 둔 파일</span><b>${size(local)}</b></p>
+    <section><h3>저장 공간</h3><p class="kv"><span>책장 서버</span><b>${size(used)} / 무료 10GB${used > 10 * 1024 ** 3 ? ` · 넘은 만큼 월 약 $${((used - 10 * 1024 ** 3) / 1024 ** 3 * 0.015).toFixed(2)}` : ''}</b></p><p class="kv"><span>이 기기에 받아 둔 파일</span><b>${size(local)}</b></p>
       ${est && est.quota ? `<p class="kv"><span>이 기기에서 쓸 수 있는 공간</span><b>약 ${size(est.quota)}</b></p>` : ''}
       <div class="keep" role="radiogroup" aria-label="이 기기에 받아 두기"><p class="keep-h">이 기기에 받아 두기 <small>인터넷 없이도 읽을 수 있습니다</small></p>
         ${[['all', '모든 논문'], ['recent', '최근 30일'], ['opened', '열어 본 것만']].map(([k, t]) => `<label class="opt"><input type="radio" name="keep" value="${k}" ${keepMode() === k ? 'checked' : ''}><span>${t}</span></label>`).join('')}
