@@ -13,8 +13,8 @@
 <link rel="alternate" hreflang="ko" href="https://0128.kr/?lang=ko">
 <link rel="alternate" hreflang="en" href="https://0128.kr/?lang=en">
 <link rel="alternate" hreflang="x-default" href="https://0128.kr/">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=f743bafc">
-<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=0e8f7b33">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=f743bafc" data-sleep="favicon-32-sleep.png?v=7598188d">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png?v=0e8f7b33" data-sleep="favicon-16-sleep.png?v=2a65bd76">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9d45e0cf">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=5df79141">
 <meta property="og:type" content="profile">
@@ -903,6 +903,22 @@ body { margin: 0; }
       h.addEventListener('pointerleave', function () { h.classList.remove('lit'); });
     });
   }
+
+  // While the visitor is on another tab, the cat in the tab icon falls asleep; it wakes when they come back
+  (function () {
+    var icons = Array.prototype.slice.call(document.querySelectorAll('link[rel="icon"][data-sleep]'));
+    if (!icons.length || !('hidden' in document)) return;
+    icons.forEach(function (l) { l.setAttribute('data-awake', l.getAttribute('href')); (new Image()).src = l.getAttribute('data-sleep'); });
+    function swap(asleep) {
+      icons = icons.map(function (l) {  // a fresh <link> makes every browser repaint the tab icon
+        var n = l.cloneNode(false);
+        n.setAttribute('href', l.getAttribute(asleep ? 'data-sleep' : 'data-awake'));
+        l.parentNode.replaceChild(n, l);
+        return n;
+      });
+    }
+    document.addEventListener('visibilitychange', function () { swap(document.hidden); });
+  })();
 
   setLang(initialLang(), false);
   if (location.hash.length > 1) {

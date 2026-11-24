@@ -242,6 +242,22 @@
     });
   }
 
+  // While the visitor is on another tab, the cat in the tab icon falls asleep; it wakes when they come back
+  (function () {
+    var icons = Array.prototype.slice.call(document.querySelectorAll('link[rel="icon"][data-sleep]'));
+    if (!icons.length || !('hidden' in document)) return;
+    icons.forEach(function (l) { l.setAttribute('data-awake', l.getAttribute('href')); (new Image()).src = l.getAttribute('data-sleep'); });
+    function swap(asleep) {
+      icons = icons.map(function (l) {  // a fresh <link> makes every browser repaint the tab icon
+        var n = l.cloneNode(false);
+        n.setAttribute('href', l.getAttribute(asleep ? 'data-sleep' : 'data-awake'));
+        l.parentNode.replaceChild(n, l);
+        return n;
+      });
+    }
+    document.addEventListener('visibilitychange', function () { swap(document.hidden); });
+  })();
+
   setLang(initialLang(), false);
   if (location.hash.length > 1) {
     var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
