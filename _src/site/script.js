@@ -167,6 +167,7 @@
     root.style.scrollBehavior = 'auto';
     if (twin) window.scrollTo(0, twin.getBoundingClientRect().top + window.scrollY - at.top);
     root.style.scrollBehavior = prev;
+    courseRows();
     update();
   }
 
@@ -218,29 +219,65 @@
 
   // The cat in the tab icon: from 11 pm to 5 am it wears a night cap; while the visitor is on another tab it falls
   // asleep, and it wakes when they come back
-  (function () {
-    var icons = Array.prototype.slice.call(document.querySelectorAll('link[rel="icon"][data-sleep]'));
-    if (!icons.length) return;
-    icons.forEach(function (l) {
-      l.setAttribute('data-day', l.getAttribute('href'));
-      ['data-sleep', 'data-night', 'data-night-sleep'].forEach(function (a) { if (l.getAttribute(a)) (new Image()).src = l.getAttribute(a); });
+  var tab = { icons: Array.prototype.slice.call(document.querySelectorAll('link[rel="icon"][data-sleep]')), waving: false };
+  function isNight() { var h = new Date().getHours(); return h >= 23 || h < 5; }
+  function tabSet(each) {  // a fresh <link> makes every browser repaint the tab icon
+    tab.icons = tab.icons.map(function (l) {
+      var want = each(l);
+      if (!want || l.getAttribute('href') === want) return l;
+      var n = l.cloneNode(false); n.setAttribute('href', want); l.parentNode.replaceChild(n, l); return n;
     });
-    function apply() {
-      var h = new Date().getHours(), night = h >= 23 || h < 5, away = document.hidden;
-      var key = night ? (away ? 'data-night-sleep' : 'data-night') : (away ? 'data-sleep' : 'data-day');
-      icons = icons.map(function (l) {
-        var want = l.getAttribute(key) || l.getAttribute('data-day');
-        if (l.getAttribute('href') === want) return l;
-        var n = l.cloneNode(false);  // a fresh <link> makes every browser repaint the tab icon
-        n.setAttribute('href', want);
-        l.parentNode.replaceChild(n, l);
-        return n;
-      });
-    }
-    document.addEventListener('visibilitychange', apply);
-    setInterval(apply, 60000);
-    apply();
-  })();
+  }
+  function tabApply() {
+    if (tab.waving) return;
+    var away = document.hidden, key = isNight() ? (away ? 'data-night-sleep' : 'data-night') : (away ? 'data-sleep' : 'data-day');
+    tabSet(function (l) { return l.getAttribute(key) || l.getAttribute('data-day'); });
+  }
+  if (tab.icons.length) {
+    tab.icons.forEach(function (l) {
+      l.setAttribute('data-day', l.getAttribute('href'));
+      ['data-sleep', 'data-night', 'data-night-sleep', 'data-art', 'data-art-night'].forEach(function (a) { if (l.getAttribute(a)) (new Image()).src = l.getAttribute(a); });
+    });
+    document.addEventListener('visibilitychange', tabApply);
+    setInterval(tabApply, 60000);
+    tabApply();
+  }
+  // ... and after the walking cat leaves the page by the right edge, it pops up in the tab icon and sways, waving, for a moment
+  function tabWave(ms) {
+    var first = tab.icons[0], src = first && first.getAttribute(isNight() ? 'data-art-night' : 'data-art');
+    if (!src || calm) return;
+    var art = new Image();
+    art.onload = function () {
+      var cv = document.createElement('canvas'); cv.width = cv.height = 64;
+      var ctx = cv.getContext('2d'), t0 = Date.now();
+      tab.waving = true;
+      (function frame() {
+        var t = (Date.now() - t0) / 1000;
+        if (t * 1000 > ms) { tab.waving = false; tabApply(); return; }
+        var rise = Math.max(0, 1 - t / 0.45), sway = Math.sin(t * Math.PI * 2 * 1.4) * 0.22 * (1 - rise);
+        ctx.clearRect(0, 0, 64, 64);
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(51, 0); ctx.quadraticCurveTo(64, 0, 64, 13); ctx.lineTo(64, 51); ctx.quadraticCurveTo(64, 64, 51, 64);
+        ctx.lineTo(13, 64); ctx.quadraticCurveTo(0, 64, 0, 51); ctx.lineTo(0, 13); ctx.quadraticCurveTo(0, 0, 13, 0); ctx.closePath();
+        ctx.fillStyle = '#0A1426'; ctx.fill(); ctx.clip();
+        ctx.translate(32, 64 + rise * 44); ctx.rotate(sway); ctx.drawImage(art, -32, -64, 64, 64);
+        ctx.restore();
+        var url = cv.toDataURL('image/png');
+        tabSet(function () { return url; });
+        setTimeout(frame, 110);
+      })();
+    };
+    art.src = src;
+  }
+
+  // Courses: no rule under the bottom row, however many columns the list has
+  function courseRows() {
+    document.querySelectorAll('.course-list').forEach(function (ul) {
+      var li = ul.children; if (!li.length || !ul.offsetParent) return;
+      var bottom = li[li.length - 1].offsetTop;
+      for (var i = 0; i < li.length; i++) li[i].classList.toggle('last-row', li[i].offsetTop === bottom);
+    });
+  }
 
   // Gold-foil signature: the light on the name follows the mouse over the hero; on a phone, a finger on the hero,
   // the tilt of the phone (where the browser reports it without asking) or the scroll
@@ -356,12 +393,13 @@
     if (!el.querySelector('.cw-z')) for (var i = 0; i < 3; i++) { var z = document.createElement('span'); z.className = 'cw-z'; z.textContent = 'z'; el.appendChild(z); }
     el.classList.add('asleep');
     clearTimeout(cat.timer);
-    cat.timer = setTimeout(function () {
-      el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 700 }).onfinish = function () {
+    cat.timer = setTimeout(function () {  // wakes, walks off the right edge … and turns up in the tab icon
+      el.classList.remove('asleep');
+      catMove(el, window.innerWidth + 24, function () {
         el.className = 'catwalk'; el.style.opacity = '0'; el.style.transform = ''; cat.x = -160; cat.busy = false;
-      };
-      el.style.opacity = '0';
-    }, 7000);
+        tabWave(4600);
+      });
+    }, 5500);
   }
   function catWalk() {
     var el = catEl(); if (!el || !el.animate) return;
@@ -408,7 +446,9 @@
     ticking = true;
     requestAnimationFrame(function () { ticking = false; update(); });
   }, { passive: true });
-  window.addEventListener('resize', function () { update(); spies.forEach(function (s) { placeMarker(s, true); }); });
+  window.addEventListener('resize', function () { update(); courseRows(); spies.forEach(function (s) { placeMarker(s, true); }); });
+  courseRows();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(courseRows);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { spies.forEach(function (s) { placeMarker(s, true); }); });
   update();
 })();

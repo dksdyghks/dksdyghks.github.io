@@ -431,20 +431,27 @@ button { font: inherit; }
 .edu-ttl .ext { background: var(--card); }
 
 /* Courses inside the current appointment */
+/* Courses taught: between a gold rule above and a hairline below, like a table in a book; numbered, in the serif */
 .courses {
-  margin-top: 14px; padding: 16px 18px 18px; border-radius: 14px;
-  background: var(--gold-wash); box-shadow: inset 0 0 0 1px var(--gold-line);
-  display: flex; flex-direction: column; gap: 12px;
+  margin-top: 14px; padding: 14px 0 6px; border-radius: 0; background: none;
+  border-top: 1.5px solid var(--mark); border-bottom: 1px solid var(--gold-line);
+  display: flex; flex-direction: column; gap: 10px; counter-reset: course;
 }
 .courses-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .courses-label { font-size: 0.875rem; font-weight: 700; color: var(--gold-ink); }
 .courses-note { font-size: 0.8125rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
-.course-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.course-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 24px; }
 .course-list li {
-  display: flex; flex-wrap: wrap; align-items: center; align-content: flex-start; gap: 6px 8px;
-  font-size: 1rem; font-weight: 700; line-height: 1.35; letter-spacing: -0.015em; color: var(--ink);
-  background: var(--card); padding: 12px 14px; border-radius: 10px; box-shadow: 0 1px 2px #0F1A2B0D, inset 0 0 0 1px var(--rule);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; counter-increment: course;
+  font-family: var(--f-serif-ko); font-size: 1rem; font-weight: 600; line-height: 1.4; letter-spacing: -0.015em; color: var(--ink);
+  padding: 10px 0; border-bottom: 1px solid var(--rule);
 }
+.course-list li.last-row { border-bottom: 0; }  /* (marked by script: the bottom row, whatever the number of columns) */
+.course-list li::before {
+  content: counter(course, decimal-leading-zero); margin-right: 2px;
+  font-family: var(--f-serif-en); font-size: .82em; font-weight: 600; color: var(--mark); font-variant-numeric: lining-nums tabular-nums;
+}
+#view-en .course-list li { font-family: var(--f-serif-en); letter-spacing: 0; }
 /* English course names are longer: as many columns as keep every name on one line (2 on tablets, 3 on desktop) */
 #view-en .course-list { grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); }
 .course-list .badge { margin-left: 0; color: var(--muted); background: var(--chip); box-shadow: none; }
@@ -523,9 +530,8 @@ button { font: inherit; }
   #view-en .h { font-size: 1.3125rem; }
   .rows > li { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .edu > li { grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .course-list { display: flex; flex-direction: column; gap: 0; background: var(--card); border-radius: 10px; box-shadow: inset 0 0 0 1px var(--gold-line); }
-  .course-list li { flex-wrap: nowrap; font-size: 0.9375rem; padding: 12px 14px; background: none; border-radius: 0; box-shadow: none; }
-  .course-list li + li { border-top: 1px solid var(--rule); }
+  .course-list { display: flex; flex-direction: column; gap: 0; }
+  .course-list li { flex-wrap: nowrap; font-size: 0.9375rem; padding: 11px 0; }
 }
 @media (max-width: 520px) {
   .hero-in { padding-block: 16px 40px; }
@@ -584,6 +590,6 @@ button { font: inherit; }
   .rows > li, .edu > li { break-inside: avoid; }
   .rows > li, .pubs > li { padding-block: 11px; }
   .edu > li { padding-block: 10px; }
-  .courses { box-shadow: inset 0 0 0 1px #CCCCCC; background: none; }
-  .course-list li { box-shadow: inset 0 0 0 1px #CCCCCC; }
+  .courses { border-color: #999999; }
+  .course-list li { border-color: #DDDDDD; }
 }

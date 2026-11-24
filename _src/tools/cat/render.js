@@ -15,13 +15,15 @@ const shots = [
   ['favicon-32-night-sleep.png', 32, { round: 104, small: true, cap: true, sleep: true }],
   ['favicon-16-night.png', 16, { tiny: true, cap: true }],
   ['favicon-16-night-sleep.png', 16, { tiny: true, cap: true, sleep: true }],
+  ['favicon-art.png', 64, { art: true }],               // the cat alone (no background), drawn into the tab icon when it waves
+  ['favicon-art-night.png', 64, { art: true, cap: true }],
 ];
 (async () => {
   const b = await chromium.launch();
   const p = await b.newPage();
   for (const [name, n, o] of shots) {
     await p.setViewportSize({ width: n, height: n });
-    await p.setContent(`<html><body style="margin:0;background:transparent">${o.tiny ? tiny({ size: n, sleep: o.sleep, cap: o.cap }) : cat({ ...o, size: n })}</body></html>`);
+    await p.setContent(`<html><body style="margin:0;background:transparent">${o.art ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="${n}" height="${n}">${cat({ artOnly: true, small: true, cap: o.cap })}</svg>` : o.tiny ? tiny({ size: n, sleep: o.sleep, cap: o.cap }) : cat({ ...o, size: n })}</body></html>`);
     await p.screenshot({ path: OUT + name, clip: { x: 0, y: 0, width: n, height: n }, omitBackground: true });
   }
   fs.writeFileSync(OUT + 'favicon.svg', cat({ round: 104, small: true }).replace(/ width="\d+" height="\d+"/, '').replace(/\n\s*/g, ''));
