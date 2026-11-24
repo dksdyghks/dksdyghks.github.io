@@ -244,7 +244,7 @@ function renderShell() {
       <button class="btn primary up-btn">${I.up}<span>PDF 올리기</span></button>
       <nav class="views">
         <button data-view="home">${I.home}<span>내 책장</span></button>
-        <button data-view="recent">${I.clock}<span>최근 읽은 것</span></button>
+        <button data-view="recent">${I.clock}<span>최근 읽은 글</span></button>
       </nav>
       <div class="tree-h">폴더</div>
       <div class="tree"></div>
@@ -380,7 +380,7 @@ function renderUsage() {
 function renderCrumbs() {
   const c = $('.crumbs');
   if (S.q) { c.innerHTML = `<b>찾기</b>`; return; }
-  if (S.view.kind === 'recent') { c.innerHTML = '<b>최근 읽은 것</b>'; return; }
+  if (S.view.kind === 'recent') { c.innerHTML = '<b>최근 읽은 글</b>'; return; }
   if (S.view.kind === 'trash') { c.innerHTML = '<b>휴지통</b>'; return; }
   const path = folderPath(S.view.folder);
   c.innerHTML = [`<button data-folder="">내 책장</button>`, ...path.map((f, i) => i === path.length - 1 ? `<b>${esc(f.name)}</b>` : `<button data-folder="${f.id}">${esc(f.name)}</button>`)].join('<span class="sl">›</span>');
@@ -450,7 +450,7 @@ function coverMark(v) { return v ? `<i class="cover-mark" aria-label="${v > 0 ? 
 
 function renderRecent(c) {
   const list = liveFiles().filter((f) => S.state.files[f.id]).sort((a, b) => S.state.files[b.id].at - S.state.files[a.id].at).slice(0, 60);
-  c.innerHTML = list.length ? '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 파일이 없습니다</p></div>`;
+  c.innerHTML = list.length ? '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`;
 }
 
 function renderTrash(c) {
