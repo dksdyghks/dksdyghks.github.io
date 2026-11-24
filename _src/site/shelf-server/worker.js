@@ -83,7 +83,7 @@ async function route(req, env, ctx) {
     switch (p[1]) {
       case 'inbox': if (m === 'POST' && p.length === 2) return await inbox(req, env, ctx, dev, url); break;
       case 'me': return json({ device: publicDevice(dev, dev.key) });
-      case 'logout': if (m === 'POST') { await env.BUCKET.delete(dev.key); forget(dev.key); return json({ ok: true }); } break;
+      case 'logout': if (m === 'POST') { await env.BUCKET.delete(dev.key); return json({ ok: true }); } break;
       case 'devices':
         if (m === 'GET' && p.length === 2) return await listDevices(env, dev);
         if (m === 'POST' && p[2] === 'sharekey') return await makeShareKey(req, env);
@@ -170,8 +170,8 @@ async function login(req, env) {
   return json({ token: t, device: publicDevice(rec, key) });
 }
 
-const devCache = new Map();   // token hash -> { rec, at } (per isolate, short-lived)
-function forget(key) { devCache.delete(key); }
+// Every request reads its device record afresh (no cache): a device signed out, or removed from the list, is out at once
+// on every server instance. One small read per request stays far inside the free tier.
 
 async function authenticate(req, env, ctx) {
   const h = req.headers.get('authorization') || '';
@@ -179,12 +179,9 @@ async function authenticate(req, env, ctx) {
   if (!/^[A-Za-z0-9_-]{30,64}$/.test(t)) return null;
   const key = 'auth/devices/' + (await sha256hex(t));
   const now = Date.now();
-  const c = devCache.get(key);
-  if (c && now - c.at < 60e3) return c.rec;
   const o = await env.BUCKET.get(key);
-  if (!o) { devCache.delete(key); return null; }
+  if (!o) return null;
   const rec = { ...(await o.json()), key };
-  devCache.set(key, { rec, at: now });
   if (now - (rec.seen || 0) > 3600e3) {   // remember when the device was last used, at most once an hour
     const save = { name: rec.name, created: rec.created, seen: now, ...(rec.kind ? { kind: rec.kind } : {}) };
     rec.seen = now;
@@ -226,7 +223,7 @@ async function makeShareKey(req, env) {
 async function dropDevice(env, id, me) {
   if (!/^[0-9a-f]{12}$/.test(id)) return err('bad_id', 400);
   const l = await env.BUCKET.list({ prefix: 'auth/devices/' + id });
-  for (const o of l.objects) { await env.BUCKET.delete(o.key); forget(o.key); }
+  for (const o of l.objects) await env.BUCKET.delete(o.key);
   return json({ ok: true, self: me.key.startsWith('auth/devices/' + id) });
 }
 
