@@ -210,12 +210,6 @@
       setTimeout(function () { b.classList.remove('ok'); }, 1600);
     }, function () { say(root.lang === 'ko' ? '복사하지 못했습니다' : 'Could not copy'); });
   });
-  document.querySelectorAll('.print-btn').forEach(function (b) {
-    b.addEventListener('click', function () {
-      if (io) document.querySelectorAll('.card:not(.in)').forEach(function (c) { c.classList.add('in', 'now'); });
-      window.print();
-    });
-  });
 
   setLang(initialLang(), false);
   if (location.hash.length > 1) {

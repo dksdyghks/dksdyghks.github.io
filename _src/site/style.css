@@ -364,13 +364,7 @@ button { font: inherit; }
 
 /* Footer: a quiet copyright line, aligned with the cards */
 .foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 28px 76px; }
-.foot-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; font-size: 0.8125rem; color: var(--faint); font-variant-numeric: tabular-nums; }
-.print-btn {
-  display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 7px 12px; border: 0; border-radius: 999px; cursor: pointer;
-  font: inherit; font-size: 0.8125rem; font-weight: 600; color: var(--muted); background: none; box-shadow: inset 0 0 0 1px var(--rule);
-  transition: color .15s, background-color .15s;
-}
-@media (hover: hover) { .print-btn:hover { color: var(--ink); background: var(--card); } }
+.foot-row { font-size: 0.8125rem; color: var(--faint); font-variant-numeric: tabular-nums; }
 /* A small confirmation after copying (bottom centre, above the floating buttons on phones) */
 .toast {
   position: fixed; z-index: 40; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);

@@ -246,9 +246,6 @@ SITE = 'https://0128.kr/'
 HANGUL = re.compile(r'[가-힣]')
 COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>'
 QUOTE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M10 7.5C7.2 8.3 5.5 10.4 5.5 13.6V17a1 1 0 0 0 1 1h3.2a1 1 0 0 0 1-1v-3.2a1 1 0 0 0-1-1H8c.1-1.6 1-2.7 2.6-3.3zM18.5 7.5c-2.8.8-4.5 2.9-4.5 6.1V17a1 1 0 0 0 1 1h3.2a1 1 0 0 0 1-1v-3.2a1 1 0 0 0-1-1h-1.7c.1-1.6 1-2.7 2.6-3.3z"/></svg>'
-PRINT_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M7 14h10v6H7z"/></svg>'
-import datetime as _dt
-BUILT = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9))).date()  # Korea time: the "last updated" date in the footer
 
 def cite_ko(date, kt, ks, kj, kv, pages, ka):
     """Korean law-journal style: 저자, "제목", 「학술지」 권호, 연도, 쪽면."""
@@ -503,11 +500,7 @@ def view(lang):
     w('</div></div></main>')
     top_lbl = '맨 위로' if ko else 'Back to top'
     w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{UP}</button>{switch("lang-fab")}</div>')
-    upd = (f'최종 수정 {ko_ym(BUILT.year, BUILT.month, BUILT.day)}' if ko else f'Last updated {en_ym(BUILT.year, BUILT.month, BUILT.day)}')
-    prn = '인쇄 · PDF로 저장' if ko else 'Print · Save as PDF'
-    w(f'<footer class="foot"><div class="foot-in"><div class="foot-row"><span>© 2026 {e(P["name"])}</span>'
-      f'<span class="foot-upd">{upd}</span>'
-      f'<button type="button" class="print-btn">{PRINT_ICON}<span>{prn}</span></button></div></div></footer>')
+    w(f'<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 {e(P["name"])}</p></div></footer>')
     w('</div>')
     return '\n'.join(out)
 
