@@ -57,6 +57,7 @@ export class Reader {
     this.texts = (o.index && o.index.pages) || null;
     this.outlineData = (o.index && o.index.outline) || [];
     this.allMarks = (o.marks || []).slice();   // includes deletions (kept for syncing)
+    this.ocr = o.ocr || null;   // a scan's words, page by page (read by ocr.js)
     this.zoom = o.zoom > 0 ? o.zoom : 1; this.tool = 'read';
     const pref = o.prefs || {};
     this.hlColor = HL.includes(pref.hl) ? pref.hl : HL[0];
@@ -320,15 +321,54 @@ export class Reader {
     const pdfjs = await lib();
     if (!p.items) { const r = await pageItems(this.doc, p.n, p.pdfPage); p.items = r.page; p.tc = r.textContent; }
     if (this.dead) return;
-    const div = el('div', 'textLayer');
-    const tl = new pdfjs.TextLayer({ textContentSource: p.tc, container: div, viewport: p.pdfPage.getViewport({ scale }) });
-    await tl.render();
+    const lines = this.ocr && this.ocr[p.n];
+    let div;
+    if (lines && lines.length) div = this.ocrLayer(p, lines);   // a scanned page: its read words, laid where they are on the picture
+    else {
+      div = el('div', 'textLayer');
+      const tl = new pdfjs.TextLayer({ textContentSource: p.tc, container: div, viewport: p.pdfPage.getViewport({ scale }) });
+      await tl.render();
+    }
     if (this.dead || scale !== this.scale) return;
     if (p.tl) p.tl.remove();
     p.el.appendChild(div);
     p.tl = div; p.tlScale = scale;
     if (this.stats && !p.fn) this.footnotesFor(p);
     if (this.findQ) this.paintHits(p);
+  }
+  // invisible words over a scanned page, each stretched to its place on the picture, so selecting, marking and 찾기 work as on any page
+  ocrLayer(p, lines) {
+    const div = el('div', 'textLayer ocr');
+    const W = p.cw, H = p.ch;
+    const ctx = ocrMeasure || (ocrMeasure = document.createElement('canvas').getContext('2d'));
+    for (const [, y0, , y1, words] of lines) {
+      const fs = Math.max(4, (y1 - y0) * H * 0.9);
+      ctx.font = `${fs}px sans-serif`;
+      words.forEach(([a, b, w], i) => {
+        const last = i === words.length - 1;
+        const text = last ? w : w + ' ';
+        const right = last ? b : Math.max(b, words[i + 1][0]);
+        const sp = document.createElement('span');
+        sp.textContent = text;
+        const nat = ctx.measureText(text).width || 1;
+        sp.style.cssText = `left:${(a * 100).toFixed(3)}%;top:${(y0 * 100).toFixed(3)}%;font-size:${fs.toFixed(2)}px;font-family:sans-serif;transform:scaleX(${(Math.max(1, (right - a) * W) / nat).toFixed(4)})`;
+        div.appendChild(sp);
+      });
+      div.appendChild(document.createElement('br'));
+    }
+    div.appendChild(el('div', 'endOfContent'));
+    return div;
+  }
+  // the words of a scan arrived while it is open: lay them on the pages already drawn
+  setOcr(pages, index) {
+    if (this.dead) return;
+    this.ocr = pages || null;
+    if (index) { this.texts = null; this.setIndex(index); }
+    for (const p of this.pages) {
+      if (!p.tl || !this.ocr || !this.ocr[p.n]) continue;
+      p.tl.remove(); p.tl = null; p.tlScale = 0;
+      if (p.cScale) this.textLayer(p, this.scale);
+    }
   }
   release(p) {
     if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } p.task = null; }
@@ -1099,6 +1139,8 @@ export class Reader {
     this.root.remove();
   }
 }
+
+let ocrMeasure = null;
 
 // text without white space, with a map back to positions in the original
 function squeeze(t) {

@@ -133,6 +133,7 @@ async function startLibrary() {
   syncOn = true; lastTouch = Date.now();
   pullLoop();
   setTimeout(() => fetchAllMarks(), 4000);
+  ocrSoon(6000);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
   if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
 }
@@ -161,8 +162,11 @@ async function pull() {
     const r = await api.sync({ lib: syncTags.lib, state: syncTags.state, marks: id, mtag: id && id === syncTags.marksId ? syncTags.marks : '' });
     if (r.lib) {
       S.index = r.lib; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
-      if (S.reader) { renderUsage(); const f = fileById(S.readerId); if (f) S.reader.setStars(f.stars || 0); } else render();
-      setTimeout(prefetch, 800); setTimeout(preparePending, 300);
+      if (S.reader) {
+        renderUsage(); const f = fileById(S.readerId); if (f) S.reader.setStars(f.stars || 0);
+        if (f && f.ocr && !S.reader.ocr) { const rd = S.reader; Promise.all([ocrData(f), textOf(f).catch(() => null)]).then(([d, t]) => { if (d && S.reader === rd) rd.setOcr(d.pages, t); }); }
+      } else render();
+      setTimeout(prefetch, 800); setTimeout(preparePending, 300); if (liveFiles().some(needsOcr)) ocrSoon();
     }
     if (r.libTag) syncTags.lib = r.libTag;
     if (r.state) { mergeState(r.state); await store.put('kv', 'state', S.state); if (!S.reader) render(); }
@@ -209,12 +213,16 @@ async function preparePending() {
           } catch (e) { /* keeps its name */ }
         }
         try { const th = await pdfkit.thumbnail(doc); await api.putMeta(f.id, 'thumb', th, 'image/jpeg'); await store.put('thumbs', f.id, th); set.thumb = true; } catch (e) { /* no picture */ }
-        try { const t = await pdfkit.textIndex(doc, A); await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip'); await store.put('texts', f.id, t); set.text = true; } catch (e) { /* not searchable */ }
+        try {
+          const t = await pdfkit.textIndex(doc, A); await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip'); await store.put('texts', f.id, t); set.text = true;
+          const scan = (await pdfkit.picturePages(doc, t.pages).catch(() => [])).length; if (scan) set.scan = scan;
+        } catch (e) { /* not searchable */ }
         doc.destroy();
       }
       try {
         const r = await api.ops([{ op: 'updateFile', id: f.id, set }]);
         S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+        if (set.scan) ocrSoon(1500);
         if (S.reader) renderUsage(); else render();
       } catch (e) { break; }
     }
@@ -461,7 +469,7 @@ function fileRow(f, extra = '') {
   const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
   return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${S.select ? `<span class="ck">${I.check}</span>` : ''}
     <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span>
-    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}${f.pending ? ' · 정리하는 중' : ''}</span>${extra}</span>
+    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
@@ -542,8 +550,8 @@ async function renderSearch(c) {
 
 async function textOf(f) {
   let t = await store.get('texts', f.id);
-  if (t) return t;
-  if (!navigator.onLine) return null;
+  if (t && (!f.ocr || t.ocr === f.ocr)) return t;   // a scan read since then: its texts now have the words
+  if (!navigator.onLine) return t || null;
   t = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
   await store.put('texts', f.id, t);
   return t;
@@ -626,7 +634,7 @@ async function onTools(e) {
 
 async function fileMenu(id, x, y) {
   const f = fileById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ...(needsOcr(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
   if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
   if (k === 'open') openFile(id);
   else if (k === 'start') openFile(id, { page: 0 });
@@ -637,6 +645,7 @@ async function fileMenu(id, x, y) {
   else if (k === 'orig') exportPdf(f, { marks: false, mode: 'download' });
   else if (k === 'clear') clearAllMarks(f);
   else if (k === 'back') marksBack(f);
+  else if (k === 'ocr') { if (OCR.id === f.id) return; if (ocrRun) { toast('다른 스캔본을 읽는 중입니다. 끝나면 이어서 읽습니다'); return; } toast('글자를 읽기 시작했습니다. 쪽마다 몇 초씩 걸립니다', 4000); ocrQueue(f.id); }
   else if (k === 'trash') doOps([{ op: 'trashFile', id }], '휴지통으로 옮겼습니다');
 }
 
@@ -806,8 +815,10 @@ async function uploadOne(u) {
       const gz = await pdfkit.gzipJSON(t);
       await api.putMeta(id, 'text', gz, 'application/gzip');
       await store.put('texts', id, t);
-      const r2 = await api.ops([{ op: 'updateFile', id, set: { text: true } }]);
+      const scan = (await pdfkit.picturePages(doc, t.pages).catch(() => [])).length;   // a scan: its words are read next (글자 읽기)
+      const r2 = await api.ops([{ op: 'updateFile', id, set: { text: true, ...(scan ? { scan } : {}) } }]);
       S.index = r2.index;
+      if (scan) ocrSoon(1500);
     } catch (e) { /* search will not include this file */ }
     doc.destroy();
     await store.put('kv', 'index', S.index);
@@ -868,8 +879,9 @@ async function openFile(id, at = {}) {
     const [marks, index] = await Promise.all([loadMarks(id), store.get('texts', id).catch(() => null)]);
     const s = S.state.files[id];
     host.innerHTML = '';
+    const ocr = f.ocr ? await ocrData(f) : null;
     S.reader = new Reader(host, {
-      doc, title: stem(f.name), analyze: A, marks, index,
+      doc, title: stem(f.name), analyze: A, marks, index, ocr: ocr && ocr.pages,
       at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query, mark: at.mark } : (s ? { page: s.page, y: s.y } : {}),
       zoom: at.zoom,
       id, tabs: tabInfo(),
@@ -1009,6 +1021,103 @@ async function pushMarks(id) {
 async function syncMarksAll() {
   if (!navigator.onLine) return;
   for (const id of await store.keys('marks')) { const r = await store.get('marks', id); if (r && r.pending) await pushMarks(id); }
+}
+
+/* ---------- 스캔본 글자 읽기 (OCR) ----------
+   A paper whose pages are pictures gets its words read on this device (ocr.js; nothing leaves it but the result).
+   An iPad or a computer does it on its own, one paper at a time; on a phone it waits for the file menu. The words
+   go to the server, so every device can then search them, select them and mark them. */
+const OCR = { id: null, done: 0, total: 0 };
+let ocrRun = null;
+const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600 && !(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const needsOcr = (f) => !!f && f.scan > 0 && !f.ocr && !f.trashed && !f.pending && !folderTrashed(f.folder);
+function ocrSoon(ms = 3000) {
+  if (isPhone()) return;
+  clearTimeout(ocrSoon.t); ocrSoon.t = setTimeout(() => ocrQueue(), ms);
+}
+function ocrQueue(only) {
+  if (ocrRun) return ocrRun;
+  ocrRun = (async () => {
+    let mod = null;
+    try {
+      for (;;) {
+        const f = only ? fileById(only) : liveFiles().find(needsOcr);
+        if (!needsOcr(f) || !syncOn || !navigator.onLine) break;
+        mod = mod || await import('./ocr.js');
+        try { await ocrFile(f, mod); }
+        catch (e) { if (only) toast(api.isOffline(e) ? '인터넷에 연결되면 할 수 있습니다' : '글자를 읽지 못했습니다'); break; }
+        if (only) break;
+      }
+    } finally {
+      OCR.id = null; showOcrProgress();
+      if (mod) await mod.stop();
+      ocrRun = null;
+    }
+  })();
+  return ocrRun;
+}
+function ocrPageItems(n, lines, W, H) {   // read words in the shape the page analysis expects (for page numbers, headings, the name)
+  return { n, W, H, items: (lines || []).map((l) => ({ s: l[4].map((w) => w[2]).join(' '), x: l[0] * W, y: l[3] * H, w: (l[2] - l[0]) * W, h: (l[3] - l[1]) * H * 0.85, f: 'ocr', eol: true })) };
+}
+async function ocrFile(f, mod) {
+  const doc = await pdfkit.openBytes(await (await getBytes(f)).arrayBuffer());
+  try {
+    const t = (await textOf(f).catch(() => null)) || await pdfkit.textIndex(doc, A);
+    const todo = await pdfkit.picturePages(doc, t.pages);
+    // each page read is kept here at once (one small record per page), so an interruption costs at most one page
+    const key = (i) => 'ocr:' + f.id + ':' + i;
+    const saved = { pages: {}, lang: ((await store.get('kv', 'ocr:' + f.id)) || {}).lang || 'kor' };
+    for (const i of todo) { const l = await store.get('kv', key(i)); if (l) saved.pages[i] = l; }
+    Object.assign(OCR, { id: f.id, total: todo.length, done: Object.keys(saved.pages).length }); showOcrProgress();
+    for (const i of todo) {
+      if (saved.pages[i]) continue;
+      if (!fileById(f.id) || fileById(f.id).trashed) return;   // thrown away meanwhile
+      const pg = await doc.getPage(i + 1);
+      try { const r = await mod.readPage(pg, saved.lang); saved.pages[i] = r.lines; if (r.lang !== saved.lang) { saved.lang = r.lang; await store.put('kv', 'ocr:' + f.id, { lang: r.lang }); } }
+      finally { pg.cleanup(); }
+      await store.put('kv', key(i), saved.pages[i]);
+      OCR.done++; showOcrProgress();
+    }
+    // the words go into the page texts (search), page numbers and headings are read from them, and the paper gets a name
+    const pages = [];
+    for (let i = 0; i < doc.numPages; i++) {
+      const pg = await doc.getPage(i + 1); const vp = pg.getViewport({ scale: 1 });
+      if (saved.pages[i]) { pages.push(ocrPageItems(i, saved.pages[i], vp.width, vp.height)); t.pages[i] = mod.textOf(saved.pages[i]); }
+      else pages.push((await pdfkit.pageItems(doc, i, pg)).page);
+      pg.cleanup();
+    }
+    try { const L = A.pageLabels(pages); if (L && L.confident) t.labels = L; } catch (e) { /* no numbering */ }
+    try { const o = A.outline(pages, A.docStats(pages)); if (o && o.length && !(t.outline || []).length) t.outline = o; } catch (e) { /* no headings */ }
+    t.chars = t.pages.reduce((s, x) => s + x.length, 0);
+    const when = Date.now();
+    t.ocr = when;   // these texts carry the read words (devices holding older ones fetch these)
+    const data = { v: 1, lang: saved.lang, pages: saved.pages };
+    await api.putMeta(f.id, 'ocr', await pdfkit.gzipJSON(data), 'application/gzip');
+    await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
+    await store.put('texts', f.id, t); await store.put('texts', f.id + ':ocr', data);
+    const set = { ocr: when, text: true };
+    const now = fileById(f.id);
+    if (now && S.prefs.autoName !== false && (!now.orig || now.name === now.orig) && pages[0] && saved.pages[0]) {   // still its file name: name it 저자_제목
+      try { const g = naming.nameFromPages(pages[0], pages[1] || null); if (g) set.name = g.name + '.pdf'; } catch (e) { /* keeps its name */ }
+    }
+    const r = await api.ops([{ op: 'updateFile', id: f.id, set }]);
+    S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+    await store.del('kv', 'ocr:' + f.id); for (const i of todo) await store.del('kv', key(i));
+    if (S.reader && S.readerId === f.id) S.reader.setOcr(data.pages, t);
+    if (S.reader) renderUsage(); else render();
+  } finally { doc.destroy(); }
+}
+function showOcrProgress() {   // just the line under the paper's name, not the whole list
+  for (const s of document.querySelectorAll('.row.file .ocr-p')) {
+    const id = s.closest('.row').dataset.file;
+    s.textContent = OCR.id === id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(fileById(id)) ? ' · 스캔본' : '';
+  }
+}
+async function ocrData(f) {   // a read paper's words for the reader: kept here, else fetched once
+  let d = await store.get('texts', f.id + ':ocr').catch(() => null);
+  if (d || !navigator.onLine) return d;
+  try { d = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'ocr')); await store.put('texts', f.id + ':ocr', d); } catch (e) { d = null; }
+  return d;
 }
 
 /* ---------- every paper's marks kept on this device as well (for 찾기, also without internet) ----------
@@ -1153,7 +1262,8 @@ async function prefetch() {
 async function prefetchRun() {
   for (const f of liveFiles().filter((x) => x.text)) {   // page texts are small: always kept, for search
     if (!navigator.onLine || document.hidden) return;
-    if (await store.has('texts', f.id)) continue;
+    const have = await store.get('texts', f.id).catch(() => null);
+    if (have && (!f.ocr || have.ocr === f.ocr)) continue;
     try { await textOf(f); } catch (e) { break; }
   }
   const mode = keepMode();
@@ -1167,6 +1277,7 @@ async function prefetchRun() {
     if (S.readerId && !S.cached.has(S.readerId)) { await new Promise((r) => setTimeout(r, 1500)); continue; }   // the open paper first
     if (f.size > budget) continue;
     try { await getBytes(f); budget -= f.size; renderUsage(); if (!S.reader) render(); } catch (e) { break; }
+    if (f.ocr) await ocrData(f);
   }
 }
 // an iPad keeps every paper (readable without internet), a phone the last 30 days, a computer only what was opened

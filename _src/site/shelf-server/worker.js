@@ -9,6 +9,7 @@
 //   files/<id>.pdf                 each PDF exactly as uploaded (never rewritten; <id> = first 24 hex of its SHA-256)
 //   meta/<id>/thumb.jpg            first-page picture (made by the device that uploaded it)
 //   meta/<id>/text.json.gz         the text of every page, for search (made by the device that uploaded it)
+//   meta/<id>/ocr.json.gz          a scanned paper's words and where they sit on each page (read by a device, see app ocr.js)
 //   marks/<id>.json                highlights and underlines
 //   backup/marks/<id>/<ms>.json    a paper's marks as they were before the first change of a day (and before a restore), 60 days
 //   backup/lib/<YYYY-MM-DD>.json   the library as it was before the first change of that day, 60 days
@@ -99,7 +100,7 @@ async function route(req, env, ctx) {
         if (p[3] === 'mpu') return await multipart(req, env, p[2], p.slice(4));
         break;
       case 'meta':
-        if (!ID.test(p[2] || '') || !['thumb', 'text'].includes(p[3])) return err('bad_id', 400);
+        if (!ID.test(p[2] || '') || !['thumb', 'text', 'ocr'].includes(p[3])) return err('bad_id', 400);
         if (m === 'GET') return await getMeta(env, p[2], p[3]);
         if (m === 'PUT') return await putMeta(req, env, p[2], p[3]);
         break;
@@ -281,6 +282,7 @@ function apply(idx, ops, dev, now) {
           added: now, modified: now, by: dev.name, trashed: null, thumb: !!f.thumb, text: !!f.text,
           orig: f.orig ? cleanName(f.orig, 200) || null : null,   // the file's own name, when it was tidied to 저자_제목
           ...(f.pending ? { pending: true } : {}),                   // came from the share menu: a device still has to prepare it
+          ...(Number(f.scan) > 0 ? { scan: Math.min(100000, Math.floor(Number(f.scan))) } : {}),   // pages that are only a picture (a scan)
         };
         if (existing) Object.assign(existing, rec); else idx.files.push(rec);
         r.file = rec;
@@ -292,7 +294,8 @@ function apply(idx, ops, dev, now) {
         const s = op.set || {};
         if ('name' in s) { const n = cleanName(s.name, 200); if (n) f.name = n; }
         if ('folder' in s) { if (!validFolder(s.folder ?? null)) { r = { ok: false, error: 'no_folder' }; break; } f.folder = s.folder ?? null; }
-        for (const k of ['pages']) if (k in s) f[k] = Math.max(0, Number(s[k]) || 0);
+        for (const k of ['pages', 'scan']) if (k in s) f[k] = Math.max(0, Math.floor(Number(s[k])) || 0);
+        if ('ocr' in s) f.ocr = Math.max(0, Number(s.ocr) || 0);   // when its scanned pages were read (0: not yet)
         for (const k of ['thumb', 'text']) if (k in s) f[k] = !!s[k];
         if ('pending' in s && !s.pending) delete f.pending;
         if ('stars' in s) { const v = Math.round(Number(s.stars)); f.stars = (v >= 1 && v <= 3) || v === -1 || v === -2 ? v : 0; f.rated = f.stars ? now : null; }   // after reading: 1–3 stars, -2 = △ (unclear; skim once more), -1 = ✕ (no need to come back); 0 clears
@@ -390,7 +393,7 @@ async function commit(env, ctx, ops, dev) {
       // a purged id might still be in use by another entry only if the same PDF was re-added meanwhile; keep those
       const live = new Set(idx.files.map((f) => f.id));
       const keys = [];
-      for (const id of purge) if (!live.has(id)) keys.push('files/' + id + '.pdf', 'meta/' + id + '/thumb.jpg', 'meta/' + id + '/text.json.gz', 'marks/' + id + '.json');
+      for (const id of purge) if (!live.has(id)) keys.push('files/' + id + '.pdf', 'meta/' + id + '/thumb.jpg', 'meta/' + id + '/text.json.gz', 'meta/' + id + '/ocr.json.gz', 'marks/' + id + '.json');
       if (keys.length) {
         const gone = purge.filter((id) => !live.has(id));
         const w = (async () => {
@@ -521,7 +524,7 @@ async function multipart(req, env, id, rest) {
 
 /* ---------------- thumbnails and page text ---------------- */
 
-const META = { thumb: { key: 'thumb.jpg', type: 'image/jpeg' }, text: { key: 'text.json.gz', type: 'application/gzip' } };
+const META = { thumb: { key: 'thumb.jpg', type: 'image/jpeg' }, text: { key: 'text.json.gz', type: 'application/gzip' }, ocr: { key: 'ocr.json.gz', type: 'application/gzip' } };
 
 async function getMeta(env, id, kind) {
   const o = await env.BUCKET.get('meta/' + id + '/' + META[kind].key);

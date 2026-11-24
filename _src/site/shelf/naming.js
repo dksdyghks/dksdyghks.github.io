@@ -85,6 +85,7 @@ function parseAuthors(raw) {
   for (let p of parts) {
     p = p.replace(/\d+$/, '').trim();
     if (/^([가-힣一-龥]\s+){1,4}[가-힣一-龥]$/.test(p)) p = p.replace(/\s+/g, '');      // 홍 길 동 → 홍길동
+    else if (/^[가-힣]+(\s+[가-힣]+){1,2}$/.test(p) && p.replace(/\s+/g, '').length <= 4) p = p.replace(/\s+/g, '');   // 홍길 동 (a scan's stray space) → 홍길동
     p = p.replace(ROLE, '').trim();
     if (/^[가-힣]{2,5}$/.test(p) || /^[一-龥]{2,4}$/.test(p)) { if (NOT_NAMES.has(p)) return null; names.push(p); continue; }
     const e = nameCase(p);

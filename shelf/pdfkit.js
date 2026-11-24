@@ -88,6 +88,25 @@ export async function textIndex(doc, A, onProgress, signal) {
   return { v: 1, pages: texts, labels, outline, chars: texts.reduce((s, t) => s + t.length, 0) };
 }
 
+// Pages that are pictures with (almost) no text: a scan. A download notice laid over a scanned page still counts as almost none.
+// When most pages are like that, the paper is a scan; otherwise only those few pages that draw an image count (a scanned
+// appendix in a typed paper), which is checked page by page.
+export async function picturePages(doc, texts) {
+  const empty = [];
+  for (let i = 0; i < doc.numPages; i++) if ((texts[i] || '').replace(/\s+/g, '').length < 150) empty.push(i);
+  if (!empty.length || empty.length >= doc.numPages * 0.5) return empty;
+  const pdfjs = await lib();
+  const O = pdfjs.OPS;
+  const IMG = new Set([O.paintImageXObject, O.paintInlineImageXObject, O.paintImageXObjectRepeat, O.paintImageMaskXObject, O.paintImageMaskXObjectGroup, O.paintImageMaskXObjectRepeat, O.paintInlineImageXObjectGroup].filter((x) => x != null));
+  const out = [];
+  for (const i of empty) {
+    let pg = null;
+    try { pg = await doc.getPage(i + 1); const ops = await pg.getOperatorList(); if (ops.fnArray.some((f) => IMG.has(f))) out.push(i); }
+    catch (e) { /* an unreadable page */ } finally { if (pg) pg.cleanup(); }
+  }
+  return out;
+}
+
 export async function gzipJSON(obj) {
   const s = new Blob([JSON.stringify(obj)]).stream();
   if (typeof CompressionStream === 'undefined') return new Blob([JSON.stringify(obj)], { type: 'application/json' });

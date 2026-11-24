@@ -184,6 +184,23 @@ ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' 
   await call('/devices/' + skr.device.id, { method: 'DELETE' }, T);
   delete env.CAP_BYTES;
 }
+{ // a scanned paper: how many pages are only pictures, the words read from them, and when they were read
+  const sid = hex(Buffer.from('scanned-paper'));
+  let y = await ops([{ op: 'addFile', file: { id: sid, name: '스캔본.pdf', folder: null, size: 10, pages: 12, scan: 12 } }]);
+  ok(y.body.index.files.find((f) => f.id === sid).scan === 12, 'a scanned paper says how many of its pages are pictures');
+  ok(y.body.index.files.filter((f) => f.id !== sid).every((f) => !('scan' in f)), 'ordinary papers carry no such field');
+  const gz = Buffer.from([0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  let r = await call(`/meta/${sid}/ocr`, { method: 'PUT', body: gz }, T);
+  ok(r.status === 200, 'the words read from it are stored');
+  r = await call(`/meta/${sid}/ocr`, {}, T);
+  ok(r.status === 200 && Buffer.from(await r.arrayBuffer()).equals(gz) && r.headers.get('content-type') === 'application/gzip', 'and come back as they were');
+  ok((await call(`/meta/${sid}/other`, {}, T)).status === 400, 'no other kinds of meta');
+  y = await ops([{ op: 'updateFile', id: sid, set: { ocr: 1700000000000, scan: 12 } }]);
+  ok(y.body.index.files.find((f) => f.id === sid).ocr === 1700000000000, 'the paper remembers when it was read');
+  await ops([{ op: 'trashFile', id: sid }, { op: 'emptyTrash' }]);
+  await new Promise((r2) => setTimeout(r2, 150));
+  ok(!(await bucket.head('meta/' + sid + '/ocr.json.gz')), 'emptying the trash takes the read words too');
+}
 { // marks for search, and backups: what was there before the day's first change is kept, and can come back
   const kday = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   const pid = hex(Buffer.from('backup-paper'));
