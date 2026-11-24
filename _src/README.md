@@ -12,14 +12,16 @@
 |---|---|
 | `build.py` | 홈페이지 내용(학력·소속·논문·과제·발표·강의·수상)과 페이지 생성. 실행하면 저장소 루트의 `index.html`, `404.html`, `psat/`, `yoai/`, `fonts/`를 만들고, claude.ai 미리보기용 `index.html`을 원본 폴더에 만듭니다. |
 | `style.css`, `script.js` | 홈페이지 모양과 동작 |
-| `doors.css`, `doors.js` | 숨은 문: 태극기를 세 번 누르면 송공, 금색 문장을 세 번 누르면 요AI |
+| `doors.css`, `doors.js` | 숨은 문: 태극기를 세 번 누르면 송공, 이름을 세 번 누르면 연구실 책장 (요AI는 2026년 11월에 닫음) |
 | `taegukgi.py` | 태극기 SVG |
 | `topicmap.py` | 연구 주제 지도(주제 사이의 연결망). 지금 페이지에서는 쓰지 않음 |
 | `photo.b64` | 프로필 사진(JPEG, base64) |
 | `serif_subset.py` | 송공 지문 글꼴(Noto Serif KR)을 송공에 나오는 글자와 KS X 1001 한글로 잘라 `fonts/noto-serif-kr/`에 만듦 |
 | `home_fonts.py` | 홈페이지 서명·명조 글꼴을 페이지에 쓰인 글자만 남겨 `fonts/home/`에 만듦 |
 | `psat/` | 송공. `index.html`의 `__V__`는 빌드 때 버전으로 바뀜 |
-| `yoai/` | 요AI. `app.js`의 모듈 주소에도 빌드 때 버전이 붙음 |
+| `shelf/` | 연구실 책장 앱(아래 따로 설명) |
+| `shelf-server/` | 연구실 책장 서버(Cloudflare Worker)와 배포·시험 |
+| `shelf-icon/` | 연구실 책장 아이콘 그리기 |
 
 `tools/`: 검증과 테스트
 
@@ -59,3 +61,15 @@ sh /tmp/yohan-work/sg/serve.sh
 
 문항을 고치거나 더하면 `tools/psat/`의 검증을 모두 통과시킨 뒤 배포합니다. 예를 들어 `node /tmp/yohan-work/psat/bankcheck.js`, `python3 /tmp/yohan-work/psat/verify-new.py`가 있습니다.
 화면 테스트는 `node /tmp/yohan-work/sg/flow.js mobile`처럼 실행합니다.
+
+## 연구실 책장 (`shelf/`, 0128.kr/shelf/)
+
+논문·책 PDF를 올려 두고 어느 기기에서나 읽고 밑줄·형광펜을 긋는 개인 책장입니다.
+
+- **들어가기**: 홈페이지 이름을 세 번 누르면 바로 앱으로 갑니다. 이 PIN은 실제 파일을 지키므로 공개 페이지에는 해시조차 두지 않고, 앱의 비밀번호 화면에서 받은 PIN을 서버만 확인합니다(8번 틀리면 한 시간 잠김). 기기마다 처음 한 번만 묻습니다.
+- **서버**: `site/shelf-server/worker.js`. Cloudflare Worker `bookshelf`와 R2 버킷 `bookshelf`(아시아·태평양)로 돌아가고, 주소는 https://bookshelf.yhahn0128.workers.dev 입니다. PIN은 서버 비밀값으로 페퍼를 친 해시(`PIN_HASH`)만 두며, 8번 틀리면 한 시간 잠깁니다. 원본 PDF는 올린 그대로 두고, 밑줄은 따로 저장했다가 내려받기·인쇄할 때 PDF 표준 주석으로 넣습니다(잠긴 PDF는 쪽을 그림으로 바꿔 밑줄과 함께 만듦).
+- **처음 배포** (Cloudflare 대시보드에서 R2를 켠 뒤): `SHELF_PIN=비밀번호 python3 site/shelf-server/deploy.py --first`. Cloudflare API 토큰은 세션 환경의 비밀 설정(api.cloudflare.com)이 요청에 붙여 주므로 파일에 없습니다.
+- **코드만 다시 배포**: `python3 site/shelf-server/deploy.py` (저장된 비밀값은 그대로 둠)
+- **서버 시험**: `cd site/shelf-server && node test.mjs` (가짜 R2와 임시 PIN 123456. 진짜 PIN은 쓰지 않음)
+- **외부 코드**: `shelf/vendor/`의 pdf.js 4.10.38과 pdf-lib 1.17.1은 npm 패키지의 배포본 그대로입니다. 사이트에만 두고 `_src`에는 넣지 않습니다(`npm pack pdfjs-dist@4.10.38 pdf-lib@1.17.1`로 다시 받을 수 있음).
+- **아이콘**: `node site/shelf-icon/render.js` (Playwright)

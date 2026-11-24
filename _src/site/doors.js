@@ -1,10 +1,13 @@
-/* A hidden door on the homepage. Three quick presses on the Taegukgi open 송공.
-   It asks a PIN (stored only as an iterated, salted SHA-256 digest), then the app opens as its own page.
+/* Hidden doors on the homepage. Three quick presses on the Taegukgi open 송공; three on the name open 연구실 책장.
+   송공 asks a PIN here (stored only as an iterated, salted SHA-256 digest), then opens as its own page.
+   연구실 책장 opens at once: its PIN guards real files, so no trace of it is kept in this public page; the app asks for
+   it and only the 책장 server checks it (and locks after 8 wrong tries).
    One or two presses do nothing at all, so a stray click never shows a password box. */
 (function () {
   'use strict';
   var DOORS = {
-    songgong: { len: 6, salt: 'sg-0128-7f3a9c', n: 4000, h: 'b883ddfa1079c250e8a6485c3fe1295b20a943727b649f01faffca22f75a87e6', path: 'psat/', title: '송공' }
+    songgong: { len: 6, salt: 'sg-0128-7f3a9c', n: 4000, h: 'b883ddfa1079c250e8a6485c3fe1295b20a943727b649f01faffca22f75a87e6', path: 'psat/', title: '송공' },
+    shelf: { path: 'shelf/', title: '연구실 책장', direct: true }   // no PIN here: the 책장 server checks it (locking after 8 misses)
   };
   var ORIGIN = 'https://0128.kr/';
   var onSite = /(^|\.)0128\.kr$|github\.io$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
@@ -108,11 +111,12 @@
     el.addEventListener('click', function () {
       var now = Date.now();
       times = times.filter(function (t) { return now - t < 1200; }); times.push(now);
-      if (times.length >= 3) { times = []; if (isOpen(name)) openApp(name, el); else askPin(name, el); }
+      if (times.length >= 3) { times = []; if (DOORS[name].direct || isOpen(name)) openApp(name, el); else askPin(name, el); }
     });
   }
   function wire() {
     Array.prototype.forEach.call(document.querySelectorAll('svg.flag'), function (el) { door(el, 'songgong'); });
+    Array.prototype.forEach.call(document.querySelectorAll('.view .name'), function (el) { door(el, 'shelf'); });
     var h = location.hash.slice(1);
     // an older bookmark or home-screen icon that points at the app on this page (#songgong) still leads into the app
     if (DOORS[h]) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ } if (isOpen(h)) openApp(h); else askPin(h, null); }

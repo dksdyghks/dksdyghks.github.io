@@ -632,7 +632,7 @@ NOT_FOUND = f"""<!doctype html>
 """
 Path('/home/user/dksdyghks.github.io/404.html').write_text(NOT_FOUND)
 
-# the app behind the door (송공: psat/) — the folder stands alone
+# the apps behind the doors (송공: psat/, 연구실 책장: shelf/) — each folder stands alone
 import hashlib, shutil
 try:  # 송공's passage face, cut to the letters 송공 shows: rebuilt only when those letters change
     import serif_subset
@@ -649,7 +649,7 @@ ldst = Path('/home/user/dksdyghks.github.io/logos')  # institution logos for the
 if ldst.exists():
     shutil.rmtree(ldst)
 shutil.copytree(Path('/home/user/yohan-ahn/logos'), ldst)
-for app in ('psat',):
+for app in ('psat', 'shelf'):
     src = Path('/home/user/yohan-ahn') / app
     if not src.exists():
         continue
@@ -701,8 +701,9 @@ if (sdst / 'logos').exists():
 shutil.copytree(Path('/home/user/yohan-ahn/logos'), sdst / 'logos')
 if (sdst / 'yoai').exists():  # YO아이 was closed: its sources are no longer kept
     shutil.rmtree(sdst / 'yoai')
-for app in ('psat',):
+for app in ('psat', 'shelf', 'shelf-server', 'shelf-icon'):
     if (sdst / app).exists():
         shutil.rmtree(sdst / app)
-    shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__'))
+    # 연구실 책장's third-party code (vendor/: pdf.js, pdf-lib) is published with the app; it is not kept twice here
+    shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__', 'vendor', 'node_modules'))
 print('sources kept in _src/site')
