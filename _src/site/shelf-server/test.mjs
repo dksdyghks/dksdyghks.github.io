@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { MockR2, serve } from './mock.mjs';
-const PORT = 8791, BASE = `http://127.0.0.1:${PORT}/api`, ORIGIN = 'http://127.0.0.1:8770';
+const PORT = Number(process.env.PORT) || 8791, BASE = `http://127.0.0.1:${PORT}/api`, ORIGIN = 'http://127.0.0.1:8770';
 const PEPPER = 'test-pepper', PIN = '123456';
 const dir = '/tmp/claude-0/-home-user/32c96ca5-ace8-5bfb-8ce5-1b09a2bc0eb1/scratchpad/seojae-mock-test';
 fs.rmSync(dir, { recursive: true, force: true });

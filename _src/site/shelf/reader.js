@@ -190,8 +190,9 @@ export class Reader {
     if (!this.pages.length) return { page: 0, y: 0 };
     const s = this.scroller, mid = s.scrollTop + s.clientHeight * 0.3;
     const i = this.pageAtY(mid); const p = this.pages[i];
-    return { page: i, y: clamp((s.scrollTop - p.top) / p.ch, 0, 1) };
+    return { page: i, y: clamp((s.scrollTop - p.top) / p.ch, 0, 1), o: this.labelOff() };
   }
+  labelOff() { return this.labels && this.labels.confident && this.labels.offset != null ? this.labels.offset : null; }
   scrollToPage(n, y = 0, smooth = true) {
     const p = this.pages[n]; if (!p) return;
     const top = p.top + y * p.ch - (y ? this.scroller.clientHeight * 0.3 : GAP);
@@ -761,7 +762,7 @@ export class Reader {
   }
 
   /* ---------------- page indicator and jumps ---------------- */
-  label(n) { return this.labels && this.labels.confident && this.labels.offset != null ? String(n + 1 + this.labels.offset) : String(n + 1); }
+  label(n) { const o = this.labelOff(); return String(n + 1 + (o == null ? 0 : o)); }
   unit() { return this.labels && this.labels.confident ? '면' : '쪽'; }
   updateInd() {
     if (!this.pages.length) return;
@@ -772,7 +773,7 @@ export class Reader {
     if (c !== this.lastPage) { this.lastPage = c; }
   }
   jump() {   // a small sheet: type a page, or slide
-    const off = this.labels && this.labels.confident && this.labels.offset != null ? this.labels.offset : 0;
+    const off = this.labelOff() || 0;
     const unit = this.unit(), cur = this.current().page;
     const box = el('div', 'rd-jump');
     box.innerHTML = `<div class="jump-card"><p>${esc(this.label(0))}–${esc(this.label(this.N - 1))}${unit} 중</p>
@@ -784,7 +785,15 @@ export class Reader {
     const close = () => box.remove();
     num.focus(); num.select();
     rng.oninput = () => { num.value = Number(rng.value) + 1 + off; go(Number(rng.value)); };
-    box.querySelector('.go').onclick = () => { const n = parseInt(num.value, 10); if (Number.isFinite(n)) go(n - 1 - off); close(); };
+    box.querySelector('.go').onclick = () => {
+      const n = parseInt(num.value, 10);
+      if (Number.isFinite(n)) {
+        let idx = n - 1 - off;
+        if (off && (idx < 0 || idx > this.N - 1) && n >= 1 && n <= this.N) idx = n - 1;   // typed the PDF's own page number (e.g. 6 for "201–220면")
+        go(idx);
+      }
+      close();
+    };
     num.onkeydown = (e) => { if (e.key === 'Enter') box.querySelector('.go').click(); if (e.key === 'Escape') close(); };
     box.onclick = (e) => { if (e.target === box) close(); };
   }

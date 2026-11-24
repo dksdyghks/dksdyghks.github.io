@@ -516,6 +516,7 @@ async function putState(req, env) {
     for (const [id, s] of Object.entries(inc)) {
       if (!ID.test(id) || !s || !Number.isFinite(s.at)) continue;
       const v = { page: Math.max(0, Math.floor(Number(s.page) || 0)), y: Math.min(1, Math.max(0, Number(s.y) || 0)), at: s.at, done: !!s.done };
+      if (Number.isInteger(s.o) && s.o >= 0 && s.o < 100000) v.o = s.o;   // printed page = page + 1 + o
       if (!cur.files[id] || v.at >= cur.files[id].at) cur.files[id] = v;
     }
     const ids = Object.keys(cur.files);

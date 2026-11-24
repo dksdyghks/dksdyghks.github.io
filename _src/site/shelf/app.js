@@ -285,7 +285,7 @@ function renderFolder(c, folder) {
   let html = '';
   if (!folder) {
     const resume = liveFiles().map((f) => ({ f, s: S.state.files[f.id] })).filter((x) => x.s && !x.s.done && x.f.pages && x.s.page < x.f.pages - 1).sort((a, b) => b.s.at - a.s.at).slice(0, 4);
-    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<button class="card" data-open="${f.id}"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}"></span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${s.page + 1} / ${f.pages}쪽 · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>`).join('')}</div>`;
+    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<button class="card" data-open="${f.id}"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}"></span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>`).join('')}</div>`;
   }
   if (!folders.length && !files.length) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
@@ -346,7 +346,7 @@ async function renderSearch(c) {
   const show = () => {
     if (S.q !== q) return;
     results.sort((a, b) => b.n - a.n);
-    box.innerHTML = results.slice(0, 80).map((r) => fileRow(r.f, `<span class="snips">${r.snips.map((s) => `<button class="snip" data-open="${r.f.id}" data-page="${s.page}" data-q="${esc(q)}"><em>${s.page + 1}쪽</em>…${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}…</button>`).join('')}</span>`)).join('') || (done === withText.length ? '<p class="none">본문에서 찾지 못했습니다</p>' : '');
+    box.innerHTML = results.slice(0, 80).map((r) => fileRow(r.f, `<span class="snips">${r.snips.map((s) => `<button class="snip" data-open="${r.f.id}" data-page="${s.page}" data-q="${esc(q)}"><em>${r.o == null ? (s.page + 1) + '쪽' : (s.page + 1 + r.o) + '면'}</em>…${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}…</button>`).join('')}</span>`)).join('') || (done === withText.length ? '<p class="none">본문에서 찾지 못했습니다</p>' : '');
     n.textContent = done < withText.length ? `찾는 중 ${done}/${withText.length}` : (results.length ? `${results.length}개 파일` : '');
     shown = results.length;
     lazyThumbs();
@@ -366,7 +366,7 @@ async function renderSearch(c) {
           let i = flat.indexOf(key);
           while (i >= 0) { count++; if (snips.length < 3) { const a = map[i], b = map[i + key.length - 1] + 1; snips.push({ page, a: txt.slice(Math.max(0, a - 30), a), w: txt.slice(a, b), b: txt.slice(b, b + 40) }); } i = flat.indexOf(key, i + key.length); }
         });
-        if (count) results.push({ f, n: count, snips });
+        if (count) results.push({ f, n: count, snips, o: t.labels && t.labels.confident && t.labels.offset != null ? t.labels.offset : null });
       }
       if (done % 4 === 0 || !queue.length) show();
     }
@@ -725,6 +725,7 @@ let stateT = null; const stateDirty = new Set();
 function savePosition(id, pos, pages, now) {
   if (!id) return;
   S.state.files[id] = { page: pos.page, y: pos.y, at: Date.now(), done: pages ? pos.page >= pages - 1 : false };
+  if (Number.isInteger(pos.o)) S.state.files[id].o = pos.o;
   stateDirty.add(id);
   store.put('kv', 'state', S.state);
   clearTimeout(stateT); stateT = setTimeout(pushState, now ? 0 : 2500);
@@ -871,6 +872,7 @@ function menu(rect, items, current) {
 /* ================= formats ================= */
 function size(b) { if (!b) return '0MB'; if (b < 1024 * 1024) return Math.max(1, Math.round(b / 1024)) + 'KB'; if (b < 1024 ** 3) return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + 'MB'; return (b / 1024 ** 3).toFixed(1) + 'GB'; }
 function date(t) { if (!t) return ''; const d = new Date(t), n = new Date(); return d.getFullYear() === n.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`; }
+function pageOf(s, pages) { const o = Number.isInteger(s.o) ? s.o : null; return o == null ? `${s.page + 1} / ${pages}쪽` : `${s.page + 1 + o} / ${pages + o}면`; }   // same numbers as the reader
 function ago(t) { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s < 90) return '방금'; if (s < 3600) return Math.round(s / 60) + '분 전'; if (s < 86400) return Math.round(s / 3600) + '시간 전'; if (s < 86400 * 7) return Math.round(s / 86400) + '일 전'; return date(t); }
 function stem(n) { return String(n || '').replace(/\.pdf$/i, ''); }
 function rid(n) { const a = 'abcdefghijklmnopqrstuvwxyz0123456789'; const b = crypto.getRandomValues(new Uint8Array(n)); return [...b].map((x) => a[x % 36]).join(''); }
