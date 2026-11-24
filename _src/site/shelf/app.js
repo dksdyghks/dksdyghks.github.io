@@ -835,6 +835,7 @@ async function openFile(id, at = {}) {
     });
     S.reader.docRef = doc;
     await S.reader.start();
+    keepAwake();
     if (at.page == null && !at.resume && !at.tab && s && s.page > 0) S.reader.askResume(S.reader.label(s.page) + S.reader.unit());
     if (!index && f.text) textOf(f).then((t) => { if (S.reader && S.readerId === id) S.reader.setIndex(t); }).catch(() => {});
   } catch (e) {
@@ -843,11 +844,23 @@ async function openFile(id, at = {}) {
     toast(e.code === 'offline' ? '이 파일은 아직 이 기기에 없습니다. 인터넷에 연결되면 열 수 있습니다.' : e.name === 'PasswordException' ? '암호가 걸린 PDF입니다' : '파일을 열지 못했습니다');
   }
 }
+let wake = null, wakeT = null;
+async function keepAwake() {
+  clearTimeout(wakeT); wakeT = setTimeout(letSleep, 10 * 60e3);
+  if (wake || !S.reader || document.hidden || !('wakeLock' in navigator)) return;
+  try { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } catch (e) { wake = null; }
+}
+function letSleep() { clearTimeout(wakeT); if (wake) { wake.release().catch(() => {}); wake = null; } }
+let awakeAt = 0;
+function nudgeAwake() { const t = Date.now(); if (S.reader && t - awakeAt > 20e3) { awakeAt = t; keepAwake(); } }
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, nudgeAwake, { passive: true, capture: true }));
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.reader) keepAwake(); });
+
 function closeReader(silent, noRemember) {
   if (!S.reader && !S.readerId) return;
   if (S.reader && !noRemember) rememberTab();
   if (S.reader) { const pos = S.reader.current(); savePosition(S.readerId, pos, S.reader.N, true); const d = S.reader.docRef; S.reader.destroy(); if (d) d.destroy(); }
-  S.reader = null; S.readerId = null;
+  S.reader = null; S.readerId = null; letSleep();
   document.querySelectorAll('.reader-host').forEach((h) => h.remove());
   if (!silent) render();
 }

@@ -493,3 +493,4 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .key-row code { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; background: var(--chip); font-size: 12.5px; word-break: break-all; user-select: all; -webkit-user-select: all; }
 .steps { margin: 12px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.55; }
 .steps b { font-weight: 700; }
+.mfoot .sp { flex: 1; }

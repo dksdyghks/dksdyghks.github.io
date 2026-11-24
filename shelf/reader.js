@@ -986,11 +986,16 @@ export class Reader {
       this.$('.rd-panel .seg [data-tab="marks"]').textContent = ms.length ? `밑줄 ${ms.length}` : '밑줄';
       box.innerHTML = ms.length ? '<ul class="mlist">' + ms.map((m) => `<li><button data-mark="${m.id}"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${m.color}"></i><span>${esc(m.text)}</span><em>${this.label(m.p)}${this.unit()}</em></button></li>`).join('') + '</ul>'
         : '<p class="empty">아직 밑줄이 없습니다.<br>형광펜이나 밑줄을 켜고 글자 위를 드래그하세요.</p>';
-      if (ms.length) box.insertAdjacentHTML('beforeend', '<div class="mfoot"><button type="button" class="btn ghost danger" data-clear>밑줄 모두 지우기</button></div>');
+      if (ms.length) box.insertAdjacentHTML('beforeend', '<div class="mfoot"><button type="button" class="btn ghost" data-copyall>모두 복사</button><span class="sp"></span><button type="button" class="btn ghost danger" data-clear>밑줄 모두 지우기</button></div>');
     }
   }
   panelClick(e) {
     if (e.target.closest('[data-clear]')) { this.o.onClearAll && this.o.onClearAll(); return; }
+    if (e.target.closest('[data-copyall]')) {   // every marked passage, in reading order, with its printed page
+      const ms = this.marks().sort((a, b) => a.p - b.p || a.rects[0][1] - b.rects[0][1] || a.rects[0][0] - b.rects[0][0]);
+      this.copy([this.o.title || '', '', ...ms.map((m) => `${this.label(m.p)}${this.unit()}  ${m.text}`)].join('\n'));
+      return;
+    }
     const t = e.target.closest('[data-toc]');
     if (t) { const x = this.outline[Number(t.dataset.toc)]; this.scrollToPage(x.page, x.y && this.pages[x.page] ? x.y / this.pages[x.page].h : 0); if (innerWidth < 900) this.action('panel'); return; }
     const m = e.target.closest('[data-mark]');
