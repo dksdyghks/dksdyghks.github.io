@@ -148,14 +148,15 @@ TALKS = [  # newest first: (y,m,d, ko role, en role, ko title, ko venue, en titl
      'Aviation Under the Serious Accidents Punishment Act',
      '70th Conference, Korean Society of Air & Space Law and Policy'),
 ]
-# institutions shown as a row of logos at the very end (page order: education, then appointments); each opens its website
+# institutions shown as a row of logos at the very end, in time order (past -> present, the current post last);
+# each opens its website
 ORGS = [  # (logo file in logos/, ko name, en name, website)
-    ('sogang.png', '서강대학교', 'Sogang University', 'https://www.sogang.ac.kr/'),
-    ('uq.svg', 'The University of Queensland', 'The University of Queensland', 'https://www.uq.edu.au/'),
     ('yonsei.svg', '연세대학교', 'Yonsei University', 'https://www.yonsei.ac.kr/'),
-    ('afa.png', '공군사관학교', 'Republic of Korea Air Force Academy', 'https://www.afa.ac.kr/'),
-    ('nec.png', '중앙선거관리위원회', 'National Election Commission', 'https://www.nec.go.kr/'),
+    ('uq.svg', 'The University of Queensland', 'The University of Queensland', 'https://www.uq.edu.au/'),
     ('nars.png', '국회입법조사처', 'National Assembly Research Service', 'https://www.nars.go.kr/'),
+    ('nec.png', '중앙선거관리위원회', 'National Election Commission', 'https://www.nec.go.kr/'),
+    ('sogang.png', '서강대학교', 'Sogang University', 'https://www.sogang.ac.kr/'),
+    ('afa.png', '공군사관학교', 'Republic of Korea Air Force Academy', 'https://rokaf.airforce.mil.kr/afa/index.do'),
 ]
 def logo_url(name):
     import hashlib
@@ -482,6 +483,7 @@ def view(lang):
     w(f'<ul class="orgs" aria-label="{"학력·경력 기관" if ko else "Institutions"}">' +
       ''.join(f'<li><a href="{u}" target="_blank" rel="noopener" title="{e(k if ko else en)}" aria-label="{e(k if ko else en)} {site_lbl}">'
               f'<img src="{logo_url(f)}" alt="" width="40" height="40" loading="lazy" decoding="async"></a></li>' for f, k, en, u in ORGS) + '</ul>')
+    # (the list is in time order; the line behind it and the ring on the last tile say so quietly)
     w('</div></div></main>')
     top_lbl = '맨 위로' if ko else 'Back to top'
     w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{UP}</button>{switch("lang-fab")}</div>')
