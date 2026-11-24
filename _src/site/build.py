@@ -442,8 +442,7 @@ def view(lang):
         courses = ''
         if i == 0:
             note = '개설 강좌별 3시간 / 3학점' if ko else '3 hours / 3 credits per course'
-            courses = (f'<div class="courses"><p class="courses-head"><span class="courses-label">{e(L["teaching"])}</span>'
-                       f'<span class="courses-note">{note}</span></p><ul class="course-list">' +
+            courses = (f'<div class="courses"><p class="courses-head">{e(L["teaching"])} · {note}</p><ul class="course-list">' +
                        ''.join('<li>' + (f'<span>{e(t)}</span><span class="badge">영어강의</span>' if (ko and j in TEACH_EN) else e(t)) + '</li>'
                                for j, t in enumerate(TEACHING[lang])) + '</ul></div>')
         until = ym(*end) if end else ('현재' if ko else 'Present')
@@ -606,7 +605,7 @@ NOT_FOUND = f"""<!doctype html>
 <link rel="apple-touch-icon" sizes="180x180" href="/{icon_url('apple-touch-icon.png')}">
 <link rel="stylesheet" href="/fonts/pretendard/pretendardvariable-dynamic-subset.css">
 <style>
-  :root {{ --bg: #F4F2EE; --card: #FFFFFF; --ink: #141C29; --muted: #586374; --rule: #E5E1D8; --btn: #0A1426; --on-btn: #F7F9FC; }}
+  :root {{ --bg: #F2F4F7; --card: #FFFFFF; --ink: #141C29; --muted: #586374; --rule: #E2E6EC; --btn: #0A1426; --on-btn: #F7F9FC; }}
   @media (prefers-color-scheme: dark) {{ :root {{ --bg: #080B11; --card: #0F1520; --ink: #EEF2F7; --muted: #9AA6B6; --rule: #1E2633; --btn: #F2D7A6; --on-btn: #0A1426; }} }}
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--ink);

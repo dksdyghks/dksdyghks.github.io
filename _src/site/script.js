@@ -167,7 +167,6 @@
     root.style.scrollBehavior = 'auto';
     if (twin) window.scrollTo(0, twin.getBoundingClientRect().top + window.scrollY - at.top);
     root.style.scrollBehavior = prev;
-    courseRows();
     update();
   }
 
@@ -284,13 +283,6 @@
   }
 
   // Courses: no rule under the bottom row, however many columns the list has
-  function courseRows() {
-    document.querySelectorAll('.course-list').forEach(function (ul) {
-      var li = ul.children; if (!li.length || !ul.offsetParent) return;
-      var bottom = li[li.length - 1].offsetTop;
-      for (var i = 0; i < li.length; i++) li[i].classList.toggle('last-row', li[i].offsetTop === bottom);
-    });
-  }
 
   // Gold-foil signature: the light on the name follows the mouse over the hero; on a phone, a finger on the hero,
   // the tilt of the phone (where the browser reports it without asking) or the scroll
@@ -491,9 +483,7 @@
     ticking = true;
     requestAnimationFrame(function () { ticking = false; update(); });
   }, { passive: true });
-  window.addEventListener('resize', function () { update(); courseRows(); spies.forEach(function (s) { placeMarker(s, true); }); });
-  courseRows();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(courseRows);
+  window.addEventListener('resize', function () { update(); spies.forEach(function (s) { placeMarker(s, true); }); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { spies.forEach(function (s) { placeMarker(s, true); }); });
   update();
 })();
