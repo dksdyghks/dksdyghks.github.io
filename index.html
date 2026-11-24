@@ -410,9 +410,8 @@ button { font: inherit; }
 .meta .dot { color: var(--faint); margin-left: 8px; }
 .meta .pg { margin-left: 4px; }  /* with the space before it, the same 8px as between the other items */
 
-/* Footer: a quiet copyright line, aligned with the cards */
-.foot-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); padding-block: 28px 76px; }
-.foot-row { font-size: 0.8125rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+/* No footer: the page ends with the last card; room is left below it for the floating buttons */
+.view > .main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
 /* A small confirmation after copying (bottom centre, above the floating buttons on phones) */
 .toast {
   position: fixed; z-index: 40; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
@@ -422,7 +421,6 @@ button { font: inherit; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media (min-width: 1024px) { .toast { bottom: 40px; } }
-@media (min-width: 1024px) { .foot-row { margin-left: 196px; } }
 
 /* Cards rise in gently the first time they come into view (added by script; never with reduced motion) */
 .reveal .card { opacity: 0; transform: translateY(16px); transition: opacity .7s cubic-bezier(.2, .7, .2, 1), transform .7s cubic-bezier(.2, .7, .2, 1); }
@@ -518,7 +516,6 @@ button { font: inherit; }
   .edu > li { padding-block: 10px; }
   .courses { box-shadow: inset 0 0 0 1px #CCCCCC; background: none; }
   .course-list li { box-shadow: inset 0 0 0 1px #CCCCCC; }
-  .foot { display: none; }
 }
 
 /* hidden doors: PIN box and the app frame (both themes) */
@@ -569,7 +566,6 @@ body { margin: 0; }
 <section class="card" id="awards" aria-labelledby="awards-h"><h2 class="h" id="awards-h">수상</h2><ol class="rows"><li><span class="when">2024. 5. 16.</span><div><p class="ttl sm">최우수 논문상</p><p class="sub-line">이화여자대학교 법학전문대학원</p></div></li></ol></section>
 </div></div></main>
 <div class="fabs"><button type="button" class="top-fab" aria-label="맨 위로" title="맨 위로"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button><button type="button" class="lang-btn lang-fab" data-lang="en" lang="en" aria-label="View this page in English"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>English</span></button></div>
-<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 안요환</p></div></footer>
 </div>
 <div class="view" id="view-en" lang="en" data-title="0128" hidden>
 <a class="skip" href="#en-main">Skip to content</a>
@@ -592,7 +588,6 @@ body { margin: 0; }
 <section class="card" id="en-awards" aria-labelledby="en-awards-h"><h2 class="h" id="en-awards-h">Awards</h2><ol class="rows"><li><span class="when">May 16, 2024</span><div><p class="ttl sm">Best Paper Award</p><p class="sub-line">Ewha Womans University School of Law</p></div></li></ol></section>
 </div></div></main>
 <div class="fabs"><button type="button" class="top-fab" aria-label="Back to top" title="Back to top"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button><button type="button" class="lang-btn lang-fab" data-lang="ko" lang="ko" aria-label="한국어로 보기"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>한국어</span></button></div>
-<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 Yohan Ahn</p></div></footer>
 </div>
 <div class="toast" role="status" aria-live="polite"></div>
 <script>

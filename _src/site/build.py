@@ -500,7 +500,6 @@ def view(lang):
     w('</div></div></main>')
     top_lbl = '맨 위로' if ko else 'Back to top'
     w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{UP}</button>{switch("lang-fab")}</div>')
-    w(f'<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 {e(P["name"])}</p></div></footer>')
     w('</div>')
     return '\n'.join(out)
 
