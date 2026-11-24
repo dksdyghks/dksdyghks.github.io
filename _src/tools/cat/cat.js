@@ -4,7 +4,7 @@ const C = { bg: '#0A1426', fur: '#F5C46C', line: '#3B2A17', heart: '#E5323B', ch
 const mirror = (d) => d.replace(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g, (m, x, y) => `${512 - +x} ${y}`);
 const heartPath = 'M0 0.78 C-0.22 0.58 -1 0.18 -1 -0.28 C-1 -0.64 -0.76 -0.86 -0.5 -0.86 C-0.25 -0.86 -0.06 -0.7 0 -0.52 C0.06 -0.7 0.25 -0.86 0.5 -0.86 C0.76 -0.86 1 -0.64 1 -0.28 C1 0.18 0.22 0.58 0 0.78 Z';
 function cat(o = {}) {
-  const small = !!o.small, round = o.round == null ? 0 : o.round, sleep = !!o.sleep;
+  const small = !!o.small, round = o.round == null ? 0 : o.round, sleep = !!o.sleep, capOn = !!o.cap;
   const armL = 'M256 162 C238 112 204 82 162 84 C108 86 72 128 73 192 C74 250 92 300 120 342';
   const armR = mirror(armL);
   const earL = small ? 'M142 258 L156 186 Q160 172 172 180 L220 218 Z' : 'M134 262 L146 168 Q150 152 163 160 L222 214 Z';
@@ -30,6 +30,9 @@ function cat(o = {}) {
     <path transform="translate(198 ${eyeY}) scale(${eyeS})" d="${heartPath}"/>
     <path transform="translate(314 ${eyeY}) scale(${eyeS})" d="${heartPath}"/>
   </g>`}
+  ${capOn ? `<path d="M190 238 C196 186 246 150 304 156 C352 162 388 196 396 236 L378 244 C370 214 348 196 330 194 C344 214 344 232 336 242 Q262 220 190 238 Z" fill="#7C93E0"/>
+  <path d="M192 236 Q262 216 334 240" fill="none" stroke="#F4F1EA" stroke-width="${small ? 22 : 16}" stroke-linecap="round"/>
+  <circle cx="392" cy="246" r="${small ? 26 : 21}" fill="#F4F1EA"/>` : ''}
   ${small ? '' : `<g fill="none" stroke="${C.line}" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
     <path d="M234 318 Q244 334 256 320 Q268 334 278 318"/>
   </g>
@@ -47,6 +50,7 @@ function tiny(o = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="${n}" height="${n}">
   <rect width="16" height="16" rx="3" fill="${C.bg}"/>
   <g fill="${C.fur}"><path d="M1.6 8.6 L2.6 2.2 L6.6 5.2 Z"/><path d="M14.4 8.6 L13.4 2.2 L9.4 5.2 Z"/><ellipse cx="8" cy="9.7" rx="6.6" ry="4.9"/></g>
+  ${o.cap ? `<path d="M4.3 6.4 Q5.4 2.6 9.4 2.4 Q12.4 2.4 13.2 5.0 L12.2 5.4 Q11.6 4.2 10.6 4.1 Q11.4 5.2 11.2 6.5 Q7.8 5.6 4.3 6.4 Z" fill="#7C93E0"/><path d="M4.4 6.3 Q7.8 5.4 11.3 6.4" fill="none" stroke="#F4F1EA" stroke-width="1.1" stroke-linecap="round"/><circle cx="12.9" cy="5.6" r="1.25" fill="#F4F1EA"/>` : ''}
   ${o.sleep ? `<g fill="none" stroke="${C.line}" stroke-width="1.05" stroke-linecap="round"><path d="M3.7 9.3 Q5.2 10.9 6.7 9.3"/><path d="M9.3 9.3 Q10.8 10.9 12.3 9.3"/></g>` : `<g fill="${C.heart}"><path transform="translate(5.2 9.6) scale(1.45)" d="${heartPath}"/><path transform="translate(10.8 9.6) scale(1.45)" d="${heartPath}"/></g>`}
   </svg>`;
 }

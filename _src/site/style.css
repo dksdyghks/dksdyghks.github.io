@@ -162,13 +162,6 @@ button { font: inherit; }
 .mail svg { flex: none; }
 .mail span { white-space: nowrap; }
 .hero-top > * { flex-shrink: 0; }
-.contact { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.mail-copy {
-  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; border: 0; border-radius: 999px; cursor: pointer;
-  color: var(--on-hero-2); background: #FFFFFF10; box-shadow: inset 0 0 0 1px #FFFFFF29; transition: color .15s, background-color .15s, box-shadow .15s;
-}
-@media (hover: hover) { .mail-copy:hover { color: var(--on-hero); background: #FFFFFF1C; box-shadow: inset 0 0 0 1px #FFFFFF3D; } }
-.mail-copy.ok { color: var(--gold); box-shadow: inset 0 0 0 1px #F2D7A666; }
 @media (max-width: 340px) { .mail span { display: none; } .mail { padding: 10px; } }  /* narrowest phones: envelope only */
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 48px; align-items: end; }
 
@@ -184,6 +177,74 @@ button { font: inherit; }
   font-family: "Yohan Sign KO", "Nanum Brush Script", var(--f-sans); font-weight: 400; letter-spacing: 0.01em;
   font-size: clamp(4.25rem, 8vw, 6.25rem); line-height: 0.9; padding-right: 8px; color: var(--on-hero); width: fit-content;
 }
+/* Gold-foil signature: the brush name is gold foil; the light slides across it with the mouse, a finger on the hero,
+   the phone's tilt (where the browser allows it) or the scroll */
+.view .name {
+  background-image: linear-gradient(105deg, #8C682A 0%, #C59B52 12%, #EED39A 22%, #FFF5D8 28%, #E3C27D 34%, #A88137 46%,
+    #CFAA62 58%, #F6E2B0 66%, #FFF8E4 70%, #D7B26A 78%, #9E7832 90%, #8C682A 100%);
+  background-size: 280% 100%; background-position: var(--sheen, 30%) 50%;
+  -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 0 #00000059) drop-shadow(0 0 1px #00000026);
+  transition: background-position .35s cubic-bezier(.2, .7, .2, 1);
+}
+/* Snow on the photo (over the frozen lake): while a mouse rests on it, or for a few seconds after a tap */
+.id { position: relative; }
+.photo-snow { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 1; cursor: default; -webkit-tap-highlight-color: transparent; }
+/* The walking cat (type 윤서, or press and hold the launcher on a phone): it hops in, stops to make a heart with its
+   arms (hearts float up, a little "냥!"), then walks to the launcher, curls up and sleeps; a tap wakes it for another heart */
+.catwalk { position: fixed; left: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 2px); z-index: 21; width: 116px; height: 128px;
+  pointer-events: none; opacity: 0; transform: translateX(-160px); -webkit-tap-highlight-color: transparent; }
+.catwalk.on { pointer-events: auto; cursor: pointer; }
+.catwalk .cw { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.cw-all, .cw-head, .cw-tail, .cw-footL, .cw-footR, .cw-arms-up, .cw-eyes-heart { transform-box: fill-box; }
+.cw-all { transform-origin: 50% 100%; }
+.cw-head { transform-origin: 50% 92%; }
+.cw-tail { transform-origin: 0% 100%; transition: transform .5s; }
+.cw-arms-up { opacity: 0; transform-origin: 50% 100%; }
+.cw-eyes-heart { transform-origin: 50% 50%; }
+.cw-eyes-shut { opacity: 0; }
+.catwalk.walking .cw-all { animation: cw-hop .3s ease-in-out infinite alternate; }
+.catwalk.walking .cw-footL { animation: cw-step .3s ease-in-out infinite alternate; }
+.catwalk.walking .cw-footR { animation: cw-step .3s ease-in-out infinite alternate-reverse; }
+.catwalk.walking .cw-tail { animation: cw-wag .5s ease-in-out infinite alternate; }
+.catwalk.walking .cw-head { animation: cw-tilt .6s ease-in-out infinite alternate; }
+.catwalk.pose .cw-arms-down { opacity: 0; }
+.catwalk.pose .cw-arms-up { opacity: 1; animation: cw-pop .5s cubic-bezier(.3, 1.6, .5, 1) both; }
+.catwalk.pose .cw-all { animation: cw-jump .5s ease-out; }
+.catwalk.pose .cw-eyes-heart { animation: cw-beat .42s ease-in-out infinite alternate; }
+.catwalk.pose .cw-tail { animation: cw-wag .22s ease-in-out infinite alternate; }
+.catwalk.pose .cw-blush { opacity: 1; }
+.catwalk.asleep .cw-eyes-heart { opacity: 0; }
+.catwalk.asleep .cw-eyes-shut { opacity: 1; }
+.catwalk.asleep .cw-all { animation: cw-breathe 2.6s ease-in-out infinite; }
+.catwalk.asleep .cw-head { transform: rotate(-6deg) translateY(4px); transition: transform .6s; }
+.catwalk.asleep .cw-tail { transform: rotate(-30deg); }
+@keyframes cw-hop { from { transform: translateY(0); } to { transform: translateY(-9px); } }
+@keyframes cw-step { from { transform: translateY(0); } to { transform: translateY(-7px); } }
+@keyframes cw-wag { from { transform: rotate(-12deg); } to { transform: rotate(16deg); } }
+@keyframes cw-tilt { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+@keyframes cw-pop { from { transform: scale(.35) translateY(40px); } to { transform: none; } }
+@keyframes cw-jump { 0% { transform: translateY(0) scale(1); } 30% { transform: translateY(-16px) scale(.97, 1.04); } 70% { transform: translateY(0) scale(1.05, .95); } 100% { transform: none; } }
+@keyframes cw-beat { from { transform: scale(1); } to { transform: scale(1.2); } }
+@keyframes cw-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03, .975); } }
+.cw-bubble {
+  position: absolute; left: 80%; top: -6px; padding: 7px 11px 8px; border-radius: 14px 14px 14px 4px; white-space: nowrap;
+  font: 800 15px/1 var(--f-sans); letter-spacing: -0.01em; color: #3B2A17; background: #FFFFFF; box-shadow: 0 6px 16px -6px #0F1A2B59, 0 0 0 1px #0F1A2B14;
+  opacity: 0; transform: scale(.4); transform-origin: 0% 100%; pointer-events: none;
+}
+.catwalk.pose .cw-bubble { animation: cw-bubble 1.8s ease-out both; }
+@keyframes cw-bubble { 0% { opacity: 0; transform: scale(.4); } 14% { opacity: 1; transform: scale(1.1); } 24% { transform: scale(1); } 82% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(.9); } }
+.cw-heart { position: absolute; top: 8%; width: 16px; height: 16px; pointer-events: none; animation: cw-float 1.5s ease-out forwards; }
+.cw-heart svg { display: block; width: 100%; height: 100%; }
+@keyframes cw-float { 0% { transform: translate(0, 10px) scale(.4); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(var(--dx, 0px), -96px) scale(1.15) rotate(var(--rot, 0deg)); opacity: 0; } }
+.cw-z { position: absolute; left: 72%; top: 6%; font: 800 17px/1 var(--f-sans); color: var(--mark); opacity: 0; pointer-events: none; }
+.catwalk.asleep .cw-z { animation: cw-zz 2.6s ease-out infinite; }
+.catwalk.asleep .cw-z:nth-of-type(2) { animation-delay: .85s; font-size: 14px; }
+.catwalk.asleep .cw-z:nth-of-type(3) { animation-delay: 1.7s; font-size: 11px; }
+@keyframes cw-zz { 0% { transform: translate(0, 8px); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(18px, -34px); opacity: 0; } }
+@media (max-width: 760px) { .catwalk { width: 96px; height: 106px; } .cw-bubble { font-size: 14px; } }
+@media (prefers-reduced-motion: reduce) { .catwalk *, .catwalk { animation: none !important; transition: none !important; } }
+.top-fab { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 /* The Korean name (three syllables) is set a little larger and slightly spaced so it holds its own beside "Yohan Ahn";
    the negative right margin cancels the spacing after the last syllable. */
 #view-ko .name { font-size: clamp(4.875rem, 9.2vw, 7.1875rem); letter-spacing: 0.12em; margin-right: -0.12em; }
@@ -245,7 +306,12 @@ button { font: inherit; }
   opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .2s, transform .2s;
 }
 .fabs.show { opacity: 1; transform: none; pointer-events: auto; }
-.lang-fab, .top-fab { background: var(--ink); color: var(--card); box-shadow: 0 10px 30px -8px #0F1A2B80, 0 0 0 1px #FFFFFF1A; }
+.top-fab { background: var(--fab-bg); color: var(--card); box-shadow: 0 8px 22px -10px #0F1A2B66, 0 0 0 1px #FFFFFF1A; }
+:root { --fab-bg: #0F1A2BB8; }  /* translucent: the page shows through the floating buttons */
+:root[data-theme="dark"] { --fab-bg: #EEF2F7C7; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fab-bg: #EEF2F7C7; } }
+.fabs.show.moving { opacity: .4; }  /* while scrolling they step back further */
+.fabs.show:hover, .fabs.show:focus-within { opacity: 1; }
 .top-fab {
   flex: none; display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0;
   border: 0; border-radius: 999px; cursor: pointer; transition: transform .15s;
@@ -268,7 +334,6 @@ button { font: inherit; }
 @keyframes land { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (min-width: 1024px) {
   .fabs { right: max(28px, calc(env(safe-area-inset-right, 0px) + 28px)); bottom: 28px; }
-  .lang-fab { font-size: 1.0625rem; padding: 13px 22px 13px 18px; }
   .top-fab { width: 48px; height: 48px; }
 }
 
@@ -325,7 +390,7 @@ button { font: inherit; }
 .h::before { content: ""; flex: none; width: 4px; height: 18px; border-radius: 2px; background: var(--mark); }
 
 .ttl { font-size: 1.0625rem; font-weight: 600; line-height: 1.5; letter-spacing: -0.015em; color: var(--ink); }
-.ttl.sm { font-size: 1rem; }
+.ttl.sm { font-size: 1.0625rem; }  /* every list's titles share one size */
 .ttl-link {
   color: inherit; text-decoration: none;
   background-image: linear-gradient(var(--mark), var(--mark)); background-size: 0 1.5px; background-position: 0 100%; background-repeat: no-repeat;
@@ -362,7 +427,7 @@ button { font: inherit; }
 .edu > li.solo .edu-main { grid-column: 1 / -1; }
 .edu-thesis { padding: 12px 16px; border-radius: 12px; background: var(--chip); display: flex; flex-direction: column; gap: 3px; }
 .edu-label { font-size: 0.8125rem; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
-.edu-ttl { font-size: 0.9375rem; font-weight: 600; line-height: 1.5; color: var(--ink-2); }
+.edu-ttl { font-size: 1rem; font-weight: 600; line-height: 1.5; color: var(--ink-2); }
 .edu-ttl .ext { background: var(--card); }
 
 /* Courses inside the current appointment */
@@ -389,7 +454,6 @@ button { font: inherit; }
 /* Work titles (articles, theses, projects, talks, awards) are set in the serif, like a journal's table of contents */
 .pubs .ttl, .edu-ttl, [id$="projects"] .ttl, [id$="talks"] .ttl, [id$="awards"] .ttl { font-family: var(--f-serif-ko); font-weight: 600; letter-spacing: -0.02em; }
 #view-en .pubs .ttl, #view-en .edu-ttl, #view-en [id$="projects"] .ttl, #view-en [id$="talks"] .ttl, #view-en [id$="awards"] .ttl { font-family: var(--f-serif-en); letter-spacing: -0.005em; }
-.pubs .ttl { font-size: 1.125rem; line-height: 1.55; }
 #view-ko .pubs .sub { font-family: var(--f-serif-ko); font-weight: 400; }
 .laurel { width: 1.35em; height: 1.35em; vertical-align: -0.32em; margin-right: 6px; color: var(--mark); }
 .ttl .sp { word-spacing: 4px; }  /* the gap before a subtitle; it disappears when the subtitle starts a new line */
@@ -433,15 +497,6 @@ button { font: inherit; }
 }
 /* No footer: the page ends with the last card; room is left below it for the floating buttons */
 .view > .main { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); }
-/* A small confirmation after copying (bottom centre, above the floating buttons on phones) */
-.toast {
-  position: fixed; z-index: 40; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
-  max-width: calc(100vw - 32px); padding: 11px 18px; border-radius: 999px;
-  font-size: 0.875rem; font-weight: 600; line-height: 1.3; text-align: center; color: var(--card); background: var(--ink);
-  box-shadow: 0 12px 30px -10px #0F1A2B99; opacity: 0; transform: translate(-50%, 8px); pointer-events: none; transition: opacity .2s, transform .2s;
-}
-.toast.show { opacity: 1; transform: translate(-50%, 0); }
-@media (min-width: 1024px) { .toast { bottom: 40px; } }
 
 /* Cards rise in gently the first time they come into view (added by script; never with reduced motion) */
 .reveal .card { opacity: 0; transform: translateY(16px); transition: opacity .7s cubic-bezier(.2, .7, .2, 1), transform .7s cubic-bezier(.2, .7, .2, 1); }
@@ -507,7 +562,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .fabs, .mail-copy, .toast, .orgs, .preamble, .hero-glow, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .orgs, .preamble, .hero-glow, .catwalk, .photo-snow, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }
@@ -517,6 +572,7 @@ button { font: inherit; }
   .hero-grid { grid-template-columns: minmax(0, 1fr); gap: 14pt; }
   .stmt { justify-self: start; max-width: none; }
   .name, .stmt p, .stmt strong, .fields-label { color: #000000 !important; }
+  .view .name { background: none !important; -webkit-text-fill-color: #000000 !important; filter: none !important; }
   .fields li { background: none; color: #000000; box-shadow: inset 0 0 0 1px #888888; }
   .photo { box-shadow: none; }
   .main { padding: 10pt 0 0; max-width: none; }

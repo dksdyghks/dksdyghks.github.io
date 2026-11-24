@@ -278,7 +278,6 @@ ROLE_TXT = {'sole': ('단독', 'Sole author'), 'first': ('주저자', 'First aut
 
 SITE = 'https://0128.kr/'
 HANGUL = re.compile(r'[가-힣]')
-COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>'
 
 CASE_NO = re.compile(r'\d{2,4}[가-힣]{1,3}\d{3,}')  # Korean court case numbers such as 93다12947, 2017다278187
 DOC_TITLE = {'ko': '0128', 'en': '0128'}  # the page is named after its address (0128.kr); who and what are in the description
@@ -394,9 +393,7 @@ def view(lang):
       f'<div class="preamble" aria-hidden="true">{e(PREAMBLE)} {e(PREAMBLE)}</div>'
       f'<div class="preamble near" aria-hidden="true">{e(PREAMBLE)} {e(PREAMBLE)}</div><div class="hero-in">')
     mail_lbl = ('이메일 보내기: ' if ko else 'Send an email: ') + MAIL
-    copy_lbl = '이메일 주소 복사' if ko else 'Copy email address'
-    w(f'<div class="hero-top"><div class="contact"><a class="mail" href="mailto:{MAIL}" aria-label="{mail_lbl}" title="{mail_lbl}">{MAIL_ICON}<span>{MAIL}</span></a>'
-      f'<button type="button" class="mail-copy" data-copy="{MAIL}" data-done="{"이메일 주소를 복사했습니다" if ko else "Email address copied"}" aria-label="{copy_lbl}" title="{copy_lbl}">{COPY_ICON}</button></div>'
+    w(f'<div class="hero-top"><a class="mail" href="mailto:{MAIL}" aria-label="{mail_lbl}" title="{mail_lbl}">{MAIL_ICON}<span>{MAIL}</span></a>'
       + switch('on-dark') + '</div>')
     flag = taegukgi.svg(30, '태극기' if ko else 'Flag of the Republic of Korea')  # a small emblem above the name
     w('<div class="hero-grid"><div class="id">')
@@ -508,7 +505,7 @@ def view(lang):
     # (the list is in time order; the line behind it and the ring on the last tile say so quietly)
     w('</div></div></main>')
     top_lbl = '맨 위로' if ko else 'Back to top'
-    w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{ROCKET}</button>{switch("lang-fab")}</div>')
+    w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{ROCKET}</button></div>')  # only the launcher floats; the language switch stays at the top
     w('</div>')
     return '\n'.join(out)
 
@@ -522,7 +519,9 @@ FONT_SERIF = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?fam
 # Pretendard is served from this site (fonts/pretendard, SIL OFL), so no third-party CDN can hold up the first paint
 FONT_PRETENDARD = '<link rel="stylesheet" href="/fonts/pretendard/pretendardvariable-dynamic-subset.css">\n'
 FONT_FALLBACK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">\n'
-BODY = view('ko') + '\n' + view('en') + '\n<div class="toast" role="status" aria-live="polite"></div>' + f'\n<script>\n{JS}</script>\n'
+CATWALK = ('<div class="catwalk" aria-hidden="true">' + (Path(__file__).parent / 'catwalk.svg').read_text().strip()
+           + '<span class="cw-bubble"></span></div>')  # the walking cat (easter egg), drawn in catwalk.svg
+BODY = view('ko') + '\n' + view('en') + '\n' + CATWALK + f'\n<script>\n{JS}</script>\n'
 
 import json as _json
 LD = {
@@ -551,8 +550,10 @@ HEAD_META = (
     f'<link rel="alternate" hreflang="ko" href="{SITE}?lang=ko">\n'
     f'<link rel="alternate" hreflang="en" href="{SITE}?lang=en">\n'
     f'<link rel="alternate" hreflang="x-default" href="{SITE}">\n'
-    f'<link rel="icon" type="image/png" sizes="32x32" href="{icon_url("favicon-32.png")}" data-sleep="{icon_url("favicon-32-sleep.png")}">\n'
-    f'<link rel="icon" type="image/png" sizes="16x16" href="{icon_url("favicon-16.png")}" data-sleep="{icon_url("favicon-16-sleep.png")}">\n'
+    f'<link rel="icon" type="image/png" sizes="32x32" href="{icon_url("favicon-32.png")}" data-sleep="{icon_url("favicon-32-sleep.png")}"'
+    f' data-night="{icon_url("favicon-32-night.png")}" data-night-sleep="{icon_url("favicon-32-night-sleep.png")}">\n'
+    f'<link rel="icon" type="image/png" sizes="16x16" href="{icon_url("favicon-16.png")}" data-sleep="{icon_url("favicon-16-sleep.png")}"'
+    f' data-night="{icon_url("favicon-16-night.png")}" data-night-sleep="{icon_url("favicon-16-night-sleep.png")}">\n'
     f'<link rel="icon" type="image/png" sizes="192x192" href="{icon_url("icon-192.png")}">\n'
     f'<link rel="apple-touch-icon" sizes="180x180" href="{icon_url("apple-touch-icon.png")}">\n'
     '<meta property="og:type" content="profile">\n'
@@ -692,7 +693,7 @@ print('built', len(artifact), len(page))
 sdst = Path('/home/user/dksdyghks.github.io/_src/site')
 sdst.mkdir(parents=True, exist_ok=True)
 for name in ('build.py', 'taegukgi.py', 'topicmap.py', 'serif_subset.py', 'home_fonts.py', 'style.css', 'script.js',
-             'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py'):
+             'doors.css', 'doors.js', 'photo.b64', 'photo-src.jpg', 'make_photo.py', 'catwalk.svg'):
     shutil.copy2(Path('/home/user/yohan-ahn') / name, sdst / name)
 if (sdst / 'logos').exists():
     shutil.rmtree(sdst / 'logos')
