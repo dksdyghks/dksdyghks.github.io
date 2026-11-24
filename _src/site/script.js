@@ -185,9 +185,22 @@
     setTimeout(function () { b.classList.remove('back'); }, 1400);
   }
   document.querySelectorAll('.top-fab').forEach(function (b) {
-    var timer = 0;
-    b.addEventListener('pointerdown', function () { b._held = false; timer = setTimeout(function () { b._held = true; catWalk(); }, 650); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { b.addEventListener(n, function () { clearTimeout(timer); }); });
+    var timer = 0, sx = 0, sy = 0;
+    function hold() { b._held = true; catWalk(); if (navigator.vibrate) navigator.vibrate(12); }
+    b.addEventListener('pointerdown', function (e) {  // a mouse or a pen held down
+      if (e.pointerType === 'touch') return;
+      b._held = false; clearTimeout(timer); timer = setTimeout(hold, 650);
+    });
+    ['pointerup', 'pointerleave'].forEach(function (n) { b.addEventListener(n, function (e) { if (e.pointerType !== 'touch') clearTimeout(timer); }); });
+    b.addEventListener('touchstart', function (e) {  // a finger held still on the launcher
+      var t = e.touches[0]; sx = t.clientX; sy = t.clientY; b._held = false;
+      clearTimeout(timer); timer = setTimeout(hold, 550);
+    }, { passive: true });
+    b.addEventListener('touchmove', function (e) {
+      var t = e.touches[0]; if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) clearTimeout(timer);
+    }, { passive: true });
+    b.addEventListener('touchend', function (e) { clearTimeout(timer); if (b._held) e.preventDefault(); }, { passive: false });  // no launch after a hold
+    b.addEventListener('touchcancel', function () { clearTimeout(timer); });
     b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     b.addEventListener('click', function () {
       if (b._held) { b._held = false; return; }  // that press called the cat
@@ -424,7 +437,8 @@
   // Zooming in (browser zoom on a computer, a pinch on a phone): the cat with a magnifier peeks up from the bottom edge
   var peekTimer = 0;
   function peekPlace(el) {  // stays at the bottom left of what the visitor sees, at its normal size, however far they zoom
-    var vv = window.visualViewport, s = vv ? vv.scale : 1, x = vv ? vv.offsetLeft : 0, y = vv ? vv.offsetTop : 0, h = vv ? vv.height : window.innerHeight;
+    var vv = window.visualViewport, s = vv ? vv.scale : 1, h = vv ? vv.height : window.innerHeight;
+    var x = vv && vv.pageLeft != null ? vv.pageLeft : window.scrollX, y = vv && vv.pageTop != null ? vv.pageTop : window.scrollY;
     el.style.transform = 'translate(' + (x + 14 / s) + 'px, ' + (y + h - el.offsetHeight / s) + 'px) scale(' + (1 / s) + ')';
   }
   function peekZoom() {
@@ -442,20 +456,23 @@
     });
     var vv = window.visualViewport; if (!vv) return;
     function follow() { var el = document.querySelector('.peek'); if (el && el.classList.contains('show')) peekPlace(el); }
-    vv.addEventListener('resize', function () {
-      if (vv.scale > 1.35 && !pinched) { pinched = true; peekZoom(); } else if (vv.scale < 1.08) pinched = false;
-      follow();
-    });
+    function check() { if (vv.scale > 1.35 && !pinched) { pinched = true; peekZoom(); } else if (vv.scale < 1.08) pinched = false; follow(); }
+    vv.addEventListener('resize', check);
     vv.addEventListener('scroll', follow);
+    window.addEventListener('scroll', follow, { passive: true });
+    document.addEventListener('gestureend', function () { setTimeout(check, 60); });            // iOS: the pinch has ended
+    window.addEventListener('touchend', function () { setTimeout(check, 150); }, { passive: true });
   })();
 
   (function () {
-    var seq = [], word = ['KeyD', 'KeyB', 'KeyS', 'KeyT', 'KeyJ'];  // 윤서 on the Korean (두벌식) layout
+    var seq = [], keys = [], word = ['KeyD', 'KeyB', 'KeyS', 'KeyT', 'KeyJ'], jamo = 'ㅇㅠㄴㅅㅓ';  // 윤서 on the Korean (두벌식) layout
     document.addEventListener('keydown', function (e) {
       var t = e.target;
       if (e.ctrlKey || e.metaKey || e.altKey || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) return;
       seq.push(e.code); if (seq.length > word.length) seq.shift();
-      if (seq.join() === word.join()) { seq = []; catWalk(); }
+      if (e.key && e.key.length === 1) { keys.push(e.key); if (keys.length > 5) keys.shift(); }
+      var typed = keys.join('');
+      if (seq.join() === word.join() || typed.slice(-5) === jamo || typed.slice(-2) === '윤서') { seq = []; keys = []; catWalk(); }
     });
   })();
 

@@ -249,7 +249,7 @@ button { font: inherit; }
 :root[data-theme="dark"] .cw-eyes-heart { filter: url(#cw-glow); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cw-eyes-heart { filter: url(#cw-glow); } }
 /* Zooming in (browser zoom, or a pinch on a phone): a cat with a magnifier peeks up from the bottom edge for a moment */
-.peek { position: fixed; left: 0; top: 0; z-index: 22; width: 124px; height: 83px; pointer-events: none; transform-origin: 0 0; visibility: hidden; overflow: hidden; }
+.peek { position: absolute; left: 0; top: 0; z-index: 22; width: 124px; height: 83px; pointer-events: none; transform-origin: 0 0; visibility: hidden; overflow: hidden; }
 .peek .pk { position: absolute; left: 0; bottom: 0; width: 100%; height: auto; display: block; transform: translateY(105%); transition: transform .45s cubic-bezier(.2, .9, .3, 1.25); }
 .peek.show { visibility: visible; }
 .peek.show .pk { transform: translateY(6%); }
