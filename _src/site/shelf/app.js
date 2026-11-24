@@ -28,10 +28,6 @@ const I = {
   home: '<svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
   tabs: '<svg viewBox="0 0 24 24"><rect x="3.5" y="7" width="13" height="13" rx="2"/><path d="M7.5 4h11a2 2 0 0 1 2 2v11"/></svg>',
-  star: '<svg viewBox="0 0 24 24"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
-  nope: '<svg viewBox="0 0 24 24" class="nx"><path d="M7 7l10 10M17 7L7 17"/></svg>',
-  tri: '<svg viewBox="0 0 24 24" class="nx"><path d="M12 5.5L19.5 18.5h-15z"/></svg>',
-  starFill: '<svg viewBox="0 0 24 24" class="sf"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   folder: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
@@ -686,13 +682,13 @@ async function doOps(ops, done) {
 function uploadBox() {
   if (!matchMedia('(hover: hover) and (pointer: fine)').matches) { $('.file-in').click(); return; }   // iPad, phone: the system picker
   const where = S.view.kind === 'home' && S.view.folder ? folderPath(S.view.folder).map((f) => f.name).join(' › ') : '내 책장';
-  const box = sheet(`<h2>PDF 올리기</h2><div class="drop-zone" tabindex="0">${I.up}<p>PDF를 여기로 끌어다 놓으세요</p><button class="btn primary pick">파일 고르기</button></div><p class="drop-where">올릴 곳 · ${esc(where)}</p>`);
+  const box = sheet(`<h2>PDF 올리기</h2><div class="drop-zone" tabindex="0">${I.up}<p>PDF를 여기로 끌어다 놓으세요</p><button class="btn primary pick-file">파일 고르기</button></div><p class="drop-where">올릴 곳 · ${esc(where)}</p>`);
   const z = $('.drop-zone', box);
   const has = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
   z.ondragenter = z.ondragover = (e) => { if (!has(e)) return; e.preventDefault(); e.stopPropagation(); z.classList.add('over'); };
   z.ondragleave = (e) => { if (!z.contains(e.relatedTarget)) z.classList.remove('over'); };
   z.ondrop = (e) => { e.preventDefault(); e.stopPropagation(); const fs = [...(e.dataTransfer?.files || [])]; closeSheet(); if (fs.length) upload(fs); };
-  $('.pick', box).onclick = () => { closeSheet(); $('.file-in').click(); };
+  $('.pick-file', box).onclick = () => { closeSheet(); $('.file-in').click(); };
 }
 async function upload(fileList) {
   const pdfs = fileList.filter((f) => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');

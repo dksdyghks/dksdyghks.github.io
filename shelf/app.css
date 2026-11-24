@@ -126,7 +126,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .thumb { width: 40px; height: 54px; border-radius: 5px; flex: none; background: var(--chip) center / cover no-repeat; box-shadow: inset 0 0 0 1px var(--rule); }
 .thumb.has { box-shadow: 0 0 0 1px #0F1A2B1A; }
 .ficon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent); flex: none; }
-.prog { font-size: 12px; font-weight: 700; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); padding: 3px 7px; border-radius: 6px; }
 .here { width: 20px; color: var(--faint); opacity: .7; }
 .here svg { width: 18px; height: 18px; }
 .ck { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px var(--faint); color: transparent; flex: none; }
@@ -342,50 +341,20 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 @media print { .rail, .bar, .tools, .uploads, .toast { display: none !important; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
 
-/* ---------- stars (1–3, after reading) ---------- */
-svg.sf { fill: currentColor; stroke-width: 1.2; }
-.stars { display: inline-flex; align-items: center; gap: 1px; color: var(--accent); flex: none; }
-.stars svg { width: 15px; height: 15px; }
-.sec-h .stars svg { width: 17px; height: 17px; }
-.sec-h .stars + .sec-n { margin-left: 8px; }
-.prog.done { color: var(--muted); background: var(--chip); }
-.rate-row { display: flex; justify-content: center; gap: 8px; margin: 10px 0 20px; }
-.rate-b { width: 60px; height: 60px; display: grid; place-items: center; border-radius: 16px; color: color-mix(in srgb, var(--ink) 18%, transparent); }
-.rate-b svg { width: 38px; height: 38px; }
-.rate-b.on { color: var(--accent); }
-@media (hover: hover) { .rate-b:hover { background: var(--chip); } }
+/* ---------- toasts with an action (되돌리기) ---------- */
 .toast.has-act { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
 .toast-act { color: var(--gold); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; padding: 4px 2px; }
 /* the card after the last page */
 .rd-end { position: relative; margin: 30px auto 0; height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
   border-radius: 18px; background: var(--card); color: var(--ink); box-shadow: var(--shadow); text-align: center; padding: 0 16px; box-sizing: border-box; max-width: calc(100% - 20px); }
-.rd-end-t { margin: 0; font-size: 15px; font-weight: 700; }
-.rd-end-s { margin: 0; font-size: 12.5px; color: var(--muted); }
-.rd-stars { display: flex; gap: 4px; }
-.rd-stars button { width: 50px; height: 50px; display: grid; place-items: center; border-radius: 14px; color: color-mix(in srgb, var(--ink) 18%, transparent); }
-.rd-stars svg { width: 32px; height: 32px; }
-.rd-stars button.on { color: var(--accent); }
-@media (hover: hover) { .rd-stars button:hover { background: var(--chip); } }
 .mfoot { display: flex; justify-content: flex-end; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
 @media print { .rd-end { display: none !important; } }
-/* ✕ = read; no need to come back */
-svg.nx { stroke-width: 2.4; }
-.nope { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--chip); color: var(--muted); flex: none; }
-.nope svg { width: 14px; height: 14px; }
+/* ✕ = read; no need to come back: the row steps back */
 .row.file.dim .meta b { color: var(--muted); }
 .row.file.dim .thumb { opacity: .55; }
-.sec-h .nope + .sec-t { margin-left: 8px; }
-.sec-h .sec-t + .sec-n { margin-left: 8px; }
-.nope-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 18px; }
-.nope-b, .rd-nope { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 18px; font-size: 13.5px; font-weight: 600; color: var(--muted); box-shadow: inset 0 0 0 1px var(--rule); }
-.nope-b svg, .rd-nope svg { width: 15px; height: 15px; stroke-width: 2.4; }
-.nope-b.on, .rd-nope.on { background: var(--ink-2); color: var(--card); box-shadow: none; }
-@media (hover: hover) { .nope-b:hover, .rd-nope:hover { background: var(--chip); } .nope-b.on:hover, .rd-nope.on:hover { background: var(--ink-2); } }
 .toast.over-tools { bottom: calc(var(--safe-b) + 96px); }
 /* two-row popovers: colours, then underline colours or actions */
 .rd-pop .pop-row + .pop-row { margin-top: 4px; padding-top: 4px; border-top: 1px solid #FFFFFF1F; }
-.rd-nopes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.nope.tri svg { width: 13px; height: 13px; }
 
 /* ---------- ★ △ ✕ drawn with a pen ---------- */
 :root { --pen: #D2403A; }
