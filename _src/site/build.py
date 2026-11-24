@@ -237,6 +237,7 @@ LINK_ICON = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" 
 
 MAIL = 'yhahn0128@sogang.ac.kr'
 MAIL_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="m4 7 8 6 8-6"/></svg>'
+UP = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>'
 GLOBE = '<svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>'
 
 ROLE_TXT = {'sole': ('단독', 'Sole author'), 'first': ('주저자', 'First author'), 'corr': ('교신저자', 'Corresponding author')}
@@ -257,7 +258,7 @@ def view(lang):
     ym = ko_ym if ko else en_ym
     out = []
     w = out.append
-    nav = [('intro', L['intro']), ('education', L['education']), ('affiliation', L['affiliation']),
+    nav = [('education', L['education']), ('affiliation', L['affiliation']),
            ('papers', L['papers']), ('projects', L['nav_projects']), ('talks', L['nav_talks']), ('awards', L['awards'])]
     open_lbl = '논문 페이지 열기' if ko else 'Open article page'
     DOT = '<span class="dot" aria-hidden="true">·</span>'  # rides at the end of the item before it, so no line starts with it
@@ -461,7 +462,8 @@ def view(lang):
     card('awards', f'<ol class="rows">{items}</ol>')
 
     w('</div></div></main>')
-    w(switch('lang-fab'))
+    top_lbl = '맨 위로' if ko else 'Back to top'
+    w(f'<div class="fabs"><button type="button" class="top-fab" aria-label="{top_lbl}" title="{top_lbl}">{UP}</button>{switch("lang-fab")}</div>')
     w(f'<footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 {e(P["name"])}</p></div></footer>')
     w('</div>')
     return '\n'.join(out)

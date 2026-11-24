@@ -67,7 +67,7 @@
     var links = Array.prototype.slice.call(view.querySelectorAll('.nav-links a, .toc a'));
     var ids = [];
     links.forEach(function (a) { var id = a.getAttribute('href').slice(1); if (ids.indexOf(id) === -1) ids.push(id); });
-    var spy = { view: view, bar: bar, toc: toc, marker: view.querySelector('.toc-mark'), links: links, ids: ids, current: null, lockUntil: 0 };
+    var spy = { view: view, bar: bar, toc: toc, marker: view.querySelector('.toc-mark'), links: links, ids: ids, current: undefined, lockUntil: 0 };
     links.forEach(function (a) {
       a.addEventListener('click', function () {
         var id = a.getAttribute('href').slice(1);
@@ -90,7 +90,7 @@
   function placeMarker(spy, instant) {
     if (!spy.marker || spy.view.hidden) return;
     var a = spy.links.filter(function (l) { return spy.toc.contains(l) && l.classList.contains('on'); })[0];
-    if (!a || !a.offsetHeight) return;
+    if (!a || !a.offsetHeight) { spy.marker.style.opacity = '0'; return; }
     if (instant) spy.marker.classList.add('still');
     spy.marker.style.transform = 'translateY(' + a.offsetTop + 'px)';
     spy.marker.style.height = a.offsetHeight + 'px';
@@ -100,7 +100,7 @@
 
   function mark(spy, id) {
     if (spy.current === id) return;
-    var first = spy.current === null;
+    var first = spy.current === undefined;
     spy.current = id;
     spy.links.forEach(function (l) {
       var on = l.getAttribute('href').slice(1) === id;
@@ -109,8 +109,8 @@
     });
     placeMarker(spy, first);
     var a = spy.bar && spy.links.filter(function (l) { return spy.bar.contains(l) && l.classList.contains('on'); })[0];
-    if (a && spy.bar.scrollWidth > spy.bar.clientWidth) {
-      spy.bar.scrollTo({ left: Math.max(0, a.offsetLeft - spy.bar.clientWidth / 2 + a.offsetWidth / 2), behavior: first ? 'auto' : 'smooth' });
+    if (spy.bar && spy.bar.scrollWidth > spy.bar.clientWidth && (a || first)) {
+      spy.bar.scrollTo({ left: !a ? 0 : Math.max(0, a.offsetLeft - spy.bar.clientWidth / 2 + a.offsetWidth / 2), behavior: first ? 'auto' : 'smooth' });
     }
   }
 
@@ -119,7 +119,7 @@
     Object.keys(views).forEach(function (k) {
       var v = views[k];
       if (v.hidden) return;
-      var hero = v.querySelector('.hero'), fab = v.querySelector('.lang-fab');
+      var hero = v.querySelector('.hero'), fab = v.querySelector('.fabs');
       if (hero && fab) fab.classList.toggle('show', hero.getBoundingClientRect().bottom < 0);
     });
     spies.forEach(function (spy) {
@@ -127,7 +127,7 @@
       var nav = spy.view.querySelector('.nav');
       var offset = (nav && nav.offsetHeight) || 0;
       var threshold = offset + window.innerHeight * 0.3;
-      var best = spy.ids[0], bestTop = -Infinity;
+      var best = null, bestTop = -Infinity;
       spy.ids.forEach(function (id) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -156,7 +156,7 @@
   function switchTo(lang) {
     var at = anchor(visibleView());
     setLang(lang, true);
-    spies.forEach(function (s) { s.current = null; });
+    spies.forEach(function (s) { s.current = undefined; });
     var view = visibleView();
     // the other language's cards are shown at once (no rise), so the switch never lands on blank space
     if (io) view.querySelectorAll('.card:not(.in)').forEach(function (c) { c.classList.add('in', 'now'); io.unobserve(c); });
@@ -172,6 +172,14 @@
     b.addEventListener('click', function () {
       if (document.startViewTransition && !calm) document.startViewTransition(function () { switchTo(b.dataset.lang); });
       else switchTo(b.dataset.lang);
+    });
+  });
+
+  document.querySelectorAll('.top-fab').forEach(function (b) {
+    b.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
+      var h = visibleView().querySelector('.name');  // keyboard and screen-reader users land at the top too
+      if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
     });
   });
 

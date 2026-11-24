@@ -174,7 +174,7 @@ button { font: inherit; }
   background: #FFFFFF10; box-shadow: inset 0 0 0 1px #FFFFFF29;
   transition: color .15s, background-color .15s, box-shadow .15s;
 }
-.mail:hover { color: var(--on-hero); background: #FFFFFF1C; box-shadow: inset 0 0 0 1px #FFFFFF3D; }
+@media (hover: hover) { .mail:hover { color: var(--on-hero); background: #FFFFFF1C; box-shadow: inset 0 0 0 1px #FFFFFF3D; } }
 .mail svg { flex: none; }
 .mail span { white-space: nowrap; }
 .hero-top > * { flex-shrink: 0; }
@@ -244,27 +244,32 @@ button { font: inherit; }
   font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; line-height: 1;
   padding: 11px 18px 11px 15px; border-radius: 999px; transition: transform .15s, box-shadow .15s, opacity .2s;
 }
-.lang-btn:hover { transform: translateY(-1px); }
+@media (hover: hover) { .lang-btn:hover { transform: translateY(-1px); } }
 .lang-btn svg { flex: none; }
 .lang-btn.on-dark { background: var(--on-hero); color: var(--hero); box-shadow: 0 8px 24px -10px #000000B0; }
-.lang-fab {
-  position: fixed; z-index: 20;
+.name[tabindex]:focus { outline: none; }  /* focus lands here after 'back to top'; no ring around the name */
+.fabs {
+  position: fixed; z-index: 20; display: flex; align-items: center; gap: 10px;
   right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
-  background: var(--ink); color: var(--card); box-shadow: 0 10px 30px -8px #0F1A2B80, 0 0 0 1px #FFFFFF1A;
-  opacity: 0; transform: translateY(12px); pointer-events: none;
+  opacity: 0; transform: translateY(12px); pointer-events: none; transition: opacity .2s, transform .2s;
 }
-.lang-fab.show { opacity: 1; transform: none; pointer-events: auto; }
-.lang-fab.show:hover { transform: translateY(-1px); }
+.fabs.show { opacity: 1; transform: none; pointer-events: auto; }
+.lang-fab, .top-fab { background: var(--ink); color: var(--card); box-shadow: 0 10px 30px -8px #0F1A2B80, 0 0 0 1px #FFFFFF1A; }
+.top-fab {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; padding: 0;
+  border: 0; border-radius: 999px; cursor: pointer; transition: transform .15s;
+}
+@media (hover: hover) { .top-fab:hover { transform: translateY(-1px); } }
 @media (min-width: 1024px) {
-  .lang-fab { right: max(28px, calc(env(safe-area-inset-right, 0px) + 28px)); bottom: 28px; font-size: 1.0625rem; padding: 13px 22px 13px 18px; }
+  .fabs { right: max(28px, calc(env(safe-area-inset-right, 0px) + 28px)); bottom: 28px; }
+  .lang-fab { font-size: 1.0625rem; padding: 13px 22px 13px 18px; }
+  .top-fab { width: 48px; height: 48px; }
 }
 
 /* ---------- Pill bar (tablet & phone) ---------- */
 .nav {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
-  background: var(--bg);
-  background: color-mix(in srgb, var(--bg) 84%, transparent);
-  -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+  background: var(--bg);  /* opaque: nothing scrolling underneath shows through as a smudge */
   border-bottom: 1px solid var(--rule);
 }
 .nav-in { max-width: var(--wrap); margin: 0 auto; padding-left: var(--gutter-l); padding-right: var(--gutter-r); height: var(--nav-h); display: flex; align-items: center; }
@@ -274,7 +279,7 @@ button { font: inherit; }
 .nav-links.fade-l { -webkit-mask-image: linear-gradient(to right, transparent, #000 44px); mask-image: linear-gradient(to right, transparent, #000 44px); }
 .nav-links.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to right, transparent, #000 44px, #000 calc(100% - 44px), transparent); }
 .nav-links a { white-space: nowrap; font-size: 0.9375rem; font-weight: 500; color: var(--muted); padding: 8px 14px; border-radius: 999px; transition: color .15s, background-color .15s; }
-.nav-links a:hover { color: var(--ink); background: var(--chip); }
+@media (hover: hover) { .nav-links a:not(.on):hover { color: var(--ink); background: var(--chip); } }
 .nav-links a.on { color: var(--card); background: var(--ink); font-weight: 600; }
 
 /* ---------- Body layout ---------- */
@@ -284,7 +289,7 @@ button { font: inherit; }
 .toc { position: relative; display: flex; flex-direction: column; }
 .toc::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--rule); }
 .toc a { position: relative; display: block; font-size: 0.9375rem; font-weight: 500; color: var(--muted); padding: 8px 12px 8px 20px; transition: color .2s; }
-.toc a:hover { color: var(--ink); }
+@media (hover: hover) { .toc a:hover { color: var(--ink); } }
 .toc a.on { color: var(--ink); font-weight: 700; }
 .toc-mark {
   position: absolute; left: 0; top: 0; width: 2px; height: 0; border-radius: 2px; background: var(--mark); opacity: 0;
@@ -313,12 +318,12 @@ button { font: inherit; }
   background-image: linear-gradient(var(--mark), var(--mark)); background-size: 0 1.5px; background-position: 0 100%; background-repeat: no-repeat;
   transition: background-size .3s cubic-bezier(.2, .75, .2, 1);
 }
-.ttl-link:hover { background-size: 100% 1.5px; }
+@media (hover: hover) { .ttl-link:hover { background-size: 100% 1.5px; } }
 .ext {
   display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 8px; border-radius: 7px; vertical-align: -2px;
   color: var(--muted); background: var(--chip); transition: color .15s, background-color .15s;
 }
-.ttl-link:hover .ext { color: var(--ink); background: var(--rule); }
+@media (hover: hover) { .ttl-link:hover .ext { color: var(--ink); background: var(--rule); } }
 .ttl-link .ext { background-image: none; }
 .badge {
   display: inline-block; margin-left: 6px; vertical-align: 1px; white-space: nowrap;
@@ -444,7 +449,7 @@ button { font: inherit; }
   @page { margin: 16mm 14mm; }
   :root { --bg: #FFFFFF; --card: #FFFFFF; --ink: #000000; --ink-2: #222222; --muted: #444444; --faint: #555555; --rule: #CCCCCC; --chip: #FFFFFF; }
   body { background: #FFFFFF; font-size: 10.5pt; }
-  .skip, .nav, .toc-col, .lang-btn, .lang-fab, .ext, .hero::after, .hero::before { display: none !important; }
+  .skip, .nav, .toc-col, .lang-btn, .fabs, .ext, .hero::after, .hero::before { display: none !important; }
   .reveal .card { opacity: 1 !important; transform: none !important; }
   .hero-top { justify-content: flex-start; margin-bottom: 10pt; }
   .mail { padding: 0; background: none; box-shadow: none; color: #000000; font-size: 10pt; }
@@ -506,9 +511,9 @@ body { margin: 0; }
 <div class="id-text"><svg class="flag" viewBox="0 0 150 100" width="30" height="20" role="img" aria-label="태극기"><rect width="150" height="100" fill="#FFFFFF"/><circle cx="75" cy="50" r="25" fill="#0047A0"/><path d="M54.199,36.132 A25,25 0 0 1 95.801,63.868 A12.5,12.5 0 0 0 75,50 A12.5,12.5 0 0 1 54.199,36.132 Z" fill="#CD2E3A"/><path d="M36.864,39.599 L50.732,18.798 L47.265,16.487 L33.397,37.288 Z M31.664,36.132 L45.532,15.331 L42.065,13.02 L28.197,33.821 Z M26.464,32.666 L40.331,11.864 L36.864,9.553 L22.997,30.354 Z M99.268,18.798 L105.624,28.332 L109.091,26.021 L102.735,16.487 Z M106.78,30.065 L113.136,39.599 L116.603,37.288 L110.247,27.754 Z M104.468,15.331 L118.336,36.132 L121.803,33.821 L107.935,13.02 Z M109.669,11.864 L116.025,21.398 L119.492,19.087 L113.136,9.553 Z M117.18,23.132 L123.536,32.666 L127.003,30.354 L120.647,20.82 Z M113.136,60.401 L106.78,69.935 L110.247,72.246 L116.603,62.712 Z M105.624,71.668 L99.268,81.202 L102.735,83.513 L109.091,73.979 Z M118.336,63.868 L111.98,73.401 L115.447,75.713 L121.803,66.179 Z M110.824,75.135 L104.468,84.669 L107.935,86.98 L114.291,77.446 Z M123.536,67.334 L117.18,76.868 L120.647,79.18 L127.003,69.646 Z M116.025,78.602 L109.669,88.136 L113.136,90.447 L119.492,80.913 Z M50.732,81.202 L36.864,60.401 L33.397,62.712 L47.265,83.513 Z M45.532,84.669 L39.176,75.135 L35.709,77.446 L42.065,86.98 Z M38.02,73.401 L31.664,63.868 L28.197,66.179 L34.553,75.713 Z M40.331,88.136 L26.464,67.334 L22.997,69.646 L36.864,90.447 Z" fill="#000000"/></svg><h1 class="name">안요환</h1></div><div class="fields-block"><span class="fields-label" id="fields">연구분야</span><ul class="fields" aria-labelledby="fields"><li>입법정책</li><li>정치관계법</li><li>행정법</li><li>헌법</li></ul></div>
 </div>
 </div></div></header>
-<nav class="nav" aria-label="목차"><div class="nav-in"><div class="nav-links"><a href="#intro">소개</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></div></div></nav>
+<nav class="nav" aria-label="목차"><div class="nav-in"><div class="nav-links"><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></div></div></nav>
 <main class="main" id="main"><div class="layout">
-<aside class="toc-col"><nav class="toc" aria-label="목차"><span class="toc-mark" aria-hidden="true"></span><a href="#intro">소개</a><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></nav></aside>
+<aside class="toc-col"><nav class="toc" aria-label="목차"><span class="toc-mark" aria-hidden="true"></span><a href="#education">학력</a><a href="#affiliation">소속</a><a href="#papers">연구논문</a><a href="#projects">연구과제</a><a href="#talks">학술대회</a><a href="#awards">수상</a></nav></aside>
 <div class="stack">
 <section class="card" id="education" aria-labelledby="education-h"><h2 class="h" id="education-h">학력</h2><ul class="edu"><li><div class="edu-main"><span class="edu-school">서강대학교</span><span class="sub-line">법학박사</span></div><div class="edu-thesis"><span class="edu-label">학위논문 · 2026. 8.</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=2496df649a4b4eccffe0bdc3ef48d419" target="_blank" rel="noopener" title="논문 페이지 열기">선거관리위원회의 독립성과 정치적 중립성에 <span class="nwm">관한 <span class="nw">연구<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></span></a></span></div></li><li><div class="edu-main"><span class="edu-school">서강대학교</span><span class="sub-line">법학석사</span></div><div class="edu-thesis"><span class="edu-label">학위논문 · 2022. 8.</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=e502ac393cc5d3a1ffe0bdc3ef48d419" target="_blank" rel="noopener" title="논문 페이지 열기">헌법상 영장주의와 선거관리위원회의 선거범죄 조사에 <span class="nwm">관한 <span class="nw">연구<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></span></a></span></div></li><li class="solo"><div class="edu-main"><span class="edu-school">University of Queensland</span><span class="sub-line">정치학석사</span></div></li><li class="solo"><div class="edu-main"><span class="edu-school">연세대학교</span><span class="sub-line">정치학사</span></div></li></ul></section>
 <section class="card" id="affiliation" aria-labelledby="affiliation-h"><h2 class="h" id="affiliation-h">소속</h2><ol class="rows"><li><span class="when">2023. 1. – 현재</span><div><p class="ttl sm">공군사관학교</p><p class="sub-line">항공우주정책학과</p><div class="courses"><p class="courses-head"><span class="courses-label">강의과목</span><span class="courses-note">개설 강좌별 3시간 / 3학점</span></p><ul class="course-list"><li><span>법학개론</span><span class="badge">영어강의</span></li><li>융합캡스톤</li><li>행정법</li><li>항공우주법</li><li>헌법과 민주시민</li></ul></div></div></li><li><span class="when">2021. 4. – 2022. 7.</span><div><p class="ttl sm">중앙선거관리위원회</p><p class="sub-line">제도연구부</p></div></li><li><span class="when">2020. 1. – 2021. 2.</span><div><p class="ttl sm">국회입법조사처</p><p class="sub-line">기획법무담당관실</p></div></li></ol></section>
@@ -517,7 +522,7 @@ body { margin: 0; }
 <section class="card" id="talks" aria-labelledby="talks-h"><h2 class="h" id="talks-h">학술대회 발표/토론</h2><ol class="rows"><li><span class="when">2026. 11. 20.</span><div><p class="ttl sm">민간투자법상 감독명령 관련 판례에 대한 고찰</p><p class="sub-line">한국공공계약법학회 제11회 <span class="nw">세미나<span class="badge">발표</span></span></p></div></li><li><span class="when">2025. 8. 28.</span><div><p class="ttl sm">우주법제의 헌법적 쟁점</p><p class="sub-line">제7회 한국헌법학자대회<wbr><span class="nw">(한국헌법학회 et al.)<span class="badge">발표</span></span></p></div></li><li><span class="when">2025. 4. 19.</span><div><p class="ttl sm">위헌법률심판의 적법요건 판단에 관한 일고찰</p><p class="sub-line">한국헌법판례연구학회 제149회 <span class="nw">월례발표회<span class="badge">발표</span></span></p></div></li><li><span class="when">2024. 8. 30.</span><div><p class="ttl sm">선거범죄로 인한 당선무효의 존립방안</p><p class="sub-line">제6회 한국헌법학자대회<wbr><span class="nw">(한국헌법학회 et al.)<span class="badge">발표</span></span></p></div></li><li><span class="when">2023. 6. 16.</span><div><p class="ttl sm">중대재해처벌법의 적용에서 항공분야의 특수성과 관련 법적 쟁점</p><p class="sub-line">한국항공우주정책·법학회 제70회 <span class="nw">학술대회<span class="badge">토론</span></span></p></div></li></ol></section>
 <section class="card" id="awards" aria-labelledby="awards-h"><h2 class="h" id="awards-h">수상</h2><ol class="rows"><li><span class="when">2024. 5. 16.</span><div><p class="ttl sm">최우수 논문상</p><p class="sub-line">이화여자대학교 법학전문대학원</p></div></li></ol></section>
 </div></div></main>
-<button type="button" class="lang-btn lang-fab" data-lang="en" lang="en" aria-label="View this page in English"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>English</span></button>
+<div class="fabs"><button type="button" class="top-fab" aria-label="맨 위로" title="맨 위로"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button><button type="button" class="lang-btn lang-fab" data-lang="en" lang="en" aria-label="View this page in English"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>English</span></button></div>
 <footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 안요환</p></div></footer>
 </div>
 <div class="view" id="view-en" lang="en" data-title="0128" hidden>
@@ -529,9 +534,9 @@ body { margin: 0; }
 <div class="id-text"><svg class="flag" viewBox="0 0 150 100" width="30" height="20" role="img" aria-label="Flag of the Republic of Korea"><rect width="150" height="100" fill="#FFFFFF"/><circle cx="75" cy="50" r="25" fill="#0047A0"/><path d="M54.199,36.132 A25,25 0 0 1 95.801,63.868 A12.5,12.5 0 0 0 75,50 A12.5,12.5 0 0 1 54.199,36.132 Z" fill="#CD2E3A"/><path d="M36.864,39.599 L50.732,18.798 L47.265,16.487 L33.397,37.288 Z M31.664,36.132 L45.532,15.331 L42.065,13.02 L28.197,33.821 Z M26.464,32.666 L40.331,11.864 L36.864,9.553 L22.997,30.354 Z M99.268,18.798 L105.624,28.332 L109.091,26.021 L102.735,16.487 Z M106.78,30.065 L113.136,39.599 L116.603,37.288 L110.247,27.754 Z M104.468,15.331 L118.336,36.132 L121.803,33.821 L107.935,13.02 Z M109.669,11.864 L116.025,21.398 L119.492,19.087 L113.136,9.553 Z M117.18,23.132 L123.536,32.666 L127.003,30.354 L120.647,20.82 Z M113.136,60.401 L106.78,69.935 L110.247,72.246 L116.603,62.712 Z M105.624,71.668 L99.268,81.202 L102.735,83.513 L109.091,73.979 Z M118.336,63.868 L111.98,73.401 L115.447,75.713 L121.803,66.179 Z M110.824,75.135 L104.468,84.669 L107.935,86.98 L114.291,77.446 Z M123.536,67.334 L117.18,76.868 L120.647,79.18 L127.003,69.646 Z M116.025,78.602 L109.669,88.136 L113.136,90.447 L119.492,80.913 Z M50.732,81.202 L36.864,60.401 L33.397,62.712 L47.265,83.513 Z M45.532,84.669 L39.176,75.135 L35.709,77.446 L42.065,86.98 Z M38.02,73.401 L31.664,63.868 L28.197,66.179 L34.553,75.713 Z M40.331,88.136 L26.464,67.334 L22.997,69.646 L36.864,90.447 Z" fill="#000000"/></svg><h1 class="name">Yohan Ahn</h1></div><div class="fields-block"><span class="fields-label" id="en-fields">Research Fields</span><ul class="fields" aria-labelledby="en-fields"><li>Election &amp; Political Law</li><li>Legislative Policy</li><li>Public Law</li></ul></div>
 </div>
 </div></div></header>
-<nav class="nav" aria-label="Contents"><div class="nav-in"><div class="nav-links"><a href="#en-intro">Introduction</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></div></div></nav>
+<nav class="nav" aria-label="Contents"><div class="nav-in"><div class="nav-links"><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></div></div></nav>
 <main class="main" id="en-main"><div class="layout">
-<aside class="toc-col"><nav class="toc" aria-label="Contents"><span class="toc-mark" aria-hidden="true"></span><a href="#en-intro">Introduction</a><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></nav></aside>
+<aside class="toc-col"><nav class="toc" aria-label="Contents"><span class="toc-mark" aria-hidden="true"></span><a href="#en-education">Education</a><a href="#en-affiliation">Appointments</a><a href="#en-papers">Journal Articles</a><a href="#en-projects">Projects</a><a href="#en-talks">Conferences</a><a href="#en-awards">Awards</a></nav></aside>
 <div class="stack">
 <section class="card" id="en-education" aria-labelledby="en-education-h"><h2 class="h" id="en-education-h">Education</h2><ul class="edu"><li><div class="edu-main"><span class="edu-school">Sogang University</span><span class="sub-line">Ph.D. in Law</span></div><div class="edu-thesis"><span class="edu-label">Dissertation · Aug 2026</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=2496df649a4b4eccffe0bdc3ef48d419" target="_blank" rel="noopener" title="Open article page">The Independence and Political Neutrality of Korea’s National <span class="nwm">Election <span class="nw">Commission<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></span></a></span></div></li><li><div class="edu-main"><span class="edu-school">Sogang University</span><span class="sub-line">Master of Laws</span></div><div class="edu-thesis"><span class="edu-label">Thesis · Aug 2022</span><span class="edu-ttl"><a class="ttl-link" href="https://www.riss.kr/search/detail/DetailView.do?p_mat_type=be54d9b8bc7cdb09&amp;control_no=e502ac393cc5d3a1ffe0bdc3ef48d419" target="_blank" rel="noopener" title="Open article page">A Study on Warrant Requirement and Investigations Conducted by the National <span class="nwm">Election <span class="nw">Commission<span class="ext" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span></span></span></a></span></div></li><li class="solo"><div class="edu-main"><span class="edu-school">The University of Queensland</span><span class="sub-line">Master of International Relations</span></div></li><li class="solo"><div class="edu-main"><span class="edu-school">Yonsei University</span><span class="sub-line">B.A. in Political Science</span></div></li></ul></section>
 <section class="card" id="en-affiliation" aria-labelledby="en-affiliation-h"><h2 class="h" id="en-affiliation-h">Appointments</h2><ol class="rows"><li><span class="when">Jan 2023 – Present</span><div><p class="ttl sm">Republic of Korea Air Force Academy</p><p class="sub-line">Department of Aerospace Policy</p><div class="courses"><p class="courses-head"><span class="courses-label">Teaching</span><span class="courses-note">3 hours / 3 credits per course</span></p><ul class="course-list"><li>Introduction to Law</li><li>Capstone Design</li><li>Administrative Law</li><li>Aviation and Space Law</li><li>Constitutional Law</li></ul></div></div></li><li><span class="when">Apr 2021 – Jul 2022</span><div><p class="ttl sm">National Election Commission</p><p class="sub-line">Electoral Systems Research Division</p></div></li><li><span class="when">Jan 2020 – Feb 2021</span><div><p class="ttl sm">National Assembly Research Service</p><p class="sub-line">Planning and Legal Affairs Division</p></div></li></ol></section>
@@ -540,7 +545,7 @@ body { margin: 0; }
 <section class="card" id="en-talks" aria-labelledby="en-talks-h"><h2 class="h" id="en-talks-h">Conference Presentations</h2><ol class="rows"><li><span class="when">Nov 20, 2026</span><div><p class="ttl sm">A Review of Case Law on Supervisory Orders under the Act on Public-Private Partnerships in Infrastructure</p><p class="sub-line">11th Seminar, Korean Society of Public Contract <span class="nw">Law<span class="badge">Presenter</span></span></p></div></li><li><span class="when">Aug 28, 2025</span><div><p class="ttl sm">Constitutional Issues in Space Legislation of Korea</p><p class="sub-line">7th Conference of Korean Constitutional Scholars <wbr><span class="nwd">(Korean Constitutional Law <span class="nw">Association et al.)<span class="badge">Presenter</span></span></span></p></div></li><li><span class="when">Apr 19, 2025</span><div><p class="ttl sm">Gatekeeping Constitutional Review: Admissibility in the Review of Statutes</p><p class="sub-line">149th Monthly Meeting, Korean Society of Constitutional Case <span class="nw">Law<span class="badge">Presenter</span></span></p></div></li><li><span class="when">Aug 30, 2024</span><div><p class="ttl sm">The Future of Invalidating Elected Candidates’ Seats for Electoral Crimes</p><p class="sub-line">6th Conference of Korean Constitutional Scholars <wbr><span class="nwd">(Korean Constitutional Law <span class="nw">Association et al.)<span class="badge">Presenter</span></span></span></p></div></li><li><span class="when">Jun 16, 2023</span><div><p class="ttl sm">Aviation Under the Serious Accidents Punishment Act</p><p class="sub-line">70th Conference, Korean Society of Air &amp; Space Law and <span class="nw">Policy<span class="badge">Discussant</span></span></p></div></li></ol></section>
 <section class="card" id="en-awards" aria-labelledby="en-awards-h"><h2 class="h" id="en-awards-h">Awards</h2><ol class="rows"><li><span class="when">May 16, 2024</span><div><p class="ttl sm">Best Paper Award</p><p class="sub-line">Ewha Womans University School of Law</p></div></li></ol></section>
 </div></div></main>
-<button type="button" class="lang-btn lang-fab" data-lang="ko" lang="ko" aria-label="한국어로 보기"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>한국어</span></button>
+<div class="fabs"><button type="button" class="top-fab" aria-label="Back to top" title="Back to top"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button><button type="button" class="lang-btn lang-fab" data-lang="ko" lang="ko" aria-label="한국어로 보기"><svg class="globe" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg><span>한국어</span></button></div>
 <footer class="foot"><div class="foot-in"><p class="foot-row">© 2026 Yohan Ahn</p></div></footer>
 </div>
 <script>
@@ -613,7 +618,7 @@ body { margin: 0; }
     var links = Array.prototype.slice.call(view.querySelectorAll('.nav-links a, .toc a'));
     var ids = [];
     links.forEach(function (a) { var id = a.getAttribute('href').slice(1); if (ids.indexOf(id) === -1) ids.push(id); });
-    var spy = { view: view, bar: bar, toc: toc, marker: view.querySelector('.toc-mark'), links: links, ids: ids, current: null, lockUntil: 0 };
+    var spy = { view: view, bar: bar, toc: toc, marker: view.querySelector('.toc-mark'), links: links, ids: ids, current: undefined, lockUntil: 0 };
     links.forEach(function (a) {
       a.addEventListener('click', function () {
         var id = a.getAttribute('href').slice(1);
@@ -636,7 +641,7 @@ body { margin: 0; }
   function placeMarker(spy, instant) {
     if (!spy.marker || spy.view.hidden) return;
     var a = spy.links.filter(function (l) { return spy.toc.contains(l) && l.classList.contains('on'); })[0];
-    if (!a || !a.offsetHeight) return;
+    if (!a || !a.offsetHeight) { spy.marker.style.opacity = '0'; return; }
     if (instant) spy.marker.classList.add('still');
     spy.marker.style.transform = 'translateY(' + a.offsetTop + 'px)';
     spy.marker.style.height = a.offsetHeight + 'px';
@@ -646,7 +651,7 @@ body { margin: 0; }
 
   function mark(spy, id) {
     if (spy.current === id) return;
-    var first = spy.current === null;
+    var first = spy.current === undefined;
     spy.current = id;
     spy.links.forEach(function (l) {
       var on = l.getAttribute('href').slice(1) === id;
@@ -655,8 +660,8 @@ body { margin: 0; }
     });
     placeMarker(spy, first);
     var a = spy.bar && spy.links.filter(function (l) { return spy.bar.contains(l) && l.classList.contains('on'); })[0];
-    if (a && spy.bar.scrollWidth > spy.bar.clientWidth) {
-      spy.bar.scrollTo({ left: Math.max(0, a.offsetLeft - spy.bar.clientWidth / 2 + a.offsetWidth / 2), behavior: first ? 'auto' : 'smooth' });
+    if (spy.bar && spy.bar.scrollWidth > spy.bar.clientWidth && (a || first)) {
+      spy.bar.scrollTo({ left: !a ? 0 : Math.max(0, a.offsetLeft - spy.bar.clientWidth / 2 + a.offsetWidth / 2), behavior: first ? 'auto' : 'smooth' });
     }
   }
 
@@ -665,7 +670,7 @@ body { margin: 0; }
     Object.keys(views).forEach(function (k) {
       var v = views[k];
       if (v.hidden) return;
-      var hero = v.querySelector('.hero'), fab = v.querySelector('.lang-fab');
+      var hero = v.querySelector('.hero'), fab = v.querySelector('.fabs');
       if (hero && fab) fab.classList.toggle('show', hero.getBoundingClientRect().bottom < 0);
     });
     spies.forEach(function (spy) {
@@ -673,7 +678,7 @@ body { margin: 0; }
       var nav = spy.view.querySelector('.nav');
       var offset = (nav && nav.offsetHeight) || 0;
       var threshold = offset + window.innerHeight * 0.3;
-      var best = spy.ids[0], bestTop = -Infinity;
+      var best = null, bestTop = -Infinity;
       spy.ids.forEach(function (id) {
         var el = document.getElementById(id);
         if (!el) return;
@@ -702,7 +707,7 @@ body { margin: 0; }
   function switchTo(lang) {
     var at = anchor(visibleView());
     setLang(lang, true);
-    spies.forEach(function (s) { s.current = null; });
+    spies.forEach(function (s) { s.current = undefined; });
     var view = visibleView();
     // the other language's cards are shown at once (no rise), so the switch never lands on blank space
     if (io) view.querySelectorAll('.card:not(.in)').forEach(function (c) { c.classList.add('in', 'now'); io.unobserve(c); });
@@ -718,6 +723,14 @@ body { margin: 0; }
     b.addEventListener('click', function () {
       if (document.startViewTransition && !calm) document.startViewTransition(function () { switchTo(b.dataset.lang); });
       else switchTo(b.dataset.lang);
+    });
+  });
+
+  document.querySelectorAll('.top-fab').forEach(function (b) {
+    b.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: calm ? 'auto' : 'smooth' });
+      var h = visibleView().querySelector('.name');  // keyboard and screen-reader users land at the top too
+      if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
     });
   });
 
