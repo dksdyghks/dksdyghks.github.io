@@ -149,7 +149,7 @@ async function pull() {
     if (r.lib) {
       S.index = r.lib; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
       if (S.reader) { renderUsage(); const f = fileById(S.readerId); if (f) S.reader.setStars(f.stars || 0); } else render();
-      setTimeout(prefetch, 800);
+      setTimeout(prefetch, 800); setTimeout(preparePending, 300);
     }
     if (r.libTag) syncTags.lib = r.libTag;
     if (r.state) { mergeState(r.state); await store.put('kv', 'state', S.state); if (!S.reader) render(); }
@@ -171,6 +171,42 @@ async function takeMarks(id, remote) {
   await store.put('marks', id, { marks: merged, pending: local.pending });
 }
 
+let preparing = false;
+async function preparePending() {
+  if (preparing || !navigator.onLine || document.hidden) return;
+  if (!liveFiles().some((f) => f.pending)) return;
+  preparing = true;
+  try {
+    for (const f0 of liveFiles().filter((f) => f.pending)) {
+      if (!navigator.onLine || document.hidden) break;
+      const f = fileById(f0.id); if (!f || !f.pending) continue;
+      const set = { pending: false };
+      let doc = null;
+      try { doc = await pdfkit.openBytes(await (await getBytes(f)).arrayBuffer()); }
+      catch (e) { if (api.isOffline(e)) break; }   // a PDF that will not open: stop trying, it stays as it came
+      if (doc) {
+        set.pages = doc.numPages;
+        if (S.prefs.autoName !== false || /^공유로 넣은 PDF/.test(f.name)) {
+          try {
+            const p1 = (await pdfkit.pageItems(doc, 0)).page;
+            const p2 = doc.numPages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
+            const g = naming.nameFromPages(p1, p2);
+            if (g) set.name = g.name + '.pdf';
+          } catch (e) { /* keeps its name */ }
+        }
+        try { const th = await pdfkit.thumbnail(doc); await api.putMeta(f.id, 'thumb', th, 'image/jpeg'); await store.put('thumbs', f.id, th); set.thumb = true; } catch (e) { /* no picture */ }
+        try { const t = await pdfkit.textIndex(doc, A); await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip'); await store.put('texts', f.id, t); set.text = true; } catch (e) { /* not searchable */ }
+        doc.destroy();
+      }
+      try {
+        const r = await api.ops([{ op: 'updateFile', id: f.id, set }]);
+        S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+        if (S.reader) renderUsage(); else render();
+      } catch (e) { break; }
+    }
+  } finally { preparing = false; }
+}
+
 async function loadTabs() { try { S.tabs = (await store.get('kv', 'tabs')) || []; } catch (e) { S.tabs = []; } }
 
 async function refresh(first) {
@@ -179,7 +215,7 @@ async function refresh(first) {
     S.index = idx; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
     mergeState(st); await store.put('kv', 'state', S.state);
     if (S.reader) { renderUsage(); } else render();
-    setTimeout(prefetch, 1500);
+    setTimeout(prefetch, 1500); setTimeout(preparePending, 600);
   } catch (e) {
     if (first && !api.isOffline(e) && e.code !== 'auth') toast('책장을 불러오지 못했습니다. 잠시 뒤에 다시 시도합니다.');
   }
@@ -408,7 +444,7 @@ function fileRow(f, extra = '') {
   const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
   return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${S.select ? `<span class="ck">${I.check}</span>` : ''}
     <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span>
-    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}</span>${extra}</span>
+    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}${f.pending ? ' · 정리하는 중' : ''}</span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
@@ -964,12 +1000,14 @@ async function settings() {
     <section><h3>저장 공간</h3><p class="kv"><span>책장 서버</span><b>${size(used)} / 무료 10GB</b></p><p class="kv"><span>이 기기에 받아 둔 파일</span><b>${size(local)}</b></p>
       ${est && est.quota ? `<p class="kv"><span>이 기기에서 쓸 수 있는 공간</span><b>약 ${size(est.quota)}</b></p>` : ''}
       <div class="keep" role="radiogroup" aria-label="이 기기에 받아 두기"><p class="keep-h">이 기기에 받아 두기 <small>인터넷 없이도 읽을 수 있습니다</small></p>
-        ${[['all', '모든 논문'], ['recent', '최근 30일'], ['opened', '열어 본 것만']].map(([k, t]) => `<label class="sw"><input type="radio" name="keep" value="${k}" ${keepMode() === k ? 'checked' : ''}><span>${t}</span></label>`).join('')}
+        ${[['all', '모든 논문'], ['recent', '최근 30일'], ['opened', '열어 본 것만']].map(([k, t]) => `<label class="opt"><input type="radio" name="keep" value="${k}" ${keepMode() === k ? 'checked' : ''}><span>${t}</span></label>`).join('')}
         <p class="keep-n">${S.cached.size} / ${liveFiles().length}편 받아 둠</p></div>
       <button class="btn ghost clear-local">이 기기에 받아 둔 파일 비우기</button></section>
-    <section><h3>올리기</h3><label class="sw"><input type="checkbox" class="an" ${S.prefs.autoName === false ? '' : 'checked'}><span>이름을 ‘저자_제목’으로 정리 <small>(부제 생략, 확실할 때만)</small></span></label></section>
+    <section><h3>올리기</h3><label class="opt"><input type="checkbox" class="an" ${S.prefs.autoName === false ? '' : 'checked'}><span>이름을 ‘저자_제목’으로 정리 <small>(부제 생략, 확실할 때만)</small></span></label></section>
+    <section><h3>공유로 넣기 <small>아이패드·아이폰</small></h3><p class="sheet-p small">Safari나 파일 앱의 공유 버튼에서 바로 책장에 넣습니다. 키를 한 번 만들어 단축어에 넣어 두면 됩니다.</p><button class="btn share-key">공유 키 만들기</button></section>
     <section><h3>로그인된 기기</h3><ul class="devs"><li class="none">불러오는 중…</li></ul></section>
     <section class="foot"><button class="btn danger ghost signout">이 기기에서 로그아웃</button><p class="ver">연구실 책장 ${esc(VERSION)}</p></section>`);
+  $('.share-key', box).onclick = () => shareKeySheet();
   $('.an', box).onchange = (e) => { S.prefs.autoName = e.target.checked; store.put('kv', 'prefs', S.prefs); };
   $('.keep', box).onchange = (e) => { if (e.target.name !== 'keep') return; S.prefs.keep = e.target.value; store.put('kv', 'prefs', S.prefs); prefetch(); };
   $('.clear-local', box).onclick = async () => {
@@ -985,7 +1023,7 @@ async function settings() {
   };
   try {
     const devs = await api.devices();
-    $('.devs', box).innerHTML = devs.map((d) => `<li><span><b>${esc(d.name)}</b>${d.current ? ' <em>이 기기</em>' : ''}<small>마지막 사용 ${ago(d.seen)}</small></span>${d.current ? '' : `<button class="btn small ghost" data-drop="${d.id}">로그아웃시키기</button>`}</li>`).join('');
+    $('.devs', box).innerHTML = devs.map((d) => `<li><span><b>${esc(d.name)}</b>${d.current ? ' <em>이 기기</em>' : ''}<small>${d.kind === 'inbox' ? (d.seen ? '마지막으로 넣은 때 ' + ago(d.seen) : '아직 쓰지 않음') : '마지막 사용 ' + ago(d.seen)}</small></span>${d.current ? '' : `<button class="btn small ghost" data-drop="${d.id}">로그아웃시키기</button>`}</li>`).join('');
     $('.devs', box).onclick = async (e) => {
       const b = e.target.closest('[data-drop]'); if (!b) return;
       if (!(await confirmBox('기기 로그아웃', '그 기기는 다시 비밀번호를 넣어야 책장을 열 수 있습니다.', '로그아웃시키기', true))) return;
@@ -1036,6 +1074,26 @@ function confirmBox(title, text, ok, danger) {
     $('.cancel', box).onclick = () => { closeSheet(); resolve(false); };
     box.closest('.sheet-wrap').addEventListener('click', (e) => { if (e.target.classList.contains('sheet-wrap') || e.target.closest('.sheet-x')) resolve(false); });
   });
+}
+async function shareKeySheet() {
+  let d;
+  try { d = await api.makeShareKey(/iPhone/.test(navigator.userAgent) ? '아이폰' : '아이패드'); }
+  catch (e) { toast(api.isOffline(e) ? '인터넷에 연결되면 만들 수 있습니다' : '만들지 못했습니다'); return; }
+  const url = api.base() + '/api/inbox';
+  const box = sheet(`<h2>공유 키</h2>
+    <p class="sheet-p small">이 화면을 닫으면 다시 볼 수 없습니다. 아래 순서대로 단축어를 만든 뒤 닫으세요. 키가 새면 설정의 기기 목록에서 지우면 됩니다. 이 키로는 PDF를 넣는 것만 할 수 있습니다.</p>
+    <div class="key-row"><code class="key">Bearer ${esc(d.token)}</code><button class="btn small copy-key">복사</button></div>
+    <ol class="steps">
+      <li><b>단축어</b> 앱에서 <b>＋</b>를 눌러 새 단축어를 만들고, 이름을 <b>책장에 넣기</b>로 바꿉니다.</li>
+      <li>아래쪽 <b>ⓘ</b>를 눌러 <b>공유 시트에서 보기</b>를 켭니다. 맨 위 입력 종류는 <b>PDF</b>만 남깁니다.</li>
+      <li>동작 추가에서 <b>URL의 콘텐츠 가져오기</b>를 고르고, URL 자리에 아래 주소를 붙여 넣습니다.<div class="key-row"><code>${esc(url)}</code><button class="btn small copy-url">복사</button></div></li>
+      <li>그 동작을 펼쳐 <b>방법</b>은 <b>POST</b>, <b>헤더</b>를 하나 추가해 키는 <b>Authorization</b>, 값은 위의 <b>Bearer …</b> 전체를 붙여 넣습니다.</li>
+      <li><b>요청 본문</b>은 <b>파일</b>로 바꾸고, 파일 자리에 <b>단축어 입력</b>을 넣습니다. (원하면 마지막에 <b>알림 보기</b> 동작을 더해 ‘책장에 넣었습니다’라고 쓰면 됩니다.)</li>
+      <li>이제 PDF에서 <b>공유</b> → <b>책장에 넣기</b>. 책장을 열면 표지 그림·본문 찾기·이름 정리가 저절로 됩니다.</li>
+    </ol>`);
+  const copy = async (t, b) => { try { await navigator.clipboard.writeText(t); b.textContent = '복사됨'; setTimeout(() => { b.textContent = '복사'; }, 1600); } catch (e) { toast('길게 눌러 직접 복사해 주세요'); } };
+  $('.copy-key', box).onclick = (e) => copy('Bearer ' + d.token, e.currentTarget);
+  $('.copy-url', box).onclick = (e) => copy(url, e.currentTarget);
 }
 function pickFolder(title, avoid = new Set()) {
   return new Promise((resolve) => {

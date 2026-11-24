@@ -174,8 +174,8 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .row-btns .sp { flex: 1; }
 .kv { display: flex; justify-content: space-between; gap: 12px; margin: 6px 0; font-size: 14px; }
 .kv span { color: var(--muted); }
-.sw { display: flex; align-items: center; gap: 10px; margin: 12px 0 6px; font-size: 14px; }
-.sw input { width: 20px; height: 20px; accent-color: var(--accent); }
+.opt { display: flex; align-items: center; gap: 10px; margin: 12px 0 6px; font-size: 14px; }
+.opt input { width: 20px; height: 20px; accent-color: var(--accent); }
 .devs { list-style: none; margin: 0; padding: 0; }
 .devs li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--rule); }
 .devs li span { display: flex; flex-direction: column; }
@@ -430,7 +430,7 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .keep { margin: 10px 0 8px; }
 .keep-h { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
 .keep-h small { font-weight: 400; color: var(--muted); margin-left: 6px; }
-.keep .sw { margin: 6px 0; }
+.keep .opt { margin: 6px 0; }
 .keep-n { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
 
 /* ---------- tabs: several papers open at once ---------- */
@@ -484,4 +484,12 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 
 .orig-name { margin: -2px 0 14px; font-size: 13px; color: var(--muted); }
 .orig-name span { color: var(--ink-2); word-break: break-all; }
-.sw small { color: var(--muted); font-weight: 400; }
+.opt small { color: var(--muted); font-weight: 400; }
+
+/* ---------- share-menu key ---------- */
+.sheet h3 small { font-weight: 400; color: var(--muted); margin-left: 6px; font-size: 12.5px; }
+.sheet-p.small { font-size: 13.5px; }
+.key-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.key-row code { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; background: var(--chip); font-size: 12.5px; word-break: break-all; user-select: all; -webkit-user-select: all; }
+.steps { margin: 12px 0 4px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.55; }
+.steps b { font-weight: 700; }

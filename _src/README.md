@@ -68,6 +68,9 @@ sh /tmp/yohan-work/sg/serve.sh
 
 - **들어가기**: 홈페이지 이름을 세 번 누르면 바로 앱으로 갑니다. 이 PIN은 실제 파일을 지키므로 공개 페이지에는 해시조차 두지 않고, 앱의 비밀번호 화면에서 받은 PIN을 서버만 확인합니다(8번 틀리면 한 시간 잠김). 기기마다 처음 한 번만 묻습니다.
 - **서버**: `site/shelf-server/worker.js`. Cloudflare Worker `bookshelf`와 R2 버킷 `bookshelf`(아시아·태평양)로 돌아가고, 주소는 https://bookshelf.yhahn0128.workers.dev 입니다. PIN은 서버 비밀값으로 페퍼를 친 해시(`PIN_HASH`)만 두며, 8번 틀리면 한 시간 잠깁니다. 원본 PDF는 올린 그대로 두고, 밑줄은 따로 저장했다가 내려받기·인쇄할 때 PDF 표준 주석으로 넣습니다(잠긴 PDF는 쪽을 그림으로 바꿔 밑줄과 함께 만듦).
+- **동기화**: 기기는 화면에 앱이 떠 있는 동안 몇 초마다 `GET /api/sync`로 가진 판(etag)을 보내고, 바뀐 것(책장·읽던 곳·열린 문서의 밑줄)만 받습니다. 밑줄은 한 줄 한 줄 시각으로 합치므로 기기를 오가도 사라지지 않고, 인터넷 없이 한 표시(★△✕ 포함)는 기기에 두었다가 연결되면 보냅니다.
+- **공유로 넣기**: 설정에서 만드는 '공유 키'는 `POST /api/inbox`(본문이 PDF 그대로, `?name=`은 선택)만 쓸 수 있는 키입니다. 아이패드·아이폰 단축어가 이 키로 PDF를 넣으면 책장 맨 위에 '정리하는 중'으로 들어가고, 앱을 연 기기가 표지 그림·본문 색인·'저자_제목' 이름 정리(`shelf/naming.js`)를 마칩니다. 60MB까지.
+- **휴지통**: 7일 보관 뒤 다음 변경 때 지워집니다.
 - **처음 배포** (Cloudflare 대시보드에서 R2를 켠 뒤): `SHELF_PIN=비밀번호 python3 site/shelf-server/deploy.py --first`. Cloudflare API 토큰은 세션 환경의 비밀 설정(api.cloudflare.com)이 요청에 붙여 주므로 파일에 없습니다.
 - **코드만 다시 배포**: `python3 site/shelf-server/deploy.py` (저장된 비밀값은 그대로 둠)
 - **서버 시험**: `cd site/shelf-server && node test.mjs` (가짜 R2와 임시 PIN 123456. 진짜 PIN은 쓰지 않음)

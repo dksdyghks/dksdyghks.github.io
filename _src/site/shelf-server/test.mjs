@@ -142,6 +142,32 @@ ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' 
   ok(f && f.name === '홍길동_기본권 제한의 한계.pdf' && f.orig === 'DBpia_12345.pdf', 'the original file name is kept with the tidied one');
   await ops([{ op: 'trashFile', id: idn }, { op: 'emptyTrash' }]);
 }
+{ // the share menu: a key that can only put PDFs in
+  let y = await j(await call('/devices/sharekey', { method: 'POST', body: JSON.stringify({ name: '아이패드' }) }, T));
+  ok(y.status === 200 && y.body.token && y.body.device.kind === 'inbox', 'a share key is made');
+  const SK = y.body.token;
+  ok((await call('/lib', {}, SK)).status === 403, 'the share key cannot read the shelf');
+  ok((await call('/lib/ops', { method: 'POST', body: JSON.stringify({ ops: [{ op: 'emptyTrash' }] }) }, SK)).status === 403, 'nor change it');
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), crypto.randomBytes(3000)]);
+  y = await j(await call('/inbox?name=' + encodeURIComponent('DBpia 받은 논문'), { method: 'POST', body: pdf, headers: { 'content-type': 'application/pdf' } }, SK));
+  ok(y.status === 200 && y.body.ok && y.body.id === hex(pdf) && y.body.name === 'DBpia 받은 논문.pdf', 'a PDF sent with the share key lands on the shelf');
+  let ix = (await j(await call('/lib', {}, T))).body;
+  const got = ix.files.find((f) => f.id === hex(pdf));
+  ok(got && got.pending === true && got.folder === null && got.orig === 'DBpia 받은 논문.pdf', 'marked to be prepared by a device');
+  ok(!!(await bucket.head('files/' + hex(pdf) + '.pdf')), 'the PDF itself is stored');
+  y = await j(await call('/inbox', { method: 'POST', body: pdf }, SK));
+  ok(y.status === 200 && y.body.dup === true, 'the same PDF twice -> already there');
+  y = await j(await call('/inbox', { method: 'POST', body: Buffer.from('not a pdf at all, just words') }, SK));
+  ok(y.status === 415, 'not a PDF -> refused');
+  y = await ops([{ op: 'updateFile', id: hex(pdf), set: { pending: false, thumb: true, text: true, pages: 3 } }]);
+  ok(!('pending' in y.body.index.files.find((f) => f.id === hex(pdf))), 'a device clears the mark after preparing it');
+  const dv = (await j(await call('/devices', {}, T))).body.devices;
+  const sk = dv.find((d) => d.kind === 'inbox');
+  ok(sk && /공유로 넣기/.test(sk.name), 'the share key is listed with the devices');
+  await call('/devices/' + sk.id, { method: 'DELETE' }, T);
+  ok((await call('/inbox', { method: 'POST', body: pdf }, SK)).status === 401, 'a removed share key no longer works');
+  await ops([{ op: 'trashFile', id: hex(pdf) }, { op: 'emptyTrash' }]);
+}
 { // the trash keeps a paper for 7 days, then lets it go at the next change
   const id7 = hex(Buffer.from('seven days'));
   x = await ops([{ op: 'addFile', file: { id: id7, name: '지난 논문.pdf', folder: null, size: 10 } }, { op: 'trashFile', id: id7 }]);

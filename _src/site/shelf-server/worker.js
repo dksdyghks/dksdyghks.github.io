@@ -73,11 +73,17 @@ async function route(req, env, ctx) {
     if (p[1] === 'ping') return json({ ok: true, at: Date.now() });
     const dev = await authenticate(req, env, ctx);
     if (!dev) return err('auth', 401);
+    if (dev.kind === 'inbox') {   // a share key (iPad/iPhone share menu): it can put a PDF in, nothing more
+      if (p[1] === 'inbox' && m === 'POST' && p.length === 2) return await inbox(req, env, ctx, dev, url);
+      return err('share_key_only', 403);
+    }
     switch (p[1]) {
+      case 'inbox': if (m === 'POST' && p.length === 2) return await inbox(req, env, ctx, dev, url); break;
       case 'me': return json({ device: publicDevice(dev, dev.key) });
       case 'logout': if (m === 'POST') { await env.BUCKET.delete(dev.key); forget(dev.key); return json({ ok: true }); } break;
       case 'devices':
         if (m === 'GET' && p.length === 2) return await listDevices(env, dev);
+        if (m === 'POST' && p[2] === 'sharekey') return await makeShareKey(req, env);
         if (m === 'DELETE' && p[2]) return await dropDevice(env, p[2], dev);
         break;
       case 'lib':
@@ -174,7 +180,7 @@ async function authenticate(req, env, ctx) {
   const rec = { ...(await o.json()), key };
   devCache.set(key, { rec, at: now });
   if (now - (rec.seen || 0) > 3600e3) {   // remember when the device was last used, at most once an hour
-    const save = { name: rec.name, created: rec.created, seen: now };
+    const save = { name: rec.name, created: rec.created, seen: now, ...(rec.kind ? { kind: rec.kind } : {}) };
     rec.seen = now;
     const w = env.BUCKET.put(key, JSON.stringify(save));
     if (ctx && ctx.waitUntil) ctx.waitUntil(w); else await w;
@@ -182,7 +188,7 @@ async function authenticate(req, env, ctx) {
   return rec;
 }
 
-function publicDevice(rec, key) { return { id: key.slice(-64, -52), name: rec.name, created: rec.created, seen: rec.seen }; }
+function publicDevice(rec, key) { return { id: key.slice(-64, -52), name: rec.name, created: rec.created, seen: rec.seen, ...(rec.kind ? { kind: rec.kind } : {}) }; }
 
 async function listDevices(env, me) {
   const out = [];
@@ -199,6 +205,16 @@ async function listDevices(env, me) {
   } while (cursor);
   out.sort((a, b) => (b.seen || 0) - (a.seen || 0));
   return json({ devices: out });
+}
+
+// a key for the iPad/iPhone share menu (단축어 '책장에 넣기'): shown once, kept only as a hash like device keys
+async function makeShareKey(req, env) {
+  const body = await readJSON(req, 4096);
+  const t = token();
+  const key = 'auth/devices/' + (await sha256hex(t));
+  const rec = { name: '공유로 넣기' + (cleanName(body.name, 30) ? ' · ' + cleanName(body.name, 30) : ''), kind: 'inbox', created: Date.now(), seen: 0 };
+  await env.BUCKET.put(key, JSON.stringify(rec));
+  return json({ token: t, device: publicDevice(rec, key) });
 }
 
 async function dropDevice(env, id, me) {
@@ -258,6 +274,7 @@ function apply(idx, ops, dev, now) {
           size: Math.max(0, Number(f.size) || 0), pages: Math.max(0, Number(f.pages) || 0),
           added: now, modified: now, by: dev.name, trashed: null, thumb: !!f.thumb, text: !!f.text,
           orig: f.orig ? cleanName(f.orig, 200) || null : null,   // the file's own name, when it was tidied to 저자_제목
+          ...(f.pending ? { pending: true } : {}),                   // came from the share menu: a device still has to prepare it
         };
         if (existing) Object.assign(existing, rec); else idx.files.push(rec);
         r.file = rec;
@@ -271,6 +288,7 @@ function apply(idx, ops, dev, now) {
         if ('folder' in s) { if (!validFolder(s.folder ?? null)) { r = { ok: false, error: 'no_folder' }; break; } f.folder = s.folder ?? null; }
         for (const k of ['pages']) if (k in s) f[k] = Math.max(0, Number(s[k]) || 0);
         for (const k of ['thumb', 'text']) if (k in s) f[k] = !!s[k];
+        if ('pending' in s && !s.pending) delete f.pending;
         if ('stars' in s) { const v = Math.round(Number(s.stars)); f.stars = (v >= 1 && v <= 3) || v === -1 || v === -2 ? v : 0; f.rated = f.stars ? now : null; }   // after reading: 1–3 stars, -2 = △ (unclear; skim once more), -1 = ✕ (no need to come back); 0 clears
         f.modified = now;
         r.file = f;
@@ -345,6 +363,11 @@ async function applyOps(req, env, ctx, dev) {
   const body = await readJSON(req);
   const ops = Array.isArray(body.ops) ? body.ops.slice(0, 500) : [];
   if (!ops.length) return err('no_ops', 400);
+  const r = await commit(env, ctx, ops, dev);
+  return r ? json(r) : err('busy', 409);
+}
+
+async function commit(env, ctx, ops, dev) {
   for (let attempt = 0; attempt < 8; attempt++) {
     const { idx, etag } = await loadIndex(env);
     const now = Date.now();
@@ -362,9 +385,31 @@ async function applyOps(req, env, ctx, dev) {
       for (const id of purge) if (!live.has(id)) keys.push('files/' + id + '.pdf', 'meta/' + id + '/thumb.jpg', 'meta/' + id + '/text.json.gz', 'marks/' + id + '.json');
       if (keys.length) { const w = deleteMany(env, keys); if (ctx && ctx.waitUntil) ctx.waitUntil(w); else await w; }
     }
-    return json({ index: idx, results });
+    return { index: idx, results };
   }
-  return err('busy', 409);
+  return null;
+}
+
+/* ---------------- a PDF sent from the share menu ----------------
+   The body is the PDF itself; ?name= is optional. The file goes to the top of the shelf marked 'pending':
+   the next device that opens the app draws its thumbnail, indexes its text and tidies its name. */
+const INBOX_MAX = 60 * 1024 * 1024;   // kept in memory to hash it; bigger files go through the app
+async function inbox(req, env, ctx, dev, url) {
+  if (Number(req.headers.get('content-length') || 0) > INBOX_MAX) return err('too_large', 413);
+  const buf = await req.arrayBuffer();
+  if (buf.byteLength > INBOX_MAX) return err('too_large', 413);
+  const head = new TextDecoder('latin1').decode(new Uint8Array(buf, 0, Math.min(1024, buf.byteLength)));
+  if (buf.byteLength < 16 || !head.includes('%PDF-')) return err('not_pdf', 415);
+  const id = (await sha256hex(buf)).slice(0, 24);
+  let name = cleanName(url.searchParams.get('name') || '', 200).replace(/[\\/]+/g, ' ').trim();
+  if (name && !/\.pdf$/i.test(name)) name += '.pdf';
+  if (!(await env.BUCKET.head('files/' + id + '.pdf'))) await env.BUCKET.put('files/' + id + '.pdf', buf, { httpMetadata: { contentType: 'application/pdf' } });
+  const r = await commit(env, ctx, [{ op: 'addFile', file: { id, name: name || '공유로 넣은 PDF.pdf', orig: name || null, folder: null, size: buf.byteLength, pages: 0, thumb: false, text: false, pending: true } }], dev);
+  if (!r) return err('busy', 409);
+  const res = r.results[0];
+  if (!res.ok && res.error === 'exists') return json({ ok: true, dup: true, id, name: res.file && res.file.name });
+  if (!res.ok) return err(res.error || 'failed', 400);
+  return json({ ok: true, id, name: res.file.name });
 }
 
 async function deleteMany(env, keys) {

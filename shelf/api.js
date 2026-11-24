@@ -55,6 +55,7 @@ export async function logout() {
 export const me = () => call('/me');
 export const devices = () => call('/devices').then((d) => d.devices);
 export const dropDevice = (id) => call('/devices/' + id, { method: 'DELETE' });
+export const makeShareKey = (name) => call('/devices/sharekey', { method: 'POST', body: { name } });
 
 export const library = () => call('/lib');
 export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: list } });
