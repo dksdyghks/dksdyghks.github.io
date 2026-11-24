@@ -405,6 +405,7 @@ button { font: inherit; }
 
 .ttl { font-size: 1.0625rem; font-weight: 600; line-height: 1.5; letter-spacing: -0.015em; color: var(--ink); }
 .ttl.sm { font-size: 1.0625rem; }  /* every list's titles share one size */
+/* titles fill each line before breaking (no forced word pairs, no balancing), so no line ends early with room left beside it */
 .ttl-link {
   color: inherit; text-decoration: none;
   background-image: linear-gradient(var(--mark), var(--mark)); background-size: 0 1.5px; background-position: 0 100%; background-repeat: no-repeat;
@@ -439,6 +440,8 @@ button { font: inherit; }
 .edu-school { font-size: 1.0625rem; font-weight: 600; color: var(--ink); }
 .edu-dept { font-weight: 500; color: var(--ink-2); }
 .edu > li.solo .edu-main { grid-column: 1 / -1; }
+/* tablets: the school column only needs the school's name, so the thesis title gets the room beside it */
+@media (min-width: 761px) and (max-width: 1100px) { .edu > li { grid-template-columns: 170px minmax(0, 1fr); } }
 .edu-thesis { padding: 12px 16px; border-radius: 12px; background: var(--chip); display: flex; flex-direction: column; gap: 3px; }
 .edu-label { font-size: 0.8125rem; font-weight: 600; color: var(--faint); font-variant-numeric: tabular-nums; }
 .edu-ttl { font-size: 1rem; font-weight: 600; line-height: 1.5; color: var(--ink-2); }

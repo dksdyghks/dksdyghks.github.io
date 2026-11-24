@@ -320,10 +320,8 @@ def view(lang):
         return f'{head_html}{brk}<span class="nw">{e(tail)}{badge_html}{after}</span>'
 
     def nowidow(t):
-        """Keep the last two words together (typographic widow control) when they are short."""
-        parts = t.rsplit(' ', 2)
-        if len(parts) == 3 and len(parts[1]) + len(parts[2]) <= 16:
-            return f'{parts[0]} {parts[1]}\u00a0{parts[2]}'
+        """Titles wrap freely; text-wrap: pretty (style.css) keeps a short word from sitting alone on the last line
+        without pushing whole word pairs down and leaving a gap at the end of the line above."""
         return t
 
     def linked(main, sub=None, href=None):
@@ -355,10 +353,6 @@ def view(lang):
                     h, l = '', h + l
                 else:
                     lead, h = f'<span class="nw">-\u00a0{e(rest[:j])}</span>', rest[j:]
-            if h.strip():  # the last two words travel together, so no subtitle ends on a lone word
-                h2, prev = widow_pair(h) if ' ' in h.strip() else ('', h)
-                if len(prev.strip()) + len(l) <= (16 if HANGUL.search(l) else 28):
-                    h, l = h2, prev + l
             return f'<span class="sub">{lead}{e(h)}<span class="nw">{e(l)}{tail_extra}</span></span>'
 
         sp = '<span class="sp"> </span>'
@@ -369,12 +363,7 @@ def view(lang):
             inner = e(main) + sp + sub_html(sub, icon)
         else:
             h, l = split_last(main)
-            short = (len(l) <= 3) if HANGUL.search(l) else (len(l) <= 12)
-            h2, prev = widow_pair(h) if (short and h.strip()) else (h, '')
-            if prev and len(prev.strip()) + len(l) <= (10 if HANGUL.search(l) else 28):
-                inner = e(h2) + f'<span class="nwm">{e(prev)}<span class="nw">{e(l)}{icon}</span></span>'
-            else:
-                inner = e(h) + f'<span class="nw">{e(l)}{icon}</span>'
+            inner = e(h) + f'<span class="nw">{e(l)}{icon}</span>'
         return f'<a class="ttl-link" href="{e(href)}" target="_blank" rel="noopener" title="{open_lbl}">{inner}</a>'
 
     def ext(href):
