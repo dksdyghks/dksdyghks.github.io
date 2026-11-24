@@ -245,26 +245,6 @@ ROLE_TXT = {'sole': ('단독', 'Sole author'), 'first': ('주저자', 'First aut
 SITE = 'https://0128.kr/'
 HANGUL = re.compile(r'[가-힣]')
 COPY_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></svg>'
-QUOTE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M10 7.5C7.2 8.3 5.5 10.4 5.5 13.6V17a1 1 0 0 0 1 1h3.2a1 1 0 0 0 1-1v-3.2a1 1 0 0 0-1-1H8c.1-1.6 1-2.7 2.6-3.3zM18.5 7.5c-2.8.8-4.5 2.9-4.5 6.1V17a1 1 0 0 0 1 1h3.2a1 1 0 0 0 1-1v-3.2a1 1 0 0 0-1-1h-1.7c.1-1.6 1-2.7 2.6-3.3z"/></svg>'
-
-def cite_ko(date, kt, ks, kj, kv, pages, ka):
-    """Korean law-journal style: 저자, "제목", 「학술지」 권호, 연도, 쪽면."""
-    title = kt.rstrip()
-    if ks:
-        title = f'{title} {ks}' if title.endswith(':') or ks.startswith('-') else f'{title}: {ks}'
-    return f'{ka or "안요환"}, "{title}", 「{kj}」 {kv}, {date[0]}, {pages}면.'
-
-def cite_en(date, et, ej, ev, pages, ea, doi):
-    """Chicago style (notes-bibliography): Family, Given, and Others. "Title." Journal vol, no. n (year): pages."""
-    names = re.split(r',\s*|\s*&\s*', ea) if ea else ['Yohan Ahn']
-    first = names[0].rsplit(' ', 1)
-    names[0] = f'{first[1]}, {first[0]}' if len(first) == 2 else names[0]
-    who = names[0] if len(names) == 1 else (f'{names[0]}, and {names[1]}' if len(names) == 2 else ', '.join(names[:-1]) + f', and {names[-1]}')
-    vol = re.match(r'Vol\. (\d+)(?:, No\. (\d+))?$', ev)
-    num = f' {vol.group(1)}' + (f', no. {vol.group(2)}' if vol.group(2) else '') if vol else ', ' + ev.replace('No. ', 'no. ')  # issue only: "Journal, no. 24"
-    t = et.rstrip('.')
-    out = f'{who}. “{t}.” {ej}{num} ({date[0]}): {pages.replace("-", "–")}.'
-    return out + (f' https://doi.org/{doi}' + ('' if doi.endswith('.') else '.') if doi else '')  # some DOIs end in a full stop
 
 CASE_NO = re.compile(r'\d{2,4}[가-힣]{1,3}\d{3,}')  # Korean court case numbers such as 93다12947, 2017다278187
 DOC_TITLE = {'ko': '0128', 'en': '0128'}  # the page is named after its address (0128.kr); who and what are in the description
@@ -440,20 +420,8 @@ def view(lang):
 
     # journal articles, newest first
     items = []
-    last_year = None
-    cite_lbl, cite_done = ('인용', '인용 표기를 복사했습니다') if ko else ('Cite', 'Citation copied')
     for (date, kt, ks, et, kj, kv, ej, ev, pages, ka, ea, fund) in reversed(PAPERS):
         doi = DOI.get(kt)
-        new_year = date[0] != last_year
-        last_year = date[0]
-        cite = cite_ko(date, kt, ks, kj, kv, pages, ka) if ko else cite_en(date, et, ej, ev, pages, ea, doi)
-        y, m, d = date
-        # the full date stays in the text (screen readers, print); on screen the year is shown once per group
-        when = (f'<span class="when"><span class="yr-in">{y}. </span>{m}. {d}.</span>' if ko
-                else f'<span class="when">{EN_MONTH[m-1]} {d}<span class="yr-in">, {y}</span></span>')
-        side = (f'<div class="when-col">{f"<span class=\"yr\" aria-hidden=\"true\">{y}</span>" if new_year else ""}{when}'
-                f'<button type="button" class="cite" data-copy="{e(cite)}" data-done="{cite_done}" '
-                f'aria-label="{cite_lbl}: {e(kt if ko else et)}" title="{"인용 표기 복사" if ko else "Copy citation (Chicago)"}">{QUOTE_ICON}<span>{cite_lbl}</span></button></div>')
         href = f'https://doi.org/{doi}' if doi else DIRECT.get(kt, (None, None))[1]
         if ko:
             shown = None if (ks and CASE_NO.search(ks)) else ks  # e.g. "대법원 … 93다12947 판결을 기초로" is omitted
@@ -473,7 +441,7 @@ def view(lang):
         meta = [f'<span class="jr">{e(j)}</span> {glue(v, kci, DOT)} <span class="nw pg">{e(pg)}{DOT if fund_txt else ""}</span>']
         if fund_txt:
             meta.append(e(fund_txt))
-        items.append(f'<li class="pub{" y-first" if new_year else ""}">{side}<div>'
+        items.append(f'<li class="pub"><span class="when">{ym(*date)}</span><div>'
                      f'<h3 class="ttl">{title}</h3>'
                      f'<p class="by">{glue(authors, ROLE_TXT[role][0 if ko else 1])}</p>'
                      '<p class="meta">' + ''.join(f'<span>{m}</span>' for m in meta) + '</p>'
