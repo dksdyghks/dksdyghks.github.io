@@ -29,6 +29,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const uid = () => 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 const ICON = {
+  walk: '<svg viewBox="0 0 24 24"><path d="M4 7h9M4 12h6M4 17h9"/><path d="M15 8.5l4.5 3.5-4.5 3.5"/></svg>',
+  prev: '<svg viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></svg>',
+  next: '<svg viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></svg>',
   star: '<svg viewBox="0 0 24 24" class="sf"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
   search: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg>',
@@ -55,12 +58,13 @@ export class Reader {
     this.texts = (o.index && o.index.pages) || null;
     this.outlineData = (o.index && o.index.outline) || [];
     this.allMarks = (o.marks || []).slice();   // includes deletions (kept for syncing)
-    this.zoom = 1; this.tool = 'read';
+    this.zoom = o.zoom > 0 ? o.zoom : 1; this.tool = 'read';
     const pref = o.prefs || {};
     this.hlColor = HL.includes(pref.hl) ? pref.hl : HL[0];
     this.ulColor = UL.includes(pref.ul) ? pref.ul : UL[0];
     this.lastMark = pref.last === 'ul' ? 'ul' : 'hl';
     this.pages = [];
+    this.walkList = []; this.walkI = 0; this.walking = false;
     this.stats = null;
     this.dead = false;
     this.build();
@@ -98,7 +102,16 @@ export class Reader {
         <button data-tool="read" class="on" aria-label="읽기">${ICON.read}<span>읽기</span></button>
         <button data-tool="hl" aria-label="형광펜">${ICON.hl}<span>형광펜</span><i class="dot"></i></button>
         <button data-tool="ul" aria-label="밑줄">${ICON.ul}<span>밑줄</span><i class="dot"></i></button>
+        <button data-walk aria-label="표시한 곳만 넘겨 보기">${ICON.walk}<span>넘겨 보기</span></button>
         <div class="rd-colors" hidden></div>
+      </div>
+      <div class="rd-walk" role="toolbar" aria-label="표시한 곳만 넘겨 보기" hidden>
+        <button type="button" class="wb" data-w="prev" aria-label="이전">${ICON.prev}</button>
+        <span class="wn" aria-live="polite"></span>
+        <button type="button" class="wb" data-w="next" aria-label="다음">${ICON.next}</button>
+        <div class="wcolors"></div>
+        <span class="wsep"></span>
+        <button type="button" class="wb" data-w="stop" aria-label="끝내기">${ICON.close}</button>
       </div>
       <div class="rd-ind">
         <button class="ib rd-zoom" data-a="zout" aria-label="작게">${ICON.minus}</button>
@@ -111,6 +124,15 @@ export class Reader {
     this.$ = (s) => r.querySelector(s);
     this.scroller = this.$('.rd-scroll'); this.pagesEl = this.$('.rd-pages');
     this.$('.rd-title b').textContent = this.o.title || '';
+    this.tabs = this.o.tabs || [];
+    this.renderTabs();
+    this.$('.rd-title').addEventListener('click', (e) => {
+      const x = e.target.closest('[data-doc-x]');
+      if (x) { e.stopPropagation(); this.o.onTabClose && this.o.onTabClose(x.dataset.docX); return; }
+      const t = e.target.closest('[data-doc]');
+      if (t && t.dataset.doc !== this.o.id) { this.o.onTab && this.o.onTab(t.dataset.doc); return; }
+      if (e.target.closest('.rd-tabcount')) this.o.onTabList && this.o.onTabList();
+    });
     this.$('.rd-back').onclick = () => this.o.onClose && this.o.onClose();
     r.querySelector('.rd-acts').onclick = (e) => { const b = e.target.closest('[data-a]'); if (b) this.action(b.dataset.a, b); };
     r.querySelector('.rd-ind').onclick = (e) => { const b = e.target.closest('[data-a]'); if (b) this.action(b.dataset.a, b); };
@@ -121,11 +143,20 @@ export class Reader {
     this.$('.rd-tools').onclick = (e) => {
       const c = e.target.closest('[data-color]');
       if (c) { this.setColor(c.dataset.color); return; }
+      if (e.target.closest('[data-walk]')) { this.walkStart(); return; }
       const b = e.target.closest('[data-tool]'); if (!b) return;
       if (b.dataset.tool === this.tool && b.dataset.tool !== 'read') { this.toggleColors(); return; }
       this.setTool(b.dataset.tool);
     };
     this.$('.rd-panel .seg').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) this.showTab(b.dataset.tab); };
+    this.$('.rd-walk').onclick = (e) => {
+      const c = e.target.closest('[data-wc]');
+      if (c) { const cur = this.walkList[this.walkI]; this.walkColor = this.walkColor === c.dataset.wc ? null : c.dataset.wc; this.walkBuild(); this.walkGo(this.walkNear(cur)); return; }
+      const b = e.target.closest('[data-w]'); if (!b) return;
+      if (b.dataset.w === 'next') this.walkGo(this.walkI + 1);
+      else if (b.dataset.w === 'prev') this.walkGo(this.walkI - 1);
+      else this.walkStop();
+    };
     this.$('.rd-panel-in').onclick = (e) => this.panelClick(e);
     this.paintTools();
     this.wire();
@@ -337,6 +368,20 @@ export class Reader {
   }
 
   /* ---------------- marks ---------------- */
+  // several papers open at once: one tab each; on a phone only a count that opens the list
+  setTabs(tabs) { this.tabs = tabs || []; this.renderTabs(); }
+  renderTabs() {
+    const box = this.$('.rd-title'), tabs = this.tabs;
+    if (!box) return;
+    if (tabs.length < 2) { box.innerHTML = `<b>${esc(this.o.title || '')}</b>`; box.classList.remove('has-tabs'); return; }
+    box.classList.add('has-tabs');
+    if (this.root.clientWidth < 600) {
+      box.innerHTML = `<b>${esc(this.o.title || '')}</b><button type="button" class="rd-tabcount" aria-label="열린 문서 ${tabs.length}개">${tabs.length}</button>`;
+      return;
+    }
+    box.innerHTML = `<div class="rd-tabs" role="tablist">${tabs.map((t) => `<button type="button" role="tab" data-doc="${t.id}" class="${t.id === this.o.id ? 'on' : ''}" aria-selected="${t.id === this.o.id}" title="${esc(t.title)}"><span>${esc(t.title)}</span><i class="x" data-doc-x="${t.id}" role="button" aria-label="닫기">${ICON.close}</i></button>`).join('')}</div>`;
+    const on = box.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
   setStars(v) {
     this.stars = v;
     if (!this.endEl) return;
@@ -345,6 +390,42 @@ export class Reader {
     const p0 = this.pages[0];
     if (p0) { let c = p0.el.querySelector('.pg-cover'); if (!c) { c = el('div', 'pg-cover'); p0.el.appendChild(c); } c.innerHTML = gradeSVG(v); c.dataset.g = v; }
   }
+  /* ---------------- only the marked passages, one after another ---------------- */
+  walkStart() {
+    if (!this.marks().length) { this.o.toast && this.o.toast('아직 표시한 곳이 없습니다'); return; }
+    this.setTool('read'); this.hidePop();
+    this.walking = true; this.walkColor = null;
+    this.root.classList.add('walking'); this.$('.rd-walk').hidden = false;
+    this.walkBuild();
+    const c = this.current();
+    const i = this.walkList.findIndex((m) => m.p > c.page || (m.p === c.page && m.rects[0][1] >= c.y - 0.02));
+    this.walkGo(i < 0 ? 0 : i);
+  }
+  walkBuild() {
+    const order = (a, b) => a.p - b.p || a.rects[0][1] - b.rects[0][1] || a.rects[0][0] - b.rects[0][0];
+    const all = this.marks().sort(order);
+    const kinds = [...new Set(all.map((m) => m.kind + m.color))];
+    if (this.walkColor && !kinds.includes(this.walkColor)) this.walkColor = null;
+    this.walkList = this.walkColor ? all.filter((m) => m.kind + m.color === this.walkColor) : all;
+    this.$('.rd-walk .wcolors').innerHTML = kinds.length > 1 ? kinds.map((k) => { const ul = k.startsWith('ul'), c = k.slice(2); return `<button type="button" data-wc="${k}" class="${this.walkColor === k ? 'on' : ''}" style="--c:${c}" aria-label="${ul ? '이 색 밑줄만' : '이 색 형광펜만'}" aria-pressed="${this.walkColor === k}"><i class="${ul ? 'uw' : 'sw'}"></i></button>`; }).join('') : '';
+  }
+  walkNear(cur) {   // after the filter changes: the first mark at or after the one in view
+    if (!cur) return 0;
+    const i = this.walkList.findIndex((m) => m.p > cur.p || (m.p === cur.p && m.rects[0][1] >= cur.rects[0][1]));
+    return i < 0 ? this.walkList.length - 1 : i;
+  }
+  walkGo(i) { this.walkShow(i, true); }
+  walkShow(i, move) {
+    const n = this.walkList.length; if (!n) return;
+    this.walkI = clamp(i, 0, n - 1);
+    const m = this.walkList[this.walkI];
+    if (move) { this.scrollToPage(m.p, m.rects[0][1], true); this.flash(m.id); }
+    this.$('.rd-walk .wn').innerHTML = `<b>${this.walkI + 1} / ${n}</b><small>${esc(this.label(m.p))}${this.unit()}</small>`;
+    this.$('.rd-walk [data-w="prev"]').disabled = this.walkI === 0;
+    this.$('.rd-walk [data-w="next"]').disabled = this.walkI === n - 1;
+  }
+  walkStop() { this.walking = false; this.root.classList.remove('walking'); this.$('.rd-walk').hidden = true; }
+
   // opened from the list with a saved place: continue there, or go back to the first page
   askResume(label) {
     const box = el('div', 'rd-resume');
@@ -375,6 +456,7 @@ export class Reader {
     }
   }
   changed() {
+    if (this.walking) { const cur = this.walkList[this.walkI]; this.walkBuild(); if (this.walkList.length) this.walkShow(Math.max(0, this.walkList.findIndex((m) => cur && m.id === cur.id)), false); else this.walkStop(); }
     for (const p of this.pages) this.drawMarks(p);
     if (!this.$('.rd-panel').hidden && this.tab === 'marks') this.showTab('marks');
     this.o.onMarks && this.o.onMarks(this.allMarks.slice());
@@ -492,7 +574,7 @@ export class Reader {
       if (!raf) raf = requestAnimationFrame(() => { raf = 0; this.update(); });
       clearTimeout(this.posT); this.posT = setTimeout(() => this.o.onPosition && this.o.onPosition(this.current()), 700);
     }, { passive: true });
-    this.ro = new ResizeObserver(() => { if (!this.pages.length || this.dead) return; const c = this.current(); const z = this.zoom; this.layout(); for (const p of this.pages) p.cScale = -1; this.zoom = z; this.scrollToPage(c.page, c.y, false); this.update(); });
+    this.ro = new ResizeObserver(() => { if (this.tabs && this.tabs.length > 1) { const narrow = this.root.clientWidth < 600; if (narrow !== this.tabsNarrow) { this.tabsNarrow = narrow; this.renderTabs(); } } if (!this.pages.length || this.dead) return; const c = this.current(); const z = this.zoom; this.layout(); for (const p of this.pages) p.cScale = -1; this.zoom = z; this.scrollToPage(c.page, c.y, false); this.update(); });
     this.ro.observe(s);
 
     // Pencil: no scrolling or system selection with the stylus — it marks
@@ -508,6 +590,13 @@ export class Reader {
 
     // two fingers: scroll while a marking tool is on; pinch zooms in every mode
     s.addEventListener('touchstart', (e) => this.twoStart(e), { passive: false });
+    s.addEventListener('touchstart', (e) => { this.swipe = this.walking && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null; }, { passive: true });
+    s.addEventListener('touchend', (e) => {
+      const w = this.swipe; this.swipe = null;
+      if (!w || !this.walking || e.changedTouches.length !== 1) return;
+      const dx = e.changedTouches[0].clientX - w.x, dy = e.changedTouches[0].clientY - w.y;
+      if (Date.now() - w.t < 700 && Math.abs(dx) > 50 && Math.abs(dx) > 1.6 * Math.abs(dy) && s.scrollWidth <= s.clientWidth + 2) this.walkGo(this.walkI + (dx < 0 ? 1 : -1));
+    }, { passive: true });
     s.addEventListener('touchmove', (e) => this.twoMove(e), { passive: false });
     s.addEventListener('touchend', (e) => this.twoEnd(e));
     s.addEventListener('touchcancel', (e) => this.twoEnd(e));
@@ -714,6 +803,11 @@ export class Reader {
     const inField = e.target && e.target.closest && e.target.closest('input, textarea');
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); this.action('search'); return; }
     if (inField) return;
+    if (this.walking && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); this.walkGo(this.walkI + 1); return; }
+      if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); this.walkGo(this.walkI - 1); return; }
+      if (e.key === 'Escape') { this.walkStop(); return; }
+    }
     if (e.key === 'Escape') { this.hidePop(); this.$('.rd-colors').hidden = true; return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.zoomBy(1.15); }
     else if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); this.zoomBy(1 / 1.15); }

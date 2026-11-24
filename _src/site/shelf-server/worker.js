@@ -257,6 +257,7 @@ function apply(idx, ops, dev, now) {
           id: f.id, name: cleanName(f.name, 200) || '이름 없음.pdf', folder: place,
           size: Math.max(0, Number(f.size) || 0), pages: Math.max(0, Number(f.pages) || 0),
           added: now, modified: now, by: dev.name, trashed: null, thumb: !!f.thumb, text: !!f.text,
+          orig: f.orig ? cleanName(f.orig, 200) || null : null,   // the file's own name, when it was tidied to 저자_제목
         };
         if (existing) Object.assign(existing, rec); else idx.files.push(rec);
         r.file = rec;

@@ -135,6 +135,13 @@ ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' 
   y = await j(await call('/sync?lib=' + tag, {}, T));
   ok(y.body.lib && y.body.libTag !== tag && y.body.lib.folders.some((f) => f.id === 'f_dddddddddd'), 'after a change the new library comes back');
 }
+{ // a tidied name keeps the file's own name beside it
+  const idn = hex(Buffer.from('named'));
+  const y = await ops([{ op: 'addFile', file: { id: idn, name: '홍길동_기본권 제한의 한계.pdf', orig: 'DBpia_12345.pdf', folder: null, size: 10 } }]);
+  const f = y.body.index.files.find((x) => x.id === idn);
+  ok(f && f.name === '홍길동_기본권 제한의 한계.pdf' && f.orig === 'DBpia_12345.pdf', 'the original file name is kept with the tidied one');
+  await ops([{ op: 'trashFile', id: idn }, { op: 'emptyTrash' }]);
+}
 { // the trash keeps a paper for 7 days, then lets it go at the next change
   const id7 = hex(Buffer.from('seven days'));
   x = await ops([{ op: 'addFile', file: { id: id7, name: '지난 논문.pdf', folder: null, size: 10 } }, { op: 'trashFile', id: id7 }]);

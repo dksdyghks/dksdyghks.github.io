@@ -6,6 +6,7 @@ import * as store from './store.js';
 import * as pdfkit from './pdfkit.js';
 import * as A from './analyze.js';
 import { Reader, gradeSVG } from './reader.js';
+import * as naming from './naming.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -16,6 +17,7 @@ const S = {
   index: { folders: [], files: [] },
   state: { files: {} },
   view: { kind: 'home', folder: null },
+  tabs: [],          // papers open as tabs on this device: { id, page, y, zoom, at }
   sort: 'added', q: '', select: null, prefs: {},
   uploads: [], reader: null, readerId: null,
   cached: new Set(),
@@ -25,6 +27,7 @@ const I = {
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   home: '<svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+  tabs: '<svg viewBox="0 0 24 24"><rect x="3.5" y="7" width="13" height="13" rx="2"/><path d="M7.5 4h11a2 2 0 0 1 2 2v11"/></svg>',
   star: '<svg viewBox="0 0 24 24"><path d="M12 3.8l2.5 5.1 5.6.8-4.05 3.95.95 5.6L12 16.6l-5 2.65.95-5.6L3.9 9.7l5.6-.8z"/></svg>',
   nope: '<svg viewBox="0 0 24 24" class="nx"><path d="M7 7l10 10M17 7L7 17"/></svg>',
   tri: '<svg viewBox="0 0 24 24" class="nx"><path d="M12 5.5L19.5 18.5h-15z"/></svg>',
@@ -113,6 +116,7 @@ async function startLibrary() {
   S.index = (await store.get('kv', 'index')) || S.index;
   S.state = (await store.get('kv', 'state')) || S.state;
   S.cached = new Set(await store.keys('files').catch(() => []));
+  await loadTabs();
   renderShell();
   render();
   await refresh(true);
@@ -167,6 +171,8 @@ async function takeMarks(id, remote) {
   await store.put('marks', id, { marks: merged, pending: local.pending });
 }
 
+async function loadTabs() { try { S.tabs = (await store.get('kv', 'tabs')) || []; } catch (e) { S.tabs = []; } }
+
 async function refresh(first) {
   try {
     const [idx, st] = await Promise.all([api.library(), api.getState()]);
@@ -220,6 +226,7 @@ function renderShell() {
       <header class="bar">
         <button class="ib menu-btn" aria-label="메뉴">${I.menu}</button>
         <nav class="crumbs"></nav>
+        <button class="tabs-btn" hidden></button>
         <label class="find">${I.search}<input type="search" placeholder="제목과 본문에서 찾기" enterkeyhint="search" autocomplete="off"></label>
       </header>
       <div class="tools"></div>
@@ -236,6 +243,7 @@ function renderShell() {
   $('.views').onclick = (e) => { const b = e.target.closest('[data-view]'); if (!b) return; S.view = { kind: b.dataset.view, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.settings-btn').onclick = () => { closeRail(); settings(); };
+  $('.tabs-btn').onclick = () => { const t = S.tabs.slice().sort((a, b) => b.at - a.at)[0]; if (t) openFile(t.id, { tab: true }); };
   $('.trash-btn').onclick = () => { S.view = { kind: 'trash', folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
   $('.menu-btn').onclick = () => app.classList.toggle('rail-open');
   $('.scrim').onclick = closeRail;
@@ -263,13 +271,63 @@ function render() {
   if (!$('.app')) return;
   for (const b of document.querySelectorAll('.views [data-view]')) b.classList.toggle('on', !S.q && b.dataset.view === S.view.kind && !(S.view.kind === 'home' && S.view.folder));
   $('.trash-btn').classList.toggle('on', !S.q && S.view.kind === 'trash');
-  renderTree(); renderUsage(); renderCrumbs(); renderTools();
+  renderTree(); renderUsage(); renderCrumbs(); renderTools(); renderTabsBtn();
   const c = $('.content');
   if (S.q) { renderSearch(c); return; }
   if (S.view.kind === 'recent') renderRecent(c);
   else if (S.view.kind === 'trash') renderTrash(c);
   else renderFolder(c, S.view.folder);
   lazyThumbs();
+}
+
+function renderTabsBtn() {
+  pruneTabs();
+  const b = $('.tabs-btn'); if (!b) return;
+  b.hidden = !S.tabs.length;
+  b.innerHTML = `${I.tabs}<span>읽던 문서</span><em>${S.tabs.length}</em>`;
+}
+// the papers open as tabs; only the one in front is drawn, the others keep just their place
+const MAX_TABS = 8;
+function pruneTabs() {
+  const before = S.tabs.length;
+  S.tabs = S.tabs.filter((t) => { const f = fileById(t.id); return f && !f.trashed && !folderTrashed(f.folder); });
+  if (S.tabs.length !== before) saveTabs();
+}
+function saveTabs() { store.put('kv', 'tabs', S.tabs).catch(() => {}); }
+function tabInfo() { return S.tabs.map((t) => ({ id: t.id, title: stem((fileById(t.id) || { name: '' }).name) })); }
+function rememberTab() {
+  if (!S.reader || !S.readerId) return;
+  const t = S.tabs.find((x) => x.id === S.readerId); if (!t) return;
+  const c = S.reader.current(); t.page = c.page; t.y = c.y; t.zoom = S.reader.zoom; t.at = Date.now();
+  saveTabs();
+}
+function addTab(id) {
+  let t = S.tabs.find((x) => x.id === id);
+  if (!t) {
+    t = { id, page: null, y: 0, zoom: 1, at: Date.now() };
+    S.tabs.push(t);
+    while (S.tabs.length > MAX_TABS) { const old = S.tabs.filter((x) => x.id !== id).sort((a, b) => a.at - b.at)[0]; S.tabs = S.tabs.filter((x) => x !== old); }
+  }
+  t.at = Date.now();
+  saveTabs();
+  return t;
+}
+function switchTab(id) { if (id && id !== S.readerId) openFile(id, { tab: true, replace: true }); }
+function closeTab(id) {
+  const i = S.tabs.findIndex((x) => x.id === id); if (i < 0) return;
+  S.tabs.splice(i, 1); saveTabs();
+  if (id !== S.readerId) { if (S.reader) S.reader.setTabs(tabInfo()); return; }
+  const next = S.tabs[i] || S.tabs[i - 1];
+  if (next) openFile(next.id, { tab: true, replace: true, noRemember: true });
+  else history.back();   // the last tab: back to the shelf
+}
+function tabsSheet() {
+  const box = sheet(`<h2>열린 문서</h2><ul class="tab-list">${S.tabs.map((t) => { const f = fileById(t.id); return `<li class="${t.id === S.readerId ? 'on' : ''}"><button class="go" data-go="${t.id}"><span class="thumb" data-thumb="${f && f.thumb ? f.id : ''}">${coverMark(f && f.stars)}</span><b>${esc(stem(f ? f.name : ''))}</b></button><button class="ib" data-x="${t.id}" aria-label="닫기">${I.close}</button></li>`; }).join('')}</ul>`);
+  lazyThumbs();
+  box.onclick = (e) => {
+    const g = e.target.closest('[data-go]'); if (g) { closeSheet(); switchTab(g.dataset.go); return; }
+    const x = e.target.closest('[data-x]'); if (x) { x.closest('li').remove(); closeTab(x.dataset.x); if (!S.tabs.length) closeSheet(); }
+  };
 }
 
 function renderTree() {
@@ -508,7 +566,7 @@ async function fileMenu(id, x, y) {
   if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
   if (k === 'open') openFile(id);
   else if (k === 'start') openFile(id, { page: 0 });
-  else if (k === 'rename') { const n = await promptBox('이름 바꾸기', '파일 이름', stem(f.name), '바꾸기'); if (n) doOps([{ op: 'updateFile', id, set: { name: n.endsWith('.pdf') ? n : n + '.pdf' } }]); }
+  else if (k === 'rename') { const n = await promptBox('이름 바꾸기', '파일 이름', stem(f.name), '바꾸기', f.orig && f.orig !== f.name ? stem(f.orig) : null); if (n) doOps([{ op: 'updateFile', id, set: { name: n.endsWith('.pdf') ? n : n + '.pdf' } }]); }
   else if (k === 'move') { const to = await pickFolder('옮길 곳'); if (to !== undefined) doOps([{ op: 'updateFile', id, set: { folder: to } }], '옮겼습니다'); }
   else if (k === 'dl') exportPdf(f, { marks: true, mode: 'download' });
   else if (k === 'print') exportPdf(f, { marks: true, mode: 'print' });
@@ -633,14 +691,23 @@ async function uploadOne(u) {
     try { doc = await pdfkit.openBytes(buf); }
     catch (e) { set('error', { msg: e && e.name === 'PasswordException' ? '암호가 걸린 PDF는 올릴 수 없습니다' : '열 수 없는 PDF입니다' }); return; }
     const pages = doc.numPages;
+    if (!u.orig) u.orig = u.name;
+    if (S.prefs.autoName !== false) {   // "저자_제목" read from the first page, only when both are clear
+      try {
+        const p1 = (await pdfkit.pageItems(doc, 0)).page;
+        const p2 = pages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
+        const g = naming.nameFromPages(p1, p2);
+        if (g) { u.name = g.name + '.pdf'; renderUploads(); }
+      } catch (e) { /* keeps the file's own name */ }
+    }
     let thumb = null;
     try { thumb = await pdfkit.thumbnail(doc); } catch (e) { /* no picture */ }
     set('up', { p: 0 });
     await api.uploadFile(id, new Blob([buf], { type: 'application/pdf' }), (p) => { u.p = p; renderUploads(); });
     if (thumb) { try { await api.putMeta(id, 'thumb', thumb, 'image/jpeg'); await store.put('thumbs', id, thumb); } catch (e) { thumb = null; } }
-    const r = await api.ops([{ op: 'addFile', file: { id, name: u.name, folder: u.folder, size: buf.byteLength, pages, thumb: !!thumb, text: false } }]);
+    const r = await api.ops([{ op: 'addFile', file: { id, name: u.name, orig: u.orig, folder: u.folder, size: buf.byteLength, pages, thumb: !!thumb, text: false } }]);
     const res = r.results[0];
-    if (!res.ok && res.error === 'no_folder') await api.ops([{ op: 'addFile', file: { id, name: u.name, folder: null, size: buf.byteLength, pages, thumb: !!thumb, text: false } }]);
+    if (!res.ok && res.error === 'no_folder') await api.ops([{ op: 'addFile', file: { id, name: u.name, orig: u.orig, folder: null, size: buf.byteLength, pages, thumb: !!thumb, text: false } }]);
     S.index = r.index;
     await store.put('files', id, new Blob([buf], { type: 'application/pdf' })); S.cached.add(id);
     render();
@@ -689,7 +756,9 @@ async function getBytes(f, onProgress) {
 
 async function openFile(id, at = {}) {
   const f = fileById(id); if (!f) return;
-  if (S.reader) closeReader(true);
+  if (S.reader) closeReader(true, at.noRemember);
+  const tab = addTab(id);
+  if (at.tab && tab.page != null) at = { ...at, page: tab.page, y: tab.y, zoom: tab.zoom, resume: true };
   if (at.replace) history.replaceState({ r: id }, '', '#r=' + id); else history.pushState({ r: id }, '', '#r=' + id);
   const host = el('div', 'reader-host');
   document.body.appendChild(host);
@@ -711,7 +780,12 @@ async function openFile(id, at = {}) {
     host.innerHTML = '';
     S.reader = new Reader(host, {
       doc, title: stem(f.name), analyze: A, marks, index,
-      at: at.page != null ? { page: at.page, query: at.query } : (s ? { page: s.page, y: s.y } : {}),
+      at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query } : (s ? { page: s.page, y: s.y } : {}),
+      zoom: at.zoom,
+      id, tabs: tabInfo(),
+      onTab: (t) => switchTab(t),
+      onTabClose: (t) => closeTab(t),
+      onTabList: () => tabsSheet(),
       prefs: S.prefs,
       onClose: () => history.back(),
       onMarks: (list) => saveMarks(id, list),
@@ -725,7 +799,7 @@ async function openFile(id, at = {}) {
     });
     S.reader.docRef = doc;
     await S.reader.start();
-    if (at.page == null && !at.resume && s && s.page > 0) S.reader.askResume(S.reader.label(s.page) + S.reader.unit());
+    if (at.page == null && !at.resume && !at.tab && s && s.page > 0) S.reader.askResume(S.reader.label(s.page) + S.reader.unit());
     if (!index && f.text) textOf(f).then((t) => { if (S.reader && S.readerId === id) S.reader.setIndex(t); }).catch(() => {});
   } catch (e) {
     host.remove(); S.readerId = null;
@@ -733,8 +807,9 @@ async function openFile(id, at = {}) {
     toast(e.code === 'offline' ? '이 파일은 아직 이 기기에 없습니다. 인터넷에 연결되면 열 수 있습니다.' : e.name === 'PasswordException' ? '암호가 걸린 PDF입니다' : '파일을 열지 못했습니다');
   }
 }
-function closeReader(silent) {
+function closeReader(silent, noRemember) {
   if (!S.reader && !S.readerId) return;
+  if (S.reader && !noRemember) rememberTab();
   if (S.reader) { const pos = S.reader.current(); savePosition(S.readerId, pos, S.reader.N, true); const d = S.reader.docRef; S.reader.destroy(); if (d) d.destroy(); }
   S.reader = null; S.readerId = null;
   document.querySelectorAll('.reader-host').forEach((h) => h.remove());
@@ -892,8 +967,10 @@ async function settings() {
         ${[['all', '모든 논문'], ['recent', '최근 30일'], ['opened', '열어 본 것만']].map(([k, t]) => `<label class="sw"><input type="radio" name="keep" value="${k}" ${keepMode() === k ? 'checked' : ''}><span>${t}</span></label>`).join('')}
         <p class="keep-n">${S.cached.size} / ${liveFiles().length}편 받아 둠</p></div>
       <button class="btn ghost clear-local">이 기기에 받아 둔 파일 비우기</button></section>
+    <section><h3>올리기</h3><label class="sw"><input type="checkbox" class="an" ${S.prefs.autoName === false ? '' : 'checked'}><span>이름을 ‘저자_제목’으로 정리 <small>(부제 생략, 확실할 때만)</small></span></label></section>
     <section><h3>로그인된 기기</h3><ul class="devs"><li class="none">불러오는 중…</li></ul></section>
     <section class="foot"><button class="btn danger ghost signout">이 기기에서 로그아웃</button><p class="ver">연구실 책장 ${esc(VERSION)}</p></section>`);
+  $('.an', box).onchange = (e) => { S.prefs.autoName = e.target.checked; store.put('kv', 'prefs', S.prefs); };
   $('.keep', box).onchange = (e) => { if (e.target.name !== 'keep') return; S.prefs.keep = e.target.value; store.put('kv', 'prefs', S.prefs); prefetch(); };
   $('.clear-local', box).onclick = async () => {
     if (!(await confirmBox('받아 둔 파일 비우기', '이 기기에 받아 둔 사본만 지웁니다. 책장 서버의 파일과 밑줄은 그대로입니다.', '비우기'))) return;
@@ -939,10 +1016,11 @@ function sheet(html) {
 }
 function closeSheet() { document.querySelectorAll('.sheet-wrap').forEach((w) => w.remove()); }
 
-function promptBox(title, label, value, ok) {
+function promptBox(title, label, value, ok, orig) {
   return new Promise((resolve) => {
-    const box = sheet(`<h2>${esc(title)}</h2><label class="field"><span>${esc(label)}</span><input type="text" value="${esc(value)}" maxlength="200"></label><div class="row-btns"><button class="btn ghost cancel">취소</button><button class="btn primary ok">${esc(ok)}</button></div>`);
+    const box = sheet(`<h2>${esc(title)}</h2><label class="field"><span>${esc(label)}</span><input type="text" value="${esc(value)}" maxlength="200"></label>${orig ? `<p class="orig-name">처음 이름 · <span>${esc(orig)}</span> <button class="link restore" type="button">되돌리기</button></p>` : ''}<div class="row-btns"><button class="btn ghost cancel">취소</button><button class="btn primary ok">${esc(ok)}</button></div>`);
     const inp = $('input', box);
+    if (orig) $('.restore', box).onclick = () => { inp.value = orig; inp.focus(); };
     setTimeout(() => { inp.focus(); inp.select(); }, 60);
     const done = (v) => { closeSheet(); resolve(v); };
     $('.ok', box).onclick = () => { const v = inp.value.trim(); if (v) done(v); else inp.focus(); };
