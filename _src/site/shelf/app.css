@@ -97,6 +97,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .find input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
 .find:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
 .tools { display: flex; align-items: center; gap: 8px; padding: 0 24px 12px; min-height: 50px; flex-wrap: wrap; }
+.tools:empty { min-height: 0; padding-bottom: 0; }   /* nothing to show (찾기): no empty band above the results */
 .tools .sp { flex: 1; }
 .tools .hint { color: var(--faint); font-size: 13.5px; flex: 1; }
 .sel-n { font-weight: 700; margin-right: 6px; }
@@ -473,3 +474,14 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .up-sum { margin: 0 0 6px; padding: 0 14px; font-size: 13px; color: var(--muted); }
 
 .kv-note { margin: -2px 0 8px; font-size: 12.5px; color: var(--muted); }
+
+/* ---------- my marks in 찾기 ---------- */
+.mark-snip { display: block; }
+.mark-snip .sw, .mark-snip .uw { display: inline-block; vertical-align: middle; width: 10px; height: 10px; margin: -2px 6px 0 0; }
+.mark-snip .uw { height: 3px; margin-top: 0; }
+.snip-more { font-size: 12.5px; color: var(--muted); padding: 2px 8px; }
+/* ---------- 예전 밑줄 되살리기 ---------- */
+.hist { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.hist-b { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--chip); text-align: left; font-size: 15px; }
+.hist-b span { color: var(--muted); font-size: 13.5px; }
+.hist-b:hover { background: var(--hover, var(--chip)); }

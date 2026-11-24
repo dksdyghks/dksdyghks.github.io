@@ -184,6 +184,62 @@ ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' 
   await call('/devices/' + skr.device.id, { method: 'DELETE' }, T);
   delete env.CAP_BYTES;
 }
+{ // marks for search, and backups: what was there before the day's first change is kept, and can come back
+  const kday = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const pid = hex(Buffer.from('backup-paper'));
+  await ops([{ op: 'addFile', file: { id: pid, name: '백업 시험.pdf', folder: null, size: 10 } }]);
+  const put = (list, t = T) => call('/marks/' + pid, { method: 'PUT', body: JSON.stringify({ marks: list }) }, t).then(j);
+  const hist = async () => (await j(await call('/marks/' + pid + '/history', {}, T))).body.list;
+  const restore = (ts) => call('/marks/' + pid + '/restore', { method: 'POST', body: JSON.stringify({ ts }) }, T).then(j);
+  const live = (y) => y.body.marks.filter((m) => !m.del).length;
+  const yesterday = async () => { const c = await (await bucket.get('marks/' + pid + '.json')).json(); c.snap = '2000-01-01'; await bucket.put('marks/' + pid + '.json', JSON.stringify(c)); return c; };
+  let y = await put([mk(1, 1000), mk(2, 1000), mk(3, 1000)]);
+  ok(y.body.tag && y.body.snap === kday, 'saving marks returns their version');
+  ok((await hist()).length === 0, 'a paper\'s first marks leave nothing to keep');
+  await put([mk(4, 1100)]);
+  ok((await hist()).length === 0, 'more changes on the same day keep nothing more');
+  const before = await yesterday();
+  let tags = (await j(await call('/marks', {}, T))).body.tags;
+  ok(tags[pid] === (await bucket.head('marks/' + pid + '.json')).etag && (await j(await call('/marks/' + pid, {}, T))).body.tag === tags[pid], 'one listing gives every paper\'s marks version, the same one a paper\'s marks come with');
+  y = await put([1, 2, 3, 4].map((i) => ({ id: 'm' + i, del: true, t: 5000 })));
+  ok(live(y) === 0, 'all four marks cleared (the day\'s first change)');
+  let h = await hist();
+  ok(h.length === 1 && h[0].n === 4 && h[0].updated === before.updated, 'how it was before the clearing is kept: 4 marks');
+  tags = (await j(await call('/marks', {}, T))).body.tags;
+  ok(tags[pid] === (await bucket.head('marks/' + pid + '.json')).etag, 'the listing follows the change');
+  y = await restore(h[0].ts);
+  ok(y.status === 200 && live(y) === 4 && y.body.tag, 'brought back: 4 marks');
+  y = await put([1, 2, 3, 4].map((i) => ({ id: 'm' + i, del: true, t: 5000 })), T2);
+  ok(live(y) === 4, 'another device\'s older copy (still cleared) cannot undo it');
+  await put([mk(5, Date.now())]);
+  y = await restore(h[0].ts);
+  ok(live(y) === 4 && y.body.marks.find((m) => m.id === 'm5').del, 'bringing back the same version again takes away the mark added since');
+  h = await hist();
+  ok(h.length === 2 && h[0].n === 5, 'what was there before a restore is kept too (5 marks)');
+  y = await restore(h[0].ts);
+  ok(live(y) === 5, 'so a restore can itself be undone');
+  ok((await restore(12345)).status === 404 && (await j(await call('/marks/' + pid + '/restore', { method: 'POST', body: '{}' }, T))).status === 400, 'unknown or missing version refused');
+  const oldKey = 'backup/marks/' + pid + '/' + (Date.now() - 61 * 86400e3) + '.json';
+  await bucket.put(oldKey, '{"marks":[]}', { customMetadata: { updated: '1', n: '1' } });
+  await yesterday(); await put([mk(6, Date.now())]);
+  ok(!(await bucket.head(oldKey)), 'kept versions older than 60 days are let go');
+  // the library: kept as it was before the day's first change
+  const ix = await (await bucket.get('lib/index.json')).json(); ix.snap = '2000-01-01'; await bucket.put('lib/index.json', JSON.stringify(ix));
+  await ops([{ op: 'addFolder', folder: { id: 'f_eeeeeeeeee', name: '백업', parent: null } }]);
+  const kept = await bucket.get('backup/lib/' + kday + '.json');
+  ok(kept && !(await kept.json()).folders.some((f) => f.id === 'f_eeeeeeeeee'), 'the library is kept as it was before the day\'s first change');
+  const e1 = (await bucket.head('backup/lib/' + kday + '.json')).etag;
+  await ops([{ op: 'addFolder', folder: { id: 'f_ffffffffff', name: '백업2', parent: null } }]);
+  ok((await bucket.head('backup/lib/' + kday + '.json')).etag === e1, 'later changes that day leave it alone');
+  await bucket.put('backup/lib/2000-01-01.json', '{}');
+  const ix2 = await (await bucket.get('lib/index.json')).json(); ix2.snap = '2000-01-02'; await bucket.put('lib/index.json', JSON.stringify(ix2));
+  await ops([{ op: 'trashFolder', id: 'f_ffffffffff' }]);
+  ok(!(await bucket.head('backup/lib/2000-01-01.json')), 'kept libraries older than 60 days are let go');
+  // a paper gone for good takes its kept versions with it
+  await ops([{ op: 'trashFile', id: pid }, { op: 'emptyTrash' }]);
+  await new Promise((r2) => setTimeout(r2, 150));
+  ok((await bucket.list({ prefix: 'backup/marks/' + pid + '/' })).objects.length === 0, 'emptying the trash also lets go of the paper\'s kept marks');
+}
 { // the trash keeps a paper for 7 days, then lets it go at the next change
   const id7 = hex(Buffer.from('seven days'));
   x = await ops([{ op: 'addFile', file: { id: id7, name: '지난 논문.pdf', folder: null, size: 10 } }, { op: 'trashFile', id: id7 }]);

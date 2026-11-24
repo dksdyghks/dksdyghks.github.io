@@ -42,6 +42,16 @@ export const del = (store, key) => tx(store, 'readwrite', (s) => { s.delete(key)
 export const keys = (store) => tx(store, 'readonly', (s) => s.getAllKeys());
 export const clear = (store) => tx(store, 'readwrite', (s) => { s.clear(); });
 
+export async function entries(store) {   // [key, value] pairs, read in one transaction
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(store, 'readonly'), s = t.objectStore(store);
+    const k = s.getAllKeys(), v = s.getAll();
+    t.oncomplete = () => resolve(k.result.map((key, i) => [key, v.result[i]]));
+    t.onerror = () => reject(t.error);
+  });
+}
+
 export async function has(store, key) {
   return tx(store, 'readonly', (s) => s.count(key)).then((n) => n > 0);
 }

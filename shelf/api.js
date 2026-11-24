@@ -72,6 +72,9 @@ export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: lis
 
 export const getMarks = (id) => call('/marks/' + id);
 export const putMarks = (id, marks) => call('/marks/' + id, { method: 'PUT', body: { marks } });
+export const marksTags = () => call('/marks').then((d) => (d && d.tags) || {});   // every paper's marks version, in one answer
+export const marksHistory = (id) => call('/marks/' + id + '/history').then((d) => (d && d.list) || []);
+export const restoreMarks = (id, ts) => call('/marks/' + id + '/restore', { method: 'POST', body: { ts } });
 export const getState = () => call('/state');
 export const sync = (q) => call('/sync?' + new URLSearchParams(q));
 export const putState = (files) => call('/state', { method: 'PUT', body: { files } });

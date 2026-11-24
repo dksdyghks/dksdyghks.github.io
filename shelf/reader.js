@@ -185,6 +185,7 @@ export class Reader {
     this.stats = null;
     this.sampleStats();
     if (to.query) { this.action('search'); this.$('.rd-find input').value = to.query; this.find(to.query, to.page); }
+    if (to.mark) { const mk = this.allMarks.find((m) => m.id === to.mark && !m.del && m.rects); if (mk) { this.scrollToPage(mk.p, mk.rects[0][1], false); this.flash(mk.id); } }
     this.loadOutline();
   }
 

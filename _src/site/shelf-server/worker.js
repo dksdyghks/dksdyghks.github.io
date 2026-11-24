@@ -10,6 +10,8 @@
 //   meta/<id>/thumb.jpg            first-page picture (made by the device that uploaded it)
 //   meta/<id>/text.json.gz         the text of every page, for search (made by the device that uploaded it)
 //   marks/<id>.json                highlights and underlines
+//   backup/marks/<id>/<ms>.json    a paper's marks as they were before the first change of a day (and before a restore), 60 days
+//   backup/lib/<YYYY-MM-DD>.json   the library as it was before the first change of that day, 60 days
 //   state.json                     where each file was last being read (newest wins)
 //   auth/devices/<sha256(token)>   one small record per signed-in device
 //   auth/fails.json                failed sign-in counter
@@ -102,9 +104,12 @@ async function route(req, env, ctx) {
         if (m === 'PUT') return await putMeta(req, env, p[2], p[3]);
         break;
       case 'marks':
+        if (p.length === 2 && m === 'GET') return await marksTags(env);
         if (!ID.test(p[2] || '')) return err('bad_id', 400);
-        if (m === 'GET') return await getMarks(env, p[2]);
-        if (m === 'PUT') return await putMarks(req, env, p[2]);
+        if (p.length === 3 && m === 'GET') return await getMarks(env, p[2]);
+        if (p.length === 3 && m === 'PUT') return await putMarks(req, env, p[2]);
+        if (p[3] === 'history' && m === 'GET') return await marksHistory(env, p[2]);
+        if (p[3] === 'restore' && m === 'POST') return await restoreMarks(req, env, p[2]);
         break;
       case 'sync':
         if (m === 'GET') return await pull(env, url);
@@ -231,7 +236,8 @@ const emptyIndex = () => ({ v: 1, rev: 0, updated: 0, folders: [], files: [] });
 async function loadIndex(env) {
   const o = await env.BUCKET.get('lib/index.json');
   if (!o) return { idx: emptyIndex(), etag: null };
-  return { idx: await o.json(), etag: o.etag };
+  const text = await o.text();
+  return { idx: JSON.parse(text), etag: o.etag, text };
 }
 
 async function getIndex(env) {
@@ -369,10 +375,12 @@ async function applyOps(req, env, ctx, dev) {
 
 async function commit(env, ctx, ops, dev) {
   for (let attempt = 0; attempt < 8; attempt++) {
-    const { idx, etag } = await loadIndex(env);
+    const { idx, etag, text } = await loadIndex(env);
     const now = Date.now();
+    const today = kstDay(now);
+    if (text && idx.snap !== today && idx.files.length) await snapshotLibrary(env, text);   // the day's first change: keep how it was
     const { purge, results } = apply(idx, ops, dev, now);
-    idx.rev = (idx.rev || 0) + 1; idx.updated = now;
+    idx.rev = (idx.rev || 0) + 1; idx.updated = now; idx.snap = today;
     const put = await env.BUCKET.put('lib/index.json', JSON.stringify(idx), {
       httpMetadata: { contentType: 'application/json' },
       onlyIf: etag ? { etagMatches: etag } : undefined,
@@ -383,7 +391,14 @@ async function commit(env, ctx, ops, dev) {
       const live = new Set(idx.files.map((f) => f.id));
       const keys = [];
       for (const id of purge) if (!live.has(id)) keys.push('files/' + id + '.pdf', 'meta/' + id + '/thumb.jpg', 'meta/' + id + '/text.json.gz', 'marks/' + id + '.json');
-      if (keys.length) { const w = deleteMany(env, keys); if (ctx && ctx.waitUntil) ctx.waitUntil(w); else await w; }
+      if (keys.length) {
+        const gone = purge.filter((id) => !live.has(id));
+        const w = (async () => {
+          await deleteMany(env, keys);
+          for (const id of gone) { const l = await env.BUCKET.list({ prefix: 'backup/marks/' + id + '/', limit: 1000 }); if (l.objects.length) await deleteMany(env, l.objects.map((o) => o.key)); }
+        })();
+        if (ctx && ctx.waitUntil) ctx.waitUntil(w); else await w;
+      }
     }
     return { index: idx, results };
   }
@@ -541,8 +556,91 @@ function cleanMark(x) {
 
 async function getMarks(env, id) {
   const o = await env.BUCKET.get('marks/' + id + '.json');
-  if (!o) return json({ rev: 0, marks: [] });
-  return json(await o.json());
+  if (!o) return json({ rev: 0, marks: [], tag: '' });
+  return json({ ...(await o.json()), tag: o.etag });
+}
+
+// every paper's marks version, in one listing: a device compares them with what it keeps and fetches only what changed
+async function marksTags(env) {
+  const tags = {};
+  let cursor;
+  do {
+    const l = await env.BUCKET.list({ prefix: 'marks/', cursor, limit: 1000 });
+    for (const o of l.objects) { const k = /^marks\/([0-9a-f]{24})\.json$/.exec(o.key); if (k) tags[k[1]] = o.etag; }
+    cursor = l.truncated ? l.cursor : null;
+  } while (cursor);
+  return json({ tags });
+}
+
+/* ---------------- backups ----------------
+   Before the first change of a day, the way things were is kept: a paper's marks under backup/marks/<id>/, the library
+   under backup/lib/. Nothing runs on a timer and nothing is copied that did not change. Kept for 60 days. */
+const KEEP_BACKUP_DAYS = 60;
+const kstDay = (t = Date.now()) => new Date(t + 9 * 3600e3).toISOString().slice(0, 10);   // the owner's calendar day (Korea)
+const liveCount = (marks) => (marks || []).filter((x) => !x.del).length;
+async function snapshotMarks(env, id, text, cur) {
+  const now = Date.now();
+  await env.BUCKET.put('backup/marks/' + id + '/' + now + '.json', text, {
+    httpMetadata: { contentType: 'application/json' },
+    customMetadata: { updated: String(cur.updated || 0), n: String(liveCount(cur.marks)) },
+  });
+  const old = [];
+  const l = await env.BUCKET.list({ prefix: 'backup/marks/' + id + '/', limit: 1000 });
+  for (const o of l.objects) { const ts = Number(o.key.split('/').pop().replace('.json', '')); if (ts && ts < now - KEEP_BACKUP_DAYS * 86400e3) old.push(o.key); }
+  if (old.length) await deleteMany(env, old);
+}
+async function snapshotLibrary(env, text) {
+  const day = kstDay();
+  await env.BUCKET.put('backup/lib/' + day + '.json', text, { httpMetadata: { contentType: 'application/json' } });
+  const cut = kstDay(Date.now() - KEEP_BACKUP_DAYS * 86400e3);
+  const l = await env.BUCKET.list({ prefix: 'backup/lib/', limit: 1000 });
+  const old = l.objects.map((o) => o.key).filter((k) => k.slice('backup/lib/'.length, 'backup/lib/'.length + 10) < cut);
+  if (old.length) await deleteMany(env, old);
+}
+
+// a paper's earlier marks: when each was last changed and how many marks it had, newest first
+async function marksHistory(env, id) {
+  const l = await env.BUCKET.list({ prefix: 'backup/marks/' + id + '/', limit: 1000, include: ['customMetadata'] });
+  const seen = new Set(), list = [];
+  for (const o of l.objects.sort((a, b) => (a.key < b.key ? 1 : -1))) {
+    const ts = Number(o.key.split('/').pop().replace('.json', ''));
+    const cm = o.customMetadata || {};
+    const updated = Number(cm.updated) || 0, n = Number(cm.n) || 0;
+    if (!ts || !n || seen.has(updated)) continue;   // an empty one is nothing to bring back; the same version twice is shown once
+    seen.add(updated);
+    list.push({ ts, updated, n });
+  }
+  return json({ list });
+}
+
+// bring a paper's marks back to an earlier version. What is there now is kept first, so this too can be undone.
+// The marks come back as new edits (newer than any device's copy), so syncing cannot undo the restore.
+async function restoreMarks(req, env, id) {
+  const body = await readJSON(req, 4096);
+  const ts = Number(body && body.ts);
+  if (!Number.isInteger(ts) || ts <= 0) return err('bad_ts', 400);
+  const b = await env.BUCKET.get('backup/marks/' + id + '/' + ts + '.json');
+  if (!b) return err('not_found', 404);
+  const back = await b.json();
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const o = await env.BUCKET.get('marks/' + id + '.json');
+    const text = o ? await o.text() : null;
+    const cur = text ? JSON.parse(text) : { rev: 0, marks: [] };
+    if (text && liveCount(cur.marks)) await snapshotMarks(env, id, text, cur);
+    const now = Date.now();
+    const keep = new Map((back.marks || []).filter((x) => !x.del).map((x) => [x.id, { ...x, t: now }]));
+    const marks = [];
+    for (const x of cur.marks || []) if (!keep.has(x.id)) marks.push(x.del ? x : { id: x.id, del: true, t: now });
+    marks.push(...keep.values());
+    marks.sort((a, c) => (a.p - c.p) || ((a.rects?.[0]?.[1] ?? 0) - (c.rects?.[0]?.[1] ?? 0)));
+    const next = { rev: (cur.rev || 0) + 1, updated: now, snap: kstDay(now), marks };
+    const put = await env.BUCKET.put('marks/' + id + '.json', JSON.stringify(next), {
+      httpMetadata: { contentType: 'application/json' }, onlyIf: o ? { etagMatches: o.etag } : undefined,
+    });
+    if (put === null) { await new Promise((r) => setTimeout(r, 30 + Math.random() * 90)); continue; }
+    return json({ ...next, tag: put.etag });
+  }
+  return err('busy', 409);
 }
 
 async function putMarks(req, env, id) {
@@ -550,17 +648,20 @@ async function putMarks(req, env, id) {
   const incoming = (Array.isArray(body.marks) ? body.marks : []).slice(0, 20000).map(cleanMark).filter(Boolean);
   for (let attempt = 0; attempt < 8; attempt++) {
     const o = await env.BUCKET.get('marks/' + id + '.json');
-    const cur = o ? await o.json() : { rev: 0, marks: [] };
+    const text = o ? await o.text() : null;
+    const cur = text ? JSON.parse(text) : { rev: 0, marks: [] };
+    const today = kstDay();
+    if (text && cur.snap !== today && liveCount(cur.marks)) await snapshotMarks(env, id, text, cur);   // the day's first change: keep how it was
     const byId = new Map(cur.marks.map((x) => [x.id, x]));
     for (const x of incoming) { const old = byId.get(x.id); if (!old || x.t >= old.t) byId.set(x.id, x); }
     const keepDeleted = Date.now() - 120 * 86400e3;   // forget deletions after four months
     const marks = [...byId.values()].filter((x) => !x.del || x.t > keepDeleted).sort((a, b) => (a.p - b.p) || ((a.rects?.[0]?.[1] ?? 0) - (b.rects?.[0]?.[1] ?? 0)));
-    const next = { rev: (cur.rev || 0) + 1, updated: Date.now(), marks };
+    const next = { rev: (cur.rev || 0) + 1, updated: Date.now(), snap: today, marks };
     const put = await env.BUCKET.put('marks/' + id + '.json', JSON.stringify(next), {
       httpMetadata: { contentType: 'application/json' }, onlyIf: o ? { etagMatches: o.etag } : undefined,
     });
     if (put === null) { await new Promise((r) => setTimeout(r, 30 + Math.random() * 90)); continue; }
-    return json(next);
+    return json({ ...next, tag: put.etag });
   }
   return err('busy', 409);
 }

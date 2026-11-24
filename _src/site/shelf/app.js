@@ -132,6 +132,7 @@ async function startLibrary() {
   }
   syncOn = true; lastTouch = Date.now();
   pullLoop();
+  setTimeout(() => fetchAllMarks(), 4000);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
   if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
 }
@@ -166,12 +167,12 @@ async function pull() {
     if (r.libTag) syncTags.lib = r.libTag;
     if (r.state) { mergeState(r.state); await store.put('kv', 'state', S.state); if (!S.reader) render(); }
     if (r.stateTag) syncTags.state = r.stateTag;
-    if (id && r.marks && S.readerId === id) await takeMarks(id, r.marks.marks || []);
+    if (id && r.marks && S.readerId === id) await takeMarks(id, r.marks.marks || [], r.marksTag);
     if (id && r.marksTag && S.readerId === id) { syncTags.marks = r.marksTag; syncTags.marksId = id; }
   } catch (e) { /* offline or busy: the next round */ } finally { pulling = false; }
 }
 // marks from another device, merged with this device's own (nothing is dropped: each mark keeps its newest version)
-async function takeMarks(id, remote) {
+async function takeMarks(id, remote, tag) {
   const local = (await store.get('marks', id)) || { marks: [], pending: false };
   let merged = mergeMarks(remote, local.marks);
   if (S.reader && S.readerId === id) {
@@ -180,7 +181,8 @@ async function takeMarks(id, remote) {
     const sig = (l) => l.map((m) => m.id + ':' + m.t).sort().join(',');
     if (sig(merged) !== sig(S.reader.allMarks)) S.reader.setRemoteMarks(merged);
   }
-  await store.put('marks', id, { marks: merged, pending: local.pending });
+  await store.put('marks', id, { marks: merged, pending: local.pending, tag: tag || local.tag || '' });
+  marksCache = null;
 }
 
 let preparing = false;
@@ -488,10 +490,21 @@ async function renderSearch(c) {
   const nameHits = files.filter((f) => f.name.replace(/\s+/g, '').toLowerCase().includes(key));
   const folderHits = S.index.folders.filter((f) => !f.trashed && f.name.replace(/\s+/g, '').toLowerCase().includes(key));
   c.innerHTML = `<h2 class="sec-h">이름</h2>${nameHits.length || folderHits.length ? '<div class="list">' + folderHits.map(folderRow).join('') + nameHits.map((f) => fileRow(f)).join('') + '</div>' : '<p class="none">이름이 맞는 파일이 없습니다</p>'}
-    <h2 class="sec-h">본문 <span class="sec-n"></span></h2><div class="list text-hits"></div>`;
+    <div class="mark-sec"></div>
+    <h2 class="sec-h">본문 <span class="sec-n text-n"></span></h2><div class="list text-hits"></div>`;
   lazyThumbs();
-  const box = $('.text-hits', c), n = $('.sec-n', c);
-  if (key.length < 2) { box.innerHTML = '<p class="none">두 글자 이상 넣으면 본문에서도 찾습니다</p>'; return; }
+  const box = $('.text-hits', c), n = $('.text-n', c);
+  if (key.length < 2) { box.innerHTML = '<p class="none">두 글자 이상 넣으면 밑줄과 본문에서도 찾습니다</p>'; return; }
+  // my own marks: what I already found worth marking
+  const fillMarks = async () => {
+    const hits = await markHits(key);
+    if (S.q !== q) return;
+    const total = hits.reduce((s, r) => s + r.snips.length, 0);
+    $('.mark-sec', c).innerHTML = total ? `<h2 class="sec-h">내 밑줄 <span class="sec-n">${total}개</span></h2><div class="list">${hits.map((r) => fileRow(r.f, `<span class="snips">${r.snips.slice(0, 6).map((s) => `<button class="snip mark-snip" data-open="${r.f.id}" data-page="${s.m.p}" data-mark="${esc(s.m.id)}"><em>${pageLabel(r.f.id, s.m.p)}</em><i class="${s.m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${esc(s.m.color)}"></i>${s.pre ? '…' : ''}${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}${s.post ? '…' : ''}</button>`).join('')}${r.snips.length > 6 ? `<span class="snip-more">외 ${r.snips.length - 6}곳</span>` : ''}</span>`)).join('')}</div>` : '';
+    lazyThumbs();
+  };
+  fillMarks();
+  fetchAllMarks().then((changed) => { if (changed && S.q === q) fillMarks(); });
   const withText = files.filter((f) => f.text);
   let done = 0, shown = 0;
   const results = [];
@@ -566,7 +579,7 @@ function onContentClick(e) {
   const pf = t.closest('[data-purge-folder]'); if (pf) { confirmBox('영구 삭제', '이 폴더와 안의 파일을 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFolder', id: pf.dataset.purgeFolder }], '지웠습니다')); return; }
   const mm = t.closest('[data-menu]'); if (mm) { const b = mm.getBoundingClientRect(); fileMenu(mm.dataset.menu, b.right, b.bottom); return; }
   const fm = t.closest('[data-fmenu]'); if (fm) { const b = fm.getBoundingClientRect(); folderMenu(fm.dataset.fmenu, b.right, b.bottom); return; }
-  const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : sn.dataset.resume ? { resume: true } : {}); return; }
+  const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.mark ? { page: Number(sn.dataset.page), mark: sn.dataset.mark } : sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : sn.dataset.resume ? { resume: true } : {}); return; }
   const row = t.closest('.row');
   if (!row) return;
   if (S.select) {
@@ -613,7 +626,7 @@ async function onTools(e) {
 
 async function fileMenu(id, x, y) {
   const f = fileById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
   if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
   if (k === 'open') openFile(id);
   else if (k === 'start') openFile(id, { page: 0 });
@@ -623,6 +636,7 @@ async function fileMenu(id, x, y) {
   else if (k === 'print') exportPdf(f, { marks: true, mode: 'print' });
   else if (k === 'orig') exportPdf(f, { marks: false, mode: 'download' });
   else if (k === 'clear') clearAllMarks(f);
+  else if (k === 'back') marksBack(f);
   else if (k === 'trash') doOps([{ op: 'trashFile', id }], '휴지통으로 옮겼습니다');
 }
 
@@ -856,7 +870,7 @@ async function openFile(id, at = {}) {
     host.innerHTML = '';
     S.reader = new Reader(host, {
       doc, title: stem(f.name), analyze: A, marks, index,
-      at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query } : (s ? { page: s.page, y: s.y } : {}),
+      at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query, mark: at.mark } : (s ? { page: s.page, y: s.y } : {}),
       zoom: at.zoom,
       id, tabs: tabInfo(),
       onTab: (t) => switchTab(t),
@@ -966,14 +980,17 @@ async function loadMarks(id) {
   try {
     const remote = await api.getMarks(id);
     const merged = mergeMarks(remote.marks || [], local.marks);
-    await store.put('marks', id, { marks: merged, pending: local.pending });
+    await store.put('marks', id, { marks: merged, pending: local.pending, tag: remote.tag || '' });
+    marksCache = null;
     if (local.pending) pushMarks(id);
     return merged;
   } catch (e) { return local.marks; }
 }
 const markTimers = new Map();
 async function saveMarks(id, list) {
-  await store.put('marks', id, { marks: list, pending: true });
+  const old = await store.get('marks', id);
+  await store.put('marks', id, { marks: list, pending: true, tag: (old && old.tag) || '' });
+  marksCache = null;
   clearTimeout(markTimers.get(id));
   markTimers.set(id, setTimeout(() => pushMarks(id), 500));
 }
@@ -984,13 +1001,129 @@ async function pushMarks(id) {
     const res = await api.putMarks(id, rec.marks);
     const now = await store.get('marks', id);
     // only clear the flag if nothing changed while the request was out
-    if (now && JSON.stringify(now.marks) === JSON.stringify(rec.marks)) await store.put('marks', id, { marks: res.marks, pending: false });
-    else await store.put('marks', id, { marks: mergeMarks(res.marks, now.marks), pending: true });
+    if (now && JSON.stringify(now.marks) === JSON.stringify(rec.marks)) await store.put('marks', id, { marks: res.marks, pending: false, tag: res.tag || '' });
+    else await store.put('marks', id, { marks: mergeMarks(res.marks, now.marks), pending: true, tag: res.tag || '' });
+    marksCache = null;
   } catch (e) { /* stays pending; sent when online again */ }
 }
 async function syncMarksAll() {
   if (!navigator.onLine) return;
   for (const id of await store.keys('marks')) { const r = await store.get('marks', id); if (r && r.pending) await pushMarks(id); }
+}
+
+/* ---------- every paper's marks kept on this device as well (for 찾기, also without internet) ----------
+   One small request lists every paper's marks version; only papers whose marks changed are fetched. */
+let marksCache = null, allMarksAt = 0, allMarksP = null;
+function fetchAllMarks(force) {
+  if (allMarksP) return allMarksP;
+  if (!syncOn || !navigator.onLine || (!force && Date.now() - allMarksAt < 60e3)) return Promise.resolve(false);
+  allMarksP = (async () => {
+    let changed = false;
+    try {
+      const tags = await api.marksTags();
+      allMarksAt = Date.now();
+      const known = new Set(S.index.files.map((f) => f.id));
+      for (const [id, tag] of Object.entries(tags)) {
+        if (!known.has(id) || id === S.readerId) continue;   // the open paper keeps itself up to date
+        const local = await store.get('marks', id);
+        if (local && local.tag === tag) continue;
+        const r = await api.getMarks(id);
+        const now = (await store.get('marks', id)) || { marks: [], pending: false };
+        await store.put('marks', id, { marks: mergeMarks(r.marks || [], now.marks), pending: now.pending, tag: r.tag || tag });
+        changed = true;
+      }
+    } catch (e) { /* offline or busy: next time */ }
+    if (changed) marksCache = null;
+    return changed;
+  })().finally(() => { allMarksP = null; });
+  return allMarksP;
+}
+async function allMarks() {   // paper id -> its marks that have words, from this device
+  if (marksCache) return marksCache;
+  const m = new Map();
+  for (const [id, r] of await store.entries('marks').catch(() => [])) {
+    const list = r && r.marks ? r.marks.filter((x) => !x.del && x.text) : [];
+    if (list.length) m.set(id, list.sort((a, b) => (a.p - b.p) || ((a.rects?.[0]?.[1] ?? 0) - (b.rects?.[0]?.[1] ?? 0))));
+  }
+  return (marksCache = m);
+}
+function pageLabel(id, p) {   // printed page number when known (○면), else the PDF page (○쪽)
+  const o = (S.state.files[id] || {}).o;
+  return Number.isInteger(o) ? (p + 1 + o) + '면' : (p + 1) + '쪽';
+}
+async function markHits(key) {
+  const live = new Map(liveFiles().map((f) => [f.id, f]));
+  const out = [];
+  for (const [id, list] of await allMarks()) {
+    const f = live.get(id); if (!f) continue;
+    const snips = [];
+    for (const m of list) {
+      const t = m.text; let flat = ''; const map = [];
+      for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { flat += t[i].toLowerCase(); map.push(i); }
+      const i = flat.indexOf(key); if (i < 0) continue;
+      const a = map[i], b = map[i + key.length - 1] + 1;
+      snips.push({ m, pre: a > 40, a: t.slice(Math.max(0, a - 40), a), w: t.slice(a, b), b: t.slice(b, b + 70), post: b + 70 < t.length });
+    }
+    if (snips.length) out.push({ f, snips });
+  }
+  return out.sort((x, y) => y.snips.length - x.snips.length || x.f.name.localeCompare(y.f.name, 'ko'));
+}
+
+/* ---------- 예전 밑줄 되살리기: the server keeps how a paper's marks were before each day's first change (60 days) ---------- */
+const when = (t) => new Date(t).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+async function marksBack(f) {
+  if (!navigator.onLine) { toast('인터넷에 연결되면 할 수 있습니다'); return; }
+  let list;
+  try { await pushMarks(f.id); list = await api.marksHistory(f.id); }
+  catch (e) { toast(api.isOffline(e) ? '인터넷에 연결되면 할 수 있습니다' : '불러오지 못했습니다'); return; }
+  if (!list.length) { toast('되살릴 예전 밑줄이 없습니다. 밑줄을 바꾸면, 그날 처음 바꾸기 전 상태가 60일 동안 남습니다.', 6000); return; }
+  const box = sheet(`<h2>예전 밑줄 되살리기</h2><p class="sheet-p small">「${esc(stem(f.name))}」의 밑줄을 고른 때의 상태로 되돌립니다. 지금 밑줄도 남겨 두므로 다시 되돌릴 수 있습니다.</p>
+    <ul class="hist">${list.map((h) => `<li><button class="hist-b" data-ts="${h.ts}"><b>${esc(when(h.updated || h.ts))}</b><span>밑줄 ${h.n}개</span></button></li>`).join('')}</ul>`);
+  $('.hist', box).onclick = (e) => { const b = e.target.closest('[data-ts]'); if (!b) return; closeSheet(); restoreMarksTo(f, Number(b.dataset.ts), true); };
+}
+async function restoreMarksTo(f, ts, offerUndo) {
+  try {
+    const before = ((await store.get('marks', f.id)) || { marks: [] }).marks.filter((m) => !m.del).length;
+    const r = await api.restoreMarks(f.id, ts);
+    await store.put('marks', f.id, { marks: r.marks, pending: false, tag: r.tag || '' }); marksCache = null;
+    if (S.reader && S.readerId === f.id) S.reader.setRemoteMarks(r.marks);
+    const n = r.marks.filter((m) => !m.del).length;
+    const undo = offerUndo && before ? { label: '되돌리기', fn: async () => {   // what was there a moment ago was kept by the server
+      const l = await api.marksHistory(f.id).catch(() => []);
+      const back = l.find((h) => Math.abs(h.ts - r.updated) < 120e3);
+      if (back) restoreMarksTo(f, back.ts, false); else toast('되돌리지 못했습니다');
+    } } : undefined;
+    toast(`밑줄 ${n}개로 되살렸습니다`, 9000, undo);
+  } catch (e) { toast(api.isOffline(e) ? '인터넷에 연결되면 할 수 있습니다' : '되살리지 못했습니다'); }
+}
+
+/* ---------- all marks in one file, for keeping a copy yourself (readable, with the data inside) ---------- */
+async function exportAllMarks() {
+  toast('모으는 중…', 30000);
+  await fetchAllMarks(true);
+  const all = await allMarks();
+  const files = liveFiles().filter((f) => all.has(f.id)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  if (!files.length) { toast('아직 밑줄이 없습니다'); return; }
+  const day = new Date().toLocaleDateString('sv-SE');
+  const n = files.reduce((s, f) => s + all.get(f.id).length, 0);
+  const full = {};
+  for (const [id, r] of await store.entries('marks').catch(() => [])) if (r && r.marks && r.marks.length) full[id] = r.marks;
+  const data = JSON.stringify({ app: '연구실 책장', at: Date.now(), index: S.index, state: S.state, marks: full }).replace(/</g, '\\u003c');
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>연구실 책장 밑줄 ${day}</title>
+<style>body{margin:0 auto;max-width:760px;padding:28px 18px 60px;font:16px/1.7 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#1b2433;background:#fff}h1{font-size:22px;margin:0}p.s{color:#5a6578;margin:4px 0 26px}h2{font-size:17px;margin:30px 0 8px;padding-top:14px;border-top:1px solid #e3e7ee}ol{list-style:none;margin:0;padding:0}li{display:flex;gap:12px;padding:7px 0}.pg{flex:none;width:52px;color:#7b8597;font-size:13px;padding-top:3px}.t{background:linear-gradient(transparent 55%,color-mix(in srgb,var(--c) 55%,transparent) 55%)}.t[data-k=ul]{background:none;text-decoration:underline;text-decoration-color:var(--c);text-decoration-thickness:2px;text-underline-offset:4px}@media print{h2{break-after:avoid}li{break-inside:avoid}}</style></head><body>
+<h1>연구실 책장 밑줄</h1><p class="s">${day} · 논문 ${files.length}편 · 밑줄 ${n}개</p>
+${files.map((f) => `<h2>${esc(stem(f.name))}</h2><ol>${all.get(f.id).map((m) => `<li><span class="pg">${pageLabel(f.id, m.p)}</span><span class="t" data-k="${m.kind}" style="--c:${esc(m.color)}">${esc(m.text)}</span></li>`).join('')}</ol>`).join('\n')}
+<script type="application/json" id="shelf-backup">${data}</script></body></html>`;
+  const file = new File([html], `연구실 책장 밑줄 ${day}.html`, { type: 'text/html' });
+  hideToast();
+  if (matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: file.name }); } catch (e) { /* closed */ }
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const a = el('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast('내려받았습니다');
 }
 
 /* ---------- reading positions ---------- */
@@ -1058,9 +1191,11 @@ async function settings() {
       <button class="btn ghost clear-local">이 기기에 받아 둔 파일 비우기</button></section>
     <section><h3>올리기</h3><label class="opt"><input type="checkbox" class="an" ${S.prefs.autoName === false ? '' : 'checked'}><span>이름을 ‘저자_제목’으로 정리 <small>(부제 생략, 확실할 때만)</small></span></label></section>
     <section><h3>공유로 넣기 <small>아이패드·아이폰</small></h3><p class="sheet-p small">Safari나 파일 앱의 공유 버튼에서 바로 책장에 넣습니다. 키를 한 번 만들어 단축어에 넣어 두면 됩니다.</p><button class="btn share-key">공유 키 만들기</button></section>
+    <section><h3>백업</h3><p class="sheet-p small">밑줄과 폴더 정리는 날마다, 처음 바뀌기 전 상태가 서버에 60일 동안 남습니다. 밑줄을 잘못 지웠다면 그 논문의 ⋯ 메뉴에서 <b>예전 밑줄 되살리기</b>를 고르세요.</p><button class="btn export-marks">모든 밑줄을 파일로 받기</button></section>
     <section><h3>로그인된 기기</h3><ul class="devs"><li class="none">불러오는 중…</li></ul></section>
     <section class="foot"><button class="btn danger ghost signout">이 기기에서 로그아웃</button><p class="ver">연구실 책장 ${esc(VERSION)}</p></section>`);
   $('.share-key', box).onclick = () => shareKeySheet();
+  $('.export-marks', box).onclick = () => { closeSheet(); exportAllMarks(); };
   $('.an', box).onchange = (e) => { S.prefs.autoName = e.target.checked; store.put('kv', 'prefs', S.prefs); };
   $('.keep', box).onchange = (e) => { if (e.target.name !== 'keep') return; S.prefs.keep = e.target.value; store.put('kv', 'prefs', S.prefs); prefetch(); };
   $('.clear-local', box).onclick = async () => {
