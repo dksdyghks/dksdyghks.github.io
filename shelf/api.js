@@ -72,6 +72,7 @@ export const diagnose = () => call('/diag');   // which outside sources (KCI, �
 export const publicData = (path, params) => call('/data/' + path + '?' + new URLSearchParams(params));   // 공공데이터포털 (헌재 판례정보 and the like), through the server, which holds the key
 export const lawSearch = (params) => call('/law/search?' + new URLSearchParams(params));   // 국가법령정보 OPEN API (법령·판례 목록)
 export const lawItem = (params) => call('/law/item?' + new URLSearchParams(params));       // … and one law or one judgment in full
+export const nlib = (op, params) => call('/nl/' + op + '?' + new URLSearchParams(params));   // 국립중앙도서관 (소장자료 검색 …)
 export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: list } });
 
 export const getMarks = (id) => call('/marks/' + id);

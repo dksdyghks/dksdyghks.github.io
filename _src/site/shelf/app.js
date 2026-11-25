@@ -1478,7 +1478,8 @@ const pubText = (d) => (d ? d.replace(/^(\d{4})-(\d{2})(?:-\d{2})?$/, (m, y, mo)
 function paperLine(f) {   // 학술지 · 학회 · 발간일, as a citation lists them (a narrow screen leaves the society out, so the date stays in view)
   const i = S.info[f.id];
   if (!i || !(i.journal || i.date)) return '';
-  let s = i.journal ? esc(i.journal) : '';
+  const jn = String(i.journal || '').replace(/[\s┃│|ㅣ]+$/, '');   // a stray rule character read with it
+  let s = jn ? esc(jn) : '';
   if (i.society) s += s ? `<span class="soc"> · ${esc(i.society)}</span>` : esc(i.society);
   if (i.date) s += (s ? ' · ' : '') + esc(pubText(i.date));
   return s;
@@ -1534,6 +1535,59 @@ async function fillPaperInfo() {
       } catch (e) { /* next time */ } finally { if (doc) doc.destroy(); }
     }
   } finally { filling = false; }
+  libraryInfo();
+}
+
+/* ---------- what the first page did not say: 국립중앙도서관's record of the paper, found by its title (and author) ----------
+   Only what is missing is filled — a date (or a whole date where only the year was read) and the society that published it;
+   what the page itself said is never changed. The answer is written into the paper's texts like the rest, so every device
+   has it. A paper the library does not know is asked about again after a month. */
+let libAsked = null;
+const libNorm = (s) => naming.hangulize(String(s || '')).replace(/<[^>]+>/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
+function libSociety(x) {
+  let t = naming.hangulize(String((x && x.pubInfo) || '').replace(/<[^>]+>/g, '')).replace(/\d{6,8}/g, ' ').replace(/(^|\D)(?:19|20)\d{2}(?!\d)/g, '$1 ');
+  const at = t.indexOf(':');
+  if (at >= 0) {   // "place : publisher": a short place name before the colon goes
+    const before = t.slice(0, at).trim(), after = t.slice(at + 1).trim();
+    t = !before || (/^[가-힣]{2,3}(?:시|군|도)?$/.test(before) && !/학회|대학|연구|원|사$|회$/.test(before)) ? after : before + ' ' + after;
+  }
+  t = t.replace(/^(?:서울|파주|고양|성남|과천|세종|대전|부산|대구|광주|인천|울산|수원|춘천|청주|전주|제주)\s+(?=\S)/, '').replace(/\s+(?:서울|파주|고양|성남|과천|세종|대전|부산|대구|광주|인천|울산|수원|춘천|청주|전주|제주)$/, '').replace(/[\s,:;]+/g, ' ').trim();
+  if (/^(?:법학)?연구(?:소|원)$|^법학연구$/.test(t)) return '';   // "법학연구소" alone: whose is not said
+  return /[가-힣A-Za-z]{2,}/.test(t) ? t : '';
+}
+function libNeeds(i) { return !i || !i.date || /^\d{4}$/.test(i.date) || !(i.journal || i.society); }
+async function libraryInfo() {
+  if (!syncOn || !navigator.onLine) return;
+  if (!libAsked) libAsked = (await store.get('kv', 'libAsked').catch(() => null)) || {};
+  for (const f of liveFiles()) {
+    if (!navigator.onLine || document.hidden) break;
+    if (!(f.id in S.info) || !libNeeds(S.info[f.id]) || Date.now() - (libAsked[f.id] || 0) < 30 * 864e5) continue;
+    const name = stem(f.name), cut = name.indexOf('_');
+    const author = cut > 0 ? name.slice(0, cut).replace(/\s*외$/, '') : '', title = (cut > 0 ? name.slice(cut + 1) : name).trim();
+    if (libNorm(title).length < 6) continue;
+    libAsked[f.id] = Date.now(); store.put('kv', 'libAsked', libAsked).catch(() => {});
+    let d;
+    try { d = await api.nlib('search', { apiType: 'json', srchTarget: 'title', kwd: title.slice(0, 60), pageNum: '1', pageSize: '10' }); } catch (e) { if (api.isOffline(e)) break; continue; }
+    const want = libNorm(title), who = libNorm(author);
+    const hits = ((d && d.result) || []).filter((x) => /기사|논문/.test(x.typeName || '') && (libNorm(x.titleInfo).startsWith(want.slice(0, 14)) || want.startsWith(libNorm(x.titleInfo).slice(0, 14))) && (!who || libNorm(x.authorInfo).includes(who)));
+    if (!hits.length) continue;
+    const ymd = (x) => String(x.pubYearInfo || '').replace(/\D/g, '');
+    const best = hits.slice().sort((a, b) => ymd(b).length - ymd(a).length)[0];
+    const digits = ymd(best);
+    const date = digits.length >= 6 ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}` : digits.length === 4 ? digits : '';
+    // the society: the print record says it plainly (한양대학교 법학연구소); the online one adds a place and a date (서울 : 韓國公法學會, 20220228)
+    const society = libSociety(hits.find((x) => /오프라인/.test(x.menuName || '')) || hits[0]) || hits.map(libSociety).filter(Boolean)[0] || '';
+    const cur = S.info[f.id] || {};
+    const merged = { journal: String(cur.journal || '').replace(/[\s┃│|ㅣ]+$/, ''), society: cur.society || society, issue: cur.issue || '', date: cur.date && !(/^\d{4}$/.test(cur.date) && date.startsWith(cur.date) && date.length > 4) ? cur.date : (date || cur.date || '') };
+    if (JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) continue;
+    try {
+      const t = (await store.get('texts', f.id).catch(() => null)) || await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
+      t.paper = paperOf(merged);
+      await store.put('texts', f.id, t);
+      await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
+      notePaper(f.id, t);
+    } catch (e) { /* next time */ }
+  }
 }
 
 /* ---------- every paper's marks kept on this device as well (for 찾기, also without internet) ----------

@@ -135,6 +135,9 @@ async function route(req, env, ctx) {
       case 'data':
         if (m === 'GET' && p.length >= 4 && p.length <= 5) return await dataApi(env, p.slice(2), url);
         break;
+      case 'nl':
+        if (m === 'GET' && p.length === 3) return await nlApi(env, p[2], url);
+        break;
       case 'kci':
         if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(url);
         break;
@@ -191,6 +194,22 @@ async function dataApi(env, segs, url) {
 }
 
 // KCI OAI-PMH (open, no key): one record, or a page of records
+// 국립중앙도서관 Open API: 소장자료 검색, KOLIS-NET 종합목록, ISBN 서지 — each with the owner's key (NL_KEY), parameters passed on
+const NL_OPS = {
+  search: ['https://www.nl.go.kr/NL/search/openApi/search.do', 'key'],
+  kolisnet: ['https://www.nl.go.kr/NL/search/openApi/searchKolisNet.do', 'key'],
+  seoji: ['https://www.nl.go.kr/seoji/SearchApi.do', 'cert_key'],
+};
+async function nlApi(env, op, url) {
+  if (!env.NL_KEY) return err('no_key', 503);
+  const svc = NL_OPS[op];
+  if (!svc) return err('bad_service', 400);
+  const q = new URLSearchParams({ [svc[1]]: env.NL_KEY });
+  for (const [k, v] of url.searchParams) if (/^[A-Za-z_]{2,30}$/.test(k) && !/^(key|cert_key)$/i.test(k) && v.length <= 300) q.set(k, v);
+  const up = await fetch(`${svc[0]}?${q}`, { cf: { cacheTtl: 86400, cacheEverything: true } });
+  return passOn(up, env.NL_KEY);
+}
+
 const OAI_PARAMS = new Set(['verb', 'identifier', 'metadataPrefix', 'set', 'from', 'until', 'resumptionToken']);
 async function kciOai(url) {
   const verb = url.searchParams.get('verb');
@@ -208,8 +227,9 @@ async function diag(req, env) {
     ['law', env.LAW_OC && `https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(env.LAW_OC)}&target=law&type=JSON&display=1&query=${encodeURIComponent('헌법')}`, lawHeaders(env)],
     ['assembly', env.ASSEMBLY_KEY && `https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn?KEY=${encodeURIComponent(env.ASSEMBLY_KEY)}&Type=json&pIndex=1&pSize=1&AGE=22`],
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
+    ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
   ];
-  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY].filter(Boolean);
+  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.NL_KEY].filter(Boolean);
   const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, results: {} };
   await Promise.all(tries.map(async ([k, u, headers]) => {
     if (!u) { out.results[k] = { status: 'no key' }; return; }
