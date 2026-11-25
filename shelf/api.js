@@ -78,12 +78,14 @@ export const nanet = (op, params) => call('/nanet/' + op + '?' + new URLSearchPa
 export const scienceon = (op, params) => call('/scienceon/' + op + '?' + new URLSearchParams(params));   // KISTI ScienceON 논문 (search: q, field, page; view: cn)
 export const foreignText = (id) => call('/foreign/' + encodeURIComponent(id), { raw: true }).then((r) => r.text());   // 비교법 원문 (일본·미국·캐나다), as the source gives it
 export const kciOai = (params) => call('/kci/oai?' + new URLSearchParams(params), { raw: true }).then((r) => r.text());   // KCI's OAI-PMH through the server (a whole record, with the full abstract)
-// a paper's openly-posted PDF, found and fetched by the server (null when none is open)
+// a paper's openly-posted PDF, found and fetched by the server: { blob, host }, or (asked with probe: true) { host } when
+// one is there — null when none is open
 export async function paperPdf(body) {
   const r = await call('/paper/pdf', { method: 'POST', body, raw: true });
   const ct = r.headers.get('content-type') || '';
-  if (ct.includes('pdf')) return await r.blob();
-  return null;
+  if (ct.includes('pdf')) return { blob: await r.blob(), host: r.headers.get('x-pdf-source') || '' };   // (a server from before the probe sends it whole)
+  const d = await r.json().catch(() => null);
+  return d && d.found ? { host: String(d.host || '') } : null;
 }
 export const bills = (law) => call('/bills?' + new URLSearchParams({ law }));   // 국회 계류 법안 of a law (the server reads more on each call)
 export const bill = (no, id) => call('/bills/one?' + new URLSearchParams({ no, id }));   // one bill: 제안이유 및 주요내용, 회의록

@@ -243,7 +243,6 @@ export class Reader {
         const l = this.A.pageLabels(more);
         if (l && l.confident) { this.labels = l; this.updateInd(); }
       }
-      for (const p of this.pages) if (p.tl && !p.fn) this.footnotesFor(p);
     } catch (e) { /* the reader works without it */ }
   }
 
@@ -520,7 +519,6 @@ export class Reader {
     if (p.tl) p.tl.remove();
     p.el.appendChild(div);
     p.tl = div; p.tlScale = scale;
-    if (this.stats && !p.fn) this.footnotesFor(p);
     const src = lines && lines.length ? 'ocr' : 'pdf';
     if (p.casesSrc !== src) this.casesFor(p, src);
     if (this.findQ) this.paintHits(p);
@@ -568,17 +566,6 @@ export class Reader {
     if (p.pdfPage && Math.abs(p.n - this.current().page) > 6) { p.pdfPage.cleanup(); }
   }
 
-  /* ---------------- footnotes ---------------- */
-  footnotesFor(p) {
-    try { p.fn = this.A.footnotes(p.items, this.stats); } catch (e) { p.fn = { notes: [], refs: [] }; }
-    const layer = p.el.querySelector('.pg-marks');
-    layer.querySelectorAll('.fn-ref').forEach((x) => x.remove());
-    for (const r of p.fn.refs || []) {
-      const d = el('i', 'fn-ref');
-      d.style.left = (100 * r.x / p.w) + '%'; d.style.top = (100 * (r.y + r.h) / p.h) + '%'; d.style.width = (100 * r.w / p.w) + '%';
-      layer.appendChild(d);
-    }
-  }
   // what this page cites — 헌재 decisions (2004헌마554), courts' judgments (대법원 … 2000두7735 판결) and articles of laws
   // (헌법 제37조 제2항) — found in its text layer, the words as laid on the page, so each can be tapped where it is printed;
   // underlined like a footnote marker
@@ -622,24 +609,6 @@ export class Reader {
     const padX = 4 / p.cw, padY = 4 / p.ch;
     return (p.cases || []).find((c) => c.rects.some((r) => x >= r[0] - padX && x <= r[0] + r[2] + padX && y >= r[1] - padY && y <= r[1] + r[3] + padY)) || null;
   }
-  async noteAt(p, no) {
-    const own = (p.fn && p.fn.notes || []).find((x) => x.no === no);
-    if (!own) return null;
-    let text = own.text;
-    // a note that runs onto the next page: its continuation is that page's unnumbered first footnote lines
-    const last = (p.fn.notes || []).filter((x) => x.no != null).slice(-1)[0];
-    if (last && last.no === no && p.n + 1 < this.N) {
-      try {
-        const nx = this.pages[p.n + 1];
-        if (!nx.items) { const r = await pageItems(this.doc, nx.n); nx.items = r.page; nx.tc = r.textContent; nx.pdfPage = r.pdfPage; }
-        const f = this.A.footnotes(nx.items, this.stats, { prevLastNo: no });
-        const cont = (f.notes || []).find((x) => x.cont);
-        if (cont && cont.text) text += ' ' + cont.text;
-      } catch (e) { /* the note as far as this page goes */ }
-    }
-    return text;
-  }
-
   /* ---------------- marks ---------------- */
   // several papers open at once: one tab each; on a phone only a count that opens the list
   setTabs(tabs) { this.tabs = tabs || []; this.renderTabs(); }
@@ -1221,12 +1190,7 @@ export class Reader {
     const p = this.pages[Number(pgEl.dataset.n)];
     const pr = pgEl.getBoundingClientRect();
     const fx = (x - pr.left) / pr.width, fy = (y - pr.top) / pr.height;
-    // the small targets first (a footnote marker, a case number), then the marks they may lie in
-    if (p.fn && p.fn.refs) {
-      const px = fx * p.w, py = fy * p.h;
-      const r = p.fn.refs.find((r) => px >= r.x - 6 && px <= r.x + r.w + 6 && py >= r.y - 6 && py <= r.y + r.h + 6);
-      if (r) { this.notePop(p, r.no, x, y); return; }
-    }
+    // the small targets first (a cited case or article), then the marks they may lie in
     const c = this.caseAt(p, fx, fy);
     if (c) { this.refPop(c, x, y); return; }
     const m = this.markAt(p, fx, fy);
@@ -1321,13 +1285,7 @@ export class Reader {
     };
     this.showPop('mark', { left: x - 1, right: x + 1, top: y - 10, bottom: y + 10, width: 2, height: 20 });
   }
-  // the box over the page: a footnote, or a 헌재 decision; a case number in either opens that decision, and ‹ goes back
-  async notePop(p, no, x, y) {
-    const text = await this.noteAt(p, no);
-    if (!text) return;
-    this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
-    this.noteShow({ kind: 'note', no, text });
-  }
+  // the box over the page for a cited 헌재 decision, court judgment or article; a case number in it opens that one, ‹ goes back
   refPop(c, x, y) {
     this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
     this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para } } : { kind: c.kind, no: c.no });
@@ -1335,11 +1293,10 @@ export class Reader {
   noteShow(v) {
     this.noteView = v;
     const n = this.$('.rd-note');
-    n.classList.toggle('case', v.kind !== 'note');
+    n.classList.add('case');
     n.innerHTML = `<div class="note-h">${this.noteTrail.length ? `<button class="ib" data-act="back" aria-label="뒤로">${ICON.back}</button>` : ''}<b></b><button class="ib" data-act="copy" aria-label="복사">${ICON.copy}</button><button class="ib" data-act="x" aria-label="닫기">${ICON.close}</button></div><div class="note-t"></div>`;
     const head = n.querySelector('.note-h b'), body = n.querySelector('.note-t');
-    if (v.kind === 'note') { head.textContent = '각주 ' + v.no; body.innerHTML = linkCases(v.text); v.copy = v.text; }
-    else if (v.kind === 'case') { head.textContent = '헌재 ' + v.no; v.copy = '헌재 ' + v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.caseFill(v, head, body); }
+    if (v.kind === 'case') { head.textContent = '헌재 ' + v.no; v.copy = '헌재 ' + v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.caseFill(v, head, body); }
     else if (v.kind === 'court') { head.textContent = v.no; v.copy = v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.courtFill(v, head, body); }
     else { const t = `${v.ref.law} ${artLabel(v.ref)}${v.ref.para ? ` 제${v.ref.para}항` : ''}`; head.textContent = t; v.copy = t; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.artFill(v, head, body); }
     n.onclick = (e) => {
@@ -1376,7 +1333,8 @@ export class Reader {
   }
   async courtFill(v, head, body) {
     const msg = (html) => { if (this.noteView === v) { body.innerHTML = html; this.notePlace(); } };
-    const out = `<a class="btn ghost small" href="${lawGoKr.case((courtQuery(v.no) || { no: v.no }).no)}" target="_blank" rel="noopener">국가법령정보센터에서 찾기</a>`;
+    // (a judgment the 법제처 mirror lacks is not at a /판례/ address either: the site's search, said to be one)
+    const out = `<a class="btn ghost small" href="${lawGoKr.precSearch((courtQuery(v.no) || { no: v.no }).no)}" target="_blank" rel="noopener">국가법령정보센터에서 검색</a>`;
     let d;
     try { d = await (this.o.courtCase ? this.o.courtCase(v.no) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
@@ -1391,7 +1349,11 @@ export class Reader {
   }
   async artFill(v, head, body) {
     const r = v.ref;
-    const out = `<a class="btn ghost small" href="${lawGoKr.article(r.law === '헌법' ? '대한민국헌법' : r.law, r.art, r.sub)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a>`;
+    // the way out to 국가법령정보센터: an address only for what was found there (the law in force, the article it has);
+    // a name the app could not find (a repealed or renamed law, a foreign one) gets the site's search, said to be one
+    const outTo = (law, a) => (law ? `<a class="btn ghost small" href="${a ? lawGoKr.article(law.full, a.art, a.sub) : lawGoKr.law(law.full)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a>`
+      : `<a class="btn ghost small" href="${lawGoKr.search(r.law === '헌법' ? '대한민국헌법' : r.law)}" target="_blank" rel="noopener">국가법령정보센터에서 검색</a>`);
+    const out = outTo(null);
     const reviewed = r.law === '헌법' ? '' : `<details class="cs-fold" data-reviewed><summary>이 조문을 심판한 헌재 결정</summary><p></p></details>`;
     const wire = () => {
       const f = body.querySelector('[data-reviewed]');
@@ -1408,12 +1370,20 @@ export class Reader {
     try { got = await (this.o.article ? this.o.article(r) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
       if (this.noteView !== v) return;
-      const why = e && e.code === 'offline' ? '인터넷에 연결되면 조문을 볼 수 있습니다.' : e && e.code === 'nolaw' ? '그 이름의 법령을 찾지 못했습니다.' : '지금은 조문을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
+      const why = e && e.code === 'offline' ? '인터넷에 연결되면 조문을 볼 수 있습니다.'
+        : e && e.code === 'nolaw' ? '현행 법령 가운데 이 이름의 법령이 없습니다. 폐지되었거나 이름이 바뀐 법률, 또는 외국 법률일 수 있습니다.'
+        : e && e.code === 'repealed' ? `폐지된 법률입니다${e.date ? ` (${esc(dateText(String(e.date).replace(/-/g, '')))} 폐지)` : ''}.`
+        : '지금은 조문을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
       body.innerHTML = `<p class="cs-wait">${why}</p><p>${out}</p>${reviewed}`; wire(); this.notePlace(); return;
     }
     if (this.noteView !== v) return;
     const { law, a } = got;
-    if (!a) { body.innerHTML = `<p class="cs-wait">${esc(law.full)}에 그 조문이 없습니다.</p><p>${out}</p>${reviewed}`; wire(); this.notePlace(); return; }
+    if (r.art === '전문') {   // 헌법 전문: the preamble itself
+      head.textContent = '헌법 전문'; v.copy = `대한민국헌법 전문\n${law.preamble || ''}`.trim();
+      body.innerHTML = (law.preamble ? `<div class="lc-t"><p>${esc(law.preamble)}</p></div>` : '<p class="cs-wait">전문을 불러오지 못했습니다.</p>') + `<p>${outTo(law)}</p>`;
+      this.notePlace(); return;
+    }
+    if (!a) { body.innerHTML = `<p class="cs-wait">${esc(law.full)}에 그 조문이 없습니다 · 마지막 조문은 ${artLabel(law.arts[law.arts.length - 1] || { art: 0 })}입니다.</p><p>${outTo(law)}</p>${reviewed}`; wire(); this.notePlace(); return; }
     const ps = paras(a), pick = r.para && ps[r.para - 1] ? r.para : 0;
     head.textContent = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}`;
     v.copy = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}\n${pick ? ps[pick - 1] : a.text}`;
@@ -1424,7 +1394,7 @@ export class Reader {
       : !pend.art ? `<p class="lc-ahead">${esc(pend.date)}부터 이 조문은 없어집니다.</p>`
       : `<details class="lc-next" open><summary>${esc(pend.date)}부터 이렇게 바뀝니다</summary><div class="lc-t">${pendingParas(a, pend.art).map((p) => (p.diff ? `<p class="chg">${p.diff.map(([k, t]) => (k === '=' ? esc(t) : k === '+' ? `<ins>${esc(t)}</ins>` : `<del>${esc(t)}</del>`)).join('')}</p>` : `<p>${linkCases(p.text)}</p>`)).join('')}</div></details>`;
     body.innerHTML = `${a.title ? `<div class="cs-name">${artLabel(a)}(${esc(a.title)})</div>` : ''}<div class="cs-meta">${[a.chapter, law.title].filter(Boolean).map(esc).join(' · ')}</div>`
-      + `<div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div>${coming}<p>${out}</p>${reviewed}`;
+      + `<div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div>${coming}<p>${outTo(law, a)}</p>${reviewed}`;
     wire();
     this.notePlace();
   }

@@ -64,7 +64,7 @@ function corsHeaders(origin, env) {
     'access-control-allow-origin': ok ? origin : (allowed[0] || 'null'),
     'access-control-allow-methods': 'GET, HEAD, PUT, POST, DELETE, OPTIONS',
     'access-control-allow-headers': 'authorization, content-type, range, if-match, x-file-name',
-    'access-control-expose-headers': 'etag, content-length, content-range, accept-ranges',
+    'access-control-expose-headers': 'etag, content-length, content-range, accept-ranges, x-pdf-source',
     vary: 'origin',
   };
 }
@@ -610,19 +610,33 @@ async function openPdfUrls(body, env) {
   }
   return [...new Set(out)].slice(0, 6);
 }
+// probe: true asks only whether there is one — the start of each candidate is read (a range; a server that ignores it is
+// cut off after the first bytes) — so the app offers its button only for a paper whose original is really there
 async function paperPdf(req, env) {
-  const body = await readJSON(req, 8 * 1024);
-  const urls = await openPdfUrls(body || {}, env);
+  const body = (await readJSON(req, 8 * 1024)) || {};
+  const probe = body.probe === true;
+  const urls = await openPdfUrls(body, env);
   for (const u of urls) {
     try {
-      const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/pdf,*/*' }, redirect: 'follow', signal: AbortSignal.timeout(15000) });
-      if (!r.ok) continue;
+      const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/pdf,*/*', ...(probe ? { range: 'bytes=0-4095' } : {}) }, redirect: 'follow', signal: AbortSignal.timeout(15000) });
+      if (!r.ok) { if (r.body) r.body.cancel().catch(() => {}); continue; }
       const final = new URL(r.url);
       if (final.protocol !== 'https:') continue;   // a redirect must not drop to http
       if (PDF_SKIP.test(final.hostname)) continue;   // a redirect that ended on a paywall host
       const host = final.hostname;
       const ct = (r.headers.get('content-type') || '').toLowerCase();
-      if (ct && !/pdf|octet-stream|download/.test(ct)) continue;
+      if (ct && !/pdf|octet-stream|download/.test(ct)) { if (r.body) r.body.cancel().catch(() => {}); continue; }
+      if (probe) {
+        // the whole size, where the answer tells it: a notice page is tiny
+        const total = Number((/\/(\d+)\s*$/.exec(r.headers.get('content-range') || '') || [])[1] || (r.status === 200 && r.headers.get('content-length')) || 0);
+        let head = new Uint8Array(0);
+        const rd = r.body && r.body.getReader();
+        while (rd && head.length < 8) { const { value, done } = await rd.read(); if (done) break; const both = new Uint8Array(head.length + value.length); both.set(head); both.set(value, head.length); head = both; }
+        if (rd) rd.cancel().catch(() => {});
+        if (total && (total < 40 * 1024 || total > 40 * 1024 * 1024)) continue;
+        if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) return json({ found: true, host: host.slice(0, 60) });   // %PDF
+        continue;
+      }
       const buf = await r.arrayBuffer();
       if (buf.byteLength < 40 * 1024 || buf.byteLength > 40 * 1024 * 1024) continue;   // a reject/notice page is tiny
       const head = new Uint8Array(buf, 0, 5);

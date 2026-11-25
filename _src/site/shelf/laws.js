@@ -18,6 +18,7 @@ export const lawKey = (name) => ALIAS[String(name || '').replace(/\s+/g, '')] ||
 const ART_RE = /^(.+?)\s*제?\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제?\s*(\d{1,3})\s*항)?(?:\s*제?\s*(\d{1,3})\s*호)?$/;
 export function articleQuery(q) {
   const s = String(q || '').trim().replace(/\s+/g, ' ');
+  if (/^(?:대한민국\s?)?헌법\s?전문$/.test(s)) return { law: '헌법', art: '전문', sub: 0, para: 0, item: 0 };   // the preamble
   const m = ART_RE.exec(s);
   if (!m) return null;
   const law = m[1].replace(/\s+/g, '');
@@ -31,14 +32,19 @@ export function courtQuery(q) {
   return { no: m[2] + m[3] + Number(m[4]), court: courtName(m[1] || '') };
 }
 
-// the 국가법령정보센터 pages (its documented links by name), for what this app cannot show itself yet
+// the 국가법령정보센터 pages (its documented links by name), for what this app cannot show itself yet. A name goes in as the
+// mirror's own 출처 links write it — no spaces, 헌법 by its full name; an article address only for a numbered article. These
+// are built only from a law the app has found (one in force); a name it could not find gets the site's search instead.
+const lgkName = (law) => { const n = String(law || '').replace(/\s+/g, ''); return encodeURIComponent(n === '헌법' ? '대한민국헌법' : n); };
 export const lawGoKr = {
-  article: (law, art, sub) => `https://www.law.go.kr/법령/${encodeURIComponent(law)}/제${art}조${sub ? '의' + sub : ''}`,
-  law: (law) => `https://www.law.go.kr/법령/${encodeURIComponent(law)}`,
+  article: (law, art, sub) => (typeof art === 'number' ? `https://www.law.go.kr/법령/${lgkName(law)}/${encodeURIComponent(`제${art}조${sub ? '의' + sub : ''}`)}` : `https://www.law.go.kr/법령/${lgkName(law)}`),
+  law: (law) => `https://www.law.go.kr/법령/${lgkName(law)}`,
   case: (no) => `https://www.law.go.kr/판례/(${encodeURIComponent(no)})`,
   decision: (no) => `https://www.law.go.kr/헌재결정례/(${encodeURIComponent(no)})`,
-  compare3: (law) => `https://www.law.go.kr/법령/${encodeURIComponent(law)}/삼단비교`,
-  oldNew: (law) => `https://www.law.go.kr/법령/신구법비교/${encodeURIComponent(law)}`,
+  compare3: (law) => `https://www.law.go.kr/법령/${lgkName(law)}/삼단비교`,
+  oldNew: (law) => `https://www.law.go.kr/법령/신구법비교/${lgkName(law)}`,
+  search: (q) => `https://www.law.go.kr/lsSc.do?query=${encodeURIComponent(String(q || '').trim())}`,
+  precSearch: (no) => `https://www.law.go.kr/LSW/precSc.do?query=${encodeURIComponent(String(no || '').trim())}`,
 };
 
 /* ---------------- the texts ---------------- */
@@ -104,7 +110,7 @@ export function parse(key, rec) {
   }
   return { key, title: rec.title, rev: rec.rev, full: LAWS[key].full, preamble: pre.join('\n'), arts: arts.map((a) => ({ ...a, text: a.lines.join('\n') })) };
 }
-export const artLabel = (a) => `제${a.art}조${a.sub ? '의' + a.sub : ''}`;
+export const artLabel = (a) => (a.art === '전문' ? '전문' : `제${a.art}조${a.sub ? '의' + a.sub : ''}`);
 export function findArt(law, art, sub = 0) { return law.arts.find((a) => a.art === art && a.sub === sub) || null; }
 // the paragraph lines of an article (①, ②, …), so one can be picked out
 export function paras(a) {
@@ -135,6 +141,7 @@ const ABBR = {
   선관위법: '선거관리위원회법', 공선법: '공직선거법', 정자법: '정치자금법', 통비법: '통신비밀보호법', 국정원법: '국가정보원법', 집회시위법: '집회 및 시위에 관한 법률',
   행소법: '행정소송법', 행심법: '행정심판법', 행절법: '행정절차법', 민소법: '민사소송법', 형소법: '형사소송법', 민집법: '민사집행법',
   근기법: '근로기준법', 산안법: '산업안전보건법', 국배법: '국가배상법', 개인정보보호법: '개인정보 보호법', 가정폭력처벌법: '가정폭력범죄의 처벌 등에 관한 특례법',
+  청소년성보호법: '아동ㆍ청소년의 성보호에 관한 법률', 아청법: '아동ㆍ청소년의 성보호에 관한 법률',
 };
 // known law names (·/spaces removed → canonical), so a cited article resolves to its filed law even when the name is long
 // and spaced ("국가를 당사자로 하는 계약에 관한 법률 제27조") or abbreviated. Seeded here; lawIndex() adds every filed law, so
@@ -216,8 +223,10 @@ async function resolveLaw(asked) {
     const e = idx[d];
     if (!e) return null;
     const files = e[1] ? e[1].split(',') : ['법률'];
-    const file = part ? (files.includes(part) ? part : null) : files.find((f) => f !== '시행령' && f !== '시행규칙') || files[0];
-    return file ? { dir: d, file, files, name: part ? `${e[0] || d} ${part}` : e[0] || d } : null;
+    const base = (f) => f.replace(/\(.*\)$/, '');   // 법률(법률), 시행령(대통령령): the kind, its own name aside
+    const cands = part ? files.filter((f) => base(f) === part) : files.filter((f) => base(f) !== '시행령' && base(f) !== '시행규칙');
+    const pick = cands.length ? cands : part ? [] : [files[0]];
+    return pick.length ? { dir: d, file: pick[0], cands: pick, files, name: part ? `${e[0] || d} ${part}` : e[0] || d } : null;
   };
   let hit = at(base) || (ABBR[dirOf(base)] && at(ABBR[dirOf(base)]));
   if (hit && !hit.guess) return hit;
@@ -241,18 +250,20 @@ const mdLine = (l) => l.replace(/\*\*([①-⑳])\*\*\s*/g, '$1 ').replace(/\\([.
 export function mirrorArts(md) {
   const { head, body } = front(md);
   const arts = [];
-  let chapter = '', cur = null;
+  let chapter = '', cur = null, pre = null;
   for (const raw of body.split('\n')) {
     const l = raw.trimEnd();
     if (/^#{1,3}\s*부\s*칙/.test(l)) break;                                                       // the 부칙 number their own articles again
     const ch = /^#{2,3}\s+(제\s*\d+\s*[편장]\S*\s+.+)$/.exec(l); if (ch) { chapter = ch[1].replace(/\s+/g, ' ').trim(); cur = null; continue; }
     if (/^#{3,4}\s+제\s*\d+\s*[절관]/.test(l)) { cur = null; continue; }
-    const a = /^#{4,6}\s+제(\d{1,4})조(?:의(\d{1,3}))?\s*(?:\(([^)]*)\))?\s*$/.exec(l);
-    if (a) { cur = { art: Number(a[1]), sub: a[2] ? Number(a[2]) : 0, title: (a[3] || '').trim(), chapter, lines: [] }; arts.push(cur); continue; }
+    const a = /^#{4,6}\s+제(\d{1,4})조(?:의(\d{1,3}))?\s*(?:\((.*)\))?\s*$/.exec(l);   // (a title in double brackets too: ((목적)))
+    if (a) { cur = { art: Number(a[1]), sub: a[2] ? Number(a[2]) : 0, title: (a[3] || '').replace(/^\((.*)\)$/, '$1').trim(), chapter, lines: [] }; arts.push(cur); continue; }
+    if (!arts.length && !chapter && /^전\s*문$/.test(l.trim())) { pre = []; continue; }   // 헌법's preamble, before its first chapter
+    if (pre && !arts.length && !chapter && l.trim() && !/^#/.test(l)) { pre.push(mdLine(l)); continue; }
     if (/^#/.test(l)) { cur = null; continue; }
     if (cur && l.trim()) cur.lines.push(mdLine(l));
   }
-  return { name: head['제목'] || '', rev: String(head['시행일자'] || '').replace(/-/g, ''), promulgated: head['공포일자'] || '', mst: head['법령MST'] || '', arts: arts.map((x) => ({ art: x.art, sub: x.sub, title: x.title, chapter: x.chapter, text: x.lines.join('\n') })) };
+  return { preamble: pre ? pre.join('\n') : '', page: head['출처'] || '', name: head['제목'] || '', rev: String(head['시행일자'] || '').replace(/-/g, ''), promulgated: head['공포일자'] || '', mst: head['법령MST'] || '', arts: arts.map((x) => ({ art: x.art, sub: x.sub, title: x.title, chapter: x.chapter, text: x.lines.join('\n') })) };
 }
 // today in Korea, as 20261125
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
@@ -275,21 +286,32 @@ async function inForce(dir, file, now, head) {
   }
   return null;
 }
-const lawView = (key, k) => ({ key, title: `${k.full}${k.rev ? ` (${ymd(k.rev)} 시행)` : ''}`, rev: k.rev, full: k.full, preamble: '', arts: k.arts, src: k.src, next: k.next || null, later: k.later || [], ahead: !!k.ahead, files: k.files || null, dir: k.dir || '' });
+const lawView = (key, k) => ({ key, title: `${k.full}${k.rev ? ` (${ymd(k.rev)} 시행)` : ''}`, rev: k.rev, full: k.full, preamble: k.preamble || '', page: k.page || '', arts: k.arts, src: k.src, next: k.next || null, later: k.later || [], ahead: !!k.ahead, files: k.files || null, dir: k.dir || '' });
 async function loadAny(key, asked) {
   const kept = await store.get('kv', 'law:' + key).catch(() => null);
-  const ok = kept && kept.v === 4 && kept.arts;
+  const ok = kept && kept.v === 5 && kept.arts;
   const now = today();
   const fresh = ok && Date.now() - kept.at < (kept.ahead ? 3600e3 : 3 * 864e5) && !(kept.next && kept.next.rev <= now) && !(kept.ahead && kept.rev <= now);
   if (ok && (fresh || !navigator.onLine)) return lawView(key, kept);
   if (!navigator.onLine) throw fail('offline');
   try {
     const hit = await resolveLaw(asked);
-    const md = hit ? await mirrorFile(hit.dir, hit.file) : null;
+    let md = hit ? await mirrorFile(hit.dir, hit.file) : null;
     if (!md) { if (drfReady()) return await loadDrf(key, asked); throw fail('nolaw'); }
-    const got = mirrorArts(md);
+    let got = mirrorArts(md);
+    // two files of one kind ("법률" and "법률(법률)": two laws of the same name): the latest promulgated is the one that
+    // stands — the plain name is often an old law's repeal record (근로기준법, 1997) or an old text (헌법재판소법, 1998) beside
+    // the law in force; when the latest is itself a repeal record, the law is gone (검찰청법, repealed 2026. 10. 2.)
+    const stub = (g, t) => g.arts.length <= 1 && /이를\s*폐지한다|은\s*폐지한다/.test(t.slice(0, 1500));
+    for (const alt of (hit.cands || []).slice(1)) {
+      const m2 = await mirrorFile(hit.dir, alt).catch(() => null);
+      if (!m2) continue;
+      const g2 = mirrorArts(m2), p1 = got.promulgated || '', p2 = g2.promulgated || '';
+      if (p2 > p1 || (p2 === p1 && stub(got, md) && !stub(g2, m2))) { md = m2; got = g2; hit.file = alt; }
+    }
+    if (stub(got, md)) throw Object.assign(fail('repealed'), { date: got.rev || got.promulgated });   // (the day the repeal took effect)
     if (!got.arts.length) throw fail('unavailable');
-    let rec = { v: 4, at: Date.now(), full: got.name || hit.name || asked, rev: got.rev, mst: got.mst, arts: got.arts, dir: hit.dir, file: hit.file, files: hit.files || null, src: 'legalize-kr' };
+    let rec = { v: 5, at: Date.now(), full: got.name || hit.name || asked, rev: got.rev, mst: got.mst, arts: got.arts, preamble: got.preamble, page: got.page, dir: hit.dir, file: hit.file, files: hit.files || null, src: 'legalize-kr' };
     if (got.rev && got.rev > now) {   // the newest text is not in force yet: today's text first, the nearest coming one beside it
       if (ok && kept.mst === got.mst && kept.next) rec = { ...rec, full: kept.full, rev: kept.rev, arts: kept.arts, next: kept.next, later: kept.later || [] };
       else {
@@ -558,7 +580,8 @@ const GLUED_FOREIGN = /(?:수정|연방)\s*$/;
 const KOREAN_ANCHOR = /(?:우리|우리나라|한국|대한민국|현행|국내)\s*(?:의\s*)?$/;
 const reEsc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function foreignLaw(text, at, law) {
-  const near = text.slice(Math.max(0, at - 24), at);
+  // (a word broken across a line of the PDF is one word: '앞의 일⏎본 헌법 제33조' is Japan's)
+  const near = text.slice(Math.max(0, at - 30), at).replace(/([가-힣])[ \t]*\n[ \t]*([가-힣])/g, '$1$2');
   if (KOREAN_ANCHOR.test(near)) return false;
   if (GOVERNS.test(near) || GLUED_FOREIGN.test(text.slice(Math.max(0, at - 7), at))) return true;
   if (/\(\s*$/.test(near)) {   // "(형사소송법 제199조" after "일본 형사소송법 … 정하고 있다"
@@ -628,10 +651,12 @@ const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
 const circ = (c) => (c ? CIRCLED.indexOf(c) + 1 : 0);
 // a circled number is a 항 only on the same line and not followed by digits: "제37조②", "제77조의2 ①과 동일" — not the
 // 판결요지집's "제53조②777면", nor "제54조⏎③ 원고는…" (the judgment's own list) or a quoted article's "⏎① 근로자가…"
-const ART_TAIL = /제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항|[ \t]*([①-⑳])(?![ \t]*\d))?/g;
-const ART_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항|[ \t]*([①-⑳])(?![ \t]*\d))?/y;
+const ART_TAIL = /제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,2})(?![\d,]))?(?:\s*제\s*(\d{1,3})\s*항|[ \t]*([①-⑳])(?![ \t]*\d))?/g;
+const ART_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,2})(?![\d,]))?(?:\s*제\s*(\d{1,3})\s*항|[ \t]*([①-⑳])(?![ \t]*\d))?/y;
 const PARA_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*(?:제\s*(\d{1,3})\s*항|([①-⑳])(?![ \t]*\d))/y;
-const JEONMUN = /(?:대한민국)?헌법\s*전문/g;
+// 헌법 전문(前文), not 전문(專門): only before a standalone particle, a list or closing punctuation — "헌법 전문은", "헌법 전문과 제1조", "(헌법 전문)" —
+// never "헌법전문가", "헌법 전문성", "헌법소송을 전담할 헌법전문재판소"
+const JEONMUN = /(?:대한민국)?헌법\s*전문(?=[은는을를의과와](?![가-힣])|에|\s*(?:[,·ㆍ]|및|[)）.。"”’」]|$))/g;   // 전문과 제1조 ✓, 전문과정 ✗
 export function scanArticles(textIn) {
   const out = [];
   if (!textIn) return out;
