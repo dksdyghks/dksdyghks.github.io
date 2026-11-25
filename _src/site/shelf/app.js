@@ -212,7 +212,7 @@ async function preparePending() {
         try {
           const p1 = (await pdfkit.pageItems(doc, 0)).page;
           const p2 = doc.numPages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
-          first = naming.withFileName(naming.readFirstPages(p1, p2), f.orig || f.name);
+          first = await nameFromBand(doc, p1, p2, naming.withFileName(naming.readFirstPages(p1, p2), f.orig || f.name), f.orig || f.name);
           if ((S.prefs.autoName !== false || /^공유로 넣은 PDF/.test(f.name)) && first && first.name) set.name = first.name + '.pdf';
         } catch (e) { /* keeps its name */ }
         try { const th = await pdfkit.thumbnail(doc); await api.putMeta(f.id, 'thumb', th, 'image/jpeg'); await store.put('thumbs', f.id, th); set.thumb = true; } catch (e) { /* no picture */ }
@@ -830,7 +830,7 @@ async function uploadOne(u) {
     try {
       const p1 = (await pdfkit.pageItems(doc, 0)).page;
       const p2 = pages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
-      first = naming.withFileName(naming.readFirstPages(p1, p2), u.orig || u.name);
+      first = await nameFromBand(doc, p1, p2, naming.withFileName(naming.readFirstPages(p1, p2), u.orig || u.name), u.orig || u.name);
       if (S.prefs.autoName !== false && first && first.name) { u.name = first.name + '.pdf'; renderUploads(); }
     } catch (e) { /* keeps the file's own name */ }
     let thumb = null;
@@ -1069,6 +1069,22 @@ async function syncMarksAll() {
    go to the server, so every device can then search them, select them and mark them. */
 const OCR = { id: null, done: 0, total: 0 };
 let ocrRun = null;
+// An author line the text layer does not carry (drawn, not written: 임 지 봉 under the title, yet no text there): that strip of
+// page 1 is read like a scan, and the name read again with it. Only when the title is read but no author, and not on a phone.
+async function nameFromBand(doc, p1, p2, first, fileName) {
+  if (!first || first.name || !first.title || isPhone()) return first;
+  const band = naming.authorBand(p1); if (!band) return first;
+  let mod = null, pg = null;
+  try {
+    mod = await import('./ocr.js');
+    pg = await doc.getPage(1);
+    const vp = pg.getViewport({ scale: 1 });
+    const r = await mod.readPage(pg, 'kor');
+    const again = naming.withFileName(naming.readFirstPages(naming.withBand(p1, band, ocrPageItems(0, r.lines, vp.width, vp.height).items), p2), fileName);
+    if (!again || !again.name) return first;
+    return { ...again, journal: first.journal || again.journal, society: first.society || again.society, issue: first.issue || again.issue, date: first.date || again.date };
+  } catch (e) { return first; } finally { if (pg) pg.cleanup(); if (mod && !ocrRun) mod.stop(); }
+}
 const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600 && !(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const needsOcr = (f) => !!f && f.scan > 0 && !f.ocr && !f.trashed && !f.pending && !folderTrashed(f.folder);
 const isScan = (f) => !!f && f.scan > 0 && (!f.pages || f.scan * 2 >= f.pages);   // most of its pages are pictures

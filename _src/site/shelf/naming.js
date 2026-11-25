@@ -47,7 +47,7 @@ const HEADINGS = new Set(['목차', '차례', '목록', '요약', '요지', '초
   '심사논문', '투고논문', '부록', '서문', '발간사', '편집', '권두언', 'abstract', 'contents', 'tableofcontents', 'keywords', 'keyword', 'introduction',
   'references', 'summary', 'article', 'articles', 'researcharticle']);
 const bare = (s) => hangulize(s).replace(/[\s[\]【】〈〉<>《》≪≫()（）「」『』｢｣:：.·ㆍ▣■□◆◇○●*\-–—―－_=]/g, '').toLowerCase();
-const isHeading = (s) => HEADINGS.has(bare(s));
+const isHeading = (s) => HEADINGS.has(bare(s)) || HEADINGS.has(bare(String(s).replace(/^\s*(?:[IVXⅠ-Ⅻ]{1,4}|\d{1,2}|[가-하])\s*[.)．]\s*|^\s*제\s*\d+\s*[장절]\s*/, '')));
 const SURNAMES = new Set(('김 이 박 최 정 강 조 윤 장 임 한 오 서 신 권 황 안 송 류 유 전 홍 고 문 양 손 배 백 허 남 심 노 하 곽 성 차 주 우 구 민 나 진 지 엄 채 원 천 방 공 현 함 변 염 '
   + '여 추 도 소 석 선 설 마 길 연 위 표 명 기 반 라 왕 금 옥 육 인 맹 제 모 탁 국 어 은 편 용 예 경 봉 사 부 가 간 갈 감 견 계 단 담 당 대 독 돈 동 두 묵 범 복 빈 '
   + '빙 상 섭 순 승 시 영 온 옹 운 음 자 점 종 좌 준 즙 증 창 초 춘 탄 태 판 팽 평 포 풍 피 필 학 해 형 호 화 환 후 흥 뇌 누 로 리 림 량 려 렴 룡 륙').split(' '));
@@ -338,6 +338,7 @@ function fromArticle(pg, next) {
 }
 function titleAboveAuthors(ls, body, H, korean) {   // the first author line in the upper page, and the title just above it
   for (let k = 1; k < ls.length && ls[k].y < H * 0.6; k++) {
+    if (isHeading(ls[k].s) || (ls[k].s.length > 45 && Math.abs(ls[k].h - body) < 0.8 && !(korean && hangulShare(ls[k].s) < 0.3))) break;   // the text has begun
     if (MARK_ONLY.test(ls[k].s) || ls[k].h < body * 0.95) continue;
     const names = authorsOf(ls[k].s);
     if (!names) continue;
@@ -400,6 +401,24 @@ export function withFileName(r, fileName) {
   if (!m || m[0] === r.title || !/[·ㆍ･・‧]/.test(m[0])) return r;
   const title = m[0].replace(/[ㆍ･・‧]/g, '·');
   return { ...r, title, name: r.name.slice(0, r.name.length - r.title.length) + title };
+}
+export function authorBand(p1) {   // { y0, y1 } on page 1 to read like a scan when its text has a title but no author line, else null
+  try {
+    const ls = lines(p1); if (!ls.length) return null;
+    const H = p1.H || 842, body = bodySize(ls), all = ls.map((L) => L.s).join(' ');
+    const korean = hangulShare(all) >= 0.3;
+    const t = pickTitle(ls, body, H, korean);
+    if (!t || !t.title || findAuthors(ls, t.end, body, H, korean)) return null;
+    let k = t.end + 1;
+    while (k < ls.length && (MARK_ONLY.test(ls[k].s) || isSubtitle(ls[k].s))) k++;
+    const top = ls[k - 1].y + 2, end = k < ls.length ? ls[k].y - ls[k].h * 0.9 : H * 0.6;
+    return end - top >= body * 1.5 ? { y0: top, y1: Math.min(end, H * 0.6) } : null;
+  } catch (e) { return null; }
+}
+// page 1 with the lines read from a picture of it (a scan reader's lines) put into that band
+export function withBand(p1, band, items) {
+  const add = (items || []).filter((i) => i.y > band.y0 && i.y - i.h < band.y1);
+  return add.length ? { ...p1, items: [...p1.items, ...add] } : p1;
 }
 export function nameFromPages(p1, p2) {   // "저자_제목", or null when either is unclear
   const r = readFirstPages(p1, p2);
