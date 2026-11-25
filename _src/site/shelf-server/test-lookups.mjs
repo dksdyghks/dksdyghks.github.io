@@ -40,6 +40,7 @@ function fakeAssembly(u) {
   if (BUSY) return new Response(JSON.stringify({ RESULT: { CODE: 'ERROR-337', MESSAGE: '일별 트래픽 제한을 넘은 호출입니다.' } }), { headers: { 'content-type': 'application/json' } });
   if (svc === 'CACHETEST') return asmJson(svc, [{ N: asked.filter((a) => a.includes('CACHETEST')).length }]);
   if (svc === 'nwbqublzajtcqpdae') {
+    if (q.get('AGE') === '22' && q.get('BILL_NAME') === '정치자금법') return asmJson(svc, [{ BILL_ID: 'PRC_Z9A9F5A257FE4A519BBFCC734D24D6', BILL_NO: '2229999', BILL_NAME: '정당법 및 정치자금법 일부개정법률안', PROPOSER: '홍길동의원 등 10인', PROPOSER_KIND: '의원', PROPOSE_DT: '2026-11-20' }]);
     if (q.get('AGE') !== '22' || q.get('BILL_NAME') !== '공직선거법') return asmJson(svc, []);
     return asmJson(svc, [
       { BILL_ID: 'PRC_B0A9F5A257FE4A519BBFCC734D24D6', BILL_NO: '2223151', BILL_NAME: '공직선거법 일부개정법률안', PROPOSER: '김예지의원 등 10인', PROPOSER_KIND: '의원', PROPOSE_DT: '2026-11-24', CURR_COMMITTEE: null },
@@ -47,6 +48,7 @@ function fakeAssembly(u) {
       { BILL_ID: 'PRC_X0A9F5A257FE4A519BBFCC734D24D6', BILL_NO: '2223000', BILL_NAME: '재외국민 공직선거법 특례법안', PROPOSER: '정부', PROPOSER_KIND: '정부', PROPOSE_DT: '2026-11-10' },
     ]);
   }
+  if (svc === 'BPMBILLSUMMARY' && q.get('BILL_NO') === '2229999') return new Response('upstream trouble', { status: 500 });   // never answers
   if (svc === 'BPMBILLSUMMARY') { const no = q.get('BILL_NO'); return SUMS[no] ? asmJson(svc, [{ BILL_NO: no, SUMMARY: SUMS[no] }]) : new Response(JSON.stringify({ RESULT: { CODE: 'INFO-200', MESSAGE: '해당하는 데이터가 없습니다.' } })); }
   return asmJson(svc, [
     { BILL_ID: q.get('BILL_ID'), CONF_KND: '국회본회의 회의록', SESS: '제439회', DGR: '제9차', CONF_DT: '20260917        ', DOWN_URL: 'https://record.assembly.go.kr/assembly/viewer/minutes/download/pdf.do?id=57268' },
@@ -113,6 +115,11 @@ BUSY = false;
 r = await call('/bills?law=' + encodeURIComponent('정당법'), T); b = await r.json();
 ok(r.status === 200 && b.total === 0 && b.missing === 0, 'bills: a law with no bills pending -> none');
 ok((await call('/bills?law=' + encodeURIComponent('<script>'), T)).status === 400 && (await call('/bills', T)).status === 400, 'bills: an odd law name -> 400');
+const nd = asked.length; await call('/bills?law=' + encodeURIComponent('5ㆍ18민주화운동 등에 관한 특별법'), T);
+ok(new URL(asked[nd]).searchParams.get('BILL_NAME') === '18민주화운동 등에 관한 특별법', 'bills: a name with a middle dot is asked by its longest part without one (the Assembly may write the dot otherwise)');
+const seen = [];
+for (let k = 0; k < 4; k++) { b = await (await call('/bills?law=' + encodeURIComponent('정치자금법'), T)).json(); seen.push(b.missing); }
+ok(b.total === 1 && b.rows[0].name.startsWith('정당법 및 정치자금법') && seen.join(',') === '1,1,0,0' && JSON.stringify(b.rows[0].arts) === '[]', 'bills: a bill of two laws shows under the second; one whose summary never comes is let go after three tries (' + seen.join(',') + ')');
 r = await call('/bills/one?no=2222983&id=PRC_75598305B0484647B86910AE3ECBFA', T); b = await r.json();
 ok(r.status === 200 && /활동기한/.test(b.summary) && b.minutes.length === 1 && b.minutes[0].date === '20260917' && b.minutes[0].url.startsWith('https://record.assembly.go.kr/'), "bills/one: the summary in full and the meetings' records (only record.assembly.go.kr links)");
 ok((await call('/bills/one?no=1&id=x', T)).status === 400, 'bills/one: odd numbers -> 400');

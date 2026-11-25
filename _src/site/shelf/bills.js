@@ -26,7 +26,8 @@ export function pending(law, onStep) {
       for (let i = 0; i < 25; i++) {
         d = await api.bills(law);
         mem.set(law, { seen: Date.now(), d }); tell(d);
-        if (!d.missing || d.missing === last) break;   // all read — or none read this time (the Assembly's site not answering)
+        if (!d.missing) break;   // all read
+        if (d.missing === last) { d = { ...d, stalled: true }; mem.set(law, { seen: Date.now(), d }); tell(d); break; }   // none read this time: as it is
         last = d.missing;
       }
     } catch (e) {

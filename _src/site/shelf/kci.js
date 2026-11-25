@@ -80,6 +80,8 @@ const fixedVol = (all) => all.length >= 3 && all.every((x) => x.vol === all[0].v
 // how the issue is written: 제V권 제N호, 제N호; a number kept only as 권 is written as 호 when the journal numbers its issues in one
 // run, and not at all otherwise (it may be an annual 권, 집 or 호)
 export function issueText(x, all = []) {
+  const digits = (v) => !v || /^\d+$/.test(String(v).trim());
+  if (!digits(x.vol) || !digits(x.no)) return '';   // 제1·2호, 특별호: not written (the line keeps what it had)
   if (x.no && (!x.vol || fixedVol(all))) return `제${Number(x.no)}호`;
   if (x.vol && x.no) return `제${Number(x.vol)}권 제${Number(x.no)}호`;
   return x.vol && oneRun(all) ? `제${Number(x.vol)}호` : '';

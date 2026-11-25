@@ -703,8 +703,10 @@ async function renderPapers(cIn) {
     c.innerHTML = `<div class="pp-home">
       <h2 class="sec-h">내 논문</h2><div class="law-ex"><button type="button" data-pq="${esc(research.ME)}"><span>${esc(research.ME)}</span><small>내가 쓴 글 · 연구자 정보</small></button></div>
       <h2 class="sec-h">내 연구 주제</h2>${chips(research.TOPICS)}
+      <section class="kci-new" hidden></section>
       ${paperRecent.length ? `<h2 class="sec-h">최근 찾은 것</h2>${chips(paperRecent)}` : ''}
       <p class="law-note">국회도서관 국가학술정보에서 학술논문·학위논문·단행본을 찾습니다. 연구자 이름을 넣으면 그 연구자가 쓴 글을 따로 모아 보여 드립니다. 논문을 누르면 초록·목차·주제어와 원문(국회전자도서관)으로 가는 길이 나오고, 이미 내 책장에 있는 논문에는 ‘내 책장’ 표시가 붙습니다.</p></div>`;
+    kciNewSec($('.kci-new', c), live);
     return;
   }
   rememberPaper(q);
@@ -719,6 +721,53 @@ async function renderPapers(cIn) {
     $('[data-sec="author"] .sec-h', box).insertAdjacentHTML('beforeend', `<button type="button" class="btn ghost small pp-who" data-who="${esc(who)}" data-aid="${esc(aid)}">연구자 정보</button>`);
     fillPapers(box, 'author', (pg) => papers.search(q.replace(/\s+/g, ''), { kind, page: pg, sort: 'new', by: 'author' }), live, false);
   }
+}
+/* ---------- KCI 새 법학 논문 ----------
+   The law papers KCI took in over the last eight weeks (kci/new.json beside the app, gathered every week from KCI's OAI-PMH):
+   on 논문 찾기's first screen, those in the owner's fields first; one opens with the start of its abstract and its KCI page. */
+let kciNewP = null;
+const kciNew = () => (kciNewP ||= fetch(new URL('./kci/new.json', location.href), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciNewP = null; return []; }));
+// the owner's fields, as words a law paper's title or abstract would use
+const MY_FIELDS = /선거|정당|정치자금|선관위|국회|입법|헌법|헌정|기본권|탄핵|대통령|적극행정|행정절차|행정소송|행정조사|민간투자|공공조달|조달|국가계약|공법상 계약|군사|국방|군형법|안보|사이버|정보기관|우주|항공|영장|집회|민주주의|대의제|국민투표/;
+const kciRows = new Map();
+const kciIssue = (x) => (x.v && x.i ? `제${x.v}권 제${x.i}호` : x.i ? `제${x.i}호` : x.v ? `제${x.v}권` : '');
+const kciWho = (x) => ((x.a || []).length > 3 ? x.a.slice(0, 3).join('·') + ' 외' : (x.a || []).join('·'));
+const kciWhen = (x) => (x.y ? `${x.y}.${x.m ? ` ${Number(x.m)}.` : ''}` : '');
+function kciRow(x, shelf) {
+  kciRows.set(x.id, x);
+  const mine = shelf.get(papers.norm(papers.mainTitle(x.t)));
+  const meta = [kciWho(x), [x.j, kciIssue(x)].filter(Boolean).join(' '), kciWhen(x)].filter(Boolean);
+  return `<button type="button" class="lrow pp-row" data-kci="${esc(x.id)}"><b>${esc(x.t)}${mine ? ' <em class="pp-mine">내 책장</em>' : ''}${x.open ? ' <em class="pp-open">원문 공개</em>' : ''}</b><span>${meta.map(esc).join(' · ')}</span></button>`;
+}
+async function kciNewSec(sec, live) {
+  if (!sec) return;
+  const all = await kciNew();
+  if (!live() || !sec.isConnected || !all.length) return;
+  const mine = all.filter((x) => MY_FIELDS.test(`${x.t} ${x.ab || ''}`));   // (by what the paper says, not by its journal's name)
+  let showAll = false, more = 6;
+  const draw = () => {
+    const rows = showAll ? all : mine, shelf = shelfTitles();
+    const list = rows.slice(0, more);
+    sec.hidden = false;
+    sec.innerHTML = `<h2 class="sec-h">KCI 새 법학 논문 <span class="sec-n">${showAll ? `법학 전체 ${all.length}편` : `내 분야 ${mine.length}편`} · 최근 8주</span></h2>
+      <div class="list law-list">${list.map((x) => kciRow(x, shelf)).join('') || '<p class="none">최근 8주 사이 내 분야의 새 논문이 없습니다</p>'}${rows.length > list.length ? `<button type="button" class="more kci-more">더 보기 · ${list.length} / ${rows.length}</button>` : ''}</div>
+      <p class="law-note faint kci-foot">KCI(한국학술지인용색인)가 새로 받은 법학 논문을 매주 모읍니다 · <button type="button" class="law-eg kci-all">${showAll ? '내 분야만 보기' : `법학 전체 ${all.length}편 보기`}</button></p>`;
+    $('.kci-more', sec) && ($('.kci-more', sec).onclick = () => { more += 20; draw(); });
+    $('.kci-all', sec).onclick = () => { showAll = !showAll; more = showAll ? 20 : 6; draw(); };
+  };
+  draw();
+}
+// one KCI paper: who wrote it, where it came out, the start of its abstract; KCI's page (its full text where open), 국회도서관
+function kciSheet(x) {
+  const box = sheet(`<div class="cs-head"><h2>${esc(x.t)}</h2></div><div class="cs-body">
+    ${(x.a || []).length ? `<div class="pp-by">${x.a.map((a) => `<button type="button" class="pp-au" data-pq="${esc(a)}" title="${esc(a)}의 글 찾기">${esc(a)}</button>`).join('')}</div>` : ''}
+    <p class="pp-meta">${esc([[x.j, kciIssue(x)].filter(Boolean).join(' '), x.p, kciWhen(x), x.fp ? `${x.fp}${x.lp ? '–' + x.lp : ''}면` : ''].filter(Boolean).join(' · '))}</p>
+    ${x.ab ? `<div class="cs-sec"><h4>초록 (앞부분)</h4><p>${esc(x.ab)}</p></div>` : ''}
+  </div><div class="row-btns"><button type="button" class="btn ghost kci-nanet">국회도서관에서 찾기</button><a class="btn ghost" href="https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=${encodeURIComponent(x.id)}" target="_blank" rel="noopener">KCI에서 보기${x.open ? ' (원문 공개)' : ''}</a><button type="button" class="btn ghost cs-copy">인용 복사</button></div>`);
+  box.classList.add('case-sheet', 'paper-sheet');
+  $('.cs-copy', box).onclick = () => copyText(`${(x.a || []).join('·')}${x.a && x.a.length ? ', ' : ''}"${x.t}", ${[x.j, kciIssue(x)].filter(Boolean).join(' ')}${x.p ? ', ' + x.p : ''}, ${x.y || ''}${x.fp ? `, ${x.fp}${x.lp ? '-' + x.lp : ''}면` : ''}.`);
+  $('.kci-nanet', box).onclick = () => { closeSheet(); paperGo(papers.mainTitle(x.t)); };
+  box.addEventListener('click', (e) => { const au = e.target.closest('.pp-au[data-pq]'); if (au) { closeSheet(); paperGo(au.dataset.pq); } });
 }
 function rememberPaper(q) {
   clearTimeout(S.paperRemT);
@@ -1184,7 +1233,7 @@ function billsSec(sec, law, a, live) {
   const whole = () => `<button type="button" class="law-eg" data-lq="${esc(name)}">${esc(name)} 계류 법안 전체 보기</button>`;
   const draw = (d) => {
     if (!live() || !sec.isConnected || !d) return;
-    const rows = here ? bills.touching(d, a.art, a.sub) : d.rows, reading = d.missing > 0 && !d.stale;
+    const rows = here ? bills.touching(d, a.art, a.sub) : d.rows, reading = d.missing > 0 && !d.stale && !d.stalled;
     const when = d.at ? `${bills.dateText(new Date(d.at + 9 * 3600e3).toISOString().slice(0, 10))} 기준` : '';
     const progress = reading ? `<span class="bill-read">주요내용 살피는 중 ${d.total - d.missing}/${d.total}</span>` : '';
     if (!rows.length && !reading) {
@@ -1198,7 +1247,7 @@ function billsSec(sec, law, a, live) {
     const list = rows.slice(0, more);
     sec.innerHTML = `<h2 class="sec-h">국회 계류 법안 <span class="sec-n">${rows.length}건${here ? '' : ''}</span>${progress}</h2>
       <div class="list law-list">${list.map((x) => billRow(x, law, here)).join('') || '<p class="none">이 조문을 고치는 법안을 찾는 중…</p>'}${rows.length > list.length ? `<button type="button" class="more bill-more">더 보기 · ${list.length} / ${rows.length}</button>` : ''}</div>
-      <p class="law-note bill-foot">${here ? `${whole()} · ` : ''}제안이유 및 주요내용이 밝힌 조문을 기준으로 모았습니다 · 열린국회정보${when ? ` · ${when}` : ''}${d.stale ? ' · 지금은 국회 의안정보에 닿지 않아 전에 받은 목록입니다' : ''}</p>`;
+      <p class="law-note bill-foot">${here ? `${whole()} · ` : ''}제안이유 및 주요내용이 밝힌 조문을 기준으로 모았습니다 · 열린국회정보${when ? ` · ${when}` : ''}${d.stale ? ' · 지금은 국회 의안정보에 닿지 않아 전에 받은 목록입니다' : d.stalled && d.missing ? ` · 법안 ${d.missing}건의 주요내용은 아직 읽지 못했습니다` : ''}</p>`;
     const mb = $('.bill-more', sec); if (mb) mb.onclick = () => { more += 20; draw(d); };
   };
   sec.hidden = false; sec.className = 'bill-sec';
@@ -1231,7 +1280,8 @@ function billSheet(x, law) {
   bills.one(x).then((d) => {
     if (!box.isConnected) return;
     const t = String(d.summary || '').replace(/\r/g, '').trim();
-    sum.innerHTML = t ? t.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean).map((p) => (/^(?:제안이유(?:\s*및\s*주요내용)?|주요내용|참고사항)$/.test(p) ? `<h4>${esc(p)}</h4>` : `<p>${linkArts(p)}</p>`)).join('') : '<p class="cs-wait">제안이유 및 주요내용이 아직 실리지 않았습니다. 의안정보시스템에서 원문을 보세요.</p>';
+    if (d.summary === null) sum.innerHTML = '<p class="cs-wait">지금은 국회 의안정보에서 제안이유를 불러오지 못했습니다. 잠시 뒤 다시 열거나 의안정보시스템에서 원문을 보세요.</p>';
+    else sum.innerHTML = t ? t.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean).map((p) => (/^(?:제안이유(?:\s*및\s*주요내용)?|주요내용|참고사항)$/.test(p) ? `<h4>${esc(p)}</h4>` : `<p>${linkArts(p)}</p>`)).join('') : '<p class="cs-wait">제안이유 및 주요내용이 아직 실리지 않았습니다. 의안정보시스템에서 원문을 보세요.</p>';
     if (d.minutes && d.minutes.length) {
       min.hidden = false;
       min.innerHTML = `<h4>회의록</h4><div class="bill-mins">${d.minutes.map((m) => `<a href="${esc(m.url)}" target="_blank" rel="noopener"><b>${esc(m.kind || '회의록')}</b><span>${esc([m.sess, m.dgr].filter(Boolean).join(' '))} · ${esc(bills.dateText(m.date))}</span></a>`).join('')}</div>`;
@@ -1384,6 +1434,7 @@ function onContentClick(e) {
   const lq = t.closest('[data-lq]'); if (lq) { S.lq = lq.dataset.lq; const li = $('.law-find input'); if (li) li.value = S.lq; renderLaw($('.content')); $('.content').scrollTop = 0; window.scrollTo(0, 0); return; }
   const ho = t.closest('[data-holding]'); if (ho) { holdingSheet(ho.dataset.holding); return; }
   const bl = t.closest('[data-bill]'); if (bl) { const b = billRows.get(bl.dataset.bill); if (b) billSheet(b.x, b.law); return; }
+  const kc = t.closest('[data-kci]'); if (kc) { const x = kciRows.get(kc.dataset.kci); if (x) kciSheet(x); return; }
   if (t.closest('[data-selall]')) { pickAll(); return; }
   const ck = t.closest('[data-ck]');
   if (ck) { const row = ck.closest('.row, .card-w[data-file]'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
@@ -2096,11 +2147,14 @@ function nanetAuthor(same) {   // one name text when every record of the title a
 // asked again a few seconds after a paper arrives or is read (several arrivals: one round); a call while a round runs comes after it
 function libSoon(ms = 4000) { clearTimeout(libSoon.t); libSoon.t = setTimeout(() => libraryInfo(), ms); }
 let libAgain = false;
-// a paper's line, set in its texts (the server's copy and this device's) when it says more than before; true when written
+// a paper's line, set in its texts (the server's copy and this device's) when it says more than before; true when written.
+// It is written onto the server's texts as they are now (a scan read on another device has its words there, which this
+// device's copy may not have yet), and not while this device is reading the scan's words (its texts are about to change).
 async function writePaper(f, cur, merged) {
   if (!paperOf(merged) || JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) return false;
+  if (OCR.id === f.id) return false;
   try {
-    const t = (await store.get('texts', f.id).catch(() => null)) || await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
+    const t = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
     t.paper = paperOf(merged);
     await store.put('texts', f.id, t);
     await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
@@ -2166,6 +2220,7 @@ async function libraryInfo() {
   // KCI (한국연구재단): the month, and the issue when it can be told, of papers whose line names the journal but not yet both
   // (the issue a line names gives the month; a known month gives the issue) — asked once a month, apart from the round above
   if (!kciAsked) kciAsked = (await store.get('kv', 'kciAsked1').catch(() => null)) || {};
+  let kciFails = 0;
   for (const f of liveFiles()) {
     if (!navigator.onLine || document.hidden) break;
     const cur = wrote.get(f.id) || infoOf(f);   // (a line written just now reaches the index a moment later)
@@ -2174,7 +2229,13 @@ async function libraryInfo() {
     await fgWait();
     const name = stem(f.name), cut = hasAuthor(f.name) ? name.indexOf('_') : -1, title = (cut > 0 ? name.slice(cut + 1) : name).trim();
     let k = null;
-    try { k = await kci.fill(cur, title); } catch (e) { if (api.isOffline(e)) { delete kciAsked[f.id]; store.put('kv', 'kciAsked1', kciAsked).catch(() => {}); break; } }
+    try { k = await kci.fill(cur, title); kciFails = 0; } catch (e) {
+      // not answered (offline, KCI or the portal out of reach, its day's limit): this paper is asked again in three days, and
+      // the round stops when it happens again and again (a paper's own trouble does not hold up the others)
+      kciAsked[f.id] = Date.now() - 27 * 864e5; store.put('kv', 'kciAsked1', kciAsked).catch(() => {});
+      if (api.isOffline(e) || ++kciFails >= 3) break;
+      continue;
+    }
     if (!k) continue;
     const merged = { ...cur, issue: cur.issue || k.issue, society: cur.society || k.society, date: /^\d{4}-\d{2}/.test(cur.date || '') ? cur.date : k.date };
     if (await writePaper(f, cur, merged)) changed = true;

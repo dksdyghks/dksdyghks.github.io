@@ -186,7 +186,7 @@ const LAW_PARAMS = new Set(['query', 'display', 'page', 'sort', 'search', 'secti
 const UA = '0128-bookshelf/1.0 (+https://0128.kr/shelf/)';
 const lawHeaders = (env) => ({ referer: env.LAW_DOMAIN || 'https://0128.kr/', 'user-agent': UA });
 // 국가법령정보 answers a refused or failed ask with 200 and {"result": "…실패…"}: such an answer is passed on, never kept
-const realLaw = (t) => /^\s*[{[<]/.test(t) && !/"result"\s*:\s*"[^"]*(?:실패|오류|제한|점검)/.test(t.slice(0, 800));
+const realLaw = (t) => /^\s*[{[]/.test(t) && !/^\s*\{\s*"result"\s*:/.test(t);   // JSON, and not its refusal ({"result": …})
 async function lawApi(env, ctx, kind, url) {
   if (!env.LAW_OC) return err('no_key', 503);
   const target = url.searchParams.get('target') || 'law';
@@ -204,6 +204,8 @@ const ASM_TTL = { BPMBILLSUMMARY: 30 * 86400, VCONFBILLCONFLIST: 86400, BILLINFO
 const asmGet = (u) => fetch(u, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
 // a real answer says INFO-000 (rows) or INFO-200 (none); ERROR-… (a missing value, the key, the day's limit: ERROR-337) is not kept
 const realAssembly = (t) => /"CODE"\s*:\s*"INFO-(?:000|200)"|<CODE>INFO-(?:000|200)<\/CODE>/.test(t.slice(0, 1200));
+// one bill's summary or meetings: kept only when there are rows (a bill just received has none yet, and soon will)
+const realRows = (t) => /"CODE"\s*:\s*"INFO-000"/.test(t.slice(0, 1200));
 async function assemblyApi(env, ctx, service, url) {
   if (!env.ASSEMBLY_KEY) return err('no_key', 503);
   if (!ASSEMBLY_SERVICE.test(service || '')) return err('bad_service', 400);
@@ -227,11 +229,14 @@ const FOREIGN = {
 };
 // the first bytes of a body (as text), and the whole body still to be read
 async function peek(body, n = 4096) {
-  const r = body.getReader(), first = await r.read();
-  const head = first.value ? new TextDecoder().decode(first.value.slice(0, n)) : '';
+  const r = body.getReader(), got = [];
+  let size = 0, done = false;
+  while (size < n && !done) { const c = await r.read(); done = c.done; if (c.value) { got.push(c.value); size += c.value.length; } }
+  const all = new Uint8Array(size); let at = 0; for (const c of got) { all.set(c, at); at += c.length; }
+  const head = new TextDecoder().decode(all.slice(0, n));
   const rest = new ReadableStream({
-    start(c) { if (first.done) c.close(); else c.enqueue(first.value); },
-    async pull(c) { const { done, value } = await r.read(); if (done) c.close(); else c.enqueue(value); },
+    start(c) { if (size) c.enqueue(all); if (done) c.close(); },
+    async pull(c) { if (done) return; const x = await r.read(); if (x.done) c.close(); else c.enqueue(x.value); },
     cancel(reason) { return r.cancel(reason); },
   });
   return [head, rest];
@@ -288,15 +293,21 @@ function asmRows(text, service) {
   if (code && !/^INFO-(?:000|200)$/.test(code)) return null;
   return { total: Number(head[0] && head[0].list_total_count) || 0, rows: (top[1] && top[1].row) || [] };
 }
-// a bill that amends the law (공직선거법 일부개정법률안, …전부개정법률안, 「공직선거법·정치자금법」 일부개정법률안), not one that only
-// holds its name ("헌법재판소법" holds "헌법")
+// a bill that amends the law (공직선거법 일부개정법률안, …전부개정법률안, and a bill of two laws: 공직선거법ㆍ정치자금법 일부개정법률안,
+// 정당법 및 공직선거법 일부개정법률안), not one that only holds its name ("헌법재판소법" holds "헌법")
 const dots = (t) => String(t || '').replace(/[·ㆍ・‧∙]/g, '·').replace(/\s+/g, ' ').trim();
 function amends(name, law) {
-  const n = dots(name), l = dots(law);
-  if (!n.startsWith(l)) return false;
-  const rest = n.slice(l.length);
-  return rest === '' || /^[\s(·,]|^(?:일부|전부)?개정|^폐지|^중\s*개정/.test(rest);
+  const n = dots(name).replace(/[「」]/g, ''), l = dots(law);
+  for (let at = n.indexOf(l); at >= 0; at = n.indexOf(l, at + 1)) {
+    const before = n.slice(0, at), rest = n.slice(at + l.length);
+    if (before && !/(?:·|,|및)\s*$/.test(before)) continue;   // at the start, or after another law of the same bill
+    if (rest === '' || /^\s*(?:(?:일부|전부)?개정|폐지|중\s*개정|\(|·|,|및\s)/.test(rest)) return true;
+  }
+  return false;
 }
+// what is asked of 열린국회정보 for a law: its name, or for a name with a middle dot (5ㆍ18민주화운동 등에 관한 특별법) its longest
+// part without one — the Assembly may write the dot differently — the bills found are then told apart by amends()
+const billAsk = (law) => (/[·ㆍ・‧∙]/.test(law) ? law.split(/[·ㆍ・‧∙]/).map((x) => x.trim()).sort((a, b) => b.length - a.length)[0] : law);
 function billStep(r) {   // how far it has gone, and since when
   if (r.LAW_PROC_DT) return [`법사위 ${r.LAW_PROC_RESULT_CD || '처리'}`, r.LAW_PROC_DT];
   if (r.LAW_PRESENT_DT) return ['법사위 상정', r.LAW_PRESENT_DT];
@@ -349,10 +360,14 @@ function billGist(s) {
 // how many points its 주요내용 lists (가. 나. 다. …), 0 when it is one paragraph
 const billItems = (s) => (/주요내용\s*\n\s*(?:\n\s*)*가\./.test(String(s || '')) ? 1 + (String(s).match(/\n\s*[나다라마바사아자차카타파하]\.\s/g) || []).length : 0);
 async function fillBill(env, x) {   // its gist and articles; false when 열린국회정보 did not answer (asked again next call)
-  const r = await asmGet(asmUrl(env, 'BPMBILLSUMMARY', { BILL_NO: x.no, pSize: '1' })).catch(() => null);
-  if (!r || !r.ok) return false;
-  const d = asmRows(await r.text(), 'BPMBILLSUMMARY');
-  if (!d) return false;
+  let d = null;
+  try { const r = await asmGet(asmUrl(env, 'BPMBILLSUMMARY', { BILL_NO: x.no, pSize: '1' })); if (r.ok) d = asmRows(await r.text(), 'BPMBILLSUMMARY'); } catch (e) { d = null; }
+  if (!d) {   // not answered: asked again next call — after three misses, a day later (so the rest is not held up)
+    x.miss = (x.miss || 0) + 1;
+    if (x.miss >= 3) { x.arts = []; x.gist = ''; x.items = 0; x.retry = Date.now() + 864e5; delete x.miss; return true; }
+    return false;
+  }
+  delete x.miss;
   const s = d.rows[0] && d.rows[0].SUMMARY;
   x.arts = s ? billArts(s) : []; x.gist = s ? billGist(s) : ''; x.items = billItems(s);
   if (s) delete x.retry; else x.retry = Date.now() + 864e5;   // a bill just received may have no summary yet: a day later, again
@@ -361,9 +376,8 @@ async function fillBill(env, x) {   // its gist and articles; false when 열린�
 async function billList(env, law, age) {
   const rows = [];
   for (let page = 1; page <= 3; page++) {
-    const r = await asmGet(asmUrl(env, 'nwbqublzajtcqpdae', { AGE: String(age), BILL_NAME: law, pIndex: String(page), pSize: '1000' })).catch(() => null);
-    if (!r || !r.ok) return null;
-    const d = asmRows(await r.text(), 'nwbqublzajtcqpdae');
+    let d = null;
+    try { const r = await asmGet(asmUrl(env, 'nwbqublzajtcqpdae', { AGE: String(age), BILL_NAME: billAsk(law), pIndex: String(page), pSize: '1000' })); if (r.ok) d = asmRows(await r.text(), 'nwbqublzajtcqpdae'); } catch (e) { d = null; }
     if (!d) return null;
     rows.push(...d.rows);
     if (rows.length >= d.total || d.rows.length < 1000) break;
@@ -382,17 +396,19 @@ async function billsApi(env, url) {
     const got = await billList(env, law, age);
     if (got) {
       const old = new Map(((b && b.rows) || []).map((x) => [x.no, x]));
-      const rows = got.map((r) => { const x = billRow(r), o = old.get(x.no); if (o && o.arts) { x.arts = o.arts; x.gist = o.gist; x.items = o.items || 0; if (o.retry) x.retry = o.retry; } return x; });
+      const rows = got.map((r) => { const x = billRow(r), o = old.get(x.no); if (o && o.arts) { x.arts = o.arts; x.gist = o.gist; x.items = o.items || 0; if (o.retry) x.retry = o.retry; } else if (o && o.miss) x.miss = o.miss; return x; });
       rows.sort((p, q) => (q.date || '').localeCompare(p.date || '') || q.no.localeCompare(p.no));
       b = { v: BILLS_V, law, age, at: now, rows };
       changed = true;
     } else if (!b) return err('assembly_unavailable', 502);   // the list we have stays, and is asked again next time
   }
   const todo = b.rows.filter((x) => !x.arts || (x.retry && x.retry < now)).slice(0, BILL_FILL);
-  if (todo.length && (await Promise.all(todo.map((x) => fillBill(env, x)))).some(Boolean)) changed = true;
+  // six at a time (as many as the platform opens at once), so no request waits out its own time limit in the queue; a miss
+  // counts too (it is written down)
+  for (let i = 0; i < todo.length; i += 6) { await Promise.all(todo.slice(i, i + 6).map((x) => fillBill(env, x))); changed = true; }
   if (changed) await env.BUCKET.put(key, JSON.stringify(b), { httpMetadata: { contentType: 'application/json' } });
   const missing = b.rows.filter((x) => !x.arts).length;
-  return json({ law, age, at: b.at, total: b.rows.length, missing, rows: b.rows.map(({ retry, ...x }) => x) });
+  return json({ law, age, at: b.at, total: b.rows.length, missing, rows: b.rows.map(({ retry, miss, ...x }) => x) });
 }
 // one bill: its 제안이유 및 주요내용 in full and the meetings that took it up (회의록, as PDF at record.assembly.go.kr)
 async function billOne(env, ctx, url) {
@@ -400,8 +416,8 @@ async function billOne(env, ctx, url) {
   const no = url.searchParams.get('no') || '', id = url.searchParams.get('id') || '';
   if (!/^\d{6,9}$/.test(no) || !/^PRC_[A-Z0-9]{20,40}$/.test(id)) return err('bad_id', 400);
   const [s, m] = await Promise.all([
-    kept(ctx, 'bill-summary:' + no, ASM_TTL.BPMBILLSUMMARY, () => asmGet(asmUrl(env, 'BPMBILLSUMMARY', { BILL_NO: no, pSize: '1' })), realAssembly),
-    kept(ctx, 'bill-minutes:' + id, ASM_TTL.VCONFBILLCONFLIST, () => asmGet(asmUrl(env, 'VCONFBILLCONFLIST', { BILL_ID: id, pSize: '50' })), realAssembly),
+    kept(ctx, 'bill-summary:' + no, ASM_TTL.BPMBILLSUMMARY, () => asmGet(asmUrl(env, 'BPMBILLSUMMARY', { BILL_NO: no, pSize: '1' })), realRows),
+    kept(ctx, 'bill-minutes:' + id, ASM_TTL.VCONFBILLCONFLIST, () => asmGet(asmUrl(env, 'VCONFBILLCONFLIST', { BILL_ID: id, pSize: '50' })), realRows),
   ]);
   const sd = s.ok ? asmRows(s.text, 'BPMBILLSUMMARY') : null, md = m.ok ? asmRows(m.text, 'VCONFBILLCONFLIST') : null;
   if (!sd && !md) return err('assembly_unavailable', 502);
@@ -421,7 +437,7 @@ const dataKey = (env, segs) => (segs[0] === '1170000' && env.MOLEG_KEY) || env.D
 const dataKeys = (env, segs) => [...new Set([dataKey(env, segs), env.DATA_GO_KR_KEY, env.MOLEG_KEY].filter(Boolean))];
 const notRegistered = (t) => /SERVICE_KEY_IS_NOT_REGISTERED|<returnReasonCode>\s*(?:30|31)\s*</.test(t.slice(0, 1500));
 // the portal's own refusals (an unregistered key, the day's limit, a retired service) and a service's error code are not kept
-const realData = (t) => !/OpenAPI_ServiceResponse|<errMsg>|<returnReasonCode>|SERVICE_KEY_IS|LIMITED_NUMBER|"resultCode"\s*:\s*"(?!0+")|<resultCode>(?!0+<)/.test(t.slice(0, 1500));
+const realData = (t) => !/OpenAPI_ServiceResponse|<errMsg>|<returnReasonCode>|SERVICE_KEY_IS|LIMITED_NUMBER|"resultCode"\s*:\s*"(?!0+")|<resultCode>(?!0+<)|<html|<!DOCTYPE/i.test(t.slice(0, 1500));
 async function dataApi(env, ctx, segs, url) {
   const keys = dataKeys(env, segs);
   if (!keys.length) return err('no_key', 503);
@@ -445,7 +461,7 @@ const NL_OPS = {
   kolisnet: ['https://www.nl.go.kr/NL/search/openApi/searchKolisNet.do', 'key'],
   seoji: ['https://www.nl.go.kr/seoji/SearchApi.do', 'cert_key'],
 };
-const realNl = (t) => /^\s*[{[<]/.test(t) && !/"error(?:Code)?"\s*:|<error/i.test(t.slice(0, 400));
+const realNl = (t) => /^\s*[{[]/.test(t) && !/"error(?:Code)?"\s*:/i.test(t.slice(0, 400));   // (asked as JSON: a page is not an answer)
 async function nlApi(env, ctx, op, url) {
   if (!env.NL_KEY) return err('no_key', 503);
   const svc = NL_OPS[op];

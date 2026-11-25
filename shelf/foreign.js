@@ -35,11 +35,12 @@ export function query(q) {
   for (const [id, re] of NAMES) {
     const m = re.exec(t);
     if (!m) continue;
-    const rest = t.slice(m[0].length).trim();
+    // the article only: a paragraph or item after it (第一項, 제2항 제3호, (a)(9), subsection (2)) is let go
+    const rest = t.slice(m[0].length).trim().replace(/\s*(?:第[〇一二三四五六七八九十百千\d]+[項号].*|제\s*\d+\s*[항호].*|(?:\([0-9a-zA-Z]{1,4}\))+|,?\s*(?:sub)?(?:section|para(?:graph)?)\s*\(?[0-9a-z.]+\)?.*)$/i, '').trim();
     if (!rest) return { id, art: null };
     let a = null;
     if (id.startsWith('jp')) {
-      const k = /^(?:제\s*)?(\d+)\s*조(?:\s*의\s*(\d+))?$|^(\d+)\s*条(?:の\s*(\d+))?$|^第([〇一二三四五六七八九十百千]+)条(?:の([〇一二三四五六七八九十百千]+))?$/.exec(rest);
+      const k = /^(?:제\s*)?(\d+)\s*조(?:\s*의\s*(\d+))?$|^(?:第\s*)?(\d+)\s*条(?:の\s*(\d+))?$|^第([〇一二三四五六七八九十百千]+)条(?:の([〇一二三四五六七八九十百千]+))?$/.exec(rest);
       if (k) a = k[1] ? k[1] + (k[2] ? '_' + k[2] : '') : k[3] ? k[3] + (k[4] ? '_' + k[4] : '') : kanjiNum(k[5]) + (k[6] ? '_' + kanjiNum(k[6]) : '');
     } else if (id === 'us-title52') {
       const k = /^(?:§+\s*|sec(?:tion)?\.?\s*)?(\d{5})$/i.exec(rest);
