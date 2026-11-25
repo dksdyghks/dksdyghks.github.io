@@ -3,6 +3,7 @@
 //   to mark it; two fingers scroll). An Apple Pencil always marks, with the last marking tool.
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
 import { lib, pageItems } from './pdfkit.js';
+import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
 import { scanCases, linkCases, caseView, judgmentView, wireCase, cite } from './cases.js';
 import { scanArticles, scanCourtCases, articleQuery, artLabel, paras, lawGoKr, courtCite } from './laws.js';
 
@@ -24,6 +25,8 @@ const GAP = 14;
 const END_H = 300;   // the '끝까지 읽었습니다' card after the last page, with room for the floating tools
 const MAX_PIXELS = 12e6;   // per canvas (Safari's hard limit is 16.7M)
 const KEEP = 2;            // pages kept rendered beyond the visible ones
+const SNAP_W = 520;        // a drawn page is also kept as a small picture this wide: shown at once when the page comes back
+const AHEAD = 4;           // while the reader rests, pages this far ahead and behind get that picture ready
 
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -184,7 +187,7 @@ export class Reader {
       this.pages.push(p);
     }
     this.endEl = el('div', 'rd-end');
-    this.endEl.innerHTML = `<div class="rd-grade" role="group" aria-label="표시">${[1, 2, 3].map((n) => `<button type="button" data-star="${n}" aria-label="별 ${n}개">${gradeSVG(1)}</button>`).join('')}<span class="sep"></span><button type="button" data-star="-2" aria-label="세모">${gradeSVG(-2)}</button><button type="button" data-star="-1" aria-label="엑스">${gradeSVG(-1)}</button></div>`;
+    this.endEl.innerHTML = `<div class="rd-grade" role="group" aria-label="표시">${[1, 2, 3].map((n) => `<button type="button" data-star="${n}" aria-label="별 ${n}개">${gradeSVG(1)}</button>`).join('')}<span class="sep"></span><button type="button" data-star="-2" aria-label="세모">${gradeSVG(-2)}</button><button type="button" data-star="-1" aria-label="엑스">${gradeSVG(-1)}</button><button type="button" class="grade-none" data-star="0" hidden>표시 없음</button></div>`;
     this.endEl.onclick = (e) => { const b = e.target.closest('[data-star]'); if (!b) return; const n = Number(b.dataset.star); const v = n === this.stars ? 0 : n; this.setStars(v); this.o.onRate && this.o.onRate(v); };   // the same choice again clears it
     this.pagesEl.appendChild(this.endEl);
     this.setStars(this.o.stars || 0);
@@ -192,7 +195,9 @@ export class Reader {
     this.drawAllMarks();
     const to = this.o.at || {};
     this.scrollToPage(clamp(to.page || 0, 0, this.N - 1), to.y || 0, false);
+    this.lastW = this.scroller.clientWidth;
     this.update();
+    this.sizeAll();
     if (!matchMedia('(pointer: coarse)').matches) this.scroller.focus({ preventScroll: true });
     this.stats = null;
     this.sampleStats();
@@ -267,33 +272,98 @@ export class Reader {
     p.pdfPage = p.pdfPage || await this.doc.getPage(p.n + 1);
     const vp = p.pdfPage.getViewport({ scale: 1 });
     p.sized = true;
-    if (Math.abs(vp.width - p.w) > 0.5 || Math.abs(vp.height - p.h) > 0.5) {
-      const before = this.scroller.scrollTop, above = p.top < before;
-      const oldH = p.ch;
-      p.w = vp.width; p.h = vp.height;
-      this.layout();
-      if (above) this.scroller.scrollTop = before + (p.ch - oldH);
-      for (const q of this.pages) if (q.cScale) q.cScale = -1;   // sizes moved: redraw
-    }
+    if (Math.abs(vp.width - p.w) > 0.5 || Math.abs(vp.height - p.h) > 0.5) this.keepPlace(() => { p.w = vp.width; p.h = vp.height; this.relayout(); });
+  }
+  // Every page's own size, asked for as soon as the paper is open (a cover is often larger than the pages after it), so the
+  // column is laid out once and does not move under the reader's eyes later.
+  async sizeAll() {
+    const sizes = [];
+    try {
+      for (let i = 1; i < this.N; i++) {
+        if (this.dead) return;
+        const p = this.pages[i];
+        if (p.sized) continue;
+        p.pdfPage = p.pdfPage || await this.doc.getPage(i + 1);
+        const vp = p.pdfPage.getViewport({ scale: 1 });
+        sizes.push([p, vp.width, vp.height]);
+      }
+    } catch (e) { /* the pages are sized as they are reached */ }
+    if (this.dead || !sizes.length) return;
+    const moved = sizes.filter(([p, w, h]) => !p.sized && (Math.abs(w - p.w) > 0.5 || Math.abs(h - p.h) > 0.5));
+    const apply = () => { for (const [p, w, h] of sizes) { if (p.sized) continue; p.w = w; p.h = h; p.sized = true; } };
+    if (!moved.length) { apply(); return; }
+    this.keepPlace(() => { apply(); this.relayout(); });
+    this.update();
+  }
+  // a change of layout that leaves the reader where they were: the same spot of the same page stays at the top of the screen
+  keepPlace(fn) {
+    const s = this.scroller;
+    if (!this.pages.length) { fn(); return; }
+    const i = this.pageAtY(s.scrollTop), p = this.pages[i], rel = (s.scrollTop - p.top) / (p.ch || 1);
+    const relX = s.scrollWidth > s.clientWidth ? (s.scrollLeft + s.clientWidth / 2) / (s.scrollWidth || 1) : null;
+    fn();
+    s.scrollTop = Math.max(0, p.top + rel * p.ch);
+    if (relX != null) s.scrollLeft = Math.max(0, relX * s.scrollWidth - s.clientWidth / 2);
+  }
+  // laid out again; pages already drawn are drawn again only when their size on screen changed (until then the old drawing
+  // stays, stretched, so nothing goes blank)
+  relayout() {
+    const before = this.scale;
+    this.layout();
+    if (Math.abs(this.scale - before) > 1e-6) for (const q of this.pages) if (q.cScale) q.cScale = -1;
   }
 
   /* ---------------- rendering ---------------- */
   update() {
     if (this.dead || !this.pages.length) return;
-    const s = this.scroller;
-    const a = this.pageAtY(Math.max(0, s.scrollTop - 10)), b = this.pageAtY(s.scrollTop + s.clientHeight + 10);
-    for (let i = 0; i < this.N; i++) {
-      const p = this.pages[i];
-      if (i >= a - KEEP && i <= b + KEEP) { if (i >= a - 1 && i <= b + 1) this.render(p); }
-      else this.release(p);
-    }
+    const [a, b] = this.inView();
+    for (let i = 0; i < this.N; i++) if (i < a - KEEP || i > b + KEEP) this.release(this.pages[i]);
+    this.pump();
     this.updateInd();
   }
-  async render(p) {
-    const want = this.scale;
-    if (p.cScale === want || p.busy) return;
-    p.busy = true;
+  inView() {
+    const s = this.scroller;
+    return [this.pageAtY(Math.max(0, s.scrollTop - 10)), this.pageAtY(s.scrollTop + s.clientHeight + 10)];
+  }
+  // pages are drawn one at a time, the one in the middle of the screen first, then its neighbours (one before, one after):
+  // a page scrolled to is never kept waiting behind pages already scrolled past
+  nextToRender() {
+    const [a, b] = this.inView(), s = this.scroller, mid = s.scrollTop + s.clientHeight / 2;
+    let best = null, bd = Infinity;
+    for (let i = Math.max(0, a - 1); i <= Math.min(this.N - 1, b + 1); i++) {
+      const p = this.pages[i];
+      if (p.cScale === this.scale || (p.failed === this.scale && Date.now() - p.failedAt < 4000)) continue;   // a failure is tried again after a pause
+      if (p.busy) { if (p.ptask) { try { p.ptask.cancel(); } catch (e) { /* ignore */ } } continue; }   // its small picture is being made: stopped, and the page drawn after
+      const d = i >= a && i <= b ? Math.abs(p.top + p.ch / 2 - mid) : 1e7 + Math.abs(p.top + p.ch / 2 - mid);
+      if (d < bd) { bd = d; best = p; }
+    }
+    return best;
+  }
+  async pump() {
+    if (this.pumping) return;
+    this.pumping = true;
     try {
+      for (let p; !this.dead && (p = this.nextToRender());) await this.render(p);
+    } finally { this.pumping = false; }
+    if (!this.dead) this.restSoon();
+  }
+  async render(p) {
+    if (p.cScale === this.scale || p.busy) return;
+    p.busy = true;
+    // a page whose drawing never ends is given up (and tried again later), so it never holds up the pages after it
+    let timedOut = false;
+    const guard = setTimeout(() => { timedOut = true; if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } } }, 25000);
+    const stall = new Promise((resolve, reject) => { p.stall = () => reject(Object.assign(new Error('stalled'), { name: 'Stalled' })); });
+    const giveUp = setTimeout(() => p.stall && p.stall(), 26000);
+    try {
+      await Promise.race([this.draw(p), stall]);
+    } catch (e) {
+      if (timedOut || (e && e.name === 'Stalled')) { p.failed = this.scale; p.failedAt = Date.now(); }
+      else if (!(e && e.name === 'RenderingCancelledException')) { console.warn('render', p.n, e); p.failed = this.scale; p.failedAt = Date.now(); }
+    } finally { clearTimeout(guard); clearTimeout(giveUp); p.stall = null; p.busy = false; }
+  }
+  async draw(p) {
+    {
       await this.ensureSize(p);
       if (this.dead) return;
       const scale = this.scale;
@@ -318,10 +388,90 @@ export class Reader {
       p.el.insertBefore(c, p.el.firstChild);
       p.canvas = c; p.cScale = scale;
       p.el.classList.add('ready');
-      await this.textLayer(p, scale);
-    } catch (e) {
-      if (!(e && e.name === 'RenderingCancelledException')) console.warn('render', p.n, e);
-    } finally { p.busy = false; if (!this.dead && p.cScale !== this.scale && this.isNear(p)) this.render(p); }
+      this.snapshot(p, c);
+      this.textLayerSoon(p, scale);
+    }
+  }
+  // The words over a page (for selecting, 찾기 and the 판례·조문 marks) are laid once the scrolling pauses: while the pages
+  // move, only pictures are drawn, so the scrolling stays smooth.
+  textLayerSoon(p, scale) {
+    clearTimeout(p.tlT);
+    const go = () => {
+      if (this.dead || p.cScale !== scale || !p.canvas) return;
+      if (Date.now() - (this.lastScroll || 0) < 140) { p.tlT = setTimeout(go, 160); return; }
+      this.textLayer(p, scale).catch((e) => console.warn('text layer', p.n, e));
+    };
+    go();
+  }
+  // a small picture of a drawn page, kept as the page's background: when its drawing is let go (far from the screen) and the
+  // page comes back, the picture is there at once and the sharp drawing replaces it — never a blank page
+  snapshot(p, c) {
+    if (p.snap || p.snapping || !c.width) return;
+    p.snapping = true;
+    try {
+      const k = Math.min(1, SNAP_W / c.width);
+      const t = document.createElement('canvas');
+      t.width = Math.max(1, Math.round(c.width * k)); t.height = Math.max(1, Math.round(c.height * k));
+      const x = t.getContext('2d', { alpha: false });
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(c, 0, 0, t.width, t.height);
+      t.toBlob((blob) => {
+        p.snapping = false; t.width = t.height = 0;
+        if (!blob || this.dead || p.snap) return;
+        p.snap = URL.createObjectURL(blob);
+        p.el.style.backgroundImage = `url("${p.snap}")`;
+      }, 'image/jpeg', 0.75);
+    } catch (e) { p.snapping = false; }
+  }
+  // while the reader rests on a page: the pictures of the pages around it are made ahead (small, quick), so turning to them
+  // never shows a blank page; any scrolling stops this at once
+  restSoon() {
+    clearTimeout(this.restT);
+    this.restT = setTimeout(() => this.rest(), 450);
+  }
+  async rest() {
+    if (this.dead || this.pumping || this.resting) return;
+    if (Date.now() - (this.lastScroll || 0) < 400) { this.restSoon(); return; }
+    this.resting = true;
+    try {
+      const cur = this.current().page;
+      const order = [];
+      for (let d = 1; d <= AHEAD; d++) { order.push(cur + d); order.push(cur - d); }
+      for (const i of order) {
+        if (this.dead || this.pumping || Date.now() - (this.lastScroll || 0) < 400) break;
+        const p = this.pages[i];
+        if (!p || p.snap || p.canvas || p.busy) continue;
+        await this.preview(p);
+      }
+      if (!this.dead && Date.now() - (this.lastScroll || 0) >= 400) this.warmCases();
+    } finally { this.resting = false; }
+  }
+  // the 헌재 decisions cited on the page being read, asked for ahead (three at most, each once): a tap on one opens it at once
+  warmCases() {
+    if (!this.o.decision) return;
+    const p = this.pages[this.current().page];
+    if (!p || !p.cases) return;
+    this.warm = this.warm || new Set();
+    const nos = [...new Set(p.cases.filter((c) => c.kind === 'case').map((c) => c.no))].filter((no) => !this.warm.has(no)).slice(0, 3);
+    for (const no of nos) { this.warm.add(no); Promise.resolve().then(() => this.o.decision(no)).catch(() => {}); }
+  }
+  async preview(p) {
+    p.busy = true;
+    try {
+      p.pdfPage = p.pdfPage || await this.doc.getPage(p.n + 1);
+      if (this.dead) return;
+      const vp = p.pdfPage.getViewport({ scale: SNAP_W / p.pdfPage.getViewport({ scale: 1 }).width });
+      const c = document.createElement('canvas');
+      c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+      const ctx = c.getContext('2d', { alpha: false });
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      const pdfjs = await lib();
+      p.ptask = p.pdfPage.render({ canvasContext: ctx, viewport: vp, annotationMode: pdfjs.AnnotationMode.ENABLE });
+      await p.ptask.promise;
+      p.ptask = null;
+      if (!this.dead && !p.snap) this.snapshot(p, c);
+      setTimeout(() => { c.width = c.height = 0; }, 0);
+    } catch (e) { p.ptask = null; } finally { p.busy = false; if (!this.dead && !this.pumping && this.nextToRender()) this.pump(); }
   }
   isNear(p) {
     const s = this.scroller;
@@ -384,6 +534,7 @@ export class Reader {
     }
   }
   release(p) {
+    clearTimeout(p.tlT);
     if (p.task) { try { p.task.cancel(); } catch (e) { /* ignore */ } p.task = null; }
     if (p.canvas) { p.canvas.width = p.canvas.height = 0; p.canvas.remove(); p.canvas = null; }
     if (p.tl) { p.tl.remove(); p.tl = null; p.tlScale = 0; }
@@ -484,7 +635,7 @@ export class Reader {
   setStars(v) {
     this.stars = v;
     if (!this.endEl) return;
-    this.endEl.querySelectorAll('[data-star]').forEach((b) => { const n = Number(b.dataset.star); const on = n < 0 ? v === n : v > 0 && n <= v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    this.endEl.querySelectorAll('[data-star]').forEach((b) => { const n = Number(b.dataset.star); if (!n) { b.hidden = !v; return; } const on = n < 0 ? v === n : v > 0 && n <= v; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });   // 표시 없음: only while something is marked
     // the same mark on the first page, top right, as on the printed cover
     const p0 = this.pages[0];
     if (p0) { let c = p0.el.querySelector('.pg-cover'); if (!c) { c = el('div', 'pg-cover'); p0.el.appendChild(c); } c.innerHTML = gradeSVG(v); c.dataset.g = v; }
@@ -727,10 +878,20 @@ export class Reader {
     const s = this.scroller;
     let raf = 0;
     s.addEventListener('scroll', () => {
+      this.lastScroll = Date.now();
+      if (this.resting) for (const p of this.pages) if (p.ptask) { try { p.ptask.cancel(); } catch (e) { /* ignore */ } }
       if (!raf) raf = requestAnimationFrame(() => { raf = 0; this.update(); });
       clearTimeout(this.posT); this.posT = setTimeout(() => this.o.onPosition && this.o.onPosition(this.current()), 700);
     }, { passive: true });
-    this.ro = new ResizeObserver(() => { if (this.tabs && this.tabs.length > 1) { const narrow = this.root.clientWidth < 600; if (narrow !== this.tabsNarrow) { this.tabsNarrow = narrow; this.renderTabs(); } } if (!this.pages.length || this.dead) return; const c = this.current(); const z = this.zoom; this.layout(); for (const p of this.pages) p.cScale = -1; this.zoom = z; this.scrollToPage(c.page, c.y, false); this.update(); });
+    // A change of the screen's height alone (a phone's address bar or keyboard, a bar opening above the pages) moves nothing
+    // and redraws nothing; only a change of width lays the pages out again, keeping the reader's place.
+    this.ro = new ResizeObserver(() => {
+      if (this.tabs && this.tabs.length > 1) { const narrow = this.root.clientWidth < 600; if (narrow !== this.tabsNarrow) { this.tabsNarrow = narrow; this.renderTabs(); } }
+      if (!this.pages.length || this.dead) return;
+      const w = s.clientWidth;
+      if (w !== this.lastW && w > 0) { this.lastW = w; this.keepPlace(() => this.relayout()); }
+      this.update();
+    });
     this.ro.observe(s);
 
     // Pencil: no scrolling or system selection with the stylus — it marks
@@ -1023,11 +1184,11 @@ export class Reader {
   async notePop(p, no, x, y) {
     const text = await this.noteAt(p, no);
     if (!text) return;
-    this.noteTrail = []; this.noteFrom = { x, y };
+    this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
     this.noteShow({ kind: 'note', no, text });
   }
   refPop(c, x, y) {
-    this.noteTrail = []; this.noteFrom = { x, y };
+    this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
     this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para } } : { kind: c.kind, no: c.no });
   }
   noteShow(v) {
@@ -1120,7 +1281,9 @@ export class Reader {
     wire();
     this.notePlace();
   }
-  // near where it was opened: below that point when it fits, else above; a long decision takes the roomier side and scrolls
+  // near where it was opened: below that point when there is room, else above. The side is chosen once, for the room the
+  // box will want (a decision grows when its text arrives), and the edge by the tapped place stays put — the box grows away
+  // from it instead of jumping over it.
   notePlace() {
     const n = this.$('.rd-note'), { x, y } = this.noteFrom || { x: 0, y: 0 };
     n.hidden = false;
@@ -1129,15 +1292,15 @@ export class Reader {
     n.style.width = w + 'px';
     n.style.left = clamp(x - w / 2, 12, W - w - 12) + 'px';
     const below = H - 70 - (y + 18), above = y - 18 - 60;
-    let max = Math.round(wide ? Math.min(H * 0.72, 720) : H * 0.5);
-    n.style.maxHeight = max + 'px';
-    let h = n.offsetHeight, top;
-    if (h <= below) top = y + 18;
-    else if (h <= above) top = y - 18 - h;
-    else if (Math.max(below, above) < 220) { max = H - 130; n.style.maxHeight = max + 'px'; top = 60; }
-    else if (below >= above) { n.style.maxHeight = below + 'px'; top = y + 18; }
-    else { n.style.maxHeight = above + 'px'; h = n.offsetHeight; top = y - 18 - h; }
-    n.style.top = Math.max(56, top) + 'px';
+    const max = Math.round(wide ? Math.min(H * 0.72, 720) : H * 0.5);
+    if (Math.max(below, above) < 200) { this.noteSide = 'middle'; n.style.bottom = ''; n.style.top = '60px'; n.style.maxHeight = (H - 130) + 'px'; return; }
+    if (!this.noteSide || this.noteSide === 'middle') {
+      n.style.maxHeight = max + 'px';
+      const need = wide ? Math.min(max, 420) : Math.min(max, n.offsetHeight);
+      this.noteSide = below >= need || below >= above ? 'below' : 'above';
+    }
+    if (this.noteSide === 'below') { n.style.bottom = ''; n.style.top = (y + 18) + 'px'; n.style.maxHeight = Math.min(max, below) + 'px'; }
+    else { n.style.top = 'auto'; n.style.bottom = (H - (y - 18)) + 'px'; n.style.maxHeight = Math.min(max, above) + 'px'; }
   }
   hideNote() { this.$('.rd-note').hidden = true; }
   showPop(kind, rect) {
@@ -1297,10 +1460,10 @@ export class Reader {
     if (q.length < 1) { this.hits = []; list.hidden = true; n.textContent = ''; return; }
     const texts = await this.pageTexts();
     if (q !== this.findQ) return;
-    const key = q.replace(/\s+/g, '').toLowerCase();
+    const plain = hangulize(q.replace(/\s+/g, '')).toLowerCase(), sk = soft(plain);   // hanja read in Hangul (see naming.searchForm)
     const hits = [];
     texts.forEach((t, page) => {
-      const { flat, map } = squeeze(t);
+      const { flat, map, han } = squeeze(t), key = han ? sk : plain;
       let i = flat.indexOf(key);
       while (i >= 0 && hits.length < 999) {
         const a = map[i], b = map[i + key.length - 1] + 1;
@@ -1335,10 +1498,12 @@ export class Reader {
   paintHits(p) {
     p.el.querySelectorAll('.hit').forEach((x) => x.remove());
     if (!this.findQ || !p.tl) return;
-    const key = this.findQ.replace(/\s+/g, '').toLowerCase();
-    const nodes = []; let flat = ''; const map = [];
+    const plain = hangulize(this.findQ.replace(/\s+/g, '')).toLowerCase();
+    const nodes = []; let flat = ''; const map = []; let han = false;
     const w = document.createTreeWalker(p.tl, NodeFilter.SHOW_TEXT);
-    while (w.nextNode()) { const t = w.currentNode; nodes.push(t); const s = t.data; for (let i = 0; i < s.length; i++) { if (!/\s/.test(s[i])) { flat += s[i].toLowerCase(); map.push([t, i]); } } }
+    while (w.nextNode()) { const t = w.currentNode; nodes.push(t); const s = t.data, src = HAS_HAN.test(s) ? (han = true, searchForm(s)) : s; for (let i = 0; i < s.length; i++) { if (!/\s/.test(s[i])) { flat += src[i].toLowerCase(); map.push([t, i]); } } }
+    if (han) flat = soft(flat);   // a page with hanja: compared as naming.searchForm does
+    const key = han ? soft(plain) : plain;
     const layer = p.el.querySelector('.pg-hits');
     let i = flat.indexOf(key);
     while (i >= 0) {
@@ -1361,7 +1526,13 @@ export class Reader {
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('pointerdown', this.onDocDown, true);
     document.removeEventListener('pointerup', this.onUpSel, true);
-    for (const p of this.pages) { this.release(p); try { p.pdfPage && p.pdfPage.cleanup(); } catch (e) { /* ignore */ } }
+    clearTimeout(this.restT);
+    for (const p of this.pages) {
+      this.release(p);
+      if (p.ptask) { try { p.ptask.cancel(); } catch (e) { /* ignore */ } }
+      if (p.snap) URL.revokeObjectURL(p.snap);
+      try { p.pdfPage && p.pdfPage.cleanup(); } catch (e) { /* ignore */ }
+    }
     this.root.remove();
   }
 }
@@ -1377,8 +1548,9 @@ function covers(A, B) {
 }
 
 // text without white space, with a map back to positions in the original
-function squeeze(t) {
+function squeeze(t) {   // (hanja read in Hangul, as 찾기 compares them)
+  const han = HAS_HAN.test(t), src = han ? searchForm(t) : t;
   let flat = ''; const map = [];
-  for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { flat += t[i].toLowerCase(); map.push(i); }
-  return { flat, map };
+  for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { flat += src[i].toLowerCase(); map.push(i); }
+  return { flat, map, han };
 }

@@ -2,7 +2,7 @@
 // 헌법재판소 판례정보 (공공데이터포털), asked through the 책장 server once and kept on this device (a decision does not change).
 import * as api from './api.js';
 import * as store from './store.js';
-import { scanArticles, scanCourtCases, artLabel } from './laws.js';
+import { scanArticles, scanCourtCases, artLabel, lawGoKr } from './laws.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -226,7 +226,8 @@ export function caseView(d) {
     + (d.pending ? '<p class="cs-wait">결정문을 불러오는 중…</p>' : !d.order && !d.summary && !d.reason ? '<p class="cs-wait">판례정보에 아직 결정문이 실리지 않았습니다.</p>' : '')
     + fold('참조판례', 'cites', lines(d.cites))
     + fold('참조조문', 'laws')
-    + (short ? '' : fold('이유 전문', 'reason'));
+    + (short ? '' : fold('이유 전문', 'reason'))
+    + `<p class="cs-out"><a class="btn ghost small" href="${lawGoKr.decision(d.no)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a></p>`;
 }
 // fill a fold the first time it opens (the full reasons of a long decision run to tens of thousands of letters)
 export function wireCase(box, d) {

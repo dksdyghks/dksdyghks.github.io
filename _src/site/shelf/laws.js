@@ -36,6 +36,9 @@ export const lawGoKr = {
   article: (law, art, sub) => `https://www.law.go.kr/법령/${encodeURIComponent(law)}/제${art}조${sub ? '의' + sub : ''}`,
   law: (law) => `https://www.law.go.kr/법령/${encodeURIComponent(law)}`,
   case: (no) => `https://www.law.go.kr/판례/(${encodeURIComponent(no)})`,
+  decision: (no) => `https://www.law.go.kr/헌재결정례/(${encodeURIComponent(no)})`,
+  compare3: (law) => `https://www.law.go.kr/법령/${encodeURIComponent(law)}/삼단비교`,
+  oldNew: (law) => `https://www.law.go.kr/법령/신구법비교/${encodeURIComponent(law)}`,
 };
 
 /* ---------------- the texts ---------------- */

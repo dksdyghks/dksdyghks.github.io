@@ -22,6 +22,10 @@
 //   /api/assembly/<service> 열린국회정보 (의안 등): env.ASSEMBLY_KEY
 //   /api/data/<기관>/<서비스>[/<기능>] 공공데이터포털 (헌법재판소·국회입법조사처·법제처): env.DATA_GO_KR_KEY
 //   /api/kci/oai            KCI OAI-PMH (no key)
+//   /api/nl/<op>            국립중앙도서관 (소장자료·KOLIS-NET·ISBN 서지): env.NL_KEY
+//   /api/nanet/<op>          국회도서관 국가학술정보 클라우드 (통합검색·상세보기·연구자·주제어·연관 연구자/학술지/발행기관/주제어·추이): env.NANET_KEY
+//   /api/scienceon/search|view  KISTI ScienceON 논문 (권호·쪽·초록·DOI·원문): env.SCIENCEON_CLIENT_ID, SCIENCEON_KEY, SCIENCEON_MAC
+//                           (its access token, issued with those, is kept in R2 at auth/scienceon.json and renewed when it runs out)
 //   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
 
 const ID = /^[0-9a-f]{24}$/;
@@ -141,6 +145,12 @@ async function route(req, env, ctx) {
       case 'kci':
         if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(url);
         break;
+      case 'nanet':
+        if (m === 'GET' && p.length === 3) return await nanetApi(env, p[2], url);
+        break;
+      case 'scienceon':
+        if (m === 'GET' && p.length === 3) return await scienceonApi(env, p[2], url);
+        break;
       case 'diag':
         if (m === 'GET' && p.length === 2) return await diag(req, env);
         if (m === 'GET' && p[2] === 'last') { const o = await env.BUCKET.get('diag/last.json'); return o ? new Response(o.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : err('none', 404); }
@@ -183,7 +193,7 @@ async function assemblyApi(env, service, url) {
 }
 
 // 공공데이터포털: https://apis.data.go.kr/<기관>/<서비스>[/<기능>]?serviceKey=… (one key for every API the owner applied for)
-const DATA_SEG = /^[A-Za-z0-9_-]{1,60}$/;
+const DATA_SEG = /^(?!\.)[A-Za-z0-9_-]{1,60}(?:\.do)?$/;   // a name, or one ending in .do (법제처: lawSearchList.do); never '..'
 async function dataApi(env, segs, url) {
   if (!env.DATA_GO_KR_KEY) return err('no_key', 503);
   if (!segs.every((x) => DATA_SEG.test(x))) return err('bad_service', 400);
@@ -210,6 +220,106 @@ async function nlApi(env, op, url) {
   return passOn(up, env.NL_KEY);
 }
 
+// 국회도서관 국가학술정보 클라우드 Open API (losi-open.nanet.go.kr): 통합검색 (searchTotal) and 상세보기 (searchView), each asked
+// by POST with the owner's key (authKey = NANET_KEY); only the parameters each one takes are passed on
+const NANET_REL = new Set(['searchTerm', 'searchType', 'searchID', 'startYear', 'endYear']);
+const NANET_OPS = {
+  search: ['searchTotal', new Set(['searchTerm', 'searchType', 'searchSort', 'sortType', 'startYear', 'endYear', 'pageNo', 'printRowCnt', 'searchRange'])],
+  view: ['searchView', new Set(['lodID', 'divFlag'])],
+  author: ['authorView', new Set(['lodID', 'name_ko', 'name_en', 'orgName_ko', 'page', 'size'])],   // 연구자 정보
+  subject: ['subjectView', new Set(['lodID'])],                                                       // 주제어 정보 (동의어·상위어·하위어·관련어)
+  relAuthor: ['relAuthor', NANET_REL], relJournal: ['relJournal', NANET_REL],                          // 연관 연구자·학술지
+  relPublisher: ['relPublisher', NANET_REL], relKeyword: ['relKeyword', NANET_REL],                    // 연관 발행기관·주제어
+  trend: ['articleTrend', new Set(['searchTerm', 'searchType', 'searchID', 'searchRange'])],          // 학술정보 추이 (해마다 몇 편)
+};
+const nanetAsk = (env, path, params) => fetch(`http://losi-api.nanet.go.kr/${path}`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', accept: 'application/json', 'user-agent': '0128-bookshelf/1.0 (+https://0128.kr/shelf/)' },
+  body: new URLSearchParams({ authKey: env.NANET_KEY, ...params }).toString(),
+  signal: AbortSignal.timeout(20000),
+});
+async function nanetApi(env, op, url) {
+  if (!env.NANET_KEY) return err('no_key', 503);
+  const svc = NANET_OPS[op];
+  if (!svc) return err('bad_service', 400);
+  const params = {};
+  for (const [k, v] of url.searchParams) if (svc[1].has(k) && v.length <= 300) params[k] = v;
+  if (['search', 'relAuthor', 'relJournal', 'relPublisher', 'relKeyword', 'trend'].includes(op) && !(params.searchTerm || '').trim()) return err('no_term', 400);
+  if (op === 'view' && !(params.lodID && params.divFlag)) return err('no_id', 400);
+  if ((op === 'subject' && !params.lodID) || (op === 'author' && !params.lodID && !params.name_ko)) return err('no_id', 400);
+  return passOn(await nanetAsk(env, svc[0], params), env.NANET_KEY);
+}
+
+// KISTI ScienceON API Gateway: a token is asked for with the owner's client id and, encrypted with the owner's key (AES-256-CBC,
+// the gateway's fixed IV), the MAC address the owner registered and the time; the token (2 hours) and its refresh token (2 weeks)
+// are kept in R2. Answers come as XML and are handed on as JSON: { total, rows: [{ CN, Title, Author, JournalName, … }] }.
+const SO = 'https://apigateway.kisti.re.kr';
+const SO_IV = 'jvHJ1EFA0IXBrxxz';   // given by the gateway's own sample code; the same for every user
+const soReady = (env) => env.SCIENCEON_CLIENT_ID && env.SCIENCEON_KEY && env.SCIENCEON_MAC;
+async function soAccounts(env) {
+  const kst = new Date(Date.now() + 9 * 3600e3).toISOString().replace(/\D/g, '').slice(0, 14);   // YYYYMMDDHHmmss, Korean time
+  const plain = JSON.stringify({ mac_address: env.SCIENCEON_MAC, datetime: kst });
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.SCIENCEON_KEY), { name: 'AES-CBC' }, false, ['encrypt']);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-CBC', iv: new TextEncoder().encode(SO_IV) }, key, new TextEncoder().encode(plain)));
+  let bin = ''; for (const b of ct) bin += String.fromCharCode(b);
+  const b64 = btoa(bin);
+  return [b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), b64];   // as the gateway's sample sends it, and as its guide shows it
+}
+const soTime = (s) => { const t = Date.parse(String(s || '').replace(' ', 'T') + '+09:00'); return Number.isFinite(t) ? t : 0; };
+async function soToken(env, fresh) {
+  const kept = await env.BUCKET.get('auth/scienceon.json').then((o) => (o ? o.json() : null)).catch(() => null);
+  if (!fresh && kept && kept.access && kept.accessUntil - Date.now() > 5 * 60e3) return kept.access;
+  const ask = async (q) => {
+    const r = await fetch(`${SO}/tokenrequest.do?${new URLSearchParams({ ...q, client_id: env.SCIENCEON_CLIENT_ID })}`, { signal: AbortSignal.timeout(15000) });
+    const d = await r.json().catch(() => null);
+    return d && d.access_token ? d : null;
+  };
+  let d = kept && kept.refresh && kept.refreshUntil - Date.now() > 60e3 ? await ask({ refresh_token: kept.refresh }) : null;
+  if (!d) { const [safe, plain] = await soAccounts(env); d = await ask({ accounts: safe }) || await ask({ accounts: plain }); }
+  if (!d) throw Object.assign(new Error('scienceon_token'), { status: 502 });
+  const keep = { access: d.access_token, accessUntil: soTime(d.access_token_expire) || Date.now() + 110 * 60e3, refresh: d.refresh_token || (kept && kept.refresh), refreshUntil: soTime(d.refresh_token_expire) || (kept && kept.refreshUntil) || 0 };
+  await env.BUCKET.put('auth/scienceon.json', JSON.stringify(keep), { httpMetadata: { contentType: 'application/json' } });
+  return keep.access;
+}
+const xmlText = (s) => String(s || '').replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, '$1').replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16))).replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&').replace(/\r/g, '').trim();
+function soParse(xml) {
+  const status = (/<statusCode>\s*(\d+)\s*<\/statusCode>/.exec(xml) || [])[1] || '';
+  const code = (/<errorCode>\s*([^<]+)<\/errorCode>/.exec(xml) || [])[1] || '';
+  const rows = [];
+  for (const m of xml.matchAll(/<record\b[^>]*>([\s\S]*?)<\/record>/g)) {
+    const row = {};
+    for (const it of m[1].matchAll(/<item\s+metaCode="([A-Za-z0-9_]+)"[^>]*>([\s\S]*?)<\/item>/g)) row[it[1]] = xmlText(it[2]);
+    rows.push(row);
+  }
+  return { status, code, total: Number((/<TotalCount>\s*(\d+)\s*<\/TotalCount>/i.exec(xml) || [])[1]) || 0, rows };
+}
+const SO_FIELDS = new Set(['BI', 'TI', 'AU', 'AB', 'KW', 'PB', 'SN', 'BN', 'PY', 'CN', 'DI']);
+async function scienceonApi(env, op, url) {
+  if (!soReady(env)) return err('no_key', 503);
+  const q = { version: '1.0', target: 'ARTI' };
+  if (op === 'search') {
+    const field = SO_FIELDS.has(url.searchParams.get('field')) ? url.searchParams.get('field') : 'BI';
+    const term = (url.searchParams.get('q') || '').trim().slice(0, 200);
+    if (!term) return err('no_term', 400);
+    Object.assign(q, { action: 'search', searchQuery: JSON.stringify({ [field]: term }), curPage: String(Math.max(1, Math.min(99, Number(url.searchParams.get('page')) || 1))), rowCount: String(Math.max(1, Math.min(50, Number(url.searchParams.get('rows')) || 20))) });
+    const sort = url.searchParams.get('sort'); if (['pubyear', 'title', 'jtitle'].includes(sort)) q.sortField = sort;
+  } else if (op === 'view') {
+    const cn = url.searchParams.get('cn') || '';
+    if (!/^[A-Z]{4}\d{8,20}$/.test(cn)) return err('no_id', 400);
+    Object.assign(q, { action: 'browse', cn });
+  } else return err('bad_service', 400);
+  for (let round = 0; round < 2; round++) {
+    const token = await soToken(env, round > 0);
+    const r = await fetch(`${SO}/openapicall.do?${new URLSearchParams({ client_id: env.SCIENCEON_CLIENT_ID, token, ...q })}`, { signal: AbortSignal.timeout(20000) });
+    const d = soParse(await r.text());
+    if (d.status === '401' && round === 0) continue;   // the token ran out early: a new one, once
+    if (d.status && d.status !== '200') return json({ error: 'scienceon', status: d.status, code: d.code }, 502);
+    return json({ total: d.total, rows: d.rows });
+  }
+  return err('scienceon_token', 502);
+}
+
 const OAI_PARAMS = new Set(['verb', 'identifier', 'metadataPrefix', 'set', 'from', 'until', 'resumptionToken']);
 async function kciOai(url) {
   const verb = url.searchParams.get('verb');
@@ -229,14 +339,17 @@ async function diag(req, env) {
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
     ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
   ];
-  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.NL_KEY].filter(Boolean);
+  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC].filter(Boolean);
   const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, results: {} };
+  tries.push(['nanet', env.NANET_KEY && (() => nanetAsk(env, 'searchTotal', { searchTerm: '관습헌법', printRowCnt: '1' }))]);
+  tries.push(['scienceon', soReady(env) && (async () => { const t = await soToken(env); return fetch(`${SO}/openapicall.do?${new URLSearchParams({ client_id: env.SCIENCEON_CLIENT_ID, token: t, version: '1.0', action: 'search', target: 'ARTI', searchQuery: JSON.stringify({ BI: '관습헌법' }), rowCount: '1' })}`, { signal: AbortSignal.timeout(15000) }); })]);
   await Promise.all(tries.map(async ([k, u, headers]) => {
     if (!u) { out.results[k] = { status: 'no key' }; return; }
     try {
-      const r = await fetch(u, { headers: headers || {}, signal: AbortSignal.timeout(12000) });
+      const r = typeof u === 'function' ? await u() : await fetch(u, { headers: headers || {}, signal: AbortSignal.timeout(12000) });
       let t = (await r.text()).slice(0, 400);
       for (const key of keys) t = t.split(key).join('');
+      t = t.replace(/\b[0-9A-Fa-f]{64}\b/g, '…');   // a token the answer repeats
       out.results[k] = { status: r.status, head: t };
     } catch (e) { out.results[k] = { error: String((e && e.message) || e).slice(0, 200) }; }
   }));

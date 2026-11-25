@@ -10,7 +10,7 @@ import { PAIRS } from './hanja.js';
 // ---------------------------------------------------------------- hanja → hangul
 let HANJA = null;
 const hanjaMap = () => { if (!HANJA) { HANJA = new Map(); for (let i = 0; i + 1 < PAIRS.length; i += 2) HANJA.set(PAIRS[i], PAIRS[i + 1]); } return HANJA; };
-const IS_HAN = /[㐀-鿿豈-﫿]/;
+const IS_HAN = /[\u3400-\u9FFF\uF900-\uFAFF]/;
 const readHan = (ch) => hanjaMap().get(ch) || hanjaMap().get(ch.normalize('NFC')) || null;
 function initialRule(syl) {   // 두음법칙 for the first syllable of a word: 리→이, 로→노, 녀→여 …
   const c = syl.charCodeAt(0) - 0xAC00; if (c < 0 || c > 11171) return syl;
@@ -20,17 +20,65 @@ function initialRule(syl) {   // 두음법칙 for the first syllable of a word: 
   return String.fromCharCode(0xAC00 + L2 * 588 + V * 28 + T);
 }
 const WORD_START = /[論](?=[叢集文壇考])/;   // 論叢 論集 論文 論壇 論考 begin a word of their own (法學論叢 → 법학논총)
-export function hangulize(s) {   // 公法學硏究 第18卷 → 공법학연구 제18권
-  let out = '', prev = '';
+// In running text a few hanja are read otherwise than the standard's first reading (a person's name keeps it: 金 is 김 in a
+// name, 금 in 賃金·金融·罰金), and some words are read as a whole.
+const TEXT_READ = { 率: '률', 宅: '택', 金: '금' };
+const WORDS = [['令狀', '영장'], ['訴狀', '소장'], ['省略', '생략'], ['更新', '갱신'], ['復活', '부활'], ['遊說', '유세'], ['簡易', '간이'],
+  ['容易', '용이'], ['安易', '안이'], ['洞察', '통찰'], ['降伏', '항복'], ['句讀', '구두'], ['不利益', '불이익'], ['不實', '부실']];
+const lead = (syl) => { const c = syl.charCodeAt(0) - 0xAC00; return c >= 0 && c <= 11171 ? Math.floor(c / 588) : -1; };   // its first consonant (ㄷ 3, ㅈ 12)
+const tail = (syl) => { const c = syl.charCodeAt(0) - 0xAC00; return c >= 0 && c <= 11171 ? c % 28 : -1; };              // its last (none 0, ㄴ 4)
+export function hangulize(s) {   // 公法學硏究 第18卷 → 공법학연구 제18권; one syllable for each hanja, so places in the text stay
   const cs = [...String(s)];
+  const fixed = [];
+  if (cs.some((ch) => IS_HAN.test(ch))) {
+    for (const [w, r] of WORDS) {
+      const ws = [...w];
+      for (let i = 0; i + ws.length <= cs.length; i++) if (cs[i] === ws[0] && ws.every((x, k) => cs[i + k] === x)) [...r].forEach((y, k) => { fixed[i + k] = y; });
+    }
+  }
+  const textRead = (ch) => TEXT_READ[ch] || readHan(ch);
+  let out = '', prev = '';
   cs.forEach((ch, i) => {
-    const r = IS_HAN.test(ch) ? readHan(ch) : null;
+    let r = IS_HAN.test(ch) ? fixed[i] || textRead(ch) : null;
+    if (r && !fixed[i] && ch === '不') { const nx = IS_HAN.test(cs[i + 1] || '') ? textRead(cs[i + 1]) : null; r = nx && (lead(nx) === 3 || lead(nx) === 12) ? '부' : '불'; }   // 不當 부당, 不正 부정, 不備 불비, 不法 불법
     const start = !/[\p{L}\p{N}]/u.test(prev) || WORD_START.test(ch + (cs[i + 1] || ''));
-    if (r) out += start ? initialRule(r) : r; else out += ch;
+    if (r) {
+      let y = start && !fixed[i] ? initialRule(r) : r;
+      if (!start && !fixed[i] && (y === '렬' || y === '률') && out && [0, 4].includes(tail(out[out.length - 1]))) y = y === '렬' ? '열' : '율';   // 規律 규율, 比率 비율, 分裂 분열
+      out += y;
+    } else out += ch;
     prev = ch;
   });
   return out;
 }
+// A text as 찾기 compares it: its hanja read in Hangul, and an initial ㄹ or ㄴ taken as a word's first sound is (理論 = 이론 =
+// 리론, 規律 = 규율) — one letter for each letter, so places in the text stay. Text without hanja is left as it is.
+export const HAS_HAN = /[\u3400-\u9FFF\uF900-\uFAFF]/;
+export function soft(s) {
+  let out = '';
+  for (const ch of String(s)) {
+    const c = ch.charCodeAt(0) - 0xAC00;
+    if (c < 0 || c > 11171) { out += ch; continue; }
+    const L = Math.floor(c / 588), V = Math.floor((c % 588) / 28), T = c % 28;
+    const iot = [2, 3, 6, 7, 12, 17, 20].includes(V);
+    const L2 = L === 5 ? (iot ? 11 : 2) : (L === 2 && iot ? 11 : L);
+    out += L2 === L ? ch : String.fromCharCode(0xAC00 + L2 * 588 + V * 28 + T);
+  }
+  return out;
+}
+export function searchForm(s) {
+  s = String(s || '');
+  if (!HAS_HAN.test(s) || /[\uD800-\uDFFF]/.test(s)) return s;
+  const h = hangulize(s);
+  return h.length === s.length ? soft(h) : s;
+}
+export function personName(s) {   // a person's name as a library writes it (林智奉, 林 智 奉, 임지봉) → 임지봉, or null when it is no name
+  let t = String(s || '').trim().replace(/^([가-힣]{3})\s+[가-힣]$/, '$1');   // "임지봉 이": a stray letter after a full name
+  t = t.replace(/\s+/g, '');
+  if (/^[가-힣]{2,5}$/.test(t)) return t;
+  return /^[\u3400-\u9FFF\uF900-\uFAFF]{2,4}$/.test(t) ? hanjaName(t) : null;
+}
+export const isSurnameStart = (t) => SURNAMES.has(String(t)[0]) || SURNAMES2.has(String(t).slice(0, 2));
 function hanjaName(s) {   // 金大仁 → 김대인 (the surname and the given name's first syllable by the initial-sound rule)
   const r = [...s].map(readHan);
   if (!r.length || r.some((x) => !x)) return null;
@@ -185,10 +233,10 @@ function cleanNamePart(p) {
 function oneName(p) {
   p = cleanNamePart(p);
   if (!p) return null;
-  if (/^([가-힣㐀-鿿豈-﫿]\s+){1,4}[가-힣㐀-鿿豈-﫿]$/.test(p)) p = p.replace(/\s+/g, '');          // 김 대 인, 金 大 仁
+  if (/^([가-힣\u3400-\u9FFF\uF900-\uFAFF]\s+){1,4}[가-힣\u3400-\u9FFF\uF900-\uFAFF]$/.test(p)) p = p.replace(/\s+/g, '');          // 김 대 인, 金 大 仁
   else if (/^[가-힣]+(\s+[가-힣]+){1,2}$/.test(p) && (p.replace(/\s+/g, '').length === 3 || SURNAMES2.has(p.split(/\s+/)[0]) && p.replace(/\s+/g, '').length === 4)) p = p.replace(/\s+/g, '');   // 홍길 동 (a scan's stray space)
   p = p.replace(new RegExp(`\\s*${ROLE.source}\\s*$`), '').trim();
-  if (/^[㐀-鿿豈-﫿]{2,4}$/.test(p)) p = hanjaName(p) || p;                                                            // 金大仁 → 김대인
+  if (/^[\u3400-\u9FFF\uF900-\uFAFF]{2,4}$/.test(p)) p = hanjaName(p) || p;                                                            // 金大仁 → 김대인
   if (koreanName(p)) return p;
   const e = nameCase(p);
   if (/^[A-Z][A-Za-z'’.-]+(?:\s+[A-Z][A-Za-z'’.-]+){1,3}$/.test(e) && !NOT_ENGLISH_NAME.test(e)) return e;

@@ -73,6 +73,8 @@ export const publicData = (path, params) => call('/data/' + path + '?' + new URL
 export const lawSearch = (params) => call('/law/search?' + new URLSearchParams(params));   // 국가법령정보 OPEN API (법령·판례 목록)
 export const lawItem = (params) => call('/law/item?' + new URLSearchParams(params));       // … and one law or one judgment in full
 export const nlib = (op, params) => call('/nl/' + op + '?' + new URLSearchParams(params));   // 국립중앙도서관 (소장자료 검색 …)
+export const nanet = (op, params) => call('/nanet/' + op + '?' + new URLSearchParams(params));   // 국회도서관 국가학술정보 클라우드 (통합검색 search, 상세보기 view)
+export const scienceon = (op, params) => call('/scienceon/' + op + '?' + new URLSearchParams(params));   // KISTI ScienceON 논문 (search: q, field, page; view: cn)
 export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: list } });
 
 export const getMarks = (id) => call('/marks/' + id);

@@ -9,6 +9,7 @@ import { Reader, gradeSVG } from './reader.js';
 import * as naming from './naming.js';
 import * as cases from './cases.js';
 import * as laws from './laws.js';
+import * as papers from './papers.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -44,6 +45,7 @@ const I = {
   select: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  papers: '<svg viewBox="0 0 24 24"><path d="M13 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21H11"/><path d="M13 3l5 5v3"/><path d="M13 3v5h5"/><circle cx="15.5" cy="16" r="3.2"/><path d="M17.9 18.4L20.5 21"/></svg>',
   law: '<svg viewBox="0 0 24 24"><path d="M12 4v16M8 20h8M5 7h14"/><path d="M5 7l-2.5 6a2.5 2.5 0 0 0 5 0zM19 7l-2.5 6a2.5 2.5 0 0 0 5 0z"/></svg>',
   cloud: '<svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.3 1.6A3.8 3.8 0 0 1 17 18z"/></svg>',
   device: '<svg viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.3 1.6A3.8 3.8 0 0 1 17 18z"/><path d="M9.5 13.5l2 2 3.5-4"/></svg>',
@@ -283,6 +285,7 @@ function renderShell() {
       <nav class="views">
         <button data-view="home">${I.home}<span>내 책장</span></button>
         <button data-view="recent">${I.clock}<span>최근 읽은 글</span></button>
+        <button data-view="papers">${I.papers}<span>논문 찾기</span></button>
         <button data-view="law">${I.law}<span>판례·법령</span></button>
       </nav>
       <div class="tree-h">폴더</div>
@@ -349,6 +352,7 @@ function render() {
   syncFind();
   if (S.q) { renderSearch(c); return; }
   if (S.view.kind === 'law') { const b = c.querySelector(':scope > .law-body'); if (!b || b.dataset.law !== (S.lq || '').trim() || !b.querySelector('.law-home, .law-res')) renderLaw(c); return; }   // asked of servers: drawn again only for a new question
+  if (S.view.kind === 'papers') { const b = c.querySelector(':scope > .pp-body'); if (!b || b.dataset.ppkey !== paperKey() || !b.querySelector('.pp-home, .pp-res')) renderPapers(c); return; }
   if (S.view.kind === 'recent') renderRecent(c);
   else if (S.view.kind === 'trash') renderTrash(c);
   else renderFolder(c, S.view.folder);
@@ -427,6 +431,7 @@ function renderCrumbs() {
   if (S.q) { c.innerHTML = `<b>찾기</b>`; return; }
   if (S.view.kind === 'recent') { c.innerHTML = '<b>최근 읽은 글</b>'; return; }
   if (S.view.kind === 'law') { c.innerHTML = '<b>판례·법령</b>'; return; }
+  if (S.view.kind === 'papers') { c.innerHTML = '<b>논문 찾기</b>'; return; }
   if (S.view.kind === 'trash') { c.innerHTML = '<b>휴지통</b>'; return; }
   const path = folderPath(S.view.folder);
   c.innerHTML = [`<button data-folder="">내 책장</button>`, ...path.map((f, i) => i === path.length - 1 ? `<b>${esc(f.name)}</b>` : `<button data-folder="${f.id}">${esc(f.name)}</button>`)].join('<span class="sl">›</span>');
@@ -528,11 +533,26 @@ function renderTrash(c) {
 }
 
 /* ---------- search: names at once, then the text of every page ---------- */
+// 찾기 compares text as a reader reads it: spaces and case ignored, and hanja read in Hangul (憲法裁判所 is found by 헌법재판소,
+// 理論 by 이론; a query in hanja finds the Hangul too). flat: the compared letters; map: each one's place in the text itself.
+function findForm(t) {
+  t = String(t || '');
+  const han = naming.HAS_HAN.test(t), src = han ? naming.searchForm(t) : t;
+  let flat = ''; const map = [];
+  for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { flat += src[i].toLowerCase(); map.push(i); }
+  return { flat, map, han };
+}
+function findKey(q) {   // the query in both forms: as typed (hanja read), and as compared with text that has hanja
+  const plain = naming.hangulize(String(q || '').replace(/\s+/g, '')).toLowerCase();
+  return { plain, soft: naming.soft(plain) };
+}
+const keyFor = (k, f) => (f.han ? k.soft : k.plain);
 async function renderSearch(c) {
-  const q = S.q, key = q.replace(/\s+/g, '').toLowerCase();
+  const q = S.q, key = q.replace(/\s+/g, '').toLowerCase(), k2 = findKey(q);
   const files = liveFiles();
-  const nameHits = files.filter((f) => f.name.replace(/\s+/g, '').toLowerCase().includes(key));
-  const folderHits = S.index.folders.filter((f) => !f.trashed && f.name.replace(/\s+/g, '').toLowerCase().includes(key));
+  const named = (name) => { const f = findForm(name); return f.flat.includes(keyFor(k2, f)); };
+  const nameHits = files.filter((f) => named(f.name));
+  const folderHits = S.index.folders.filter((f) => !f.trashed && named(f.name));
   // a decision's or judgment's number, or an article: that first (the decision, the judgment, the article's text), then the
   // papers that cite it
   const caseNo = cases.caseQuery(q), courtNo = !caseNo && laws.courtQuery(q), artQ = !caseNo && !courtNo && laws.articleQuery(q);
@@ -566,6 +586,7 @@ const snipsHtml = (r, q) => `<span class="snips">${r.snips.map((s) => `<button c
 // every paper's page texts searched for the words (spaces and case ignored); the papers by how often, a few places each.
 // A word that ends in a number does not match a longer number (헌법 제1조 is not 제10조, 2004헌마55 is not 2004헌마554).
 async function pageHits(keys, live, onUpdate) {
+  const ks = keys.map(findKey);
   const withText = liveFiles().filter((f) => f.text);
   const results = [], queue = withText.slice();
   let done = 0;
@@ -579,9 +600,8 @@ async function pageHits(keys, live, onUpdate) {
       if (t && t.pages) {
         const snips = []; let count = 0;
         t.pages.forEach((txt, page) => {
-          let flat = ''; const map = [];
-          for (let i = 0; i < txt.length; i++) if (!/\s/.test(txt[i])) { flat += txt[i].toLowerCase(); map.push(i); }
-          for (const key of keys) {
+          const ff = findForm(txt), flat = ff.flat, map = ff.map;
+          for (const key of ks.map((k) => keyFor(k, ff))) {
             const digitEnd = /\d$/.test(key);
             let i = flat.indexOf(key);
             while (i >= 0) {
@@ -620,8 +640,216 @@ const LAW_EX = ['2004헌마554', '관습헌법', '헌법 제37조 제2항', '공
 let lawRecent = null;
 // 판례·법령 has its own search, wide at the top of the page (the shelf's small box in the toolbar is put away here)
 function syncFind() {
-  const main = $('.main'); if (main) main.classList.toggle('law-mode', S.view.kind === 'law');
+  const main = $('.main'); if (main) main.classList.toggle('law-mode', S.view.kind === 'law' || S.view.kind === 'papers');
 }
+/* ---------- 논문 찾기: 국회도서관 국가학술정보 (학술논문·학위논문·단행본) ----------
+   Asked through the shelf's server (which holds the key). A paper already on this shelf is marked; a paper opens a sheet with its
+   abstract, contents and keywords, and the ways to its full text (국회전자도서관) and to other catalogues (RISS, 구글 학술검색). */
+let paperRecent = null;
+const PAPER_EX = ['관습헌법', '선거운동의 자유', '정당해산심판', '비례대표제', '헌법재판소 결정의 기속력'];
+const ppRows = new Map();   // the papers on screen, for their sheets
+const paperKey = () => [(S.pq || '').trim(), S.pk ?? 'ARTICLE', S.ps || ''].join('|');
+function paperFrame(c) {
+  if (c.querySelector(':scope > .pp-top')) return;
+  c.innerHTML = `<div class="law-top pp-top"><label class="law-find">${I.search}<input type="search" placeholder="제목 · 주제어 · 저자 — 관습헌법, 선거운동의 자유, 임지봉" enterkeyhint="search" autocomplete="off" aria-label="논문 찾기"></label>
+    <div class="pp-opts" role="group" aria-label="찾는 자료와 순서">${papers.KINDS.map(([k, t]) => `<button type="button" data-pk="${k}">${t}</button>`).join('')}<span class="sep"></span><button type="button" data-ps="">정확도순</button><button type="button" data-ps="new">최신순</button></div></div><div class="law-body pp-body"></div>`;
+  const inp = $('.law-find input', c);
+  inp.value = S.pq || '';
+  const ask = () => { clearTimeout(S.pqT); S.pq = inp.value.trim(); renderPapers(c); };
+  inp.addEventListener('input', () => { clearTimeout(S.pqT); S.pqT = setTimeout(ask, 650); });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; ask(); } if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ask(); inp.blur(); } });
+  $('.pp-opts', c).onclick = (e) => { const b = e.target.closest('[data-pk], [data-ps]'); if (!b) return; if (b.dataset.pk !== undefined) S.pk = b.dataset.pk; else S.ps = b.dataset.ps; renderPapers(c); };
+  if (matchMedia('(hover: hover) and (pointer: fine)').matches && !S.pq) setTimeout(() => inp.focus(), 0);
+}
+async function renderPapers(cIn) {
+  const q = (S.pq || '').trim(), kind = S.pk ?? 'ARTICLE', sort = S.ps || '', key = paperKey();
+  paperFrame(cIn);
+  const inp = $('.law-find input', cIn);
+  if (inp && inp.value.trim() !== q && document.activeElement !== inp) inp.value = q;
+  for (const b of cIn.querySelectorAll('.pp-opts [data-pk]')) b.classList.toggle('on', b.dataset.pk === kind);
+  for (const b of cIn.querySelectorAll('.pp-opts [data-ps]')) b.classList.toggle('on', b.dataset.ps === sort);
+  const c = $('.pp-body', cIn);
+  c.dataset.ppkey = key;
+  const live = () => S.view.kind === 'papers' && !S.q && paperKey() === key;
+  if (!q) {
+    if (!paperRecent) paperRecent = (await store.get('kv', 'paperRecent').catch(() => null)) || [];
+    if (!live()) return;
+    const chips = (xs) => `<div class="law-ex">${xs.map((x) => `<button type="button" data-pq="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
+    c.innerHTML = `<div class="pp-home"><h2 class="sec-h">이렇게 찾습니다</h2>${chips(PAPER_EX)}
+      <p class="law-note">국회도서관 국가학술정보에서 학술논문·학위논문·단행본을 찾습니다. 연구자 이름을 넣으면 그 연구자가 쓴 글을 따로 모아 보여 드립니다. 논문을 누르면 초록·목차·주제어와 원문(국회전자도서관)으로 가는 길이 나오고, 이미 내 책장에 있는 논문에는 ‘내 책장’ 표시가 붙습니다.</p>
+      ${paperRecent.length ? `<h2 class="sec-h">최근 찾은 것</h2>${chips(paperRecent)}` : ''}</div>`;
+    return;
+  }
+  rememberPaper(q);
+  c.innerHTML = `<div class="pp-res">${ppSec('author', '저자 ' + esc(q))}${ppSec('all', '국회도서관 국가학술정보')}</div>`;
+  const box = $('.pp-res', c);
+  $('[data-sec="author"]', box).hidden = true;
+  const first = await fillPapers(box, 'all', (pg) => papers.search(q, { kind, page: pg, sort }), live, true);
+  // a person asked for: someone of exactly that name wrote some of what was found — their own writings, newest first
+  if (live() && first && papers.authorAsked(q, first.rows)) {
+    const who = q.replace(/\s+/g, ''), aid = (first.rows.find((x) => x.ids[who]) || { ids: {} }).ids[who] || '';
+    $('[data-sec="author"]', box).hidden = false;
+    $('[data-sec="author"] .sec-h', box).insertAdjacentHTML('beforeend', `<button type="button" class="btn ghost small pp-who" data-who="${esc(who)}" data-aid="${esc(aid)}">연구자 정보</button>`);
+    fillPapers(box, 'author', (pg) => papers.search(q.replace(/\s+/g, ''), { kind, page: pg, sort: 'new', by: 'author' }), live, false);
+  }
+}
+function rememberPaper(q) {
+  clearTimeout(S.paperRemT);
+  S.paperRemT = setTimeout(() => {
+    if (!q || (S.pq || '').trim() !== q) return;
+    paperRecent = [q, ...(paperRecent || []).filter((x) => x !== q)].slice(0, 8);
+    store.put('kv', 'paperRecent', paperRecent).catch(() => {});
+  }, 1500);
+}
+function paperGo(q) {   // to 논문 찾기, asking q
+  S.view = { kind: 'papers', folder: null }; S.q = ''; S.pq = q;
+  const fi = $('.find input'); if (fi) fi.value = '';
+  render(); closeRail();
+  const c = $('.content'); if (c) c.scrollTop = 0; window.scrollTo(0, 0);
+}
+function ppSec(kind, title) { return `<section class="law-sec pp-sec" data-sec="${kind}"><h2 class="sec-h">${title} <span class="sec-n"></span></h2><div class="list law-list"><p class="none">찾는 중…</p></div></section>`; }
+// one section of papers, a page at a time; resolves to the first page's answer (or null)
+async function fillPapers(box, kind, ask, live, keep, page = 1) {
+  const sec = $(`[data-sec="${kind}"]`, box); if (!sec) return null;
+  const list = $('.law-list', sec), n = $('.sec-n', sec);
+  try {
+    const r = await ask(page);
+    if (!live()) return null;
+    if (page === 1) list.innerHTML = '';
+    const more = list.querySelector('.more'); if (more) more.remove();
+    if (!r.total && page === 1) { if (keep) list.innerHTML = '<p class="none">찾지 못했습니다 · 낱말을 줄이거나 다른 말로 찾아 보세요</p>'; else sec.hidden = true; return r; }
+    const shelf = shelfTitles();
+    list.insertAdjacentHTML('beforeend', r.rows.map((x) => { ppRows.set(x.id + ':' + x.kind, x); return paperRow(x, shelf); }).join(''));
+    n.textContent = `${r.total.toLocaleString()}건`;
+    const shown = list.querySelectorAll('.lrow').length;
+    if (shown < r.total && r.rows.length) {
+      list.insertAdjacentHTML('beforeend', `<button type="button" class="more">더 보기 · ${shown.toLocaleString()} / ${r.total.toLocaleString()}</button>`);
+      list.lastElementChild.onclick = (e) => { e.currentTarget.textContent = '불러오는 중…'; fillPapers(box, kind, ask, live, keep, page + 1); };
+    }
+    return r;
+  } catch (e) {
+    if (!live()) return null;
+    const msg = e && e.code === 'offline' ? '인터넷에 연결되면 찾을 수 있습니다' : e && e.code === 'no_key' ? '국회도서관 연결이 아직 준비되지 않았습니다' : '지금은 국회도서관에 닿지 않습니다 · 잠시 뒤 다시 찾아 보세요';
+    const more = list.querySelector('.more');
+    if (page > 1 && more) more.textContent = '불러오지 못했습니다 · 다시 누르기';   // the rows already shown stay
+    else list.innerHTML = `<p class="none">${msg}</p>`;
+    return null;
+  }
+}
+function shelfTitles() {   // the papers on this shelf by title (without the subtitle), to mark what is here already
+  const m = new Map();
+  for (const f of liveFiles()) { const nm = stem(f.name), cut = hasAuthor(f.name) ? nm.indexOf('_') : -1; m.set(papers.norm(papers.mainTitle(cut > 0 ? nm.slice(cut + 1) : nm)), f); }
+  return m;
+}
+function paperRow(x, shelf) {
+  const mine = shelf.get(papers.norm(papers.mainTitle(x.title)));
+  const who = x.authors.length > 3 ? x.authors.slice(0, 3).join('·') + ' 외' : x.authors.join('·');
+  const meta = [who, x.kind === 'ARTICLE' ? x.journal : '', x.publisher, x.year, (S.pk ?? 'ARTICLE') === '' ? x.kindName : ''].filter(Boolean);
+  return `<button type="button" class="lrow pp-row" data-paper="${esc(x.id + ':' + x.kind)}"><b>${esc(x.title)}${mine ? ' <em class="pp-mine">내 책장</em>' : ''}</b>${x.reading ? `<span class="pp-read">${esc(x.reading)}</span>` : ''}<span>${meta.map(esc).join(' · ')}</span></button>`;
+}
+function paperSheet(row, back) {
+  const box = sheet(`<div class="cs-head">${back ? `<button class="ib cs-back" aria-label="뒤로">${I.back}</button>` : ''}<h2></h2></div><div class="cs-body"></div>`);
+  box.classList.add('case-sheet', 'paper-sheet');
+  const h = $('h2', box), body = $('.cs-body', box);
+  let shown = row, so = null;
+  const draw = (p, wait) => {
+    if (!box.isConnected) return;
+    shown = p;
+    const mine = shelfTitles().get(papers.norm(papers.mainTitle(p.title)));
+    const vol = so ? [so.volume ? `제${so.volume}권` : '', so.issue ? `제${so.issue}호` : ''].filter(Boolean).join(' ') : '';
+    const where = p.kind === 'THESIS' ? [p.school || p.publisher, p.degree ? p.degree + '학위논문' : '학위논문', p.major].filter(Boolean).join(' ') : [p.kind === 'ARTICLE' ? [p.journal, vol].filter(Boolean).join(' ') : '', p.publisher].filter(Boolean).join(' · ');
+    const abs = p.abstract || (so && so.abstract) || '';
+    const links = papers.elsewhere({ ...p, doi: p.doi || (so && so.doi) || '' });
+    if (so && so.full) links.unshift(['원문', so.full]);
+    if (so && so.page) links.push(['ScienceON', so.page]);
+    const cite = p.kind ? papers.cite(p, so) : '';
+    h.textContent = p.title;
+    body.innerHTML = `${p.reading ? `<p class="pp-read">${esc(p.reading)}</p>` : ''}
+      ${p.authors.length ? `<div class="pp-by">${p.authors.map((a) => `<button type="button" class="pp-au" data-author="${esc(a)}" data-aid="${esc((p.ids || {})[a] || '')}" title="${esc(a)} 연구자 정보">${esc(a)}</button>`).join('')}</div>` : ''}
+      <p class="pp-meta">${esc([where, p.when || p.year, so && so.pages ? so.pages + '면' : ''].filter(Boolean).join(' · '))}</p>
+      ${p.advisor ? `<p class="pp-meta">지도교수 ${esc(p.advisor)}</p>` : ''}
+      ${mine ? `<p class="pp-here">내 책장에 있습니다 <button type="button" class="btn ghost small" data-open-file="${mine.id}">열기</button></p>` : ''}
+      ${abs ? `<div class="cs-sec"><h4>초록</h4><p>${esc(abs)}</p></div>` : ''}
+      ${p.toc ? `<details class="cs-fold"><summary>목차</summary><p>${esc(p.toc)}</p></details>` : ''}
+      ${p.keywords.length ? `<div class="cs-sec"><h4>주제어</h4><div class="law-ex pp-kw">${p.keywords.slice(0, 18).map((k) => `<button type="button" data-kw="${esc(k)}">${esc(k)}</button>`).join('')}</div></div>` : ''}
+      ${cite ? `<div class="cs-sec pp-cite"><h4>인용</h4><p>${esc(cite)}</p><button type="button" class="btn ghost small" data-cite>인용 복사</button></div>` : ''}
+      ${wait ? '<p class="cs-wait">자세한 정보를 불러오는 중…</p>' : ''}
+      <div class="cs-out pp-out">${links.map(([t, u]) => `<a class="btn ghost small" href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join('')}</div>
+      ${p.uci || p.isbn ? `<p class="pp-id">${esc([p.uci ? 'UCI ' + p.uci : '', p.isbn ? 'ISBN ' + p.isbn : ''].filter(Boolean).join(' · '))}</p>` : ''}`;
+  };
+  draw(row, true);
+  papers.detail(row).then((d) => d || row, () => row).then((d) => {
+    draw(d, d.kind === 'ARTICLE');
+    if (d.kind !== 'ARTICLE') return;
+    papers.scienceon(d).then((x) => { so = x; draw(d, false); }, () => draw(d, false));   // 권호·쪽·초록·원문, when ScienceON has the paper
+  });
+  const again = () => paperSheet(row, back);
+  box.addEventListener('click', (e) => {
+    if (e.target.closest('.cs-back')) { back(); return; }
+    const a = e.target.closest('[data-author]'); if (a) { researcherSheet(a.dataset.author, a.dataset.aid, again); return; }
+    const k = e.target.closest('[data-kw]'); if (k) { closeSheet(); paperGo(k.dataset.kw); return; }
+    if (e.target.closest('[data-cite]')) { copyText(papers.cite(shown, so)); return; }
+    const o = e.target.closest('[data-open-file]'); if (o) { closeSheet(); openFile(o.dataset.openFile); }
+  });
+}
+// a researcher: where they are, how much they wrote each year, what they wrote (newest first), the researchers working on the
+// same things, their journals and their subjects — each a tap from the next
+function researcherSheet(name, id, back) {
+  const box = sheet(`<div class="cs-head">${back ? `<button class="ib cs-back" aria-label="뒤로">${I.back}</button>` : ''}<h2>${esc(name)}</h2></div><div class="cs-body"><p class="cs-wait">연구자 정보를 불러오는 중…</p></div>`);
+  box.classList.add('case-sheet', 'person-sheet');
+  const body = $('.cs-body', box);
+  const again = () => researcherSheet(name, id, back);
+  let page = 1, rid = id || '';
+  const works = async () => {
+    const list = $('.pp-works', body); if (!list) return;
+    const more = list.querySelector('.more'); if (more) more.textContent = '불러오는 중…';
+    let r = null;
+    try { r = await papers.search(name, { kind: '', page, sort: 'new', by: 'author' }); } catch (e) { r = null; }
+    if (!box.isConnected) return;
+    if (more) more.remove();
+    if (!r) { if (page === 1) list.innerHTML = '<p class="none">지금은 국회도서관에 닿지 않습니다</p>'; return; }
+    const mine = r.rows.filter((x) => x.authors.includes(name) && (!rid || !x.ids[name] || x.ids[name] === rid));   // the same person, not a namesake
+    const shelf = shelfTitles();
+    if (page === 1) list.innerHTML = '';
+    list.insertAdjacentHTML('beforeend', mine.map((x) => { ppRows.set(x.id + ':' + x.kind, x); return paperRow(x, shelf); }).join('') || (page === 1 ? '<p class="none">찾지 못했습니다</p>' : ''));
+    if (page * 20 < r.total && r.rows.length) list.insertAdjacentHTML('beforeend', '<button type="button" class="more">더 보기</button>');
+    page++;
+  };
+  papers.researcher(name, id).then((r) => {
+    if (!box.isConnected) return;
+    rid = r.id;
+    if (!r.id && r.others.length > 1) {   // namesakes: which one
+      body.innerHTML = `<p class="pp-meta">같은 이름의 연구자가 여럿입니다. 누구인지 골라 주세요.</p><div class="pp-by">${r.others.map((o) => `<button type="button" class="pp-au" data-pid="${esc(o.id)}" data-pname="${esc(o.name)}">${esc(o.name)}${o.org ? ` · ${esc(o.org)}` : ''}</button>`).join('')}</div>`;
+      return;
+    }
+    const total = r.years.reduce((n, y) => n + y.count, 0);
+    const about = r.prof ? [r.prof.org, r.prof.position, r.prof.nameEn].filter(Boolean).join(' · ') : '';
+    body.innerHTML = `<p class="pp-meta">${esc(about || '국회도서관 국가학술정보의 연구자')}</p>
+      ${r.years.length ? `<div class="cs-sec"><h4>해마다 쓴 글 <span class="pp-n">모두 ${total.toLocaleString()}편</span></h4>${yearBars(r.years)}</div>` : ''}
+      <div class="cs-sec"><h4>쓴 글 <span class="pp-n">최근 것부터</span></h4><div class="list law-list pp-works"><p class="none">찾는 중…</p></div></div>
+      ${r.people.length ? `<div class="cs-sec"><h4>같은 주제를 다루는 연구자</h4><div class="law-ex pp-kw">${r.people.map((x) => `<button type="button" data-pid="${esc(x.id)}" data-pname="${esc(x.name)}">${esc(x.name)}</button>`).join('')}</div></div>` : ''}
+      ${r.journals.length ? `<div class="cs-sec"><h4>주로 싣는 학술지</h4><div class="law-ex pp-kw">${r.journals.map((j) => `<button type="button" data-kw="${esc(j)}">${esc(j)}</button>`).join('')}</div></div>` : ''}
+      ${r.keywords.length ? `<div class="cs-sec"><h4>주제어</h4><div class="law-ex pp-kw">${r.keywords.map((k) => `<button type="button" data-kw="${esc(k)}">${esc(k)}</button>`).join('')}</div></div>` : ''}
+      <div class="cs-out pp-out"><a class="btn ghost small" href="${esc('https://scholar.google.com/scholar?q=' + encodeURIComponent('author:"' + name + '"'))}" target="_blank" rel="noopener">구글 학술검색</a><a class="btn ghost small" href="${esc('https://www.riss.kr/search/Search.do?isDetailSearch=N&searchGubun=true&viewYn=OP&query=' + encodeURIComponent(name))}" target="_blank" rel="noopener">RISS</a></div>`;
+    works();
+  }, () => { if (box.isConnected) body.innerHTML = '<p class="cs-wait">지금은 국회도서관에 닿지 않습니다. 잠시 뒤 다시 열어 보세요.</p>'; });
+  box.addEventListener('click', (e) => {
+    if (e.target.closest('.cs-back')) { back(); return; }
+    const pr = e.target.closest('[data-pid]'); if (pr) { researcherSheet(pr.dataset.pname, pr.dataset.pid, again); return; }
+    const k = e.target.closest('[data-kw]'); if (k) { closeSheet(); paperGo(k.dataset.kw); return; }
+    const pp = e.target.closest('[data-paper]'); if (pp) { const row = ppRows.get(pp.dataset.paper); if (row) paperSheet(row, again); return; }
+    if (e.target.closest('.pp-works .more')) works();
+  });
+}
+// papers a year, as thin bars (the first and last year and the busiest one written under them)
+function yearBars(years) {
+  const from = years[0].year, to = Math.max(years[years.length - 1].year, from);
+  const by = new Map(years.map((y) => [y.year, y.count]));
+  const all = []; for (let y = from; y <= to; y++) all.push([y, by.get(y) || 0]);
+  const max = Math.max(1, ...all.map((x) => x[1])), top = all.find((x) => x[1] === max);
+  return `<div class="pp-years" role="img" aria-label="${from}년부터 ${to}년까지 해마다 쓴 글, 가장 많은 해는 ${top[0]}년 ${max}편">${all.map(([y, n]) => `<i style="height:${Math.max(n ? 6 : 1, Math.round(100 * n / max))}%" title="${y}년 ${n}편"></i>`).join('')}</div><div class="pp-axis"><span>${from}</span><span>가장 많은 해 ${top[0]}년 · ${max}편</span><span>${to}</span></div>`;
+}
+
 function lawFrame(c) {
   if (c.querySelector(':scope > .law-top')) return;
   c.innerHTML = `<div class="law-top"><label class="law-find">${I.search}<input type="search" placeholder="사건번호 · 낱말 · 조문 — 2004헌마554, 관습헌법, 헌법 제37조" enterkeyhint="search" autocomplete="off" aria-label="판례·법령 찾기"></label></div><div class="law-body"></div>`;
@@ -704,7 +932,12 @@ const lawRow = {
   name: (r) => caseRow(r.no, r.name, [r.no, r.date, r.court], r.result),
   law: (r) => caseRow(r.no, r.name, [r.no, r.date, r.target], r.result, r.order),
   leading: (r) => caseRow(r.no, r.nick ? `${r.nick} · ${r.name}` : r.name, [r.no, r.date, r.area]),
-  holding: (r) => `<button type="button" class="lrow" data-holding="${esc(r.seq)}"><b>${esc(r.title)}</b><span>${esc(r.path)}</span></button>`,
+  holding: (r) => {
+    const parts = String(r.path || '').split('>').map((x) => x.trim()).filter(Boolean);
+    const law = /^기타 법령편/.test(r.path || '') && parts.length > 1 ? parts[parts.length - 1] : '';
+    const head = law && !r.title.includes(law) ? `${law} ${r.title}` : r.title;
+    return `<button type="button" class="lrow" data-holding="${esc(r.seq)}"><b>${esc(head)}</b><span>${esc(law ? '심판대상 · ' + parts.slice(1, -1).filter((x) => !/^</.test(x)).join(' > ') : r.path)}</span></button>`;
+  },
 };
 function caseRow(no, name, meta, result, order) {
   if (!no) return '';
@@ -788,7 +1021,7 @@ function lawLinkCard(a, why) {
   const label = `${a.law} ${laws.artLabel(a)}${a.para ? ` 제${a.para}항` : ''}`;
   return `<div class="law-card"><div class="lc-h"><b>${esc(label)}</b></div>
     <p class="law-note">${why === 'nolaw' ? '국가법령정보에서 이 이름의 법령을 찾지 못했습니다. 정식 이름으로 찾아 보세요.' : '이 법률의 조문 내용은 국가법령정보 연결을 마치면 여기서 바로 보입니다.'} 아래에는 이 조문을 심판대상으로 한 헌재 결정을 모았습니다.</p>
-    <div class="lc-acts"><a class="btn ghost small" href="${laws.lawGoKr.article(a.law, a.art, a.sub)}" target="_blank" rel="noopener">국가법령정보센터에서 조문 보기</a></div></div>`;
+    <div class="lc-acts"><a class="btn ghost small" href="${laws.lawGoKr.article(a.law, a.art, a.sub)}" target="_blank" rel="noopener">국가법령정보센터에서 조문 보기</a><a class="btn ghost small" href="${laws.lawGoKr.compare3(a.law)}" target="_blank" rel="noopener">3단비교</a><a class="btn ghost small" href="${laws.lawGoKr.oldNew(a.law)}" target="_blank" rel="noopener">신구법비교</a></div></div>`;
 }
 function courtSheet(no, trail = []) {
   const box = sheet(`<div class="cs-head">${trail.length ? `<button class="ib cs-back" aria-label="뒤로">${I.back}</button>` : ''}<h2>${esc(no)}</h2></div><div class="cs-body"><p class="cs-wait">불러오는 중…</p></div><div class="row-btns"><button class="btn ghost cs-copy" hidden>인용 복사</button></div>`);
@@ -864,7 +1097,13 @@ async function textOf(f) {
 let thumbIO = null;
 function lazyThumbs() {
   if (!thumbIO) thumbIO = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) { thumbIO.unobserve(e.target); loadThumb(e.target); } }, { rootMargin: '300px' });
-  document.querySelectorAll('[data-thumb]:not([data-done])').forEach((t) => { t.dataset.done = '1'; if (t.dataset.thumb) thumbIO.observe(t); });
+  document.querySelectorAll('[data-thumb]:not([data-done])').forEach((t) => {
+    t.dataset.done = '1';
+    const id = t.dataset.thumb; if (!id) return;
+    const url = thumbUrls.get(id);
+    if (url) { t.style.backgroundImage = `url("${url}")`; t.classList.add('has'); return; }   // held already: drawn at once, so a list drawn again does not blink
+    thumbIO.observe(t);
+  });
 }
 const thumbUrls = new Map();
 async function loadThumb(span) {
@@ -890,6 +1129,9 @@ function onContentClick(e) {
   const cc = t.closest('[data-court-open]'); if (cc) { courtSheet(cc.dataset.courtOpen); return; }
   const il = t.closest('.case-ln');   // a citation inside an article's text: the decision, the judgment, or that article
   if (il) { if (il.dataset.case) caseSheet(il.dataset.case); else if (il.dataset.court) courtSheet(il.dataset.court); else if (il.dataset.art) lawGo(il.dataset.art); return; }
+  const pq = t.closest('[data-pq]'); if (pq) { paperGo(pq.dataset.pq); return; }
+  const pw = t.closest('[data-who]'); if (pw) { researcherSheet(pw.dataset.who, pw.dataset.aid); return; }
+  const pp = t.closest('[data-paper]'); if (pp) { const row = ppRows.get(pp.dataset.paper); if (row) paperSheet(row); return; }
   const lq = t.closest('[data-lq]'); if (lq) { S.lq = lq.dataset.lq; const li = $('.law-find input'); if (li) li.value = S.lq; renderLaw($('.content')); $('.content').scrollTop = 0; window.scrollTo(0, 0); return; }
   const ho = t.closest('[data-holding]'); if (ho) { holdingSheet(ho.dataset.holding); return; }
   if (t.closest('[data-selall]')) { pickAll(); return; }
@@ -1472,12 +1714,12 @@ async function ocrData(f) {   // a read paper's words for the reader: kept here,
 /* ---------- where a paper was published (journal · society · date), read from its first page and kept in its page texts,
    so every device learns it with the texts (no extra request). S.info: id -> { journal, society, issue, date } or null ---------- */
 let infoT = null;
-function notePaper(id, t) {
+function notePaper(id, t, quiet) {
   if (!t || t.paper === undefined) return;
   const v = t.paper || null;
   if (JSON.stringify(S.info[id] ?? null) === JSON.stringify(v) && id in S.info) return;
   S.info[id] = v;
-  clearTimeout(infoT); infoT = setTimeout(() => { store.put('kv', 'paperInfo', S.info); if (!S.reader) render(); }, 500);
+  clearTimeout(infoT); infoT = setTimeout(() => { store.put('kv', 'paperInfo', S.info); if (!S.reader && !quiet) render(); }, 500);
 }
 const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal, society: r.society, issue: r.issue, date: r.date } : null);
 const pubText = (d) => (d ? d.replace(/^(\d{4})-(\d{2})(?:-\d{2})?$/, (m, y, mo) => `${y}. ${+mo}.`).replace(/^(\d{4})$/, '$1.') : '');   // 2018-03 → 2018. 3.; a year alone → 2018.
@@ -1548,7 +1790,7 @@ async function fillPaperInfo() {
    Only what is missing is filled — a date (or a whole date where only the year was read) and the society that published it;
    what the page itself said is never changed. The answer is written into the paper's texts like the rest, so every device
    has it. A paper the library does not know is asked about again after a month. */
-let libAsked = null;
+let libAsked = null, libRunning = false;
 const libNorm = (s) => naming.hangulize(String(s || '')).replace(/<[^>]+>/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
 function libSociety(x) {
   let t = naming.hangulize(String((x && x.pubInfo) || '').replace(/<[^>]+>/g, '')).replace(/\d{6,8}/g, ' ').replace(/(^|\D)(?:19|20)\d{2}(?!\d)/g, '$1 ');
@@ -1562,21 +1804,79 @@ function libSociety(x) {
   return /[가-힣A-Za-z]{2,}/.test(t) ? t : '';
 }
 function libNeeds(i) { return !i || !i.date || /^\d{4}$/.test(i.date) || !(i.journal || i.society); }
+const hasAuthor = (name) => /^[^_]{2,20}_\S/.test(name);
+const mainTitle = (t) => { const m = /^(.{8,}?)\s+[-―—–]\s*\S.*$/.exec(t) || /^(.{8,}?)\s*:\s*\S.*$/.exec(t); return (m ? m[1] : t).trim(); };   // the subtitle off
+function libAuthor(x) {   // 林智奉 → 임지봉; "홍길동 ; 김철수" → 홍길동 외
+  const names = String((x && x.authorInfo) || '').replace(/<[^>]+>/g, '').split(/\s*[;,·]\s*|\s{2,}/)
+    .map((s) => naming.personName(s.replace(/\s*(?:\[[^\]]*\]|\([^)]*\)|저|지음|공저|편저|편|역|옮김)$/g, '').trim())).filter(Boolean);
+  return names.length ? names[0] + (names.length > 1 ? ' 외' : '') : '';
+}
+// 국회도서관 국가학술정보 클라우드: the records of exactly this title (학술기사), each with its authors in Hangul, its journal and
+// its publisher — the surest outside answer to "who wrote this" for a Korean law paper
+async function nanetSame(title) {
+  const d = await api.nanet('search', { searchTerm: mainTitle(title).slice(0, 80), searchRange: 'ARTICLE', printRowCnt: '10' });
+  const want = libNorm(mainTitle(title));
+  return (((d && d.result && d.result[0] && d.result[0].searchList) || []))
+    .filter((x) => libNorm(mainTitle(papers.clean(x.title).split(/\s=\s/)[0])) === want);
+}
+const nanetNames = (x) => ((x && x.authorList) || []).map((a) => naming.personName(a.name)).filter(Boolean);
+const nameText = (names) => (names.length === 1 ? names[0] : names.length === 2 ? names.join('·') : names[0] + ' 외');   // as the first page's names are written
+function nanetAuthor(same) {   // one name text when every record of the title agrees on it, else ''
+  const who = [...new Set(same.map(nanetNames).filter((n) => n.length).map(nameText))];
+  return who.length === 1 ? who[0] : '';
+}
 async function libraryInfo() {
-  if (!syncOn || !navigator.onLine) return;
-  if (!libAsked) libAsked = (await store.get('kv', 'libAsked').catch(() => null)) || {};
+  if (!syncOn || !navigator.onLine || libRunning) return;
+  libRunning = true;
+  let changed = false;
+  try {
+  if (!libAsked) libAsked = (await store.get('kv', 'libAsked2').catch(() => null)) || {};   // (2: asked again once, now that 국회도서관 answers too)
   for (const f of liveFiles()) {
     if (!navigator.onLine || document.hidden) break;
-    if (!(f.id in S.info) || !libNeeds(S.info[f.id]) || Date.now() - (libAsked[f.id] || 0) < 30 * 864e5) continue;
-    const name = stem(f.name), cut = name.indexOf('_');
+    const unnamed = !hasAuthor(f.name) && (!f.orig || f.name === f.orig) && S.prefs.autoName !== false && !f.pending;   // still its uploaded name
+    const known = f.id in S.info;   // its first page was read (a scan still to be read is not, yet it can be named from its title)
+    if (!(unnamed || (known && libNeeds(S.info[f.id]))) || Date.now() - (libAsked[f.id] || 0) < 30 * 864e5) continue;
+    const name = stem(f.name), cut = hasAuthor(f.name) ? name.indexOf('_') : -1;
     const author = cut > 0 ? name.slice(0, cut).replace(/\s*외$/, '') : '', title = (cut > 0 ? name.slice(cut + 1) : name).trim();
     if (libNorm(title).length < 6) continue;
-    libAsked[f.id] = Date.now(); store.put('kv', 'libAsked', libAsked).catch(() => {});
-    let d;
-    try { d = await api.nlib('search', { apiType: 'json', srchTarget: 'title', kwd: title.slice(0, 60), pageNum: '1', pageSize: '10' }); } catch (e) { if (api.isOffline(e)) break; continue; }
+    libAsked[f.id] = Date.now(); store.put('kv', 'libAsked2', libAsked).catch(() => {});
+    let same = [];   // 국회도서관's records of this very title
+    try { same = await nanetSame(title); } catch (e) { if (api.isOffline(e)) break; }
+    let d = null;
+    try { d = await api.nlib('search', { apiType: 'json', srchTarget: 'title', kwd: mainTitle(title).slice(0, 60), pageNum: '1', pageSize: '10' }); } catch (e) { if (api.isOffline(e)) break; }
+    if (unnamed) {   // named 저자_제목 only when the libraries' records of exactly this title agree on one author (국회도서관 first)
+      let who = nanetAuthor(same);
+      if (!who) {
+        const want = libNorm(mainTitle(title));
+        const nl = ((d && d.result) || []).filter((x) => /기사|논문/.test(x.typeName || '') && libNorm(mainTitle(String(x.titleInfo || '').replace(/<[^>]+>/g, '').split(/\s=\s/)[0])) === want);
+        const names = [...new Set(nl.map(libAuthor).filter(Boolean))];
+        if (names.length === 1) who = names[0];
+      }
+      if (who) {
+        try {
+          const r = await api.ops([{ op: 'updateFile', id: f.id, set: { name: `${who}_${mainTitle(title)}.pdf` } }]);
+          S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = ''; changed = true;
+        } catch (e) { /* next time */ }
+      }
+      if (!known || !libNeeds(S.info[f.id])) continue;
+    }
     const want = libNorm(title), who = libNorm(author);
     const hits = ((d && d.result) || []).filter((x) => /기사|논문/.test(x.typeName || '') && (libNorm(x.titleInfo).startsWith(want.slice(0, 14)) || want.startsWith(libNorm(x.titleInfo).slice(0, 14))) && (!who || libNorm(x.authorInfo).includes(who)));
-    if (!hits.length) continue;
+    if (!hits.length) {   // not in 국립중앙도서관: 국회도서관's record (journal, publisher, year), when it is this author's
+      const mine = same.find((x) => !who || nanetNames(x).some((n) => libNorm(n) === who));
+      if (!mine) continue;
+      const cur = S.info[f.id] || {};
+      const merged = { journal: String(cur.journal || '').replace(/[\s┃│|ㅣ]+$/, '') || naming.hangulize(String((mine.journal && mine.journal.title) || '')).trim(), society: cur.society || naming.hangulize(String(mine.publisher || '')).trim(), issue: cur.issue || '', date: cur.date || (/^\d{4}$/.test(String(mine.pubYear || '')) ? String(mine.pubYear) : '') };
+      if (JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) continue;
+      try {
+        const t = (await store.get('texts', f.id).catch(() => null)) || await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
+        t.paper = paperOf(merged);
+        await store.put('texts', f.id, t);
+        await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
+        notePaper(f.id, t, true); changed = true;
+      } catch (e) { /* next time */ }
+      continue;
+    }
     const ymd = (x) => String(x.pubYearInfo || '').replace(/\D/g, '');
     const best = hits.slice().sort((a, b) => ymd(b).length - ymd(a).length)[0];
     const digits = ymd(best);
@@ -1591,9 +1891,10 @@ async function libraryInfo() {
       t.paper = paperOf(merged);
       await store.put('texts', f.id, t);
       await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
-      notePaper(f.id, t);
+      notePaper(f.id, t, true); changed = true;
     } catch (e) { /* next time */ }
   }
+  } finally { libRunning = false; if (changed && !S.reader) render(); }   // drawn once, after all of them
 }
 
 /* ---------- every paper's marks kept on this device as well (for 찾기, also without internet) ----------
@@ -1652,10 +1953,9 @@ async function markHits(key) {
     const f = live.get(id); if (!f) continue;
     const snips = [];
     for (const m of list) {
-      const t = m.text; let flat = ''; const map = [];
-      for (let i = 0; i < t.length; i++) if (!/\s/.test(t[i])) { flat += t[i].toLowerCase(); map.push(i); }
-      const i = flat.indexOf(key); if (i < 0) continue;
-      const a = map[i], b = map[i + key.length - 1] + 1;
+      const t = m.text, ff = findForm(t), map = ff.map, k = keyFor(findKey(key), ff);
+      const i = ff.flat.indexOf(k); if (i < 0) continue;
+      const a = map[i], b = map[i + k.length - 1] + 1;
       snips.push({ m, pre: a > 40, a: t.slice(Math.max(0, a - 40), a), w: t.slice(a, b), b: t.slice(b, b + 70), post: b + 70 < t.length });
     }
     if (snips.length) out.push({ f, snips });
@@ -1909,7 +2209,7 @@ function pickFolder(title, avoid = new Set()) {
 }
 function marksRow(v) {
   const b = (g, on, label) => `<button data-k="g:${g}" class="${on ? 'on' : ''}" aria-label="${label}">${gradeSVG(g > 0 ? 1 : g)}</button>`;
-  return `<div class="menu-marks" role="group" aria-label="표시">${b(1, v >= 1, '별 1개')}${b(2, v >= 2, '별 2개')}${b(3, v >= 3, '별 3개')}<span class="sep"></span>${b(-2, v === -2, '세모')}${b(-1, v === -1, '엑스')}</div><hr>`;
+  return `<div class="menu-marks" role="group" aria-label="표시">${b(1, v >= 1, '별 1개')}${b(2, v >= 2, '별 2개')}${b(3, v >= 3, '별 3개')}<span class="sep"></span>${b(-2, v === -2, '세모')}${b(-1, v === -1, '엑스')}${v ? '<button data-k="g:0" class="grade-none">표시 없음</button>' : ''}</div><hr>`;   // 표시 없음 takes the mark off
 }
 function menu(rect, items, current) {
   return new Promise((resolve) => {

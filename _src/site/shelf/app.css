@@ -269,7 +269,7 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .rd-scroll { flex: 1; min-width: 0; overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; outline: 0; overscroll-behavior: contain; }
 .rd.marking .rd-scroll { touch-action: none; }
 .rd-pages { position: relative; margin: 0 auto; transform-origin: 0 0; }
-.pg { position: absolute; left: 50%; transform: translateX(-50%); background: #fff; box-shadow: 0 1px 3px #0F1A2B33, 0 10px 28px -16px #0F1A2B55; overflow: hidden; }
+.pg { position: absolute; left: 50%; transform: translateX(-50%); background: #fff; background-size: 100% 100%; background-repeat: no-repeat; box-shadow: 0 1px 3px #0F1A2B33, 0 10px 28px -16px #0F1A2B55; overflow: hidden; }
 .rd-pages .pg { position: relative; margin: 14px auto 0; left: auto; transform: none; }
 .pg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .pg-marks, .pg-hits { position: absolute; inset: 0; pointer-events: none; }
@@ -399,6 +399,8 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .cs-fold summary span { color: var(--muted); font-weight: 500; }
 .cs-fold p { padding-bottom: 14px; }
 .cs-wait { color: var(--muted); font-size: 13.5px; line-height: 1.6; margin: 8px 0 4px; }
+.cs-out { margin: 14px 0 0; }
+.cs-out .btn { text-decoration: none; }
 .case-card { display: grid; gap: 4px; width: 100%; text-align: left; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 18px; }
 .case-card b { font-size: 15px; line-height: 1.45; }
 .case-card span { font-size: 13px; color: var(--muted); }
@@ -411,6 +413,28 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 /* 판례·법령 */
 .law-mode .toolrow { display: none; }
 .law-top { max-width: 860px; margin: 4px 0 20px; }
+.pp-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 2px 0; }
+.pp-opts button { height: 32px; padding: 0 13px; border-radius: 16px; background: var(--card); box-shadow: var(--shadow); font-size: 13px; font-weight: 600; color: var(--muted); }
+.pp-opts button.on { color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pp-opts .sep { width: 1px; height: 18px; background: var(--rule); margin: 0 4px; }
+.lrow .pp-read, .paper-sheet .pp-read { font-size: 12.5px; color: var(--faint); }
+.pp-mine { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 2px; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.paper-sheet h2 { font-size: 18px; line-height: 1.45; word-break: keep-all; }
+.paper-sheet .pp-by { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.pp-au { height: 30px; padding: 0 12px; border-radius: 15px; background: var(--chip); font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.pp-meta { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.pp-here { display: flex; align-items: center; gap: 10px; margin: 12px 0 0; color: var(--accent); font-size: 13.5px; font-weight: 600; }
+.pp-kw { margin-top: 6px; }
+.pp-kw button { height: 30px; padding: 0 12px; font-size: 13px; }
+.pp-out { display: flex; flex-wrap: wrap; gap: 8px; }
+.pp-id { margin: 12px 0 0; color: var(--faint); font-size: 12px; }
+.pp-cite p { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 8px; word-break: keep-all; overflow-wrap: anywhere; }
+.pp-n { margin-left: 6px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.pp-who { margin-left: 10px; vertical-align: 1px; }
+.pp-years { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin: 8px 0 4px; }
+.pp-years i { flex: 1; min-width: 2px; border-radius: 2px 2px 0 0; background: var(--accent); opacity: .8; }
+.pp-axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+.person-sheet .pp-works { margin-top: 4px; border-radius: 12px; box-shadow: var(--shadow); background: var(--card); }
 .law-find { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 18px; border-radius: 16px; background: var(--card); box-shadow: var(--shadow); color: var(--faint); cursor: text; }
 .law-find svg { width: 22px; height: 22px; }
 .law-find input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font-size: 16.5px; }
@@ -486,6 +510,8 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .menu .menu-marks { display: flex; align-items: center; padding: 2px 4px; }
 .menu-marks button { width: 38px; height: 38px; }
 .menu-marks svg.pen { width: 24px; height: 24px; }
+.rd-grade button.grade-none, .menu-marks button.grade-none { width: auto; padding: 0 12px; margin-left: 6px; font-size: 13px; font-weight: 600; color: var(--muted); border: 1px solid var(--rule); border-radius: 999px; height: 32px; white-space: nowrap; }
+.rd-grade button.grade-none[hidden] { display: none; }
 /* ---------- rail: settings and the trash in the bottom corner ---------- */
 .foot-row { display: flex; align-items: center; justify-content: space-between; }
 .trash-btn { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 10px; border-radius: 10px; color: #8E9AAD; font-size: 13px; }

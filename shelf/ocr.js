@@ -48,22 +48,23 @@ function lineWords(ln) {
     const out = []; let k = 0;
     for (const tok of tokens) {
       const n = [...tok].length, a = own[k], b = own[k + n - 1]; k += n;
-      let x0 = Infinity, x1 = -Infinity;
-      for (let i = a; i <= b; i++) { x0 = Math.min(x0, ws[i].bbox.x0); x1 = Math.max(x1, ws[i].bbox.x1); }
-      out.push([x0, x1, tok]);
+      let x0 = Infinity, x1 = -Infinity, cf = 100;
+      for (let i = a; i <= b; i++) { x0 = Math.min(x0, ws[i].bbox.x0); x1 = Math.max(x1, ws[i].bbox.x1); cf = Math.min(cf, conf(ws[i])); }
+      out.push([x0, x1, tok, cf]);
     }
     return out;
   }
   const h = Math.max(1, ln.bbox.y1 - ln.bbox.y0), out = [];
   for (const w of ws) {
     const last = out[out.length - 1];
-    if (last && w.bbox.x0 - last[1] < 0.42 * h) { last[1] = Math.max(last[1], w.bbox.x1); last[2] += w.text.trim(); }
-    else out.push([w.bbox.x0, w.bbox.x1, w.text.trim()]);
+    if (last && w.bbox.x0 - last[1] < 0.42 * h) { last[1] = Math.max(last[1], w.bbox.x1); last[2] += w.text.trim(); last[3] = Math.min(last[3], conf(w)); }
+    else out.push([w.bbox.x0, w.bbox.x1, w.text.trim(), conf(w)]);
   }
   return out;
 }
+const conf = (w) => (typeof w.confidence === 'number' ? Math.round(w.confidence) : 0);   // how sure the engine is of a piece (0–100)
 
-async function recognize(c, lang) {
+async function recognize(c, lang, sure = false) {   // sure: each word also carries how sure the engine was of it
   const w = await engine(lang);
   const r = await w.recognize(c, {}, { blocks: true, text: false });
   if (failed) throw new Error('engine');
@@ -73,7 +74,7 @@ async function recognize(c, lang) {
     const words = lineWords(ln);
     if (!words.length) continue;
     const L = ln.bbox;
-    lines.push([r4(L.x0 / W), r4(L.y0 / H), r4(L.x1 / W), r4(L.y1 / H), words.map(([a, z, t]) => [r4(a / W), r4(z / W), t])]);
+    lines.push([r4(L.x0 / W), r4(L.y0 / H), r4(L.x1 / W), r4(L.y1 / H), words.map(([a, z, t, cf]) => (sure ? [r4(a / W), r4(z / W), t, cf] : [r4(a / W), r4(z / W), t]))]);
   }
   return lines;
 }
@@ -85,6 +86,27 @@ export async function readPage(pdfPage, lang = 'kor') {
     let lines = await recognize(c, lang), used = lang;
     if (lang === 'kor' && lines.length && hangulShare(textOf(lines)) < 0.15) { lines = await recognize(c, 'eng'); used = 'eng'; }
     return { lines, lang: used };
+  } finally { c.width = c.height = 0; }
+}
+
+// One band of a page read again, much larger (about 600 dpi on its own): small print the whole-page reading got wrong —
+// an author's name set letter-spaced (임 지 봉) — comes out right this way. y0, y1 are parts of the page (0..1); the lines
+// come back placed on the whole page, as readPage gives them.
+export async function readBand(pdfPage, y0, y1, lang = 'kor') {
+  const v1 = pdfPage.getViewport({ scale: 1 });
+  const scale = Math.min(8, Math.max(3, 3800 / v1.width));
+  const vp = pdfPage.getViewport({ scale });
+  const top = Math.max(0, Math.floor(y0 * vp.height)), bottom = Math.min(Math.ceil(vp.height), Math.ceil(y1 * vp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.floor(vp.width); c.height = Math.max(1, bottom - top);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.translate(0, -top);
+  await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise;
+  try {
+    const lines = await recognize(c, lang);
+    const H = vp.height, hb = c.height;
+    return lines.map(([x0, a, x1, b, words]) => [x0, r4((top + a * hb) / H), x1, r4((top + b * hb) / H), words]);
   } finally { c.width = c.height = 0; }
 }
 
