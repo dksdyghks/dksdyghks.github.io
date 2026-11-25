@@ -6,6 +6,9 @@ on:
   schedule:
     - cron: '23 18 * * 0'   # every Monday, 03:23 in Korea
   workflow_dispatch:
+  push:   # and once whenever this file itself changes (so a change is tried at once)
+    branches: [main]
+    paths: ['.github/workflows/shelf-indexes.yml']
 permissions:
   contents: write
   pages: write
