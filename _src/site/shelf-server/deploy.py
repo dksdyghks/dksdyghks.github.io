@@ -28,8 +28,8 @@ def account():
 
 def main(first):
     acc = account()
-    # 1. the bucket (Asia-Pacific)
-    b = call('GET', f'/accounts/{acc}/r2/buckets/{BUCKET}')
+    # 1. the bucket (Asia-Pacific): only made on the first run (an update needs no storage permission)
+    b = call('GET', f'/accounts/{acc}/r2/buckets/{BUCKET}') if first else {'success': True}
     if not b.get('success'):
         c = call('POST', f'/accounts/{acc}/r2/buckets', {'name': BUCKET, 'locationHint': 'apac'})
         print('bucket:', c.get('success'), c.get('errors'))
@@ -54,7 +54,7 @@ def main(first):
             {'type': 'secret_text', 'name': 'PIN_HASH', 'text': hashlib.sha256((pepper + ':' + pin).encode()).hexdigest()},
         ]
     else:
-        meta['keep_bindings'] = ['secret_text']
+        meta['keep_bindings'] = ['secret_text', 'plain_text']   # keys the owner set in the dashboard (secret or text) stay
     code = open(os.path.join(HERE, 'worker.js'), 'rb').read()
     boundary = '----shelf' + uuid.uuid4().hex
     parts = []
@@ -67,8 +67,8 @@ def main(first):
     # 3. reachable at <script>.<subdomain>.workers.dev
     s = call('POST', f'/accounts/{acc}/workers/scripts/{SCRIPT}/subdomain', {'enabled': True, 'previews_enabled': False})
     print('workers.dev route:', s.get('success'), s.get('errors'))
-    sub = call('GET', f'/accounts/{acc}/workers/subdomain')['result']['subdomain']
-    print('url: https://%s.%s.workers.dev' % (SCRIPT, sub))
+    sub = (call('GET', f'/accounts/{acc}/workers/subdomain').get('result') or {}).get('subdomain')   # needs a permission an update token may lack
+    if sub: print('url: https://%s.%s.workers.dev' % (SCRIPT, sub))
 
 if __name__ == '__main__':
     main('--first' in sys.argv)
