@@ -521,7 +521,8 @@ function renderTools() {
   const t = $('.tools');
   if (S.select) {
     const n = S.select.files.size + S.select.folders.size;
-    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">선택 끝</button>`;
+    // (the same buttons, type and height as the bar has when nothing is picked: only what they do changes)
+    t.innerHTML = `<span class="sel-n" aria-live="polite"><b>${n}</b>개 선택</span><button class="btn" data-t="move" ${n ? '' : 'disabled'}>${MI.move}<span>옮기기</span></button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>${I.trash}<span>휴지통으로</span></button><span class="sp"></span><button class="btn ghost" data-t="endsel">${I.close}<span>선택 끝</span></button>`;
     return;
   }
   if (S.q) { t.innerHTML = ''; return; }
@@ -772,19 +773,73 @@ async function renderPapers(cIn) {
   }
 }
 /* ---------- KCI 법학 논문 ----------
-   The law papers in KCI by the month they came out (kci/law/ beside the app: gathered from KCI's OAI-PMH every week going
-   forward, and every hour going back until three years are covered), newest month first: on 논문 찾기's first screen, those
-   in the owner's fields (or every law paper); one opens with the start of its abstract and its KCI page. Months are read
-   only as the list reaches them. (kci/new.json, the last eight weeks, stands in while the months are not there.) */
+   Every law paper in KCI by the month it came out (kci/law/ beside the app: gathered from KCI's OAI-PMH every week going
+   forward, and every hour going back until three years are covered), newest month first, a journal's papers together; the
+   heading says from which day KCI's records are in (until the three years are). One opens with the start of its abstract
+   and its KCI page; one set aside (관심 없음) is left out from then on, on every device. Months are read only as the list
+   reaches them. (kci/new.json, the last eight weeks, stands in while the months are not there.) */
 const kciUrl = (path) => new URL('./kci/' + path, location.href);
-let kciIdxP = null, kciNewP = null;
+let kciIdxP = null, kciNewP = null, kciStateP = null;
+const kciState = () => (kciStateP ||= fetch(kciUrl('state.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : {})).catch(() => { kciStateP = null; return {}; }));
 const kciIndex = () => (kciIdxP ||= fetch(kciUrl('law/index.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { kciIdxP = null; return null; }));
 const kciNew = () => (kciNewP ||= fetch(kciUrl('new.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciNewP = null; return []; }));
 const kciMonthP = new Map();
-const kciMonth = (key) => { if (!kciMonthP.has(key)) kciMonthP.set(key, fetch(kciUrl(`law/${key}.json`)).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciMonthP.delete(key); return []; })); return kciMonthP.get(key); };
+// a month's papers, a journal's together (its newest issue first, each issue in page order)
+const kciOrder = (a, b) => (a.j || '').localeCompare(b.j || '', 'ko') || (Number(b.v) || 0) - (Number(a.v) || 0) || (Number(b.i) || 0) - (Number(a.i) || 0) || (Number(a.fp) || 0) - (Number(b.fp) || 0);
+const kciMonth = (key) => { if (!kciMonthP.has(key)) kciMonthP.set(key, fetch(kciUrl(`law/${key}.json`)).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d.slice().sort(kciOrder) : [])).catch(() => { kciMonthP.delete(key); return []; })); return kciMonthP.get(key); };
 const monthName = (key) => (key.endsWith('-00') ? `${key.slice(0, 4)}년` : `${key.slice(0, 4)}년 ${Number(key.slice(5))}월`);
-// the owner's fields, as words a law paper's title or abstract would use
-const MY_FIELDS = /선거|정당|정치자금|선관위|국회|입법|헌법|헌정|기본권|탄핵|대통령|적극행정|행정절차|행정소송|행정조사|민간투자|공공조달|조달|국가계약|공법상 계약|군사|국방|군형법|안보|사이버|정보기관|우주|항공|영장|집회|민주주의|대의제|국민투표/;
+// from which day KCI's records are in: 'n월 n일 이후 등록분' while the years before are still being gathered
+function kciSpan(st) {
+  const from = (st && (st.back || st.first)) || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return '';
+  const goalYear = new Date().getFullYear() - 3;   // (kci_oai.py gathers back to 1 January three years before)
+  if (from <= `${goalYear}-01-01`) return `${goalYear}년부터`;
+  const [y, m, d] = from.split('-').map(Number);
+  return `${y === new Date().getFullYear() ? '' : y + '년 '}${m}월 ${d}일 이후 등록분 · 3년 치 모으는 중`;
+}
+/* the KCI papers set aside (관심 없음): kept on this device at once and with the server, so every device leaves them out —
+   { ART…: { at, on } }, set aside or brought back, the newest word wins */
+const KH = { map: {}, q: {}, t: 0, ready: null, at: 0 };
+function kciHiddenReady() {   // (asked of the server again when the list is drawn ten minutes or more after the last time)
+  if (KH.ready && Date.now() - KH.at < 10 * 60e3) return KH.ready;
+  const first = !KH.ready;
+  KH.at = Date.now();
+  return (KH.ready = (async () => {
+    if (first) {
+      KH.map = (await store.get('kv', 'kciHidden').catch(() => null)) || {};
+      KH.q = (await store.get('kv', 'kciHiddenQ').catch(() => null)) || {};
+      for (const [k, v] of Object.entries(KH.q)) if (!KH.map[k] || v.at >= KH.map[k].at) KH.map[k] = v;   // (a word not sent yet)
+    }
+    if (navigator.onLine) {
+      try { const r = await Promise.race([api.getPrefs(), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 2500))]); kciMerge(r && r.hidden); } catch (e) { /* this device's word stands until the server answers */ }
+    }
+    if (Object.keys(KH.q).length) kciPush();
+  })());
+}
+function kciMerge(h) {
+  if (!h || typeof h !== 'object') return;
+  for (const [k, v] of Object.entries(h)) if (v && Number.isFinite(v.at) && (!KH.map[k] || v.at > KH.map[k].at)) KH.map[k] = { at: v.at, on: !!v.on };
+  store.put('kv', 'kciHidden', KH.map).catch(() => {});
+}
+const kciHidden = (id) => !!(KH.map[id] && KH.map[id].on);
+function kciSetHidden(ids, on) {
+  const at = Date.now();
+  for (const id of ids) { KH.map[id] = { at, on }; KH.q[id] = { at, on }; }
+  store.put('kv', 'kciHidden', KH.map).catch(() => {});
+  store.put('kv', 'kciHiddenQ', KH.q).catch(() => {});
+  clearTimeout(KH.t); KH.t = setTimeout(kciPush, 800);
+}
+async function kciPush() {
+  const q = { ...KH.q };
+  if (!Object.keys(q).length || !navigator.onLine) return;
+  try {
+    const r = await api.putPrefs(q);
+    for (const k of Object.keys(q)) if (KH.q[k] && KH.q[k].at === q[k].at) delete KH.q[k];
+    store.put('kv', 'kciHiddenQ', KH.q).catch(() => {});
+    kciMerge(r && r.hidden);
+  } catch (e) { /* kept: sent with the next change, or the next time the list is drawn */ }
+}
+window.addEventListener('online', () => { if (Object.keys(KH.q).length) kciPush(); });
 const kciRows = new Map();
 const kciIssue = (x) => (x.v && x.i ? `제${x.v}권 제${x.i}호` : x.i ? `제${x.i}호` : x.v ? `제${x.v}권` : '');
 const kciWho = (x) => ((x.a || []).length > 3 ? x.a.slice(0, 3).join('·') + ' 외' : (x.a || []).join('·'));
@@ -793,41 +848,64 @@ function kciRow(x, shelf) {
   kciRows.set(x.id, x);
   const mine = shelf.get(papers.norm(papers.mainTitle(x.t)));
   const meta = [kciWho(x), [x.j, kciIssue(x)].filter(Boolean).join(' '), kciWhen(x)].filter(Boolean);
-  return `<button type="button" class="lrow pp-row" data-kci="${esc(x.id)}"><b>${esc(x.t)}${mine ? ' <em class="pp-mine">내 책장</em>' : ''}${x.open ? ' <em class="pp-open">원문 공개</em>' : ''}</b><span>${meta.map(esc).join(' · ')}</span></button>`;
+  return `<div class="kci-item"><button type="button" class="lrow pp-row" data-kci="${esc(x.id)}"><b>${esc(x.t)}${mine ? ' <em class="pp-mine">내 책장</em>' : ''}${x.open ? ' <em class="pp-open">원문 공개</em>' : ''}</b><span>${meta.map(esc).join(' · ')}</span></button><button type="button" class="kci-x" data-kci-x="${esc(x.id)}" aria-label="관심 없음" title="관심 없음">${I.close}</button></div>`;
 }
 async function kciNewSec(sec, live) {
   if (!sec) return;
-  const idx = await kciIndex();
+  const [idx, st] = await Promise.all([kciIndex(), kciState(), kciHiddenReady().catch(() => {})]);
   const months = idx && idx.months ? Object.keys(idx.months).filter((k) => idx.months[k] > 0).sort().reverse() : [];
   if (!months.length && !(await kciNew()).length) return;
   if (!live() || !sec.isConnected) return;
-  const fits = (x) => MY_FIELDS.test(`${x.t} ${x.ab || ''}`);   // (by what the paper says, not by its journal's name)
-  let showAll = false, want = 8, busy = false;
+  let want = 8, busy = false;
   const seen = new Set(), got = [];   // [{ key, x }] in order
   let mi = 0;
+  const shown = () => got.filter((g) => !kciHidden(g.x.id));
   // read months (newest first) until there are enough rows for the list, or none is left
   const fill = async () => {
-    if (!months.length && !got.length) { for (const x of await kciNew()) { if (!seen.has(x.id)) { seen.add(x.id); got.push({ key: '', x }); } } return; }
-    while (mi < months.length && got.filter((g) => showAll || fits(g.x)).length < want) {
+    if (!months.length) { if (!got.length) for (const x of await kciNew()) { if (!seen.has(x.id)) { seen.add(x.id); got.push({ key: '', x }); } } return; }
+    while (mi < months.length && shown().length < want) {
       const key = months[mi++];
       for (const x of await kciMonth(key)) if (!seen.has(x.id)) { seen.add(x.id); got.push({ key, x }); }
     }
   };
   const draw = () => {
-    const shelf = shelfTitles(), rows = got.filter((g) => showAll || fits(g.x)), list = rows.slice(0, want);
+    const shelf = shelfTitles(), rows = shown(), list = rows.slice(0, want);
     let html = '', last = null;
     for (const g of list) {
       if (g.key && g.key !== last) { html += `<div class="kci-month">${esc(monthName(g.key))}</div>`; last = g.key; }
       html += kciRow(g.x, shelf);
     }
     const more = rows.length > list.length || mi < months.length;
-    const oldest = months.length ? monthName(months[months.length - 1]) : '';
+    const span = months.length ? kciSpan(st) : '';
     sec.hidden = false;
-    sec.innerHTML = `<div class="list-h"><h2 class="sec-h">KCI 법학 논문 <span class="sec-n">${showAll ? '법학 전체' : '내 분야'}${oldest ? ` · ${esc(oldest)}부터` : ''}</span></h2><button type="button" class="sec-act kci-all">${showAll ? '내 분야만' : '법학 전체'}</button></div>
-      <div class="list law-list kci-list">${html || '<p class="none">아직 내 분야의 논문이 없습니다</p>'}${more ? '<button type="button" class="more kci-more">더 보기</button>' : ''}</div>`;
+    sec.innerHTML = `<div class="list-h"><h2 class="sec-h">KCI 법학 논문${span ? ` <span class="sec-n">${esc(span)}</span>` : ''}</h2></div>
+      <div class="list law-list kci-list">${html || '<p class="none">새로 모은 논문이 없습니다</p>'}${more ? '<button type="button" class="more kci-more">더 보기</button>' : ''}</div>`;
     const mb = $('.kci-more', sec);
     if (mb) mb.onclick = async () => { if (busy) return; busy = true; mb.textContent = '불러오는 중…'; want += 20; await fill(); busy = false; if (live() && sec.isConnected) draw(); };
-    $('.kci-all', sec).onclick = async () => { showAll = !showAll; want = 8; await fill(); if (live() && sec.isConnected) draw(); };
+  };
+  // 관심 없음: the row folds away and the list keeps its length; one notice (되돌리기) speaks for those set aside together
+  let batch = [], batchTill = 0;
+  sec.onclick = async (e) => {
+    const b = e.target.closest('[data-kci-x]');
+    if (!b || !sec.contains(b)) return;
+    const id = b.dataset.kciX, item = b.closest('.kci-item');
+    if (kciHidden(id)) return;
+    kciSetHidden([id], true);
+    if (Date.now() > batchTill) batch = [];
+    batch.push(id);
+    const ids = batch.slice();
+    batchTill = Date.now() + 5000;
+    toast(ids.length > 1 ? `관심 없는 논문 ${ids.length}편을 뺐습니다` : '관심 없는 논문으로 뺐습니다', 5000, { label: '되돌리기', fn: async () => {
+      kciSetHidden(ids, false); batch = []; batchTill = 0;
+      if (live() && sec.isConnected) draw();
+    } });
+    if (item && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      item.style.height = item.offsetHeight + 'px'; void item.offsetHeight;
+      item.classList.add('gone'); item.style.height = '0px';
+      await new Promise((r) => setTimeout(r, 230));
+    }
+    await fill();
+    if (live() && sec.isConnected) draw();
   };
   await fill();
   if (live() && sec.isConnected) draw();

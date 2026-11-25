@@ -89,6 +89,8 @@ export const restoreMarks = (id, ts) => call('/marks/' + id + '/restore', { meth
 export const getState = () => call('/state');
 export const sync = (q) => call('/sync?' + new URLSearchParams(q));
 export const putState = (files) => call('/state', { method: 'PUT', body: { files } });
+export const getPrefs = () => call('/prefs');
+export const putPrefs = (hidden) => call('/prefs', { method: 'PUT', body: { hidden } });
 
 export function fileUrl(id) { return base() + '/api/files/' + id; }
 

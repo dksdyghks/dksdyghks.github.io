@@ -1,8 +1,8 @@
 """Law papers in KCI (한국학술지인용색인), gathered from its OAI-PMH (open.kci.go.kr/oai/request, metadataPrefix oai_kci):
 shelf/kci/new.json — the law papers KCI took in over the last eight weeks, newest first:
-  [{ id, t, a: [authors], j, p, y, m, v, i, s, fp, lp, open, ab, d }]
+  [{ id, t, a: [authors], j, p, y, m, v, i, s, fp, lp, open, ab, d, o, c, doi }]
   (id ART…, title, authors, journal, publisher, year, month, volume, issue, 통권, pages, 원문 공개, the start of the abstract,
-  the day KCI took it in). The app shows the ones in its owner's fields on 논문 찾기's first screen.
+  the day KCI took it in, KCI's OAI number (the whole record, with the full abstract, on demand), times cited, DOI). The app shows the ones in its owner's fields on 논문 찾기's first screen.
 shelf/kci/law/YYYY-MM.json — every law paper gathered, kept by the month it came out (YYYY-00 when KCI gives no month),
   for the last YEARS years and this one: [{ id, t, a, j, p, y, m, v, i, s, fp, lp, open, ab }], newest issue first;
   shelf/kci/law/index.json — { months: { "YYYY-MM": count }, back, through }.
@@ -23,7 +23,8 @@ import datetime, html, json, os, re, sys, time, urllib.parse, urllib.request
 
 BASE = 'https://open.kci.go.kr/oai/request'
 UA = '0128-bookshelf/1.0 (+https://0128.kr/shelf/)'
-KEEP_DAYS, MAX_DAYS, BUDGET, YEARS = 56, 21, 25 * 60, 3
+KEEP_DAYS, MAX_DAYS, YEARS = 56, 21, 3
+BUDGET = int(os.environ.get('KCI_BUDGET', 25 * 60))   # seconds a run may take (a long gathering elsewhere may give more)
 LAWISH = re.compile(r'법|입법|헌정|선거|의정|인권|정치|규제|행정')
 
 
@@ -49,11 +50,17 @@ def records(xml):
         abstracts = re.findall(r'<abstract(?: lang="(\w+)")?>([\s\S]*?)</abstract>', r)
         ab = next((a for lang, a in abstracts if lang in ('original', '')), abstracts[0][1] if abstracts else '')
         ab = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', '', ab))).strip()
+        oai = re.search(r'<identifier>oai:kci\.go\.kr:ARTI/(\d+)</identifier>', r)
+        cites = tag(r, 'citation-count')
+        doi = re.sub(r'^https?://(?:dx\.)?doi\.org/', '', tag(r, 'doi'))
         rec = dict(id=art.group(1), t=re.sub(r'\s+', ' ', title), a=[n for n in names if n][:6], j=journal, p=tag(r, 'publisher-name'),
                    y=tag(r, 'pub-year'), m=tag(r, 'pub-mon'), v=tag(r, 'volume'), i=tag(r, 'issue'), s=tag(r, 'serno'),
                    fp=tag(r, 'fpage'), lp=tag(r, 'lpage'), open=tag(r, 'orte-open-yn') == 'Y',
-                   ab=(ab[:158] + '…') if len(ab) > 160 else ab, d=tag(r, 'datestamp'))
-        out.append({k: v for k, v in rec.items() if v not in ('', [], None)})
+                   ab=(ab[:158] + '…') if len(ab) > 160 else ab, d=tag(r, 'datestamp'),
+                   o=oai.group(1) if oai else '',                      # KCI's OAI number: the whole record (full abstract) on demand
+                   c=int(cites) if cites.isdigit() and int(cites) > 0 else None,   # times cited, as KCI counts
+                   doi=doi if doi.startswith('10.') else '')
+        out.append({k: v for k, v in rec.items() if v not in ('', [], None, False) or k == 'open'})
     return out
 
 
@@ -67,7 +74,12 @@ def ask(params, tries=3):
             if '<OAI-PMH' in text:
                 return text
         except Exception as e:
-            print('  retry', k + 1, type(e).__name__, str(e)[:80])
+            body = ''
+            try:
+                body = e.read().decode('utf-8', 'replace')[:160].replace('\n', ' ') if hasattr(e, 'read') else ''
+            except Exception:
+                pass
+            print('  retry', k + 1, type(e).__name__, str(e)[:80], body)
         time.sleep(5 * (k + 1))
     return None
 
@@ -145,22 +157,30 @@ def go_back(dst):
     if d < goal:
         print('done: gathered back to', first)
         return
-    started, got, days = time.time(), [], 0
+    started, got, days, total = time.time(), [], 0, 0
+    def save():
+        archive(dst, got, back=state.get('back'))
+        with open(state_f, 'w', encoding='utf-8') as fh:
+            json.dump(state, fh)
     while d >= goal:
         recs = day(d.isoformat(), started)
+        if recs is None and time.time() - started < BUDGET - 120:   # once more, a minute later (a server busy for a moment)
+            time.sleep(60)
+            recs = day(d.isoformat(), started)
         if recs is None:
             print('stopped at', d, '(not answered, or out of time)')
             break
         got += recs
+        total += len(recs)
         state['back'] = d.isoformat()
         days += 1
-        if recs:
-            print(d, len(recs), 'law papers')
+        print(d, len(recs), 'law papers', flush=True)
         d -= datetime.timedelta(days=1)
-    archive(dst, got, back=state.get('back'))
-    with open(state_f, 'w', encoding='utf-8') as fh:
-        json.dump(state, fh)
-    print(len(got), 'law papers in', days, 'days; gathered back to', state.get('back'))
+        if days % 7 == 0:   # what is gathered is kept as it goes (a run cut short loses at most a week)
+            save()
+            got = []
+    save()
+    print(total, 'law papers in', days, 'days; gathered back to', state.get('back'))
 
 
 def main(dst):

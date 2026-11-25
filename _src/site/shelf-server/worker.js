@@ -14,6 +14,7 @@
 //   backup/marks/<id>/<ms>.json    a paper's marks as they were before the first change of a day (and before a restore), 60 days
 //   backup/lib/<YYYY-MM-DD>.json   the library as it was before the first change of that day, 60 days
 //   state.json                     where each file was last being read (newest wins)
+//   prefs.json                     a few choices kept across devices: the KCI papers set aside (관심 없음), newest wins
 //   auth/devices/<sha256(token)>   one small record per signed-in device
 //   auth/fails.json                failed sign-in counter
 //
@@ -134,6 +135,10 @@ async function route(req, env, ctx) {
       case 'state':
         if (m === 'GET') return await getState(env);
         if (m === 'PUT') return await putState(req, env);
+        break;
+      case 'prefs':
+        if (m === 'GET' && p.length === 2) return await getPrefs(env);
+        if (m === 'PUT' && p.length === 2) return await putPrefs(req, env);
         break;
       case 'law':
         if (m === 'GET' && (p[2] === 'search' || p[2] === 'item') && p.length === 3) return await lawApi(env, ctx, p[2], url);
@@ -1203,6 +1208,34 @@ async function pull(env, url) {
   const id = q.get('marks');
   if (id && ID.test(id)) await look('marks/' + id + '.json', q.get('mtag') || '', 'marks');
   return json(out);
+}
+
+/* ---------------- a few choices kept across devices ---------------- */
+// hidden: the KCI papers set aside, { ART…: { at, on } } — set aside again or brought back, the newest word wins
+async function getPrefs(env) {
+  const o = await env.BUCKET.get('prefs.json');
+  const d = o ? await o.json() : {};
+  return json({ hidden: d.hidden || {} });
+}
+async function putPrefs(req, env) {
+  const body = await readJSON(req, 256 * 1024);
+  const inc = body && typeof body.hidden === 'object' && body.hidden ? body.hidden : {};
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const o = await env.BUCKET.get('prefs.json');
+    const cur = o ? await o.json() : {};
+    cur.hidden = cur.hidden || {};
+    for (const [k, v] of Object.entries(inc)) {
+      if (!/^ART\d{6,12}$/.test(k) || !v || !Number.isFinite(v.at)) continue;
+      const x = { at: v.at, on: !!v.on };
+      if (!cur.hidden[k] || x.at >= cur.hidden[k].at) cur.hidden[k] = x;
+    }
+    const ks = Object.keys(cur.hidden);
+    if (ks.length > 20000) { ks.sort((a, b) => cur.hidden[a].at - cur.hidden[b].at); for (const k of ks.slice(0, ks.length - 20000)) delete cur.hidden[k]; }
+    const put = await env.BUCKET.put('prefs.json', JSON.stringify(cur), { httpMetadata: { contentType: 'application/json' }, onlyIf: o ? { etagMatches: o.etag } : undefined });
+    if (put === null) { await new Promise((r) => setTimeout(r, 30 + Math.random() * 90)); continue; }
+    return json({ hidden: cur.hidden });
+  }
+  return err('busy', 409);
 }
 
 /* ---------------- reading positions ---------------- */
