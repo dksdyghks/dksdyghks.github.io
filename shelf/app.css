@@ -113,7 +113,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .none { color: var(--faint); font-size: 14px; margin: 4px 4px 18px; }
 
 .resume { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.card { display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 12px; row-gap: 2px; padding: 12px; text-align: left;
+.card { display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-rows: auto auto auto; column-gap: 12px; row-gap: 2px; padding: 12px; text-align: left;   /* (a 1fr last row made Chromium give the card 40px more than its cover needs) */
   background: var(--card); border-radius: 14px; box-shadow: var(--shadow); }
 .card .thumb { grid-row: 1 / span 3; width: 54px; height: 72px; }
 .card-w { position: relative; display: grid; }
@@ -159,6 +159,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .content:not(.picking) .card-w > .ck { display: none; }
 }
 .snips { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.row:has(.snips) { align-items: flex-start; }   /* a paper with its places found: the cover beside its name, not in the middle of the list */
+.row:has(.snips) > .more { margin-top: 6px; }
 .snip { text-align: left; font-size: 13px; color: var(--ink-2); line-height: 1.45; padding: 4px 8px; border-radius: 8px; background: var(--chip); }
 .snip em { font-style: normal; font-weight: 700; color: var(--accent); margin-right: 6px; }
 mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px; }

@@ -324,6 +324,8 @@ function yearInDoi(s) {   // …/HYLR.2018.35.1.029 → 2018 (only the year)
 function issueIn(s) {
   let m = /제\s*(\d+)\s*([권집])\s*(?:제?\s*(\d+)\s*호)?/.exec(s);
   if (m) return `제${m[1]}${m[2]}${m[3] ? ` 제${m[3]}호` : ''}`;
+  m = /제\s*([권집])\s*(?:제\s*)?호\s*(\d+)\s+(\d+)(?!\d)/.exec(s);   // digits set apart from their words (제 권 호9 2: 제9권 제2호)
+  if (m) return `제${m[2]}${m[1]} 제${m[3]}호`;
   m = /(?:^|[^통권\d])제\s*(\d+)\s*호/.exec(s);
   if (m) return `제${m[1]}호`;
   m = /[』」]\s*\.?\s*(\d+)\s*\(\s*(\d+)\s*\)/.exec(s) || /Vol\.?\s*(\d+)\s*,?\s*No\.?\s*(\d+)/i.exec(s);
@@ -333,10 +335,17 @@ function issueIn(s) {
   return '';
 }
 function journalIn(s) {
-  let m = /[『「]([^』」]{2,30})[』」]/.exec(s);
+  // a name in brackets right before its volume (「법조」 제71권, 『공법연구』 제48집 제4호) is the journal
+  let m = /[『「]([^』」]{2,30})[』」]\s*,?\s*(?:통권\s*)?제\s*\d+\s*[권집호]/.exec(s);
   if (m) return m[1].trim();
   m = /^(?:사단법인\s+)?(.{2,30}?)\s*(?:\(|（)?\s*(?:통권\s*)?제\s*\d+\s*[권집호]/.exec(s);
-  if (m) { const j = m[1].replace(/\s*\(.*$/, '').replace(/[\s,·.]+$/, '').trim(); if (!/^(제\s*\d|vol|no\b|\d)/i.test(j) && /[가-힣A-Za-z]{2}/.test(j)) return j; }
+  if (m) { const j = m[1].replace(/\s*\(.*$/, '').replace(/[\s,·.]+$/, '').trim(); if (!/^(제\s*\d|vol|no\b|\d)/i.test(j) && /[가-힣A-Za-z]{2}/.test(j) && !/[「」『』]/.test(j)) return j; }
+  // a running head with the title first and the journal after it (…일고찰/조원용 7 중앙법학 제27집 제4호): the name before its volume
+  m = /(?:^|[\s/|·])([가-힣][가-힣·]{1,14})\s*(?:통권\s*)?제\s*\d+\s*[권집]/.exec(s);
+  if (m && !/^(?:법률|대통령령|조례|규칙|헌법|동법|같은법)$/.test(m[1])) return m[1];
+  // a name in brackets anywhere else — but not a law's name inside a title (이른바 「개식용종식법」에 관한 …)
+  m = /[『「]([^』」]{2,30})[』」]/.exec(s);
+  if (m && !/(?:법|법률|령|규칙|조약|협정)$/.test(m[1].replace(/\s+/g, ''))) return m[1].trim();
   return '';
 }
 function societyIn(s) {

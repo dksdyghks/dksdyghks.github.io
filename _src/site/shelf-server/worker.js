@@ -541,7 +541,14 @@ function apply(idx, ops, dev, now) {
         for (const k of ['thumb', 'text']) if (k in s) f[k] = !!s[k];
         if ('pending' in s && !s.pending) delete f.pending;
         if ('stars' in s) { const v = Math.round(Number(s.stars)); f.stars = (v >= 1 && v <= 3) || v === -1 || v === -2 ? v : 0; f.rated = f.stars ? now : null; }   // after reading: 1–3 stars, -2 = △ (unclear; skim once more), -1 = ✕ (no need to come back); 0 clears
-        f.modified = now;
+        if ('paper' in s) {   // where it was published (학술지 · 학회 · 권호 · 발간일), kept here so every device shows it at once
+          const p = s.paper && typeof s.paper === 'object' ? s.paper : null;
+          const str = (v, n) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+          const date = String((p && p.date) || '');
+          const v = p ? { journal: str(p.journal, 120), society: str(p.society, 120), issue: str(p.issue, 60), date: /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/.test(date) ? date : '' } : null;
+          if (v && (v.journal || v.date)) f.paper = v; else delete f.paper;
+        }
+        if (Object.keys(s).some((k) => k !== 'paper')) f.modified = now;   // a line filled in is not a change of the paper
         r.file = f;
         break;
       }

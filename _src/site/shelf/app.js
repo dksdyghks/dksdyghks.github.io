@@ -11,6 +11,7 @@ import * as cases from './cases.js';
 import * as laws from './laws.js';
 import * as papers from './papers.js';
 import * as research from './research.js';
+import * as biblio from './biblio.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -122,6 +123,7 @@ async function startLibrary() {
   S.state = (await store.get('kv', 'state')) || S.state;
   S.cached = new Set(await store.keys('files').catch(() => []));
   S.info = (await store.get('kv', 'paperInfo').catch(() => null)) || {};
+  texted = new Set((await store.keys('texts').catch(() => [])).map(String));
   infoAsked = (await store.get('kv', 'paperInfoAsked').catch(() => null)) || {};
   await loadTabs();
   renderShell();
@@ -145,6 +147,7 @@ async function startLibrary() {
   setTimeout(() => fetchAllMarks(), 4000);
   ocrSoon(6000);
   setTimeout(() => fillPaperInfo(), 9000);
+  setTimeout(seedPapers, 7000);
   setTimeout(async () => {   // once a day: which outside sources answer from here (the server keeps the answer, for fixing what is blocked)
     if (Date.now() - ((await store.get('kv', 'diagAt').catch(() => 0)) || 0) < 864e5 || !navigator.onLine) return;
     store.put('kv', 'diagAt', Date.now()); api.diagnose().catch(() => {});
@@ -180,11 +183,11 @@ async function pull() {
       if (S.reader) {
         renderUsage(); const f = fileById(S.readerId); if (f) S.reader.setStars(f.stars || 0);
         if (f && f.ocr && !S.reader.ocr) { const rd = S.reader; Promise.all([ocrData(f), textOf(f).catch(() => null)]).then(([d, t]) => { if (d && S.reader === rd) rd.setOcr(d.pages, t); }); }
-      } else render();
+      } else renderBg();
       setTimeout(prefetch, 800); setTimeout(preparePending, 300); if (liveFiles().some(needsOcr)) ocrSoon();
     }
     if (r.libTag) syncTags.lib = r.libTag;
-    if (r.state) { mergeState(r.state); await store.put('kv', 'state', S.state); if (!S.reader) render(); }
+    if (r.state) { mergeState(r.state); await store.put('kv', 'state', S.state); if (!S.reader) renderBg(); }
     if (r.stateTag) syncTags.state = r.stateTag;
     if (id && r.marks && S.readerId === id) await takeMarks(id, r.marks.marks || [], r.marksTag);
     if (id && r.marksTag && S.readerId === id) { syncTags.marks = r.marksTag; syncTags.marksId = id; }
@@ -238,7 +241,7 @@ async function preparePending() {
         const r = await api.ops([{ op: 'updateFile', id: f.id, set }]);
         S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
         if (set.scan) ocrSoon(1500);
-        if (S.reader) renderUsage(); else render();
+        if (S.reader) renderUsage(); else renderBg();
       } catch (e) { break; }
     }
   } finally { preparing = false; }
@@ -343,6 +346,22 @@ function closeRail() { const a = $('.app'); if (a) a.classList.remove('rail-open
 
 function renderOffline() { const o = $('.offline'); if (o) o.hidden = navigator.onLine; }
 
+// a redraw nobody asked for (another device's change, a paper's line filled in by the libraries) waits while a finger or the
+// mouse is down on the list — the row under it would be replaced and the tap lost — and comes just after the tap is done
+let pressing = false, bgWaiting = false;
+function renderBg() { if (pressing) { bgWaiting = true; return; } render(); }
+document.addEventListener('pointerdown', (e) => { if (e.target && e.target.closest && e.target.closest('.content')) pressing = true; }, { capture: true, passive: true });
+['pointerup', 'pointercancel'].forEach((ev) => document.addEventListener(ev, () => {
+  if (!pressing) return;
+  pressing = false;
+  if (bgWaiting) { bgWaiting = false; setTimeout(() => { if (!S.reader && !pressing) render(); }, 350); }   // after the tap's own click
+}, { capture: true, passive: true }));
+// a list drawn again exactly as it is stays as it is (nothing replaced under a finger, no flicker of its pictures)
+function paint(c, html) {
+  if (c._html === html && c._first && c._first === c.firstElementChild && c._first.isConnected) return false;
+  c.innerHTML = html; c._html = html; c._first = c.firstElementChild;
+  return true;
+}
 function render() {
   if (!$('.app')) return;
   for (const b of document.querySelectorAll('.views [data-view]')) b.classList.toggle('on', !S.q && b.dataset.view === S.view.kind && !(S.view.kind === 'home' && S.view.folder));
@@ -352,7 +371,7 @@ function render() {
   c.classList.toggle('picking', !!S.select);
   syncFind();
   if (S.q) { renderSearch(c); return; }
-  if (S.view.kind === 'law') { const b = c.querySelector(':scope > .law-body'); if (!b || b.dataset.law !== (S.lq || '').trim() || !b.querySelector('.law-home, .law-res')) renderLaw(c); return; }   // asked of servers: drawn again only for a new question
+  if (S.view.kind === 'law') { const b = c.querySelector(':scope > .law-body:not(.pp-body)'); if (!b || b.dataset.law !== (S.lq || '').trim() || !b.querySelector('.law-home, .law-res')) renderLaw(c); return; }   // asked of servers: drawn again only for a new question
   if (S.view.kind === 'papers') { const b = c.querySelector(':scope > .pp-body'); if (!b || b.dataset.ppkey !== paperKey() || !b.querySelector('.pp-home, .pp-res')) renderPapers(c); return; }
   if (S.view.kind === 'recent') renderRecent(c);
   else if (S.view.kind === 'trash') renderTrash(c);
@@ -459,7 +478,7 @@ function renderTools() {
 
 function sorted(files) {
   const opened = (f) => (S.state.files[f.id] && S.state.files[f.id].at) || 0;
-  const pub = (f) => (S.info[f.id] && S.info[f.id].date) || '';
+  const pub = (f) => (infoOf(f) || {}).date || '';
   const by = { added: (a, b) => b.added - a.added, published: (a, b) => (pub(b) > pub(a) ? 1 : pub(b) < pub(a) ? -1 : b.added - a.added), name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }), opened: (a, b) => opened(b) - opened(a) || b.added - a.added, stars: (a, b) => gradeRank(b.stars) - gradeRank(a.stars) || b.added - a.added }[S.sort];
   return files.slice().sort(by);
 }
@@ -474,11 +493,11 @@ function renderFolder(c, folder) {
   }
   if (!folders.length && !files.length) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
-    c.innerHTML = html; return;
+    paint(c, html); return;
   }
   html += listHead(folder ? `${folders.length + files.length}개` : files.length ? '전체' : '폴더');
   html += '<div class="list">' + folders.map(folderRow).join('') + files.map((f) => fileRow(f)).join('') + '</div>';
-  c.innerHTML = html;
+  paint(c, html);
 }
 
 const boxes = () => !S.q && S.view.kind !== 'trash';   // rows carry a checkbox here
@@ -521,7 +540,7 @@ function shownItems() {   // what the list in view shows (전체 선택 picks th
 }
 function renderRecent(c) {
   const list = recentList();
-  c.innerHTML = list.length ? listHead(`${list.length}편`) + '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`;
+  paint(c, list.length ? listHead(`${list.length}편`) + '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`);
 }
 
 function renderTrash(c) {
@@ -589,13 +608,15 @@ const snipsHtml = (r, q) => `<span class="snips">${r.snips.map((s) => `<button c
 async function pageHits(keys, live, onUpdate) {
   const ks = keys.map(findKey);
   const withText = liveFiles().filter((f) => f.text);
-  const results = [], queue = withText.slice();
+  // the papers whose texts are on this device first (their hits show at once), then the ones fetched
+  const results = [], queue = withText.filter((f) => texted.has(f.id)).concat(withText.filter((f) => !texted.has(f.id)));
   let done = 0;
   const update = () => { if (live()) onUpdate(results.sort((a, b) => b.n - a.n), done, withText.length); };
   update();
   const worker = async () => {
     while (queue.length && live()) {
       const f = queue.shift();
+      fgUntil = Math.max(fgUntil, Date.now() + 1500);   // the background waits while 찾기 fetches
       const t = await textOf(f).catch(() => null);
       done++;
       if (t && t.pages) {
@@ -619,7 +640,7 @@ async function pageHits(keys, live, onUpdate) {
       if (done % 4 === 0 || !queue.length) update();
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);   // six at a time: a new device fetches every paper's texts
   update();
 }
 
@@ -732,7 +753,7 @@ async function fillPapers(box, kind, ask, live, keep, page = 1) {
     return r;
   } catch (e) {
     if (!live()) return null;
-    const msg = e && e.code === 'offline' ? '인터넷에 연결되면 찾을 수 있습니다' : e && e.code === 'no_key' ? '국회도서관 연결이 아직 준비되지 않았습니다' : '지금은 국회도서관에 닿지 않습니다 · 잠시 뒤 다시 찾아 보세요';
+    const msg = e && e.code === 'offline' ? '인터넷에 연결되면 찾을 수 있습니다' : e && e.code === 'no_key' ? '국회도서관 연결이 아직 준비되지 않았습니다' : e && e.code === 'busy' ? '국회도서관의 하루 이용량이 다 찼습니다 · 자정이 지나면 다시 찾을 수 있습니다' : '지금은 국회도서관에 닿지 않습니다 · 잠시 뒤 다시 찾아 보세요';
     const more = list.querySelector('.more');
     if (page > 1 && more) more.textContent = '불러오지 못했습니다 · 다시 누르기';   // the rows already shown stay
     else list.innerHTML = `<p class="none">${msg}</p>`;
@@ -806,11 +827,11 @@ function researcherSheet(name, id, back) {
   const works = async () => {
     const list = $('.pp-works', body); if (!list) return;
     const more = list.querySelector('.more'); if (more) more.textContent = '불러오는 중…';
-    let r = null;
-    try { r = await papers.search(name, { kind: '', page, sort: 'new', by: 'author' }); } catch (e) { r = null; }
+    let r = null, why = null;
+    try { r = await papers.search(name, { kind: '', page, sort: 'new', by: 'author' }); } catch (e) { r = null; why = e; }
     if (!box.isConnected) return;
     if (more) more.remove();
-    if (!r) { if (page === 1) list.innerHTML = '<p class="none">지금은 국회도서관에 닿지 않습니다</p>'; return; }
+    if (!r) { if (page === 1) list.innerHTML = `<p class="none">${why && why.code === 'busy' ? '국회도서관의 하루 이용량이 다 찼습니다 · 자정이 지나면 다시 볼 수 있습니다' : '지금은 국회도서관에 닿지 않습니다'}</p>`; return; }
     const mine = r.rows.filter((x) => x.authors.includes(name) && (!rid || !x.ids[name] || x.ids[name] === rid));   // the same person, not a namesake
     const shelf = shelfTitles();
     if (page === 1) list.innerHTML = '';
@@ -835,7 +856,7 @@ function researcherSheet(name, id, back) {
       ${r.keywords.length ? `<div class="cs-sec"><h4>주제어</h4><div class="law-ex pp-kw">${r.keywords.map((k) => `<button type="button" data-kw="${esc(k)}">${esc(k)}</button>`).join('')}</div></div>` : ''}
       <div class="cs-out pp-out"><a class="btn ghost small" href="${esc('https://scholar.google.com/scholar?q=' + encodeURIComponent('author:"' + name + '"'))}" target="_blank" rel="noopener">구글 학술검색</a><a class="btn ghost small" href="${esc('https://www.riss.kr/search/Search.do?isDetailSearch=N&searchGubun=true&viewYn=OP&query=' + encodeURIComponent(name))}" target="_blank" rel="noopener">RISS</a></div>`;
     works();
-  }, () => { if (box.isConnected) body.innerHTML = '<p class="cs-wait">지금은 국회도서관에 닿지 않습니다. 잠시 뒤 다시 열어 보세요.</p>'; });
+  }, (e) => { if (box.isConnected) body.innerHTML = `<p class="cs-wait">${e && e.code === 'busy' ? '국회도서관의 하루 이용량이 다 찼습니다. 자정이 지나면 다시 열어 보세요.' : '지금은 국회도서관에 닿지 않습니다. 잠시 뒤 다시 열어 보세요.'}</p>`; });
   box.addEventListener('click', (e) => {
     if (e.target.closest('.cs-back')) { back(); return; }
     const pr = e.target.closest('[data-pid]'); if (pr) { researcherSheet(pr.dataset.pname, pr.dataset.pid, again); return; }
@@ -854,7 +875,7 @@ function yearBars(years) {
 }
 
 function lawFrame(c) {
-  if (c.querySelector(':scope > .law-top')) return;
+  if (c.querySelector(':scope > .law-top:not(.pp-top)')) return;   // its own frame (논문 찾기's frame looks alike: it is replaced)
   c.innerHTML = `<div class="law-top"><label class="law-find">${I.search}<input type="search" placeholder="사건번호 · 조문 · 법령 이름 · 낱말" enterkeyhint="search" autocomplete="off" aria-label="판례·법령 찾기" aria-autocomplete="list" aria-controls="law-sugg" aria-expanded="false"></label><div class="law-sugg" id="law-sugg" role="listbox" aria-label="법령 이름" hidden></div></div><div class="law-body"></div>`;
   const inp = $('.law-find input', c), sug = $('.law-sugg', c);
   inp.value = S.lq || '';
@@ -1165,15 +1186,25 @@ async function copyText(t) {
   try { await navigator.clipboard.writeText(t); toast('복사했습니다'); } catch (e) { toast('복사하지 못했습니다'); }
 }
 
+const textAsking = new Map();   // a paper's texts asked for once at a time (찾기 and the background fetch share one answer)
+let texted = new Set();         // the papers whose texts are kept on this device
 async function textOf(f) {
-  let t = await store.get('texts', f.id);
+  const t = await store.get('texts', f.id);
   if (t && (!f.ocr || t.ocr === f.ocr)) return t;   // a scan read since then: its texts now have the words
   if (!navigator.onLine) return t || null;
-  t = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
-  await store.put('texts', f.id, t);
-  notePaper(f.id, t);
-  return t;
+  if (!textAsking.has(f.id)) {
+    textAsking.set(f.id, (async () => {
+      const s = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
+      await store.put('texts', f.id, s); texted.add(f.id);
+      notePaper(f.id, s);
+      return s;
+    })().finally(() => textAsking.delete(f.id)));
+  }
+  return textAsking.get(f.id);
 }
+// the paper being opened comes first: what is fetched in the background waits until its first pages are drawn
+let fgUntil = 0;
+async function fgWait() { while (Date.now() < fgUntil) await new Promise((r) => setTimeout(r, 250)); }
 
 /* ---------- thumbnails: from this device, else fetched once ---------- */
 let thumbIO = null;
@@ -1194,7 +1225,7 @@ async function loadThumb(span) {
     let url = thumbUrls.get(id);
     if (!url) {
       let b = await store.get('thumbs', id);
-      if (!b) { if (!navigator.onLine) return; b = await api.getMeta(id, 'thumb'); await store.put('thumbs', id, b); }
+      if (!b) { if (!navigator.onLine) return; await fgWait(); b = await api.getMeta(id, 'thumb'); await store.put('thumbs', id, b); }
       url = URL.createObjectURL(b); thumbUrls.set(id, url);
     }
     span.style.backgroundImage = `url("${url}")`; span.classList.add('has');
@@ -1315,7 +1346,7 @@ async function flushOps() {   // changes made without internet, in order; the se
       const now = (await store.get('kv', 'pendingOps')) || [];
       await store.put('kv', 'pendingOps', now.slice(q.length));
       S.index = r.index; applyPending(now.slice(q.length)); await store.put('kv', 'index', S.index); syncTags.lib = '';
-      if (S.reader) renderUsage(); else render();
+      if (S.reader) renderUsage(); else renderBg();
     } catch (e) { /* kept; sent later */ } finally { flushing = null; }
   })();
   return flushing;
@@ -1504,6 +1535,7 @@ async function getBytes(f, onProgress) {
 
 async function openFile(id, at = {}) {
   const f = fileById(id); if (!f) return;
+  fgUntil = Date.now() + 8000;   // the background waits while this paper's first pages come (released once drawn)
   if (S.reader) closeReader(true, at.noRemember);
   const tab = addTab(id);
   if (at.tab && tab.page != null) at = { ...at, page: tab.page, y: tab.y, zoom: tab.zoom, resume: true };
@@ -1553,10 +1585,12 @@ async function openFile(id, at = {}) {
     });
     S.reader.docRef = doc;
     await S.reader.start();
+    fgUntil = Date.now() + 1500;   // drawn: the background goes on a moment later
     keepAwake();
     if (at.page == null && !at.resume && !at.tab && s && s.page > 0) S.reader.askResume(S.reader.label(s.page) + S.reader.unit());
     if (!index && f.text) textOf(f).then((t) => { if (S.reader && S.readerId === id) S.reader.setIndex(t); }).catch(() => {});
   } catch (e) {
+    fgUntil = 0;
     host.remove(); S.readerId = null;
     if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname);
     toast(e.code === 'offline' ? '이 파일은 아직 이 기기에 없습니다. 인터넷에 연결되면 열 수 있습니다.' : e.name === 'PasswordException' ? '암호가 걸린 PDF입니다' : '파일을 열지 못했습니다');
@@ -1777,7 +1811,7 @@ async function ocrFile(f, mod) {
     S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
     await store.del('kv', 'ocr:' + f.id); for (const i of todo) await store.del('kv', key(i));
     if (S.reader && S.readerId === f.id) S.reader.setOcr(data.pages, t);
-    if (S.reader) renderUsage(); else render();
+    if (S.reader) renderUsage(); else renderBg();
     libSoon();
   } finally { doc.destroy(); }
 }
@@ -1796,19 +1830,44 @@ async function ocrData(f) {   // a read paper's words for the reader: kept here,
 }
 
 /* ---------- where a paper was published (journal · society · date), read from its first page and kept in its page texts,
-   so every device learns it with the texts (no extra request). S.info: id -> { journal, society, issue, date } or null ---------- */
+   and in the library's index too (f.paper), so every device shows it at once — a new one without fetching any paper's texts.
+   S.info: id -> { journal, society, issue, date } or null, what this device read ---------- */
 let infoT = null;
 function notePaper(id, t, quiet) {
   if (!t || t.paper === undefined) return;
   const v = t.paper || null;
+  queuePaper(id, v);
   if (JSON.stringify(S.info[id] ?? null) === JSON.stringify(v) && id in S.info) return;
   S.info[id] = v;
-  clearTimeout(infoT); infoT = setTimeout(() => { store.put('kv', 'paperInfo', S.info); if (!S.reader && !quiet) render(); }, 500);
+  clearTimeout(infoT); infoT = setTimeout(() => { store.put('kv', 'paperInfo', S.info); if (!S.reader && !quiet) renderBg(); }, 500);
 }
-const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal, society: r.society, issue: r.issue, date: r.date } : null);
+const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal || '', society: r.society || '', issue: r.issue || '', date: r.date || '' } : null);
+const infoOf = (f) => (f && (f.paper || S.info[f.id])) || null;   // the index's (shared, newest) first, else what this device read
+// a paper's line written into the library's index as well (a few at a time, once each), never clearing what is there
+const paperQ = new Map();
+function queuePaper(id, v) {
+  const f = fileById(id), want = paperOf(v);
+  if (!f || !want || JSON.stringify(f.paper || null) === JSON.stringify(want)) return;
+  paperQ.set(id, want);
+  clearTimeout(queuePaper.t); queuePaper.t = setTimeout(flushPapers, 2500);
+}
+async function flushPapers() {
+  if (!paperQ.size || !syncOn || !navigator.onLine) return;
+  const ops = [...paperQ].map(([id, paper]) => ({ op: 'updateFile', id, set: { paper } }));
+  paperQ.clear();
+  try {
+    for (let i = 0; i < ops.length; i += 40) {
+      const r = await api.ops(ops.slice(i, i + 40));
+      S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+    }
+  } catch (e) { /* the next start asks again */ }
+}
+function seedPapers() {   // what this device read before the index kept lines: written there once
+  for (const f of liveFiles()) if (S.info[f.id]) queuePaper(f.id, S.info[f.id]);
+}
 const pubText = (d) => (d ? d.replace(/^(\d{4})-(\d{2})(?:-\d{2})?$/, (m, y, mo) => `${y}. ${+mo}.`).replace(/^(\d{4})$/, '$1.') : '');   // 2018-03 → 2018. 3.; a year alone → 2018.
 function paperLine(f) {   // 학술지 · 학회 · 발간일, as a citation lists them (a narrow screen leaves the society out, so the date stays in view)
-  const i = S.info[f.id];
+  const i = infoOf(f);
   if (!i || !(i.journal || i.date)) return '';
   const jn = String(i.journal || '').replace(/[\s┃│|ㅣ]+$/, '');   // a stray rule character read with it
   let s = jn ? esc(jn) + (i.issue ? ' ' + esc(i.issue) : '') : '';
@@ -1827,12 +1886,13 @@ async function fillPaperInfo() {
   if (filling || !syncOn) return;
   filling = true;
   try {
-    for (const f of liveFiles().filter((x) => x.text && !askedInfo.has(x.id) && (!(x.id in S.info) || askAgain(x.id)))) {
+    for (const f of liveFiles().filter((x) => x.text && !x.paper && !askedInfo.has(x.id) && (!(x.id in S.info) || askAgain(x.id)))) {   // (a line the index keeps needs no texts fetched)
       if (!navigator.onLine || document.hidden) break;
       if (needsOcr(f) || OCR.id === f.id) continue;   // a scan still to be read: its reading fills this in (and writes its texts)
       let t = await store.get('texts', f.id).catch(() => null);
       if (t && t.paper !== undefined && !(f.id in S.info)) { notePaper(f.id, t); if (t.paper) continue; }
       askedInfo.add(f.id); infoAsked[f.id] = Date.now(); store.put('kv', 'paperInfoAsked', infoAsked);   // the server's page texts
+      await fgWait();
       try {
         const s = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
         if (s && s.paper !== undefined) { await store.put('texts', f.id, s); notePaper(f.id, s); if (s.paper) continue; }
@@ -1847,7 +1907,7 @@ async function fillPaperInfo() {
           if (pics.length > (f.scan || 0)) {
             const r = await api.ops([{ op: 'updateFile', id: f.id, set: { scan: pics.length } }]);
             S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
-            ocrSoon(1500); if (!S.reader) render();
+            ocrSoon(1500); if (!S.reader) renderBg();
             continue;
           }
         }
@@ -1875,19 +1935,7 @@ async function fillPaperInfo() {
    what the page itself said is never changed. The answer is written into the paper's texts like the rest, so every device
    has it. A paper the library does not know is asked about again after a month. */
 let libAsked = null, libRunning = false;
-const libNorm = (s) => naming.hangulize(String(s || '')).replace(/<[^>]+>/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
-function libSociety(x) {
-  let t = naming.hangulize(String((x && x.pubInfo) || '').replace(/<[^>]+>/g, '')).replace(/\d{6,8}/g, ' ').replace(/(^|\D)(?:19|20)\d{2}(?!\d)/g, '$1 ');
-  const at = t.indexOf(':');
-  if (at >= 0) {   // "place : publisher": a short place name before the colon goes
-    const before = t.slice(0, at).trim(), after = t.slice(at + 1).trim();
-    t = !before || (/^[가-힣]{2,3}(?:시|군|도)?$/.test(before) && !/학회|대학|연구|원|사$|회$/.test(before)) ? after : before + ' ' + after;
-  }
-  t = t.replace(/^(?:서울|파주|고양|성남|과천|세종|대전|부산|대구|광주|인천|울산|수원|춘천|청주|전주|제주)\s+(?=\S)/, '').replace(/\s+(?:서울|파주|고양|성남|과천|세종|대전|부산|대구|광주|인천|울산|수원|춘천|청주|전주|제주)$/, '').replace(/[\s,:;]+/g, ' ').trim();
-  if (/^(?:법학)?연구(?:소|원)$|^법학연구$/.test(t)) return '';   // "법학연구소" alone: whose is not said
-  return /[가-힣A-Za-z]{2,}/.test(t) ? t : '';
-}
-function libNeeds(i) { return !i || !i.date || /^\d{4}$/.test(i.date) || !(i.journal || i.society) || (!!i.journal && !i.issue); }
+const libNorm = biblio.norm;
 const hasAuthor = (name) => /^[^_]{2,20}_\S/.test(name);
 const mainTitle = (t) => { const m = /^(.{8,}?)\s+[-―—–]\s*\S.*$/.exec(t) || /^(.{8,}?)\s*:\s*\S.*$/.exec(t); return (m ? m[1] : t).trim(); };   // the subtitle off
 function libAuthor(x) {   // 林智奉 → 임지봉; "홍길동 ; 김철수" → 홍길동 외
@@ -1895,14 +1943,13 @@ function libAuthor(x) {   // 林智奉 → 임지봉; "홍길동 ; 김철수" �
     .map((s) => naming.personName(s.replace(/\s*(?:\[[^\]]*\]|\([^)]*\)|저|지음|공저|편저|편|역|옮김)$/g, '').trim())).filter(Boolean);
   return names.length ? names[0] + (names.length > 1 ? ' 외' : '') : '';
 }
-// 국회도서관 국가학술정보 클라우드: the records of exactly this title (학술기사), each with its authors in Hangul, its journal and
-// its publisher — the surest outside answer to "who wrote this" for a Korean law paper
-async function nanetSame(title) {
-  const d = await api.nanet('search', { searchTerm: mainTitle(title).slice(0, 80), searchRange: 'ARTICLE', printRowCnt: '10' });
-  const want = libNorm(mainTitle(title));
-  return (((d && d.result && d.result[0] && d.result[0].searchList) || []))
-    .filter((x) => libNorm(mainTitle(papers.clean(x.title).split(/\s=\s/)[0])) === want);
+// 국회도서관 국가학술정보 클라우드: its records (학술기사) found by the title, each with its authors in Hangul, its journal and its
+// publisher — the surest outside answer to "who wrote this" and "where" for a Korean law paper
+async function nanetRows(title) {
+  const d = await papers.ask('search', { searchTerm: biblio.searchTerm(title), searchRange: 'ARTICLE', printRowCnt: '10' });
+  return (d && d.result && d.result[0] && d.result[0].searchList) || [];
 }
+const sameTitle = (rows, title) => { const want = libNorm(mainTitle(title)); return rows.filter((x) => libNorm(mainTitle(papers.clean(x.title).split(/\s=\s/)[0])) === want); };
 const nanetNames = (x) => ((x && x.authorList) || []).map((a) => naming.personName(a.name)).filter(Boolean);
 const nameText = (names) => (names.length === 1 ? names[0] : names.length === 2 ? names.join('·') : names[0] + ' 외');   // as the first page's names are written
 function nanetAuthor(same) {   // one name text when every record of the title agrees on it, else ''
@@ -1918,18 +1965,24 @@ async function libraryInfo() {
   libRunning = true;
   let changed = false;
   try {
-  if (!libAsked) libAsked = (await store.get('kv', 'libAsked2').catch(() => null)) || {};   // (2: asked again once, now that 국회도서관 answers too)
+  // (3: every paper whose line wants something asked again once, now that the libraries' records are merged)
+  if (!libAsked) libAsked = (await store.get('kv', 'libAsked3').catch(() => null)) || {};
   for (const f of liveFiles()) {
     if (!navigator.onLine || document.hidden) break;
     const unnamed = !hasAuthor(f.name) && (!f.orig || f.name === f.orig) && S.prefs.autoName !== false && !f.pending;   // still its uploaded name
-    const known = f.id in S.info;   // its first page was read (a scan still to be read is not, yet it can be named from its title)
-    if (!(unnamed || (known && libNeeds(S.info[f.id]))) || Date.now() - (libAsked[f.id] || 0) < 30 * 864e5) continue;
+    const known = f.id in S.info || !!f.paper;   // its first page was read (a scan still to be read is not, yet it can be named from its title)
     const name = stem(f.name), cut = hasAuthor(f.name) ? name.indexOf('_') : -1;
     const author = cut > 0 ? name.slice(0, cut).replace(/\s*외$/, '') : '', title = (cut > 0 ? name.slice(cut + 1) : name).trim();
+    if (!(unnamed || (known && biblio.wants(infoOf(f), title))) || Date.now() - (libAsked[f.id] || 0) < 30 * 864e5) continue;
     if (libNorm(title).length < 6) continue;
-    libAsked[f.id] = Date.now(); store.put('kv', 'libAsked2', libAsked).catch(() => {});
-    let same = [];   // 국회도서관's records of this very title
-    try { same = await nanetSame(title); } catch (e) { if (api.isOffline(e)) break; }
+    libAsked[f.id] = Date.now(); store.put('kv', 'libAsked3', libAsked).catch(() => {});
+    await fgWait();
+    let rows = [];   // 국회도서관's records found by this title
+    try { rows = await nanetRows(title); } catch (e) {
+      // offline, or 국회도서관's daily allowance used up: this paper is asked again another time, and the round ends here
+      if (api.isOffline(e) || (e && e.code === 'busy')) { delete libAsked[f.id]; store.put('kv', 'libAsked3', libAsked).catch(() => {}); break; }
+    }
+    const same = sameTitle(rows, title);
     let d = null;
     try { d = await api.nlib('search', { apiType: 'json', srchTarget: 'title', kwd: mainTitle(title).slice(0, 60), pageNum: '1', pageSize: '10' }); } catch (e) { if (api.isOffline(e)) break; }
     if (unnamed) {   // named 저자_제목 only when the libraries' records of exactly this title agree on one author (국회도서관 first)
@@ -1946,31 +1999,17 @@ async function libraryInfo() {
           S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = ''; changed = true;
         } catch (e) { /* next time */ }
       }
-      if (!known || !libNeeds(S.info[f.id])) continue;
+      if (!known || !biblio.wants(infoOf(fileById(f.id) || f), title)) continue;
     }
-    const want = libNorm(title), who = libNorm(author);
-    const hits = ((d && d.result) || []).filter((x) => /기사|논문/.test(x.typeName || '') && (libNorm(x.titleInfo).startsWith(want.slice(0, 14)) || want.startsWith(libNorm(x.titleInfo).slice(0, 14))) && (!who || libNorm(x.authorInfo).includes(who)));
-    const cur = S.info[f.id] || {};
-    const merged = { journal: String(cur.journal || '').replace(/[\s┃│|ㅣ]+$/, ''), society: cur.society || '', issue: cur.issue || '', date: cur.date || '' };
-    if (hits.length) {   // 국립중앙도서관: the date (to the month) and the society
-      const ymd = (x) => String(x.pubYearInfo || '').replace(/\D/g, '');
-      const best = hits.slice().sort((a, b) => ymd(b).length - ymd(a).length)[0];
-      const digits = ymd(best);
-      const date = digits.length >= 6 ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}` : digits.length === 4 ? digits : '';
-      // the society: the print record says it plainly (한양대학교 법학연구소); the online one adds a place and a date (서울 : 韓國公法學會, 20220228)
-      merged.society = merged.society || libSociety(hits.find((x) => /오프라인/.test(x.menuName || '')) || hits[0]) || hits.map(libSociety).filter(Boolean)[0] || '';
-      if (!(cur.date && !(/^\d{4}$/.test(cur.date) && date.startsWith(cur.date) && date.length > 4))) merged.date = date || cur.date || '';
-    } else {   // not in 국립중앙도서관: 국회도서관's record (journal, publisher, year), when it is this author's
-      const mine = same.find((x) => !who || nanetNames(x).some((n) => libNorm(n) === who));
-      if (mine) {
-        merged.journal = merged.journal || naming.hangulize(String((mine.journal && mine.journal.title) || '')).trim();
-        merged.society = merged.society || naming.hangulize(String(mine.publisher || '')).trim();
-        merged.date = merged.date || (/^\d{4}$/.test(String(mine.pubYear || '')) ? String(mine.pubYear) : '');
-      }
-    }
-    if (merged.journal && !merged.issue) {   // the volume and issue, from Crossref (its Korean original title and the year agreeing)
+    // where it was published: what the first page said, set right and filled in by the libraries' records of this very paper
+    // (국회도서관: the journal; 국립중앙도서관: the date to the month; Crossref: the volume, issue and month)
+    const cur = infoOf(fileById(f.id) || f) || {};
+    const nanet = biblio.nanetOf(rows, title, author), nl = biblio.nlOf((d && d.result) || [], title, author);
+    let merged = biblio.merge(cur, { nanet, nl }).info;
+    if (merged.journal && (!merged.issue || !/^\d{4}-\d{2}/.test(merged.date))) {
       const cr = await papers.crossref({ title: mainTitle(title), year: String(merged.date || '').slice(0, 4), authors: [] }).catch(() => null);
-      if (cr && (cr.volume || cr.issue)) merged.issue = [cr.volume && `제${cr.volume}권`, cr.issue && `제${cr.issue}호`].filter(Boolean).join(' ');
+      if (cr) merged = biblio.merge(cur, { nanet, nl, cr }).info;
+      await new Promise((ok) => setTimeout(ok, 350));   // Crossref is asked gently, one paper at a time
     }
     if (!paperOf(merged) || JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) continue;
     try {
@@ -1983,7 +2022,7 @@ async function libraryInfo() {
   }
   } finally {
     libRunning = false;
-    if (changed && !S.reader) render();   // drawn once, after all of them
+    if (changed && !S.reader) renderBg();   // drawn once, after all of them
     if (libAgain) { libAgain = false; libSoon(1500); }
   }
 }
@@ -2150,6 +2189,7 @@ async function prefetchRun() {
     if (!navigator.onLine || document.hidden) return;
     const have = await store.get('texts', f.id).catch(() => null);
     if (have && (!f.ocr || have.ocr === f.ocr)) continue;
+    await fgWait();
     try { await textOf(f); } catch (e) { break; }
   }
   const mode = keepMode();
@@ -2161,6 +2201,7 @@ async function prefetchRun() {
   for (const f of todo) {
     if (!navigator.onLine || document.hidden) break;
     if (S.readerId && !S.cached.has(S.readerId)) { await new Promise((r) => setTimeout(r, 1500)); continue; }   // the open paper first
+    await fgWait();
     if (f.size > budget) continue;
     try { await getBytes(f); budget -= f.size; renderUsage(); if (!S.reader) render(); } catch (e) { break; }
     if (f.ocr) await ocrData(f);

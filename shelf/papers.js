@@ -40,6 +40,15 @@ function shape(x) {
   };
 }
 
+// 국회도서관 asked through the server; an answer that is an error (its daily allowance used up: "트랙픽 양이 초과 되었습니다")
+// is thrown, never taken for "nothing found" — and never kept
+export async function ask(op, params) {
+  const d = await api.nanet(op, params);
+  const r = d && Array.isArray(d.result) ? d.result.find((x) => x && x.error) : null;
+  const e = r && (Array.isArray(r.error) ? r.error[0] : r.error);
+  if (e) throw Object.assign(new Error(String(e.message || 'nanet')), { code: /트랙픽|트래픽|초과|traffic|limit/i.test(String(e.message || '')) ? 'busy' : 'unavailable' });
+  return d;
+}
 const asked = new Map();   // each question asked once while the app is open
 export async function search(q, { kind = 'ARTICLE', page = 1, sort = '', by = '' } = {}) {
   const key = [q, kind, page, sort, by].join('\u0001');
@@ -48,7 +57,7 @@ export async function search(q, { kind = 'ARTICLE', page = 1, sort = '', by = ''
   if (kind) params.searchRange = kind;
   if (sort === 'new') { params.searchSort = 'year'; params.sortType = 'desc'; }
   if (by === 'author') params.searchType = 'AUTHOR';
-  const d = await api.nanet('search', params);
+  const d = await ask('search', params);
   const r = (d && d.result && d.result[0]) || {};
   const out = { total: Number(r.totalCount) || 0, rows: (r.searchList || []).map(shape).filter((x) => x.id && x.title) };
   asked.set(key, out);
@@ -59,7 +68,7 @@ const seen = new Map();
 export async function detail(row) {
   const key = row.id + ':' + row.kind;
   if (seen.has(key)) return seen.get(key);
-  const d = await api.nanet('view', { lodID: row.id, divFlag: row.kind });
+  const d = await ask('view', { lodID: row.id, divFlag: row.kind });
   const v = d && d.result && d.result[0] && d.result[0].searchView;
   if (!v) return null;
   const out = {
@@ -132,14 +141,14 @@ export async function researcher(name, id) {
   const key = (id || '') + ':' + name;
   if (people.has(key)) return people.get(key);
   let prof = null;
-  const pd = await api.nanet('author', id ? { lodID: id } : { name_ko: name, size: '20' }).catch(() => null);
+  const pd = await ask('author', id ? { lodID: id } : { name_ko: name, size: '20' }).catch((e) => { if (e && e.code === 'busy') throw e; return null; });
   const profs = (((pd && pd.result) || []).flat()).filter(Boolean).map((x) => ({ id: clean(x.lodID), name: person(x.name_ko) || clean(x.name_ko), nameEn: clean(x.name_en), org: clean(x.orgName_ko), position: clean(x.position) }));
   if (id) prof = profs.find((x) => x.id === id) || profs[0] || null;
   else if (profs.length === 1) prof = profs[0];
   const out = { name, id: id || (prof && prof.id) || '', prof, others: id || prof ? [] : profs.filter((x) => x.name === name).slice(0, 12), years: [], people: [], journals: [], keywords: [] };
   if (out.id) {
     const q = { searchTerm: name, searchType: 'AUTHOR', searchID: out.id };
-    const [tr, ra, rj, rk] = await Promise.all(['trend', 'relAuthor', 'relJournal', 'relKeyword'].map((op) => api.nanet(op, q).catch(() => null)));
+    const [tr, ra, rj, rk] = await Promise.all(['trend', 'relAuthor', 'relJournal', 'relKeyword'].map((op) => ask(op, q).catch(() => null)));
     out.years = firstList(tr, 'trendList').map((y) => ({ year: Number(y.year), count: Number(y.count) || 0 })).filter((y) => y.year > 1900).sort((a, b) => a.year - b.year);
     out.people = firstList(ra, 'authorList').map((a) => ({ id: clean(a.lodAuthorID), name: person(a.name) || clean(a.name) })).filter((a) => a.name && a.name !== name).slice(0, 16);
     out.journals = firstList(rj, 'journalList').map((j) => naming.hangulize(clean(j.name))).filter(Boolean).slice(0, 12);
@@ -166,7 +175,9 @@ export async function crossref(p) {
     && (!Number(p.year) || !crYear(it) || Math.abs(crYear(it) - Number(p.year)) <= 1));
   // a journal numbered once (인권과 정의 제513호) is deposited as a volume alone: that number is its issue
   const v = clean(hit && hit.volume), n = clean(hit && hit.issue);
-  const out = hit ? { volume: n ? v : '', issue: n || v, pages: clean(hit.page).replace(/\s*[-–~]+\s*/, '-'), doi: clean(hit.DOI) } : null;
+  const dp = hit ? (((hit.issued || hit.published || {})['date-parts'] || [[]])[0] || []) : [];
+  const date = dp[0] && dp[1] ? `${dp[0]}-${String(dp[1]).padStart(2, '0')}` : '';   // to the month, when it is told
+  const out = hit ? { volume: n ? v : '', issue: n || v, pages: clean(hit.page).replace(/\s*[-–~]+\s*/, '-'), doi: clean(hit.DOI), date } : null;
   crSeen.set(key, out);
   return out;
 }
