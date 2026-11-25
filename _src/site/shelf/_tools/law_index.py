@@ -1,0 +1,55 @@
+"""The index of the laws kept in the public mirror legalize-kr (법제처's texts): shelf/lawidx.json, folder → [name, files]
+(files: '' for a law alone, else e.g. '법률,시행령,시행규칙' or '중앙선거관리위원회규칙'). The name is read from the head of
+each folder's main file (a ranged request: the first 700 bytes).
+
+  git clone --filter=blob:none --no-checkout --depth 1 https://github.com/legalize-kr/legalize-kr laws
+  git -C laws -c core.quotePath=false ls-tree -r --name-only HEAD kr/ | sed 's#^kr/##' > law-files.txt
+  python3 law_index.py law-files.txt ../lawidx.json
+"""
+import json, ssl, sys, urllib.parse, urllib.request, concurrent.futures as cf
+
+ORDER = ['법률', '헌법', '대통령령']
+KEEP = ['헌법', '법률', '대통령령', '시행령', '시행규칙']
+
+
+def main(listing, dst, cafile=None):
+    files = {}
+    for l in open(listing, encoding='utf-8'):
+        l = l.strip()
+        if l.endswith('.md') and l.count('/') == 1:
+            d, f = l.split('/')
+            files.setdefault(d, []).append(f[:-3])
+    ctx = ssl.create_default_context(cafile=cafile) if cafile else None
+
+    def main_file(fs):
+        return next((o for o in ORDER if o in fs), next((f for f in fs if f not in ('시행령', '시행규칙')), fs[0]))
+
+    def name(d):
+        url = ('https://raw.githubusercontent.com/legalize-kr/legalize-kr/main/kr/' + urllib.parse.quote(d) + '/'
+               + urllib.parse.quote(main_file(files[d])) + '.md')
+        for _ in range(3):
+            try:
+                req = urllib.request.Request(url, headers={'Range': 'bytes=0-699'})
+                with urllib.request.urlopen(req, context=ctx, timeout=20) as r:
+                    head = r.read().decode('utf-8', 'ignore')
+                for line in head.split('\n')[1:]:
+                    if line.startswith('제목:'):
+                        return d, line.split(':', 1)[1].strip().strip("'")
+                return d, ''
+            except Exception:
+                pass
+        return d, ''
+
+    with cf.ThreadPoolExecutor(6) as ex:
+        names = dict(ex.map(name, files))
+    out = {}
+    for d in sorted(files):
+        fs = sorted(files[d], key=lambda f: (KEEP.index(f) if f in KEEP else len(KEEP), f))
+        out[d] = [names.get(d) or d, '' if fs == ['법률'] else ','.join(fs)]
+    with open(dst, 'w', encoding='utf-8') as fh:
+        json.dump(out, fh, ensure_ascii=False, separators=(',', ':'))
+    print(len(out), 'laws,', sum(1 for d in out if out[d][0] == d and ' ' not in d and not names.get(d)), 'without a name read')
+
+
+if __name__ == '__main__':
+    main(sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None)

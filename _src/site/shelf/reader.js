@@ -5,7 +5,7 @@
 import { lib, pageItems } from './pdfkit.js';
 import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
 import { scanCases, linkCases, caseView, judgmentView, wireCase, cite } from './cases.js';
-import { scanArticles, scanCourtCases, articleQuery, artLabel, paras, lawGoKr, courtCite } from './laws.js';
+import { scanArticles, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText } from './laws.js';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
 // soft tints: butter, mint, sky, pink, lilac, apricot.
@@ -1235,14 +1235,14 @@ export class Reader {
   }
   async courtFill(v, head, body) {
     const msg = (html) => { if (this.noteView === v) { body.innerHTML = html; this.notePlace(); } };
-    const out = `<a class="btn ghost small" href="${lawGoKr.case(v.no)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a>`;
+    const out = `<a class="btn ghost small" href="${lawGoKr.case((courtQuery(v.no) || { no: v.no }).no)}" target="_blank" rel="noopener">국가법령정보센터에서 찾기</a>`;
     let d;
     try { d = await (this.o.courtCase ? this.o.courtCase(v.no) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
-      const why = e && e.code === 'offline' ? '인터넷에 연결되면 판결을 볼 수 있습니다.' : e && e.code === 'unregistered' ? '법원 판결은 국가법령정보 연결을 마치면 여기서 바로 보입니다.' : '지금은 판결을 불러오지 못했습니다.';
+      const why = e && e.code === 'offline' ? '인터넷에 연결되면 판결을 볼 수 있습니다.' : '지금은 판결을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
       msg(`<p class="cs-wait">${why}</p><p>${out}</p>`); return;
     }
-    if (!d) { msg(`<p class="cs-wait">국가법령정보에서 이 사건을 찾지 못했습니다. 공개되지 않은 판결일 수 있습니다.</p><p>${out}</p>`); return; }
+    if (!d) { msg(`<p class="cs-wait">법제처가 공개한 판결 가운데 이 사건이 없습니다. 공개되지 않은 판결이거나 번호가 다를 수 있습니다.</p><p>${out}</p>`); return; }
     if (this.noteView !== v) return;
     head.textContent = courtCite(d); v.copy = courtCite(d);
     body.innerHTML = judgmentView(d); wireCase(body, d);
@@ -1267,7 +1267,7 @@ export class Reader {
     try { got = await (this.o.article ? this.o.article(r) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
       if (this.noteView !== v) return;
-      const why = e && e.code === 'offline' ? '인터넷에 연결되면 조문을 볼 수 있습니다.' : e && e.code === 'unregistered' ? '이 법률의 조문은 국가법령정보 연결을 마치면 여기서 바로 보입니다.' : e && e.code === 'nolaw' ? '국가법령정보에서 이 이름의 법령을 찾지 못했습니다.' : '지금은 조문을 불러오지 못했습니다.';
+      const why = e && e.code === 'offline' ? '인터넷에 연결되면 조문을 볼 수 있습니다.' : e && e.code === 'nolaw' ? '그 이름의 법령을 찾지 못했습니다.' : '지금은 조문을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
       body.innerHTML = `<p class="cs-wait">${why}</p><p>${out}</p>${reviewed}`; wire(); this.notePlace(); return;
     }
     if (this.noteView !== v) return;
@@ -1276,8 +1276,14 @@ export class Reader {
     const ps = paras(a), pick = r.para && ps[r.para - 1] ? r.para : 0;
     head.textContent = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}`;
     v.copy = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}\n${pick ? ps[pick - 1] : a.text}`;
+    // a coming amendment: the article as it will read (what changes marked), or that it stays; a text not yet in force says so
+    const pend = pendingArt(law, a);
+    const coming = law.ahead ? `<p class="lc-ahead">${esc(dateText(law.rev))}부터 시행되는 조문입니다. 지금 시행 중인 조문은 국가법령정보센터에서 확인하세요.</p>`
+      : !law.next ? '' : !pend ? `<p class="lc-same">${esc(dateText(law.next.rev))} 시행 예정 개정이 있으나 이 조문은 그대로입니다.</p>`
+      : !pend.art ? `<p class="lc-ahead">${esc(pend.date)}부터 이 조문은 없어집니다.</p>`
+      : `<details class="lc-next" open><summary>${esc(pend.date)}부터 이렇게 바뀝니다</summary><div class="lc-t">${pendingParas(a, pend.art).map((p) => (p.diff ? `<p class="chg">${p.diff.map(([k, t]) => (k === '=' ? esc(t) : k === '+' ? `<ins>${esc(t)}</ins>` : `<del>${esc(t)}</del>`)).join('')}</p>` : `<p>${linkCases(p.text)}</p>`)).join('')}</div></details>`;
     body.innerHTML = `${a.title ? `<div class="cs-name">${artLabel(a)}(${esc(a.title)})</div>` : ''}<div class="cs-meta">${[a.chapter, law.title].filter(Boolean).map(esc).join(' · ')}</div>`
-      + `<div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div><p>${out}</p>${reviewed}`;
+      + `<div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div>${coming}<p>${out}</p>${reviewed}`;
     wire();
     this.notePlace();
   }

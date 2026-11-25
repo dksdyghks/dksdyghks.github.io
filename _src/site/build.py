@@ -648,6 +648,30 @@ ldst = Path('/home/user/dksdyghks.github.io/logos')  # institution logos for the
 if ldst.exists():
     shutil.rmtree(ldst)
 shutil.copytree(Path('/home/user/yohan-ahn/logos'), ldst)
+# 연구실 책장's first screens follow this page: the provisions examined in the research (PROVISIONS) and the cases a work
+# names in its title are written into the app's folder as research.json, so the app and the page never differ
+def shelf_research():
+    import json
+    works = [(w[1].rstrip(':').strip(), ' '.join(x for x in w[1:3] if x)) for w in PAPERS] + [(t['ko'], t['ko']) for t in THESES]
+    cases = []
+    for title, text in works:
+        for m in re.finditer(r'(대법원|헌법재판소)\s*((?:19|20)\d{2}\.\s*\d{1,2}\.\s*\d{1,2}\.)\s*(?:선고|자)?\s*((?:19|20)?\d{2}[가-힣]{1,3}\d{1,7})', text):
+            cases.append(dict(court=m.group(1), date=m.group(2), no=m.group(3), work=title))
+    data = dict(
+        provisions=[dict(group=g, items=[dict(law=x[0], arts=[a.strip() for a in x[2].split('·')], topic=x[4],
+                                              works=[k.rstrip(':').strip() for k in x[6]]) for x in items])
+                    for g, _, items in PROVISIONS],
+        cases=cases,
+    )
+    out = json.dumps(data, ensure_ascii=False, indent=1) + '\n'
+    p = Path('/home/user/yohan-ahn/shelf/research.json')
+    if not (p.parent / 'prec').exists():
+        print('WARNING: shelf/prec/ (the index of the courts\' judgments) is missing: run shelf/_tools/prec_index.py')
+    if p.parent.exists() and (not p.exists() or p.read_text() != out):
+        p.write_text(out)
+
+
+shelf_research()
 for app in ('psat', 'shelf'):
     src = Path('/home/user/yohan-ahn') / app
     if not src.exists():
@@ -703,6 +727,7 @@ if (sdst / 'yoai').exists():  # YO아이 was closed: its sources are no longer k
 for app in ('psat', 'shelf', 'shelf-server', 'shelf-icon'):
     if (sdst / app).exists():
         shutil.rmtree(sdst / app)
-    # 연구실 책장's third-party code (vendor/: pdf.js, pdf-lib) is published with the app; it is not kept twice here
-    shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__', 'vendor', 'node_modules'))
+    # 연구실 책장's third-party code (vendor/: pdf.js, pdf-lib) and its index of the courts' judgments (prec/, made by
+    # shelf/_tools/prec_index.py) are published with the app; they are not kept twice here
+    shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__', 'vendor', 'node_modules', 'prec'))
 print('sources kept in _src/site')

@@ -148,3 +148,33 @@ export async function researcher(name, id) {
   people.set(key, out);
   return out;
 }
+
+// Crossref (the DOI registry, where many Korean journals deposit their papers): the same paper — its Korean title (Crossref
+// keeps it as the 'original-title') and its year agreeing — for its volume, issue, pages and DOI. null when not there.
+const crSeen = new Map();
+const crYear = (it) => Number((((it.issued || it.published || {})['date-parts'] || [[0]])[0] || [0])[0]) || 0;
+export async function crossref(p) {
+  const want = norm(mainTitle(p.title));
+  const key = want + '|' + p.year;
+  if (!want) return null;
+  if (crSeen.has(key)) return crSeen.get(key);
+  const q = new URLSearchParams({ 'query.bibliographic': mainTitle(p.title).slice(0, 120), rows: '8', select: 'DOI,title,original-title,volume,issue,page,issued,published' });
+  const r = await fetch('https://api.crossref.org/works?' + q, { signal: AbortSignal.timeout(12000) });
+  if (!r.ok) throw Object.assign(new Error('crossref'), { code: r.status === 429 ? 'busy' : 'unavailable' });
+  const d = await r.json();
+  const hit = ((d && d.message && d.message.items) || []).find((it) => [...(it['original-title'] || []), ...(it.title || [])].some((t) => norm(mainTitle(t)) === want)
+    && (!Number(p.year) || !crYear(it) || Math.abs(crYear(it) - Number(p.year)) <= 1));
+  // a journal numbered once (인권과 정의 제513호) is deposited as a volume alone: that number is its issue
+  const v = clean(hit && hit.volume), n = clean(hit && hit.issue);
+  const out = hit ? { volume: n ? v : '', issue: n || v, pages: clean(hit.page).replace(/\s*[-–~]+\s*/, '-'), doi: clean(hit.DOI) } : null;
+  crSeen.set(key, out);
+  return out;
+}
+// what the outside records add to a paper, ScienceON first and Crossref where it is silent
+export async function extra(p) {
+  const [a, b] = await Promise.allSettled([scienceon(p), crossref(p)]);
+  const s = a.status === 'fulfilled' ? a.value : null, c = b.status === 'fulfilled' ? b.value : null;
+  if (!s && !c) return null;
+  const pick = (k) => (s && s[k]) || (c && c[k]) || '';
+  return { volume: pick('volume'), issue: pick('issue'), pages: pick('pages'), doi: pick('doi'), abstract: (s && s.abstract) || '', full: (s && s.full) || '', page: (s && s.page) || '' };
+}

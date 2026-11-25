@@ -76,11 +76,17 @@ export function personName(s) {   // a person's name as a library writes it (林
   let t = String(s || '').trim().replace(/^([가-힣]{3})\s+[가-힣]$/, '$1');   // "임지봉 이": a stray letter after a full name
   t = t.replace(/\s+/g, '');
   if (/^[가-힣]{2,5}$/.test(t)) return t;
-  return /^[\u3400-\u9FFF\uF900-\uFAFF]{2,4}$/.test(t) ? hanjaName(t) : null;
+  if (/^[\u3400-\u9FFF\uF900-\uFAFF]{2,4}$/.test(t)) return hanjaName(t);
+  // half in hanja (安요환, 金철수: a catalogue's way with a surname): the hanja read, the rest kept
+  if (/^[\u3400-\u9FFF\uF900-\uFAFF가-힣]{2,5}$/.test(t) && /[가-힣]/.test(t)) {
+    const n = hanjaName(t);
+    return n && (SURNAMES.has(n[0]) || SURNAMES2.has(n.slice(0, 2))) ? n : null;
+  }
+  return null;
 }
 export const isSurnameStart = (t) => SURNAMES.has(String(t)[0]) || SURNAMES2.has(String(t).slice(0, 2));
-function hanjaName(s) {   // 金大仁 → 김대인 (the surname and the given name's first syllable by the initial-sound rule)
-  const r = [...s].map(readHan);
+function hanjaName(s) {   // 金大仁 → 김대인 (the surname and the given name's first syllable by the initial-sound rule); 安요환 → 안요환
+  const r = [...s].map((ch) => (/[가-힣]/.test(ch) ? ch : readHan(ch)));
   if (!r.length || r.some((x) => !x)) return null;
   const sur = SURNAMES2.has(r[0] + (r[1] || '')) && r.length >= 3 ? 2 : 1;
   r[0] = initialRule(r[0]);

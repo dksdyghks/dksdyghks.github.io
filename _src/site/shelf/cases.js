@@ -185,7 +185,7 @@ export function linkCases(text) {
   if (!text) return '';
   const refs = [
     ...scanCases(text).map((c) => ({ ...c, attr: `data-case="${esc(c.no)}"` })),
-    ...scanCourtCases(text).map((c) => ({ ...c, attr: `data-court="${esc(c.no)}"` })),
+    ...scanCourtCases(text).map((c) => ({ ...c, attr: `data-court="${esc(c.ref)}"` })),
     ...scanArticles(text).map((a) => ({ ...a, attr: `data-art="${esc(`${a.law} ${artLabel(a)}${a.para ? ` 제${a.para}항` : ''}`)}"` })),
   ].sort((a, b) => a.i - b.i);
   let out = '', last = 0;
@@ -201,13 +201,14 @@ export function judgmentView(d) {
   const sec = (h, body) => (body ? `<section class="cs-sec"><h4>${h}</h4><p>${body}</p></section>` : '');
   const fold = (h, part, n) => (d[part] ? `<details class="cs-fold" data-part="${part}"><summary>${h}${n ? `<span>${n}</span>` : ''}</summary><p></p></details>` : '');
   return `<div class="cs-name">${esc(d.name || d.no)}</div>`
-    + `<div class="cs-meta">${[d.courtName, d.date && d.date + ' 선고', d.kind].filter(Boolean).map(esc).join(' · ')}</div>`
+    + `<div class="cs-meta">${[d.courtName, d.date && d.date + (d.kind === '결정' ? '자' : ' 선고'), d.kind].filter(Boolean).map(esc).join(' · ')}</div>`
     + sec('판시사항', linkCases(d.points))
-    + sec('판결요지', linkCases(unwrap(d.summary)))
-    + (!d.points && !d.summary && !d.reason ? '<p class="cs-wait">국가법령정보에 아직 판결 내용이 실리지 않았습니다.</p>' : '')
+    + sec(d.kind === '결정' ? '결정요지' : '판결요지', linkCases(unwrap(d.summary)))
+    + (!d.points && !d.summary && !d.reason ? '<p class="cs-wait">공개된 판결문에 아직 내용이 실리지 않았습니다.</p>' : '')
     + fold('참조판례', 'cites', lines(d.cites))
     + fold('참조조문', 'laws')
-    + fold('전문', 'reason');
+    + fold('전문', 'reason').replace('<details', !d.points && !d.summary ? '<details open' : '<details')   // the whole text, when that is all there is
+    + (d.url ? `<p class="cs-out"><a class="btn ghost small" href="${esc(d.url)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a></p>` : '');
 }
 const lines = (s) => String(s || '').split('\n').filter((l) => l.trim()).length;
 // the decision as a card: what it is, 주문, 판시사항, 결정요지; the references and the full reasons fold out when wanted
@@ -231,11 +232,12 @@ export function caseView(d) {
 }
 // fill a fold the first time it opens (the full reasons of a long decision run to tens of thousands of letters)
 export function wireCase(box, d) {
-  box.querySelectorAll('details.cs-fold').forEach((x) => x.addEventListener('toggle', () => {
+  const fill = (x) => {
     const p = x.querySelector('p');
     if (!x.open || p.dataset.done) return;
     p.dataset.done = '1';
     const t = d[x.dataset.part] || '';
     p.innerHTML = linkCases(x.dataset.part === 'reason' ? unwrap(t) : t);
-  }));
+  };
+  box.querySelectorAll('details.cs-fold').forEach((x) => { x.addEventListener('toggle', () => fill(x)); fill(x); });
 }

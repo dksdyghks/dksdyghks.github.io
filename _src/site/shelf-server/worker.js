@@ -20,7 +20,7 @@
 // Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
 //   /api/law/search|item   국가법령정보 공동활용 (법령·판례·헌재결정례…): env.LAW_OC
 //   /api/assembly/<service> 열린국회정보 (의안 등): env.ASSEMBLY_KEY
-//   /api/data/<기관>/<서비스>[/<기능>] 공공데이터포털 (헌법재판소·국회입법조사처·법제처): env.DATA_GO_KR_KEY
+//   /api/data/<기관>/<서비스>[/<기능>] 공공데이터포털 (헌법재판소·국회입법조사처·법제처): env.DATA_GO_KR_KEY (법제처 1170000: env.MOLEG_KEY)
 //   /api/kci/oai            KCI OAI-PMH (no key)
 //   /api/nl/<op>            국립중앙도서관 (소장자료·KOLIS-NET·ISBN 서지): env.NL_KEY
 //   /api/nanet/<op>          국회도서관 국가학술정보 클라우드 (통합검색·상세보기·연구자·주제어·연관 연구자/학술지/발행기관/주제어·추이): env.NANET_KEY
@@ -194,13 +194,17 @@ async function assemblyApi(env, service, url) {
 
 // 공공데이터포털: https://apis.data.go.kr/<기관>/<서비스>[/<기능>]?serviceKey=… (one key for every API the owner applied for)
 const DATA_SEG = /^(?!\.)[A-Za-z0-9_-]{1,60}(?:\.do)?$/;   // a name, or one ending in .do (법제처: lawSearchList.do); never '..'
+// 법제처 (1170000: 국가법령정보 공유서비스, apis.data.go.kr/1170000/law) is approved for the owner's newer key (MOLEG_KEY);
+// every other service there takes DATA_GO_KR_KEY
+const dataKey = (env, segs) => (segs[0] === '1170000' && env.MOLEG_KEY) || env.DATA_GO_KR_KEY;
 async function dataApi(env, segs, url) {
-  if (!env.DATA_GO_KR_KEY) return err('no_key', 503);
+  if (!dataKey(env, segs)) return err('no_key', 503);
   if (!segs.every((x) => DATA_SEG.test(x))) return err('bad_service', 400);
-  const q = new URLSearchParams({ serviceKey: env.DATA_GO_KR_KEY });
+  const key = dataKey(env, segs);
+  const q = new URLSearchParams({ serviceKey: key });
   for (const [k, v] of url.searchParams) if (/^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(k) && !/^servicekey$/i.test(k) && v.length <= 300) q.set(k, v);
   const up = await fetch(`https://apis.data.go.kr/${segs.join('/')}?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
-  return passOn(up, env.DATA_GO_KR_KEY);
+  return passOn(up, key);
 }
 
 // KCI OAI-PMH (open, no key): one record, or a page of records
@@ -339,9 +343,12 @@ async function diag(req, env) {
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
     ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
   ];
-  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC].filter(Boolean);
-  const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, results: {} };
+  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.MOLEG_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC].filter(Boolean);
+  // the shape of each data.go.kr key (never its value): a 64-letter hex key is the portal's newer '일반 인증키'
+  const shape = (k) => (k ? { len: k.length, hex: /^[0-9a-f]+$/i.test(k) } : null);
+  const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, keys: { DATA_GO_KR_KEY: shape(env.DATA_GO_KR_KEY), MOLEG_KEY: shape(env.MOLEG_KEY) }, results: {} };
   tries.push(['nanet', env.NANET_KEY && (() => nanetAsk(env, 'searchTotal', { searchTerm: '관습헌법', printRowCnt: '1' }))]);
+  tries.push(['moleg', dataKey(env, ['1170000']) && `https://apis.data.go.kr/1170000/law/lawSearchList.do?${new URLSearchParams({ serviceKey: dataKey(env, ['1170000']), target: 'law', query: '공직선거법', numOfRows: '1', pageNo: '1' })}`]);
   tries.push(['scienceon', soReady(env) && (async () => { const t = await soToken(env); return fetch(`${SO}/openapicall.do?${new URLSearchParams({ client_id: env.SCIENCEON_CLIENT_ID, token: t, version: '1.0', action: 'search', target: 'ARTI', searchQuery: JSON.stringify({ BI: '관습헌법' }), rowCount: '1' })}`, { signal: AbortSignal.timeout(15000) }); })]);
   await Promise.all(tries.map(async ([k, u, headers]) => {
     if (!u) { out.results[k] = { status: 'no key' }; return; }
