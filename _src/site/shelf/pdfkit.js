@@ -92,9 +92,13 @@ export async function textIndex(doc, A, onProgress, signal) {
 // When most pages are like that, the paper is a scan; otherwise only those few pages that draw an image count (a scanned
 // appendix in a typed paper), which is checked page by page.
 export async function picturePages(doc, texts) {
-  const empty = [];
-  for (let i = 0; i < doc.numPages; i++) if ((texts[i] || '').replace(/\s+/g, '').length < 150) empty.push(i);
-  if (!empty.length || empty.length >= doc.numPages * 0.5) return empty;
+  const empty = [], broken = [];
+  for (let i = 0; i < doc.numPages; i++) {
+    const t = (texts[i] || '').replace(/\s+/g, '');
+    if (garbled(t)) broken.push(i); else if (t.length < 150) empty.push(i);
+  }
+  if (empty.length + broken.length >= doc.numPages * 0.5) return [...empty, ...broken].sort((a, b) => a - b);
+  if (!empty.length) return broken;
   const pdfjs = await lib();
   const O = pdfjs.OPS;
   const IMG = new Set([O.paintImageXObject, O.paintInlineImageXObject, O.paintImageXObjectRepeat, O.paintImageMaskXObject, O.paintImageMaskXObjectGroup, O.paintImageMaskXObjectRepeat, O.paintInlineImageXObjectGroup].filter((x) => x != null));
@@ -104,7 +108,13 @@ export async function picturePages(doc, texts) {
     try { pg = await doc.getPage(i + 1); const ops = await pg.getOperatorList(); if (ops.fnArray.some((f) => IMG.has(f))) out.push(i); }
     catch (e) { /* an unreadable page */ } finally { if (pg) pg.cleanup(); }
   }
-  return out;
+  return [...out, ...broken].sort((a, b) => a - b);
+}
+// text that is mostly not letters a Korean or English paper uses: a font whose characters map to nothing sensible
+function garbled(t) {
+  if (t.length < 40) return false;
+  const ok = (t.match(/[가-힣ㄱ-ㅎA-Za-z0-9\u3400-\u9FFF.,()·:;'"“”‘’\-–—「」『』｢｣<>%/~\[\]①-⑳ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]/g) || []).length;
+  return ok / t.length < 0.5;
 }
 
 export async function gzipJSON(obj) {

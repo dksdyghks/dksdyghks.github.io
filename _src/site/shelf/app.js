@@ -21,6 +21,7 @@ const S = {
   sort: 'added', q: '', select: null, prefs: {},
   uploads: [], reader: null, readerId: null,
   cached: new Set(),
+  info: {},          // where each paper was published: id -> { journal, society, issue, date } or null
 };
 
 const I = {
@@ -113,6 +114,7 @@ async function startLibrary() {
   S.index = (await store.get('kv', 'index')) || S.index;
   S.state = (await store.get('kv', 'state')) || S.state;
   S.cached = new Set(await store.keys('files').catch(() => []));
+  S.info = (await store.get('kv', 'paperInfo').catch(() => null)) || {};
   await loadTabs();
   renderShell();
   render();
@@ -134,6 +136,7 @@ async function startLibrary() {
   pullLoop();
   setTimeout(() => fetchAllMarks(), 4000);
   ocrSoon(6000);
+  setTimeout(() => fillPaperInfo(), 9000);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
   if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
 }
@@ -204,17 +207,17 @@ async function preparePending() {
       catch (e) { if (api.isOffline(e)) break; }   // a PDF that will not open: stop trying, it stays as it came
       if (doc) {
         set.pages = doc.numPages;
-        if (S.prefs.autoName !== false || /^공유로 넣은 PDF/.test(f.name)) {
-          try {
-            const p1 = (await pdfkit.pageItems(doc, 0)).page;
-            const p2 = doc.numPages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
-            const g = naming.nameFromPages(p1, p2);
-            if (g) set.name = g.name + '.pdf';
-          } catch (e) { /* keeps its name */ }
-        }
+        let first = null;
+        try {
+          const p1 = (await pdfkit.pageItems(doc, 0)).page;
+          const p2 = doc.numPages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
+          first = naming.readFirstPages(p1, p2);
+          if ((S.prefs.autoName !== false || /^공유로 넣은 PDF/.test(f.name)) && first && first.name) set.name = first.name + '.pdf';
+        } catch (e) { /* keeps its name */ }
         try { const th = await pdfkit.thumbnail(doc); await api.putMeta(f.id, 'thumb', th, 'image/jpeg'); await store.put('thumbs', f.id, th); set.thumb = true; } catch (e) { /* no picture */ }
         try {
-          const t = await pdfkit.textIndex(doc, A); await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip'); await store.put('texts', f.id, t); set.text = true;
+          const t = await pdfkit.textIndex(doc, A); t.paper = paperOf(first); notePaper(f.id, t);
+          await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip'); await store.put('texts', f.id, t); set.text = true;
           const scan = (await pdfkit.picturePages(doc, t.pages).catch(() => [])).length; if (scan) set.scan = scan;
         } catch (e) { /* not searchable */ }
         doc.destroy();
@@ -473,7 +476,7 @@ function fileRow(f, extra = '') {
   const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
   return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${boxes() ? ckBox(sel) : ''}
     <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span>
-    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
+    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${paperLine(f) || `${f.pages ? f.pages + '쪽 · ' : ''}${date(f.added)} 올림`}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
@@ -516,9 +519,10 @@ async function renderSearch(c) {
   // my own marks: what I already found worth marking
   const fillMarks = async () => {
     const hits = await markHits(key);
+    const offs = await printedOffsets(hits.map((r) => r.f.id));
     if (S.q !== q) return;
     const total = hits.reduce((s, r) => s + r.snips.length, 0);
-    $('.mark-sec', c).innerHTML = total ? `<h2 class="sec-h">내 밑줄 <span class="sec-n">${total}개</span></h2><div class="list">${hits.map((r) => fileRow(r.f, `<span class="snips">${r.snips.slice(0, 6).map((s) => `<button class="snip mark-snip" data-open="${r.f.id}" data-page="${s.m.p}" data-mark="${esc(s.m.id)}"><em>${pageLabel(r.f.id, s.m.p)}</em><i class="${s.m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${esc(s.m.color)}"></i>${s.pre ? '…' : ''}${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}${s.post ? '…' : ''}</button>`).join('')}${r.snips.length > 6 ? `<span class="snip-more">외 ${r.snips.length - 6}곳</span>` : ''}</span>`)).join('')}</div>` : '';
+    $('.mark-sec', c).innerHTML = total ? `<h2 class="sec-h">내 밑줄 <span class="sec-n">${total}개</span></h2><div class="list">${hits.map((r) => fileRow(r.f, `<span class="snips">${r.snips.slice(0, 6).map((s) => `<button class="snip mark-snip" data-open="${r.f.id}" data-page="${s.m.p}" data-mark="${esc(s.m.id)}"><em>${pageLabel(r.f.id, s.m.p, offs.get(r.f.id))}</em><i class="${s.m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${esc(s.m.color)}"></i>${s.pre ? '…' : ''}${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}${s.post ? '…' : ''}</button>`).join('')}${r.snips.length > 6 ? `<span class="snip-more">외 ${r.snips.length - 6}곳</span>` : ''}</span>`)).join('')}</div>` : '';
     lazyThumbs();
   };
   fillMarks();
@@ -564,6 +568,7 @@ async function textOf(f) {
   if (!navigator.onLine) return t || null;
   t = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
   await store.put('texts', f.id, t);
+  notePaper(f.id, t);
   return t;
 }
 
@@ -815,14 +820,13 @@ async function uploadOne(u) {
     catch (e) { set('error', { msg: e && e.name === 'PasswordException' ? '암호가 걸린 PDF는 올릴 수 없습니다' : '열 수 없는 PDF입니다' }); return; }
     const pages = doc.numPages;
     if (!u.orig) u.orig = u.name;
-    if (S.prefs.autoName !== false) {   // "저자_제목" read from the first page, only when both are clear
-      try {
-        const p1 = (await pdfkit.pageItems(doc, 0)).page;
-        const p2 = pages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
-        const g = naming.nameFromPages(p1, p2);
-        if (g) { u.name = g.name + '.pdf'; renderUploads(); }
-      } catch (e) { /* keeps the file's own name */ }
-    }
+    let first = null;   // what the first page says: "저자_제목" (used only when both are clear), and where it was published
+    try {
+      const p1 = (await pdfkit.pageItems(doc, 0)).page;
+      const p2 = pages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
+      first = naming.readFirstPages(p1, p2);
+      if (S.prefs.autoName !== false && first && first.name) { u.name = first.name + '.pdf'; renderUploads(); }
+    } catch (e) { /* keeps the file's own name */ }
     let thumb = null;
     try { thumb = await pdfkit.thumbnail(doc); } catch (e) { /* no picture */ }
     set('up', { p: 0 });
@@ -838,6 +842,8 @@ async function uploadOne(u) {
     // page texts for search: after the file is safely stored, so a failure here never loses the upload
     try {
       const t = await pdfkit.textIndex(doc, A, (p) => { u.p = p; renderUploads(); });
+      t.paper = paperOf(first);
+      notePaper(id, t);
       const gz = await pdfkit.gzipJSON(t);
       await api.putMeta(id, 'text', gz, 'application/gzip');
       await store.put('texts', id, t);
@@ -878,6 +884,7 @@ async function getBytes(f, onProgress) {
   if (b) return b;
   const blob = await api.download('/files/' + f.id, onProgress);
   await store.put('files', f.id, blob); S.cached.add(f.id);
+  if (f.text && !(f.id in S.info)) { clearTimeout(getBytes.t); getBytes.t = setTimeout(fillPaperInfo, 3000); }   // now its first page can be read here
   return blob;
 }
 
@@ -1117,6 +1124,10 @@ async function ocrFile(f, mod) {
     try { const L = A.pageLabels(pages); if (L && L.confident) t.labels = L; } catch (e) { /* no numbering */ }
     try { const o = A.outline(pages, A.docStats(pages)); if (o && o.length && !(t.outline || []).length) t.outline = o; } catch (e) { /* no headings */ }
     t.chars = t.pages.reduce((s, x) => s + x.length, 0);
+    const first = (() => { try { return naming.readFirstPages(pages[0], pages[1] || null); } catch (e) { return null; } })();
+    if (!t.paper && paperOf(first)) t.paper = paperOf(first);
+    if (t.paper === undefined) t.paper = null;
+    notePaper(f.id, t);
     const when = Date.now();
     t.ocr = when;   // these texts carry the read words (devices holding older ones fetch these)
     const data = { v: 1, lang: saved.lang, pages: saved.pages };
@@ -1126,7 +1137,7 @@ async function ocrFile(f, mod) {
     const set = { ocr: when, text: true };
     const now = fileById(f.id);
     if (now && S.prefs.autoName !== false && (!now.orig || now.name === now.orig) && pages[0] && saved.pages[0]) {   // still its file name: name it 저자_제목
-      try { const g = naming.nameFromPages(pages[0], pages[1] || null); if (g) set.name = g.name + '.pdf'; } catch (e) { /* keeps its name */ }
+      if (first && first.name) set.name = first.name + '.pdf';
     }
     const r = await api.ops([{ op: 'updateFile', id: f.id, set }]);
     S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
@@ -1147,6 +1158,70 @@ async function ocrData(f) {   // a read paper's words for the reader: kept here,
   if (d || !navigator.onLine) return d;
   try { d = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'ocr')); await store.put('texts', f.id + ':ocr', d); } catch (e) { d = null; }
   return d;
+}
+
+/* ---------- where a paper was published (journal · society · date), read from its first page and kept in its page texts,
+   so every device learns it with the texts (no extra request). S.info: id -> { journal, society, issue, date } or null ---------- */
+let infoT = null;
+function notePaper(id, t) {
+  if (!t || t.paper === undefined) return;
+  const v = t.paper || null;
+  if (JSON.stringify(S.info[id] ?? null) === JSON.stringify(v) && id in S.info) return;
+  S.info[id] = v;
+  clearTimeout(infoT); infoT = setTimeout(() => { store.put('kv', 'paperInfo', S.info); if (!S.reader) render(); }, 500);
+}
+const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal, society: r.society, issue: r.issue, date: r.date } : null);
+const pubText = (d) => (d ? d.replace(/^(\d{4})-(\d{2})(?:-\d{2})?$/, (m, y, mo) => `${y}. ${+mo}.`) : '');
+function paperLine(f) {   // 학술지 · 학회 · 발간일, as a citation lists them (a narrow screen leaves the society out, so the date stays in view)
+  const i = S.info[f.id];
+  if (!i || !(i.journal || i.date)) return '';
+  let s = i.journal ? esc(i.journal) : '';
+  if (i.society) s += s ? `<span class="soc"> · ${esc(i.society)}</span>` : esc(i.society);
+  if (i.date) s += (s ? ' · ' : '') + esc(pubText(i.date));
+  return s;
+}
+// papers whose texts were made before this was read: fetch the newer texts once, or read the first page here and share it
+let filling = false;
+const askedInfo = new Set();
+async function fillPaperInfo() {
+  if (filling || !syncOn) return;
+  filling = true;
+  try {
+    for (const f of liveFiles().filter((x) => x.text && !(x.id in S.info))) {
+      if (!navigator.onLine || document.hidden) break;
+      if (needsOcr(f) || OCR.id === f.id) continue;   // a scan still to be read: its reading fills this in (and writes its texts)
+      let t = await store.get('texts', f.id).catch(() => null);
+      if (t && t.paper !== undefined) { notePaper(f.id, t); continue; }
+      if (!askedInfo.has(f.id)) {   // perhaps another device filled it in already
+        askedInfo.add(f.id);
+        try { const s = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text')); if (s && s.paper !== undefined) { await store.put('texts', f.id, s); notePaper(f.id, s); continue; } t = s || t; } catch (e) { /* later */ }
+      }
+      if (!t || !S.cached.has(f.id)) continue;   // the PDF is not on this device: a device that has it will do it
+      let doc = null;
+      try {
+        doc = await pdfkit.openBytes(await (await getBytes(f)).arrayBuffer());
+        if (!f.ocr) {   // text that is garbage (a broken font), from before upload caught it: the paper is read like a scan, which also names it
+          const pics = await pdfkit.picturePages(doc, t.pages || []).catch(() => []);
+          if (pics.length > (f.scan || 0)) {
+            const r = await api.ops([{ op: 'updateFile', id: f.id, set: { scan: pics.length } }]);
+            S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+            ocrSoon(1500); if (!S.reader) render();
+            continue;
+          }
+        }
+        const o = f.ocr ? await ocrData(f) : null;   // a read scan: its first pages are the words read, not the (empty) text layer
+        const items = async (i) => {
+          if (i >= doc.numPages) return null;
+          if (o && o.pages && o.pages[i]) { const pg = await doc.getPage(i + 1); const vp = pg.getViewport({ scale: 1 }); pg.cleanup(); return ocrPageItems(i, o.pages[i], vp.width, vp.height); }
+          return (await pdfkit.pageItems(doc, i)).page;
+        };
+        t.paper = paperOf(naming.readFirstPages(await items(0), await items(1)));
+        await store.put('texts', f.id, t);
+        await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
+        notePaper(f.id, t);
+      } catch (e) { /* next time */ } finally { if (doc) doc.destroy(); }
+    }
+  } finally { filling = false; }
 }
 
 /* ---------- every paper's marks kept on this device as well (for 찾기, also without internet) ----------
@@ -1185,9 +1260,18 @@ async function allMarks() {   // paper id -> its marks that have words, from thi
   }
   return (marksCache = m);
 }
-function pageLabel(id, p) {   // printed page number when known (○면), else the PDF page (○쪽)
+function pageLabel(id, p, found) {   // printed page number when known (○면), else the PDF page (○쪽)
   const o = (S.state.files[id] || {}).o;
-  return Number.isInteger(o) ? (p + 1 + o) + '면' : (p + 1) + '쪽';
+  const off = Number.isInteger(o) ? o : found;
+  return Number.isInteger(off) ? (p + 1 + off) + '면' : (p + 1) + '쪽';
+}
+async function printedOffsets(ids) {   // id -> how far the printed page numbers run ahead of the PDF's, as the page texts found it
+  const out = new Map();
+  for (const id of ids) {
+    const t = await store.get('texts', id).catch(() => null), L = t && t.labels;
+    if (L && L.confident && Number.isInteger(L.offset)) out.set(id, L.offset);
+  }
+  return out;
 }
 async function markHits(key) {
   const live = new Map(liveFiles().map((f) => [f.id, f]));
@@ -1244,13 +1328,14 @@ async function exportAllMarks() {
   if (!files.length) { toast('아직 밑줄이 없습니다'); return; }
   const day = new Date().toLocaleDateString('sv-SE');
   const n = files.reduce((s, f) => s + all.get(f.id).length, 0);
+  const offs = await printedOffsets(files.map((f) => f.id));
   const full = {};
   for (const [id, r] of await store.entries('marks').catch(() => [])) if (r && r.marks && r.marks.length) full[id] = r.marks;
   const data = JSON.stringify({ app: '연구실 책장', at: Date.now(), index: S.index, state: S.state, marks: full }).replace(/</g, '\\u003c');
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>연구실 책장 밑줄 ${day}</title>
-<style>body{margin:0 auto;max-width:760px;padding:28px 18px 60px;font:16px/1.7 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#1b2433;background:#fff}h1{font-size:22px;margin:0}p.s{color:#5a6578;margin:4px 0 26px}h2{font-size:17px;margin:30px 0 8px;padding-top:14px;border-top:1px solid #e3e7ee}ol{list-style:none;margin:0;padding:0}li{display:flex;gap:12px;padding:7px 0}.pg{flex:none;width:52px;color:#7b8597;font-size:13px;padding-top:3px}.t{background:linear-gradient(transparent 55%,color-mix(in srgb,var(--c) 55%,transparent) 55%)}.t[data-k=ul]{background:none;text-decoration:underline;text-decoration-color:var(--c);text-decoration-thickness:2px;text-underline-offset:4px}@media print{h2{break-after:avoid}li{break-inside:avoid}}</style></head><body>
+<style>body{margin:0 auto;max-width:760px;padding:28px 18px 60px;font:16px/1.7 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#1b2433;background:#fff}h1{font-size:22px;margin:0}p.s{color:#5a6578;margin:4px 0 26px}h2{font-size:17px;margin:30px 0 8px;padding-top:14px;border-top:1px solid #e3e7ee}p.j{margin:-6px 0 8px;color:#5a6578;font-size:14px}ol{list-style:none;margin:0;padding:0}li{display:flex;gap:12px;padding:7px 0}.pg{flex:none;width:52px;color:#7b8597;font-size:13px;padding-top:3px}.t{background:linear-gradient(transparent 55%,color-mix(in srgb,var(--c) 55%,transparent) 55%)}.t[data-k=ul]{background:none;text-decoration:underline;text-decoration-color:var(--c);text-decoration-thickness:2px;text-underline-offset:4px}@media print{h2{break-after:avoid}li{break-inside:avoid}}</style></head><body>
 <h1>연구실 책장 밑줄</h1><p class="s">${day} · 논문 ${files.length}편 · 밑줄 ${n}개</p>
-${files.map((f) => `<h2>${esc(stem(f.name))}</h2><ol>${all.get(f.id).map((m) => `<li><span class="pg">${pageLabel(f.id, m.p)}</span><span class="t" data-k="${m.kind}" style="--c:${esc(m.color)}">${esc(m.text)}</span></li>`).join('')}</ol>`).join('\n')}
+${files.map((f) => `<h2>${esc(stem(f.name))}</h2>${paperLine(f) ? `<p class="j">${paperLine(f)}</p>` : ''}<ol>${all.get(f.id).map((m) => `<li><span class="pg">${pageLabel(f.id, m.p, offs.get(f.id))}</span><span class="t" data-k="${m.kind}" style="--c:${esc(m.color)}">${esc(m.text)}</span></li>`).join('')}</ol>`).join('\n')}
 <script type="application/json" id="shelf-backup">${data}</script></body></html>`;
   const file = new File([html], `연구실 책장 밑줄 ${day}.html`, { type: 'text/html' });
   hideToast();
