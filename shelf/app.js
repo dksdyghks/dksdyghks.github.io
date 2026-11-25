@@ -320,14 +320,8 @@ function renderShell() {
   $('.menu-btn').onclick = () => app.classList.toggle('rail-open');
   $('.scrim').onclick = closeRail;
   const fin = $('.find input');
-  // the one search box: the library's own, or in 판례·법령 the search for decisions and articles (asked of the court's
-  // servers, so it waits a little longer for the typing to settle, and Enter asks at once)
-  const lawAsk = () => { clearTimeout(S.qT); S.lq = fin.value.trim(); renderLaw($('.content')); };
-  fin.addEventListener('input', () => { clearTimeout(S.qT); if (S.view.kind === 'law') { S.qT = setTimeout(lawAsk, 650); return; } S.qT = setTimeout(() => { S.q = fin.value.trim(); render(); }, 220); });
-  fin.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { fin.value = ''; if (S.view.kind === 'law') lawAsk(); else { S.q = ''; render(); } }
-    if (e.key === 'Enter' && !e.isComposing && S.view.kind === 'law') { e.preventDefault(); lawAsk(); }
-  });
+  fin.addEventListener('input', () => { clearTimeout(S.qT); S.qT = setTimeout(() => { S.q = fin.value.trim(); render(); }, 220); });
+  fin.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fin.value = ''; S.q = ''; render(); } });
   $('.content').addEventListener('click', onContentClick);
   $('.crumbs').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (b) { S.view = { kind: 'home', folder: b.dataset.folder || null }; S.select = null; render(); } };
   $('.tools').onclick = onTools;
@@ -354,7 +348,7 @@ function render() {
   c.classList.toggle('picking', !!S.select);
   syncFind();
   if (S.q) { renderSearch(c); return; }
-  if (S.view.kind === 'law') { if (c.dataset.law !== (S.lq || '') || !c.querySelector('.law-home, .law-res')) renderLaw(c); return; }   // asked of servers: drawn again only for a new question
+  if (S.view.kind === 'law') { const b = c.querySelector(':scope > .law-body'); if (!b || b.dataset.law !== (S.lq || '').trim() || !b.querySelector('.law-home, .law-res')) renderLaw(c); return; }   // asked of servers: drawn again only for a new question
   if (S.view.kind === 'recent') renderRecent(c);
   else if (S.view.kind === 'trash') renderTrash(c);
   else renderFolder(c, S.view.folder);
@@ -624,15 +618,27 @@ async function caseCard(box, no, live) {
 /* ---------- 판례·법령: 헌재 결정, and the articles of 헌법 and 헌법재판소법, by number, words or article ---------- */
 const LAW_EX = ['2004헌마554', '관습헌법', '헌법 제37조 제2항', '공직선거법 제82조의8', '선거관리위원회법', '대법원 2000두7735', '헌법'];
 let lawRecent = null;
-function syncFind() {   // the search box follows the view: its question and its hint
-  const fin = $('.find input'), law = S.view.kind === 'law';
-  if (!fin || S.findFor === law) return;
-  S.findFor = law;
-  fin.placeholder = law ? '사건번호 · 낱말 · 조문으로 찾기' : '제목과 본문에서 찾기';
-  fin.value = law ? (S.lq || '') : (S.q || '');
+// 판례·법령 has its own search, wide at the top of the page (the shelf's small box in the toolbar is put away here)
+function syncFind() {
+  const main = $('.main'); if (main) main.classList.toggle('law-mode', S.view.kind === 'law');
 }
-async function renderLaw(c) {
+function lawFrame(c) {
+  if (c.querySelector(':scope > .law-top')) return;
+  c.innerHTML = `<div class="law-top"><label class="law-find">${I.search}<input type="search" placeholder="사건번호 · 낱말 · 조문 — 2004헌마554, 관습헌법, 헌법 제37조" enterkeyhint="search" autocomplete="off" aria-label="판례·법령 찾기"></label></div><div class="law-body"></div>`;
+  const inp = $('.law-find input', c);
+  inp.value = S.lq || '';
+  // asked of the courts' servers: it waits a little longer for the typing to settle, and Enter asks at once
+  const ask = () => { clearTimeout(S.qT); S.lq = inp.value.trim(); renderLaw(c); };
+  inp.addEventListener('input', () => { clearTimeout(S.qT); S.qT = setTimeout(ask, 650); });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; ask(); } if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ask(); inp.blur(); } });
+  if (matchMedia('(hover: hover) and (pointer: fine)').matches && !S.lq) setTimeout(() => inp.focus(), 0);   // a keyboard at hand: ready to type
+}
+async function renderLaw(cIn) {
   const q = (S.lq || '').trim();
+  lawFrame(cIn);
+  const inp = $('.law-find input', cIn);
+  if (inp && inp.value.trim() !== q && document.activeElement !== inp) inp.value = q;
+  const c = $('.law-body', cIn);
   c.dataset.law = q;
   const live = () => S.view.kind === 'law' && !S.q && (S.lq || '').trim() === q;
   if (!q) {
@@ -806,7 +812,7 @@ function sheetLinks(box, again, self, back) {
   });
 }
 function lawGo(q) {   // to 판례·법령, asking q
-  S.view = { kind: 'law', folder: null }; S.q = ''; S.select = null; S.lq = q; S.findFor = null;
+  S.view = { kind: 'law', folder: null }; S.q = ''; S.select = null; S.lq = q; $('.find input').value = '';
   render(); $('.content').scrollTop = 0; window.scrollTo(0, 0);
 }
 function holdingSheet(seq) {
@@ -884,7 +890,7 @@ function onContentClick(e) {
   const cc = t.closest('[data-court-open]'); if (cc) { courtSheet(cc.dataset.courtOpen); return; }
   const il = t.closest('.case-ln');   // a citation inside an article's text: the decision, the judgment, or that article
   if (il) { if (il.dataset.case) caseSheet(il.dataset.case); else if (il.dataset.court) courtSheet(il.dataset.court); else if (il.dataset.art) lawGo(il.dataset.art); return; }
-  const lq = t.closest('[data-lq]'); if (lq) { S.lq = lq.dataset.lq; $('.find input').value = S.lq; renderLaw($('.content')); $('.content').scrollTop = 0; window.scrollTo(0, 0); return; }
+  const lq = t.closest('[data-lq]'); if (lq) { S.lq = lq.dataset.lq; const li = $('.law-find input'); if (li) li.value = S.lq; renderLaw($('.content')); $('.content').scrollTop = 0; window.scrollTo(0, 0); return; }
   const ho = t.closest('[data-holding]'); if (ho) { holdingSheet(ho.dataset.holding); return; }
   if (t.closest('[data-selall]')) { pickAll(); return; }
   const ck = t.closest('[data-ck]');
