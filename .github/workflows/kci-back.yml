@@ -1,6 +1,8 @@
 # 연구실 책장: KCI's law papers of the last three years, gathered going back from the first day the weekly refresh read
-# (shelf/kci/law/, by the month each paper came out), a little every hour — about twenty minutes of KCI's OAI-PMH, one page
+# (shelf/kci/law/, by the month each paper came out), a little at a time — about twenty minutes of KCI's OAI-PMH, one page
 # at a time with a pause — until three years are covered; after that each run only finds it is done.
+# GitHub's hourly schedule is best effort (it may not come for hours), so a run that went further back and is not done asks
+# for the next one itself; a run that got nowhere (KCI not answering) does not, and the schedule or a hand takes it up.
 name: 연구실 책장 KCI 지난 논문 모으기
 on:
   schedule:
@@ -9,6 +11,7 @@ on:
 permissions:
   contents: write
   pages: write
+  actions: write   # to ask for the next run
 concurrency:
   group: shelf-indexes
   cancel-in-progress: false
@@ -23,8 +26,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Where the gathering stands
+        id: before
+        run: echo "back=$(python3 -c "import json;print(json.load(open('shelf/kci/state.json')).get('back',''))" 2>/dev/null)" >> "$GITHUB_OUTPUT"
       - name: The days before (KCI OAI-PMH)
         timeout-minutes: 30
+        continue-on-error: true
         run: python3 _src/site/shelf/_tools/kci_oai.py shelf/kci --back
       - name: Build the KCI law-paper word index
         continue-on-error: true
@@ -43,3 +50,15 @@ jobs:
           for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 10; done
           curl -s -o /dev/null -w 'pages build: %{http_code}\n' -X POST -H "Authorization: Bearer ${{ github.token }}" \
             -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${{ github.repository }}/pages/builds" || true
+      - name: The next run, while three years are not yet in
+        if: always()
+        run: |
+          before='${{ steps.before.outputs.back }}'
+          now=$(python3 -c "import json;print(json.load(open('shelf/kci/state.json')).get('back',''))" 2>/dev/null)
+          goal=$(date -u -d '3 years ago' +%Y-%m-%d)
+          echo "back: $before -> $now (goal $goal)"
+          if [ -z "$now" ] || [ "$now" = "$before" ]; then echo "no step back this time: the schedule takes it up"; exit 0; fi
+          if [[ "$now" < "$goal" || "$now" = "$goal" ]]; then echo "three years in: done"; exit 0; fi
+          curl -s -o /dev/null -w 'next run asked: %{http_code}\n' -X POST -H "Authorization: Bearer ${{ github.token }}" \
+            -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${{ github.repository }}/actions/workflows/kci-back.yml/dispatches" \
+            -d '{"ref":"main"}' || true
