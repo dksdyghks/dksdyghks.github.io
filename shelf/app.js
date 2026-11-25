@@ -12,6 +12,7 @@ import * as laws from './laws.js';
 import * as papers from './papers.js';
 import * as research from './research.js';
 import * as biblio from './biblio.js';
+import * as bills from './bills.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -955,8 +956,8 @@ async function renderLaw(cIn) {
   if (court) { box.innerHTML = '<div class="court-sec"></div>'; courtCard($('.court-sec', box), court, live); mineSec(box, [court.no.toLowerCase()], q, live); return; }
   if (art) {
     const own = !!laws.LAWS[art.law];   // 헌법, 헌법재판소법: the court's own text; any other law: 국가법령정보
-    box.innerHTML = '<div class="art-sec"></div>' + (own ? lawSec('holding', '이 조문이 나오는 결정요지') : lawSec('law', '이 조문을 심판한 헌재 결정'));
-    articleCard($('.art-sec', box), art, live);
+    box.innerHTML = '<div class="art-sec"></div><section class="bill-sec" hidden></section>' + (own ? lawSec('holding', '이 조문이 나오는 결정요지') : lawSec('law', '이 조문을 심판한 헌재 결정'));
+    articleCard($('.art-sec', box), art, live).then((law) => { if (law && live()) billsSec($('.bill-sec', box), law, art, live); });
     const ref = `${art.law} ${laws.artLabel(art)}${art.para ? ` 제${art.para}항` : ''}`;
     if (own) fillSec(box, 'holding', (pg) => cases.byHolding(ref, pg), live);
     else fillSec(box, 'law', (pg) => cases.byLaw(art.law, art.art, art.para, pg), live, true);
@@ -965,15 +966,19 @@ async function renderLaw(cIn) {
     mineSec(box, names.flatMap((nm) => [nm + tail, '「' + nm + '」' + tail]), q, live, $('.art-sec', box));
     return;
   }
-  if (whole) { lawWhole(box, whole, live); return; }
+  if (whole) {
+    box.innerHTML = '<div class="whole-sec"></div><section class="bill-sec" hidden></section>';
+    lawWhole($('.whole-sec', box), whole, live).then((law) => { if (law && live()) billsSec($('.bill-sec', box), law, null, live); });
+    return;
+  }
   // a law's name (its own, or one lawyers use): the law itself first, then what 헌재 decided on it; else words, in 헌재's records
   const named = await laws.lawOf(q).catch(() => null);
   if (!live()) return;
   const lawLike = !!named || /(?:법|법률|령|규칙|규정)$/.test(q.replace(/\s+/g, ''));
   const secs = [['name', '사건명', (pg) => cases.byName(q, pg)], ['holding', '결정요지 (판례요지집)', (pg) => cases.byHolding(q, pg)], ['leading', '주요 결정', (pg) => cases.byLeading(q, pg)]];
   if (lawLike) secs.unshift(['law', '이 법률을 심판한 헌재 결정', (pg) => cases.byLaw(named ? named.name : q.replace(/\s+/g, ''), 0, 0, pg)]);
-  box.innerHTML = (lawLike ? '<div class="whole-sec"></div>' : '') + secs.map(([k, t]) => lawSec(k, t)).join('') + `<p class="none law-empty" hidden>${named ? '이 법령을 다룬 헌법재판소 결정은 찾지 못했습니다' : '헌법재판소 자료에서 찾지 못했습니다'}</p>`;
-  if (lawLike) lawWhole($('.whole-sec', box), named ? named.name : q, live, !named);
+  box.innerHTML = (lawLike ? '<div class="whole-sec"></div><section class="bill-sec" hidden></section>' : '') + secs.map(([k, t]) => lawSec(k, t)).join('') + `<p class="none law-empty" hidden>${named ? '이 법령을 다룬 헌법재판소 결정은 찾지 못했습니다' : '헌법재판소 자료에서 찾지 못했습니다'}</p>`;
+  if (lawLike) lawWhole($('.whole-sec', box), named ? named.name : q, live, !named).then((law) => { if (law && live()) billsSec($('.bill-sec', box), law, null, live); });
   let left = secs.length, any = false;
   for (const [k, , ask] of secs) fillSec(box, k, ask, live).then((n) => { any = any || n > 0; if (--left === 0 && !any && live()) $('.law-empty', box).hidden = false; });
 }
@@ -1062,12 +1067,12 @@ const diffParas = (today, coming) => laws.pendingParas(today, coming).map((p) =>
 async function articleCard(box, a, live) {
   box.innerHTML = '<div class="law-card"><p class="none">조문을 불러오는 중…</p></div>';
   let law;
-  try { law = await laws.lawText(a.law); } catch (e) { if (live()) box.innerHTML = e && /unregistered|nolaw/.test(e.code) ? lawLinkCard(a, e.code) : `<div class="law-card"><p class="none">${lawErr(e)}</p></div>`; return; }
-  if (!live()) return;
+  try { law = await laws.lawText(a.law); } catch (e) { if (live()) box.innerHTML = e && /unregistered|nolaw/.test(e.code) ? lawLinkCard(a, e.code) : `<div class="law-card"><p class="none">${lawErr(e)}</p></div>`; return null; }
+  if (!live()) return null;
   let x = laws.findArt(law, a.art, a.sub), coming = false;
   const name = a.law === '헌법' ? '헌법' : law.full;
   if (!x && law.next) { x = laws.findArt(law.next, a.art, a.sub); coming = !!x; }   // an article the coming amendment adds
-  if (!x) { box.innerHTML = `<div class="law-card"><p class="none">${esc(law.full)}에서 그 조문을 찾지 못했습니다 · 마지막 조문은 ${laws.artLabel(law.arts[law.arts.length - 1])}</p></div>`; return; }
+  if (!x) { box.innerHTML = `<div class="law-card"><p class="none">${esc(law.full)}에서 그 조문을 찾지 못했습니다 · 마지막 조문은 ${laws.artLabel(law.arts[law.arts.length - 1])}</p></div>`; return law; }
   const list = coming ? law.next.arts : law.arts, i = list.indexOf(x), prev = list[i - 1], next = list[i + 1];
   const ps = laws.paras(x), pick = a.para && ps[a.para - 1] ? a.para : 0;
   const go = (y, text) => `<button type="button" class="btn ghost small" data-lq="${esc(name + ' ' + laws.artLabel(y))}">${text}</button>`;
@@ -1079,13 +1084,14 @@ async function articleCard(box, a, live) {
     <div class="lc-acts">${prev ? go(prev, '‹ ' + laws.artLabel(prev)) : ''}<span class="sp"></span><button type="button" class="btn ghost small lc-copy">복사</button><a class="btn ghost small" href="${laws.lawGoKr.article(law.full, x.art, x.sub)}" target="_blank" rel="noopener">국가법령정보센터</a><span class="sp"></span>${next ? go(next, laws.artLabel(next) + ' ›') : ''}</div>
   </div>`;
   $('.lc-copy', box).onclick = () => copyText(`${law.full} ${laws.artLabel(x)}${pick ? ` 제${pick}항` : ''}\n${pick ? ps[pick - 1] : x.text}`);
+  return law;
 }
 // a whole law, chapter by chapter, one line per article
 async function lawWhole(box, key, live, quiet) {
   box.innerHTML = quiet ? '' : '<div class="law-card"><p class="none">불러오는 중…</p></div>';
   let law;
-  try { law = await laws.lawText(key); } catch (e) { if (live() && !quiet) box.innerHTML = `<div class="law-card"><p class="none">${lawErr(e)}</p></div>`; return; }
-  if (!live()) return;
+  try { law = await laws.lawText(key); } catch (e) { if (live() && !quiet) box.innerHTML = `<div class="law-card"><p class="none">${lawErr(e)}</p></div>`; return null; }
+  if (!live()) return null;
   const name = key === '헌법' ? '헌법' : law.full;
   const line = (a) => `<button type="button" class="lw-a" data-lq="${esc(name + ' ' + laws.artLabel(a))}"><b>${laws.artLabel(a)}${a.title ? ` ${esc(a.title)}` : ''}</b><span>${esc(a.text.split('\n')[0])}</span></button>`;
   const groups = [];
@@ -1102,6 +1108,81 @@ async function lawWhole(box, key, live, quiet) {
   const rel = more + (law.files || []).filter((f) => (f === '시행령' || f === '시행규칙') && !law.full.endsWith(f)).map((f) => `<button type="button" class="lw-rel" data-lq="${esc(law.full.replace(/\s*(?:시행령|시행규칙)$/, '') + ' ' + f)}">${f}</button>`).join('');
   const out = `<a class="lc-out" href="${laws.lawGoKr.law(law.full)}" target="_blank" rel="noopener">국가법령정보센터</a>`;
   box.innerHTML = `<div class="law-card law-whole"><div class="lc-h"><b>${esc(law.title)}</b><span>${law.arts.length}개 조</span>${rel ? `<span class="lw-rels">${rel}</span>` : ''}${out}</div>${law.ahead ? aheadNote(law) : next}${law.preamble ? `<details class="cs-fold"><summary>전문</summary><p>${esc(law.preamble)}</p></details>` : ''}${html}</div>`;
+  return law;
+}
+
+/* ---------- 국회 계류 법안 ---------- */
+// Under an article, the bills now before the Assembly that would change it; under a whole law, all of them, newest first.
+// The first look at a law with many bills takes a while (the server reads each bill's 주요내용): what is found shows as it comes.
+const billRows = new Map();   // bill number → { x, law }: the rows on screen, for their sheets
+const billArtsText = (x, max = 4) => (x.arts && x.arts.length ? x.arts.slice(0, max).map((k) => { const a = bills.artOf(k); return a ? laws.artLabel(a) : k; }).join(' · ') + (x.arts.length > max ? ` 외 ${x.arts.length - max}개` : '') : '');
+function billRow(x, law, here) {
+  billRows.set(x.no, { x, law });
+  const arts = here ? billArtsText({ arts: x.arts.filter((k) => k !== here) }, 3) : billArtsText(x);
+  const meta = [here && arts ? '함께 바꾸는 조문 ' + arts : arts, bills.byText(x), bills.dateText(x.date), bills.stepText(x)].filter(Boolean);
+  return `<button type="button" class="lrow bill-row" data-bill="${esc(x.no)}"><b>${esc(x.gist || x.name)}</b><span>${meta.map(esc).join(' · ')}</span>${x.gist ? '' : '<span class="lr-o">주요내용을 읽는 중…</span>'}</button>`;
+}
+function billsSec(sec, law, a, live) {
+  if (!sec || !bills.byAssembly(law.full)) return;   // a 시행령 or 규칙 is not amended by the Assembly
+  const name = law.full, here = a ? bills.artKey(a.art, a.sub) : null, constitution = /헌법$/.test(name) && !/재판소법$/.test(name);
+  let more = 10;
+  const whole = () => `<button type="button" class="law-eg" data-lq="${esc(name)}">${esc(name)} 계류 법안 전체 보기</button>`;
+  const draw = (d) => {
+    if (!live() || !sec.isConnected || !d) return;
+    const rows = here ? bills.touching(d, a.art, a.sub) : d.rows, reading = d.missing > 0 && !d.stale;
+    const when = d.at ? `${bills.dateText(new Date(d.at + 9 * 3600e3).toISOString().slice(0, 10))} 기준` : '';
+    const progress = reading ? `<span class="bill-read">주요내용 살피는 중 ${d.total - d.missing}/${d.total}</span>` : '';
+    if (!rows.length && !reading) {
+      // nothing pending: under a law, one quiet line; under an article, one line pointing to the law's whole list
+      if (constitution && !d.total) { sec.hidden = true; return; }
+      sec.hidden = false; sec.className = 'bill-sec bill-none';
+      sec.innerHTML = `<p class="law-note">${!d.total ? `국회에 계류 중인 ${esc(name)} 개정안이 없습니다` : `국회에 계류 중인 ${esc(name)} 개정안 ${d.total}건 가운데 이 조문을 고치는 법안은 없습니다 · ${whole()}`}${when ? ` <span class="bill-when">(${when})</span>` : ''}</p>`;
+      return;
+    }
+    sec.hidden = false; sec.className = 'bill-sec';
+    const list = rows.slice(0, more);
+    sec.innerHTML = `<h2 class="sec-h">국회 계류 법안 <span class="sec-n">${rows.length}건${here ? '' : ''}</span>${progress}</h2>
+      <div class="list law-list">${list.map((x) => billRow(x, law, here)).join('') || '<p class="none">이 조문을 고치는 법안을 찾는 중…</p>'}${rows.length > list.length ? `<button type="button" class="more bill-more">더 보기 · ${list.length} / ${rows.length}</button>` : ''}</div>
+      <p class="law-note bill-foot">${here ? `${whole()} · ` : ''}제안이유 및 주요내용이 밝힌 조문을 기준으로 모았습니다 · 열린국회정보${when ? ` · ${when}` : ''}${d.stale ? ' · 지금은 국회 의안정보에 닿지 않아 전에 받은 목록입니다' : ''}</p>`;
+    const mb = $('.bill-more', sec); if (mb) mb.onclick = () => { more += 20; draw(d); };
+  };
+  sec.hidden = false; sec.className = 'bill-sec';
+  sec.innerHTML = '<h2 class="sec-h">국회 계류 법안</h2><div class="list law-list"><p class="none">국회 의안정보를 불러오는 중…</p></div>';
+  bills.pending(name, draw).then(draw, (e) => {
+    if (!live() || !sec.isConnected) return;
+    if (constitution) { sec.hidden = true; return; }
+    sec.className = 'bill-sec bill-none';
+    sec.innerHTML = `<p class="law-note">${e && e.code === 'offline' ? '인터넷에 연결되면 국회 계류 법안을 볼 수 있습니다' : '지금은 국회 의안정보에 닿지 않아 계류 법안을 불러오지 못했습니다'}</p>`;
+  });
+}
+// one bill: who proposed it and how far it has gone, its 제안이유 및 주요내용 (the articles it names, one tap away), the
+// meetings that took it up, and its page at 의안정보시스템 (검토보고서·원문)
+function billSheet(x, law) {
+  const name = law.full;
+  const arts = (x.arts || []).map((k) => { const a = bills.artOf(k); return a ? `<button type="button" data-art="${esc(name + ' ' + laws.artLabel(a))}">${laws.artLabel(a)}</button>` : ''; }).join('');
+  const step = bills.stepText(x) + (x.step !== '접수' && x.stepAt ? ` (${bills.dateText(x.stepAt)})` : '');
+  const box = sheet(`<div class="cs-head"><h2>${esc(x.name)}</h2></div><div class="cs-body">
+    <div class="cs-meta">의안번호 ${esc(x.no)} · ${esc(bills.byText(x))} · ${esc(bills.dateText(x.date))} 제안</div>
+    <div class="cs-meta">${esc(step)}</div>
+    ${arts ? `<div class="bill-arts">${arts}</div>` : ''}
+    <section class="cs-sec bill-sum"><p class="cs-wait">제안이유 및 주요내용을 불러오는 중…</p></section>
+    <section class="cs-sec bill-min" hidden></section>
+  </div><div class="row-btns"><a class="btn ghost" href="${bills.likms(x)}" target="_blank" rel="noopener">${x.review ? '검토보고서 · 원문' : '원문'} (의안정보시스템)</a><button type="button" class="btn ghost cs-copy">인용 복사</button></div>`);
+  box.classList.add('case-sheet');
+  $('.cs-copy', box).onclick = () => copyText(bills.cite(x));
+  const sum = $('.bill-sum', box), min = $('.bill-min', box);
+  // the articles a bracket names ("(안 제24조제1항 및 제24조의2 신설)"), each one tap from its text in this law
+  const linkArts = (t) => esc(t).replace(/\(\s*안\s*제[^()]*\)/g, (g) => g.replace(/제\s*(\d+)\s*조(?:\s*의\s*(\d+))?/g, (m, n, sub) => `<button type="button" class="case-ln" data-art="${esc(name)} 제${n}조${sub ? '의' + sub : ''}">${m}</button>`));
+  bills.one(x).then((d) => {
+    if (!box.isConnected) return;
+    const t = String(d.summary || '').replace(/\r/g, '').trim();
+    sum.innerHTML = t ? t.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean).map((p) => (/^(?:제안이유(?:\s*및\s*주요내용)?|주요내용|참고사항)$/.test(p) ? `<h4>${esc(p)}</h4>` : `<p>${linkArts(p)}</p>`)).join('') : '<p class="cs-wait">제안이유 및 주요내용이 아직 실리지 않았습니다. 의안정보시스템에서 원문을 보세요.</p>';
+    if (d.minutes && d.minutes.length) {
+      min.hidden = false;
+      min.innerHTML = `<h4>회의록</h4><div class="bill-mins">${d.minutes.map((m) => `<a href="${esc(m.url)}" target="_blank" rel="noopener"><b>${esc(m.kind || '회의록')}</b><span>${esc([m.sess, m.dgr].filter(Boolean).join(' '))} · ${esc(bills.dateText(m.date))}</span></a>`).join('')}</div>`;
+    }
+  }, (e) => { if (box.isConnected) sum.innerHTML = `<p class="cs-wait">${e && e.code === 'offline' ? '인터넷에 연결되면 제안이유 및 주요내용을 볼 수 있습니다.' : '지금은 국회 의안정보에 닿지 않습니다. 의안정보시스템에서 원문을 보세요.'}</p>`; });
+  sheetLinks(box, null, null, null);
 }
 // a court's judgment (대법원 and the other courts, as 법제처 publishes them); a number two courts share shows the other too
 const COURT_NONE = '법제처가 공개한 판결 가운데 이 사건이 없습니다. 공개되지 않은 판결이거나 번호가 다를 수 있습니다.';
@@ -1247,6 +1328,7 @@ function onContentClick(e) {
   const pp = t.closest('[data-paper]'); if (pp) { const row = ppRows.get(pp.dataset.paper); if (row) paperSheet(row); return; }
   const lq = t.closest('[data-lq]'); if (lq) { S.lq = lq.dataset.lq; const li = $('.law-find input'); if (li) li.value = S.lq; renderLaw($('.content')); $('.content').scrollTop = 0; window.scrollTo(0, 0); return; }
   const ho = t.closest('[data-holding]'); if (ho) { holdingSheet(ho.dataset.holding); return; }
+  const bl = t.closest('[data-bill]'); if (bl) { const b = billRows.get(bl.dataset.bill); if (b) billSheet(b.x, b.law); return; }
   if (t.closest('[data-selall]')) { pickAll(); return; }
   const ck = t.closest('[data-ck]');
   if (ck) { const row = ck.closest('.row, .card-w[data-file]'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }

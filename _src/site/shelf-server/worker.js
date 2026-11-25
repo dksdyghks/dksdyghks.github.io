@@ -20,6 +20,8 @@
 // Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
 //   /api/law/search|item   국가법령정보 공동활용 (법령·판례·헌재결정례…): env.LAW_OC
 //   /api/assembly/<service> 열린국회정보 (의안 등): env.ASSEMBLY_KEY
+//   /api/bills?law=…        국회 계류 법안 of one law, with the articles each would change (kept in R2: bills/<law name>.json)
+//   /api/bills/one?no=&id=  one bill's 제안이유 및 주요내용 and the meetings that took it up (회의록)
 //   /api/data/<기관>/<서비스>[/<기능>] 공공데이터포털 (헌법재판소·국회입법조사처·법제처): env.DATA_GO_KR_KEY (법제처 1170000: env.MOLEG_KEY)
 //   /api/kci/oai            KCI OAI-PMH (no key)
 //   /api/nl/<op>            국립중앙도서관 (소장자료·KOLIS-NET·ISBN 서지): env.NL_KEY
@@ -27,6 +29,8 @@
 //   /api/scienceon/search|view  KISTI ScienceON 논문 (권호·쪽·초록·DOI·원문): env.SCIENCEON_CLIENT_ID, SCIENCEON_KEY, SCIENCEON_MAC
 //                           (its access token, issued with those, is kept in R2 at auth/scienceon.json and renewed when it runs out)
 //   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
+// Their answers are kept at Cloudflare's edge for a while (kept()), but only real answers: an error, a daily-limit answer or a
+// maintenance page is never kept, so the next ask goes out again.
 
 const ID = /^[0-9a-f]{24}$/;
 const FOLDER_ID = /^f_[0-9a-z]{10}$/;
@@ -131,22 +135,26 @@ async function route(req, env, ctx) {
         if (m === 'PUT') return await putState(req, env);
         break;
       case 'law':
-        if (m === 'GET' && (p[2] === 'search' || p[2] === 'item') && p.length === 3) return await lawApi(env, p[2], url);
+        if (m === 'GET' && (p[2] === 'search' || p[2] === 'item') && p.length === 3) return await lawApi(env, ctx, p[2], url);
         break;
       case 'assembly':
-        if (m === 'GET' && p.length === 3) return await assemblyApi(env, p[2], url);
+        if (m === 'GET' && p.length === 3) return await assemblyApi(env, ctx, p[2], url);
+        break;
+      case 'bills':
+        if (m === 'GET' && p.length === 2) return await billsApi(env, url);
+        if (m === 'GET' && p[2] === 'one' && p.length === 3) return await billOne(env, ctx, url);
         break;
       case 'data':
-        if (m === 'GET' && p.length >= 4 && p.length <= 5) return await dataApi(env, p.slice(2), url);
+        if (m === 'GET' && p.length >= 4 && p.length <= 6) return await dataApi(env, ctx, p.slice(2), url);
         break;
       case 'nl':
-        if (m === 'GET' && p.length === 3) return await nlApi(env, p[2], url);
+        if (m === 'GET' && p.length === 3) return await nlApi(env, ctx, p[2], url);
         break;
       case 'kci':
-        if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(url);
+        if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(ctx, url);
         break;
       case 'nanet':
-        if (m === 'GET' && p.length === 3) return await nanetApi(env, p[2], url);
+        if (m === 'GET' && p.length === 3) return await nanetApi(env, ctx, p[2], url);
         break;
       case 'scienceon':
         if (m === 'GET' && p.length === 3) return await scienceonApi(env, p[2], url);
@@ -170,41 +178,209 @@ const LAW_TARGETS = new Set(['law', 'prec', 'detc', 'expc', 'admrul']);   // 법
 const LAW_PARAMS = new Set(['query', 'display', 'page', 'sort', 'search', 'section', 'ID', 'MST', 'LID', 'LM', 'JO', 'efYd', 'nb', 'org', 'curt', 'date', 'knd']);
 // 국가법령정보 OPEN API checks who is asking against what the owner registered there (open.law.go.kr → OPEN API 신청):
 // requests say plainly which site they are made for — the registered domain — and what is making them
-const lawHeaders = (env) => ({ referer: env.LAW_DOMAIN || 'https://0128.kr/', 'user-agent': '0128-bookshelf/1.0 (+https://0128.kr/shelf/)' });
-async function lawApi(env, kind, url) {
+// every outside request says plainly what is making it
+const UA = '0128-bookshelf/1.0 (+https://0128.kr/shelf/)';
+const lawHeaders = (env) => ({ referer: env.LAW_DOMAIN || 'https://0128.kr/', 'user-agent': UA });
+// 국가법령정보 answers a refused or failed ask with 200 and {"result": "…실패…"}: such an answer is passed on, never kept
+const realLaw = (t) => /^\s*[{[<]/.test(t) && !/"result"\s*:\s*"[^"]*(?:실패|오류|제한|점검)/.test(t.slice(0, 800));
+async function lawApi(env, ctx, kind, url) {
   if (!env.LAW_OC) return err('no_key', 503);
   const target = url.searchParams.get('target') || 'law';
   if (!LAW_TARGETS.has(target)) return err('bad_target', 400);
   const q = new URLSearchParams({ OC: env.LAW_OC, target, type: 'JSON' });
   for (const [k, v] of url.searchParams) if (LAW_PARAMS.has(k) && v.length <= 200) q.set(k, v);
-  const up = await fetch(`https://www.law.go.kr/DRF/${kind === 'item' ? 'lawService' : 'lawSearch'}.do?${q}`, { headers: lawHeaders(env), cf: { cacheTtl: 21600, cacheEverything: true } });
-  return passOn(up, env.LAW_OC);
+  const u = `https://www.law.go.kr/DRF/${kind === 'item' ? 'lawService' : 'lawSearch'}.do?${q}`;
+  return passOn(await kept(ctx, u, 21600, () => fetch(u, { headers: lawHeaders(env), signal: AbortSignal.timeout(20000) }), realLaw), env.LAW_OC);
 }
 
-// 열린국회정보 (open.assembly.go.kr): one service by its code, parameters passed on (KEY and Type are set here)
+// 열린국회정보 (open.assembly.go.kr): one service by its code, parameters passed on (KEY and Type are set here). It answers a
+// request that does not say what is making it with a bare "Bad Request.", so every request here says so (UA).
 const ASSEMBLY_SERVICE = /^[A-Za-z0-9]{6,40}$/;
-async function assemblyApi(env, service, url) {
+const ASM_TTL = { BPMBILLSUMMARY: 30 * 86400, VCONFBILLCONFLIST: 86400, BILLINFODETAIL: 6 * 3600 };   // others: an hour
+const asmGet = (u) => fetch(u, { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+// a real answer says INFO-000 (rows) or INFO-200 (none); ERROR-… (a missing value, the key, the day's limit: ERROR-337) is not kept
+const realAssembly = (t) => /"CODE"\s*:\s*"INFO-(?:000|200)"|<CODE>INFO-(?:000|200)<\/CODE>/.test(t.slice(0, 1200));
+async function assemblyApi(env, ctx, service, url) {
   if (!env.ASSEMBLY_KEY) return err('no_key', 503);
   if (!ASSEMBLY_SERVICE.test(service || '')) return err('bad_service', 400);
   const q = new URLSearchParams({ KEY: env.ASSEMBLY_KEY, Type: 'json', pIndex: '1', pSize: '20' });
   for (const [k, v] of url.searchParams) if (/^[A-Za-z_]{2,30}$/.test(k) && !/^(KEY|Type)$/i.test(k) && v.length <= 200) q.set(k, v);
-  const up = await fetch(`https://open.assembly.go.kr/portal/openapi/${service}?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
-  return passOn(up, env.ASSEMBLY_KEY);
+  const u = `https://open.assembly.go.kr/portal/openapi/${service}?${q}`;
+  return passOn(await kept(ctx, u, ASM_TTL[service] || 3600, () => asmGet(u), realAssembly), env.ASSEMBLY_KEY);
+}
+
+/* ---------------- 국회 계류 법안 ---------------- */
+// A law's bills now before the National Assembly (열린국회정보 계류의안: 의원·정부·위원장 제안), each with its gist and the
+// articles it would change, both read from its 제안이유 및 주요내용 (BPMBILLSUMMARY). Kept in R2 (bills/<law>.json): the list
+// is asked again after six hours, and each call reads the summaries of up to BILL_FILL more bills, newest first — a law with
+// many bills (공직선거법: about 300) fills in over a few calls the first time, and after that only new bills are read.
+const BILL_FRESH = 6 * 3600e3, BILL_FILL = 40, BILLS_V = 2;
+const LAW_NAME = /^[가-힣A-Za-z0-9·ㆍ・ ,()「」-]{2,60}$/;
+function assemblyAge(t = Date.now()) {   // the Assembly now sitting: the 22nd from 30 May 2024, a new one every four years
+  const k = new Date(t + 9 * 3600e3);
+  const y = k.getUTCFullYear() - (k.getUTCMonth() < 4 || (k.getUTCMonth() === 4 && k.getUTCDate() < 30) ? 1 : 0);
+  return 22 + Math.floor((y - 2024) / 4);
+}
+const asmUrl = (env, service, params) => `https://open.assembly.go.kr/portal/openapi/${service}?${new URLSearchParams({ KEY: env.ASSEMBLY_KEY, Type: 'json', pIndex: '1', pSize: '100', ...params })}`;
+// the rows of an answer ([] when there are none), or null when it is an error
+function asmRows(text, service) {
+  let d; try { d = JSON.parse(text); } catch { return null; }
+  if (d && d.RESULT) return d.RESULT.CODE === 'INFO-200' ? { total: 0, rows: [] } : null;
+  const top = d && d[service];
+  if (!Array.isArray(top)) return null;
+  const head = (top[0] && top[0].head) || [];
+  const code = head[1] && head[1].RESULT && head[1].RESULT.CODE;
+  if (code && !/^INFO-(?:000|200)$/.test(code)) return null;
+  return { total: Number(head[0] && head[0].list_total_count) || 0, rows: (top[1] && top[1].row) || [] };
+}
+// a bill that amends the law (공직선거법 일부개정법률안, …전부개정법률안, 「공직선거법·정치자금법」 일부개정법률안), not one that only
+// holds its name ("헌법재판소법" holds "헌법")
+const dots = (t) => String(t || '').replace(/[·ㆍ・‧∙]/g, '·').replace(/\s+/g, ' ').trim();
+function amends(name, law) {
+  const n = dots(name), l = dots(law);
+  if (!n.startsWith(l)) return false;
+  const rest = n.slice(l.length);
+  return rest === '' || /^[\s(·,]|^(?:일부|전부)?개정|^폐지|^중\s*개정/.test(rest);
+}
+function billStep(r) {   // how far it has gone, and since when
+  if (r.LAW_PROC_DT) return [`법사위 ${r.LAW_PROC_RESULT_CD || '처리'}`, r.LAW_PROC_DT];
+  if (r.LAW_PRESENT_DT) return ['법사위 상정', r.LAW_PRESENT_DT];
+  if (r.LAW_SUBMIT_DT) return ['법사위 회부', r.LAW_SUBMIT_DT];
+  if (r.CMT_PROC_DT) return [`위원회 ${r.CMT_PROC_RESULT_CD || '처리'}`, r.CMT_PROC_DT];
+  if (r.CMT_PRESENT_DT) return ['위원회 상정', r.CMT_PRESENT_DT];
+  if (r.COMMITTEE_DT) return ['위원회 회부', r.COMMITTEE_DT];
+  return ['접수', r.PROPOSE_DT];
+}
+const billRow = (r) => {
+  const [step, stepAt] = billStep(r);
+  // once taken up in committee (상정) the committee's 검토보고서 exists, on the bill's page at 의안정보시스템
+  return { id: r.BILL_ID, no: String(r.BILL_NO || ''), name: dots(r.BILL_NAME), by: dots(r.PROPOSER), kind: r.PROPOSER_KIND || '', date: r.PROPOSE_DT || '', cmt: r.CURR_COMMITTEE || '', step, stepAt: stepAt || '', review: !!r.CMT_PRESENT_DT };
+};
+// the articles a bill would change, as its 주요내용 names them: "(안 제24조제1항)" → 24; "(안 제6조의4 및 제6조의5 신설,
+// 제151조제8항)" → 6의4, 6의5, 151; "(안 제59조부터 제61조까지)" → 59, 60, 61. Only brackets that begin with 안 are read (an
+// article of another law is named as 「…법」 제N조 in the text); a summary without them gives its plain brackets "(제59조)".
+function billArts(s) {
+  const out = new Set(), t = String(s || '');
+  const groups = [...t.matchAll(/\(\s*안\s*(제[^()]*)\)/g)].map((m) => m[1]);
+  if (!groups.length) for (const m of t.matchAll(/(.)\(\s*(제\s*\d+\s*조[^()]*)\)/g)) if (m[1] !== '」') groups.push(m[2]);
+  for (const g of groups) {
+    for (const m of g.matchAll(/제\s*(\d+)\s*조(?:\s*의\s*(\d+))?(?:(?:\s*제\s*\d+\s*[항호])*\s*부터\s*제\s*(\d+)\s*조(?:\s*의\s*(\d+))?\s*까지)?/g)) {
+      const a = Number(m[1]), sa = m[2] ? Number(m[2]) : 0;
+      out.add(sa ? `${a}의${sa}` : String(a));
+      if (!m[3]) continue;
+      const b = Number(m[3]), sb = m[4] ? Number(m[4]) : 0;
+      if (a === b) { for (let k = sa + 1; k < sb; k++) out.add(`${a}의${k}`); }
+      else if (b > a && b - a <= 80) for (let k = a + 1; k <= b; k++) out.add(String(k));
+      if (sb) out.add(`${b}의${sb}`);
+    }
+  }
+  return [...out];
+}
+// what the bill does, in a line: its first 주요내용 item ("가. …"), or else the sentence that says what it would do ("이에 …것임")
+function billGist(s) {
+  // (a closing 참고사항 — "이 법률안은 …의 의결을 전제로 하는 것이므로 …" — says nothing of what the bill does)
+  const t = String(s || '').replace(/\r/g, '').replace(/\n\s*참고사항[\s\S]*$/, '').replace(/\(\s*안\s*제[^()]*\)/g, '');
+  const item = /주요내용\s*\n\s*(?:\n\s*)*가\.\s*([\s\S]*?)(?:\n\s*나\.|$)/.exec(t);
+  let g = item ? item[1] : '';
+  if (!g) {
+    const body = t.replace(/^\s*제안이유(?:\s*및\s*주요내용)?\s*/, '');
+    const sents = body.split(/(?<=[.])\s+/).map((x) => x.trim()).filter(Boolean);
+    g = sents.find((x) => /^이에\s/.test(x)) || [...sents].reverse().find((x) => /것임\.?$/.test(x)) || sents[sents.length - 1] || '';
+    g = g.replace(/^(?:이에\s*따라|이에|따라서|이러한\s*취지에서)\s*,?\s*/, '');
+  }
+  g = g.replace(/\s+/g, ' ').replace(/\.{2,}$/, '.').trim();
+  return g.length > 150 ? g.slice(0, 148).replace(/\s+\S*$/, '') + '…' : g;
+}
+// how many points its 주요내용 lists (가. 나. 다. …), 0 when it is one paragraph
+const billItems = (s) => (/주요내용\s*\n\s*(?:\n\s*)*가\./.test(String(s || '')) ? 1 + (String(s).match(/\n\s*[나다라마바사아자차카타파하]\.\s/g) || []).length : 0);
+async function fillBill(env, x) {   // its gist and articles; false when 열린국회정보 did not answer (asked again next call)
+  const r = await asmGet(asmUrl(env, 'BPMBILLSUMMARY', { BILL_NO: x.no, pSize: '1' })).catch(() => null);
+  if (!r || !r.ok) return false;
+  const d = asmRows(await r.text(), 'BPMBILLSUMMARY');
+  if (!d) return false;
+  const s = d.rows[0] && d.rows[0].SUMMARY;
+  x.arts = s ? billArts(s) : []; x.gist = s ? billGist(s) : ''; x.items = billItems(s);
+  if (s) delete x.retry; else x.retry = Date.now() + 864e5;   // a bill just received may have no summary yet: a day later, again
+  return true;
+}
+async function billList(env, law, age) {
+  const rows = [];
+  for (let page = 1; page <= 3; page++) {
+    const r = await asmGet(asmUrl(env, 'nwbqublzajtcqpdae', { AGE: String(age), BILL_NAME: law, pIndex: String(page), pSize: '1000' })).catch(() => null);
+    if (!r || !r.ok) return null;
+    const d = asmRows(await r.text(), 'nwbqublzajtcqpdae');
+    if (!d) return null;
+    rows.push(...d.rows);
+    if (rows.length >= d.total || d.rows.length < 1000) break;
+  }
+  return rows.filter((x) => amends(x.BILL_NAME, law));
+}
+async function billsApi(env, url) {
+  if (!env.ASSEMBLY_KEY) return err('no_key', 503);
+  const law = dots(url.searchParams.get('law'));
+  if (!LAW_NAME.test(law)) return err('bad_law', 400);
+  const key = 'bills/' + law + '.json', age = assemblyAge(), now = Date.now();   // (LAW_NAME allows no '/')
+  let b = await env.BUCKET.get(key).then((o) => (o ? o.json() : null)).catch(() => null);
+  if (b && (b.v !== BILLS_V || b.age !== age)) b = null;
+  let changed = false;
+  if (!b || now - b.at > BILL_FRESH) {
+    const got = await billList(env, law, age);
+    if (got) {
+      const old = new Map(((b && b.rows) || []).map((x) => [x.no, x]));
+      const rows = got.map((r) => { const x = billRow(r), o = old.get(x.no); if (o && o.arts) { x.arts = o.arts; x.gist = o.gist; x.items = o.items || 0; if (o.retry) x.retry = o.retry; } return x; });
+      rows.sort((p, q) => (q.date || '').localeCompare(p.date || '') || q.no.localeCompare(p.no));
+      b = { v: BILLS_V, law, age, at: now, rows };
+      changed = true;
+    } else if (!b) return err('assembly_unavailable', 502);   // the list we have stays, and is asked again next time
+  }
+  const todo = b.rows.filter((x) => !x.arts || (x.retry && x.retry < now)).slice(0, BILL_FILL);
+  if (todo.length && (await Promise.all(todo.map((x) => fillBill(env, x)))).some(Boolean)) changed = true;
+  if (changed) await env.BUCKET.put(key, JSON.stringify(b), { httpMetadata: { contentType: 'application/json' } });
+  const missing = b.rows.filter((x) => !x.arts).length;
+  return json({ law, age, at: b.at, total: b.rows.length, missing, rows: b.rows.map(({ retry, ...x }) => x) });
+}
+// one bill: its 제안이유 및 주요내용 in full and the meetings that took it up (회의록, as PDF at record.assembly.go.kr)
+async function billOne(env, ctx, url) {
+  if (!env.ASSEMBLY_KEY) return err('no_key', 503);
+  const no = url.searchParams.get('no') || '', id = url.searchParams.get('id') || '';
+  if (!/^\d{6,9}$/.test(no) || !/^PRC_[A-Z0-9]{20,40}$/.test(id)) return err('bad_id', 400);
+  const [s, m] = await Promise.all([
+    kept(ctx, 'bill-summary:' + no, ASM_TTL.BPMBILLSUMMARY, () => asmGet(asmUrl(env, 'BPMBILLSUMMARY', { BILL_NO: no, pSize: '1' })), realAssembly),
+    kept(ctx, 'bill-minutes:' + id, ASM_TTL.VCONFBILLCONFLIST, () => asmGet(asmUrl(env, 'VCONFBILLCONFLIST', { BILL_ID: id, pSize: '50' })), realAssembly),
+  ]);
+  const sd = s.ok ? asmRows(s.text, 'BPMBILLSUMMARY') : null, md = m.ok ? asmRows(m.text, 'VCONFBILLCONFLIST') : null;
+  if (!sd && !md) return err('assembly_unavailable', 502);
+  const summary = sd ? String((sd.rows[0] && sd.rows[0].SUMMARY) || '') : null;
+  const minutes = md ? md.rows.map((x) => ({ kind: String(x.CONF_KND || '').trim(), sess: String(x.SESS || '').trim(), dgr: String(x.DGR || '').trim(), date: String(x.CONF_DT || '').trim(), url: String(x.DOWN_URL || '').replace(/^http:/, 'https:') }))
+    .filter((x) => /^https:\/\/record\.assembly\.go\.kr\//.test(x.url)).sort((p, q) => p.date.localeCompare(q.date)) : null;
+  return json({ summary, minutes });
 }
 
 // 공공데이터포털: https://apis.data.go.kr/<기관>/<서비스>[/<기능>]?serviceKey=… (one key for every API the owner applied for)
 const DATA_SEG = /^(?!\.)[A-Za-z0-9_-]{1,60}(?:\.do)?$/;   // a name, or one ending in .do (법제처: lawSearchList.do); never '..'
 // 법제처 (1170000: 국가법령정보 공유서비스, apis.data.go.kr/1170000/law) is approved for the owner's newer key (MOLEG_KEY);
 // every other service there takes DATA_GO_KR_KEY
-const dataKey = (env, segs) => (segs[0] === '1170000' && env.MOLEG_KEY) || env.DATA_GO_KR_KEY;
-async function dataApi(env, segs, url) {
-  if (!dataKey(env, segs)) return err('no_key', 503);
+const dataKey = (env, segs) => (segs[0] === '1170000' && env.MOLEG_KEY) || env.DATA_GO_KR_KEY || env.MOLEG_KEY;
+// the owner's keys, the one for this service first: a service approved later (한국연구재단 KCI, B552540) may know only one of them,
+// so an answer that says the key is not registered for it is asked again with the other
+const dataKeys = (env, segs) => [...new Set([dataKey(env, segs), env.DATA_GO_KR_KEY, env.MOLEG_KEY].filter(Boolean))];
+const notRegistered = (t) => /SERVICE_KEY_IS_NOT_REGISTERED|<returnReasonCode>\s*(?:30|31)\s*</.test(t.slice(0, 1500));
+// the portal's own refusals (an unregistered key, the day's limit, a retired service) and a service's error code are not kept
+const realData = (t) => !/OpenAPI_ServiceResponse|<errMsg>|<returnReasonCode>|SERVICE_KEY_IS|LIMITED_NUMBER|"resultCode"\s*:\s*"(?!0+")|<resultCode>(?!0+<)/.test(t.slice(0, 1500));
+async function dataApi(env, ctx, segs, url) {
+  const keys = dataKeys(env, segs);
+  if (!keys.length) return err('no_key', 503);
   if (!segs.every((x) => DATA_SEG.test(x))) return err('bad_service', 400);
-  const key = dataKey(env, segs);
-  const q = new URLSearchParams({ serviceKey: key });
-  for (const [k, v] of url.searchParams) if (/^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(k) && !/^servicekey$/i.test(k) && v.length <= 300) q.set(k, v);
-  const up = await fetch(`https://apis.data.go.kr/${segs.join('/')}?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
-  return passOn(up, key);
+  const params = [...url.searchParams].filter(([k, v]) => /^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(k) && !/^servicekey$/i.test(k) && v.length <= 300);
+  let res;
+  for (const key of keys) {
+    const q = new URLSearchParams({ serviceKey: key });
+    for (const [k, v] of params) q.set(k, v);
+    const u = `https://apis.data.go.kr/${segs.join('/')}?${q}`;
+    res = await kept(ctx, u, 3600, () => fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(20000) }), realData);
+    if (!notRegistered(res.text)) break;
+  }
+  return passOn(res, keys);
 }
 
 // KCI OAI-PMH (open, no key): one record, or a page of records
@@ -214,14 +390,15 @@ const NL_OPS = {
   kolisnet: ['https://www.nl.go.kr/NL/search/openApi/searchKolisNet.do', 'key'],
   seoji: ['https://www.nl.go.kr/seoji/SearchApi.do', 'cert_key'],
 };
-async function nlApi(env, op, url) {
+const realNl = (t) => /^\s*[{[<]/.test(t) && !/"error(?:Code)?"\s*:|<error/i.test(t.slice(0, 400));
+async function nlApi(env, ctx, op, url) {
   if (!env.NL_KEY) return err('no_key', 503);
   const svc = NL_OPS[op];
   if (!svc) return err('bad_service', 400);
   const q = new URLSearchParams({ [svc[1]]: env.NL_KEY });
   for (const [k, v] of url.searchParams) if (/^[A-Za-z_]{2,30}$/.test(k) && !/^(key|cert_key)$/i.test(k) && v.length <= 300) q.set(k, v);
-  const up = await fetch(`${svc[0]}?${q}`, { cf: { cacheTtl: 86400, cacheEverything: true } });
-  return passOn(up, env.NL_KEY);
+  const u = `${svc[0]}?${q}`;
+  return passOn(await kept(ctx, u, 86400, () => fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(20000) }), realNl), env.NL_KEY);
 }
 
 // 국회도서관 국가학술정보 클라우드 Open API (losi-open.nanet.go.kr): 통합검색 (searchTotal) and 상세보기 (searchView), each asked
@@ -238,11 +415,13 @@ const NANET_OPS = {
 };
 const nanetAsk = (env, path, params) => fetch(`http://losi-api.nanet.go.kr/${path}`, {
   method: 'POST',
-  headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', accept: 'application/json', 'user-agent': '0128-bookshelf/1.0 (+https://0128.kr/shelf/)' },
+  headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', accept: 'application/json', 'user-agent': UA },
   body: new URLSearchParams({ authKey: env.NANET_KEY, ...params }).toString(),
   signal: AbortSignal.timeout(20000),
 });
-async function nanetApi(env, op, url) {
+// a search is kept half a day, one record (상세·연구자·주제어) three days; the day's-limit answer ("트랙픽 양이 초과") is not kept
+const realNanet = (t) => /^\s*\{/.test(t) && !/"error"\s*:/.test(t.slice(0, 800));
+async function nanetApi(env, ctx, op, url) {
   if (!env.NANET_KEY) return err('no_key', 503);
   const svc = NANET_OPS[op];
   if (!svc) return err('bad_service', 400);
@@ -251,7 +430,8 @@ async function nanetApi(env, op, url) {
   if (['search', 'relAuthor', 'relJournal', 'relPublisher', 'relKeyword', 'trend'].includes(op) && !(params.searchTerm || '').trim()) return err('no_term', 400);
   if (op === 'view' && !(params.lodID && params.divFlag)) return err('no_id', 400);
   if ((op === 'subject' && !params.lodID) || (op === 'author' && !params.lodID && !params.name_ko)) return err('no_id', 400);
-  return passOn(await nanetAsk(env, svc[0], params), env.NANET_KEY);
+  const ttl = ['view', 'author', 'subject'].includes(op) ? 3 * 86400 : 12 * 3600;
+  return passOn(await kept(ctx, 'nanet:' + svc[0] + ':' + JSON.stringify(Object.entries(params).sort()), ttl, () => nanetAsk(env, svc[0], params), realNanet), env.NANET_KEY);
 }
 
 // KISTI ScienceON API Gateway: a token is asked for with the owner's client id and, encrypted with the owner's key (AES-256-CBC,
@@ -325,13 +505,14 @@ async function scienceonApi(env, op, url) {
 }
 
 const OAI_PARAMS = new Set(['verb', 'identifier', 'metadataPrefix', 'set', 'from', 'until', 'resumptionToken']);
-async function kciOai(url) {
+const realKci = (t) => t.includes('<OAI-PMH') && !/<error\b/.test(t.slice(0, 3000));
+async function kciOai(ctx, url) {
   const verb = url.searchParams.get('verb');
   if (!['GetRecord', 'ListRecords', 'ListIdentifiers', 'Identify', 'ListSets'].includes(verb)) return err('bad_verb', 400);
   const q = new URLSearchParams();
   for (const [k, v] of url.searchParams) if (OAI_PARAMS.has(k) && v.length <= 200) q.set(k, v);
-  const up = await fetch(`https://open.kci.go.kr/oai/request?${q}`, { cf: { cacheTtl: 86400, cacheEverything: true } });
-  return passOn(up, '');
+  const u = `https://open.kci.go.kr/oai/request?${q}`;
+  return passOn(await kept(ctx, u, 86400, () => fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(30000) }), realKci), '');
 }
 
 // which outside sources answer, asked from where we run now (near the device that asked); the answer is kept for reading later
@@ -339,7 +520,7 @@ async function diag(req, env) {
   const tries = [
     ['kci', 'https://open.kci.go.kr/oai/request?verb=Identify'],
     ['law', env.LAW_OC && `https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(env.LAW_OC)}&target=law&type=JSON&display=1&query=${encodeURIComponent('헌법')}`, lawHeaders(env)],
-    ['assembly', env.ASSEMBLY_KEY && `https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn?KEY=${encodeURIComponent(env.ASSEMBLY_KEY)}&Type=json&pIndex=1&pSize=1&AGE=22`],
+    ['assembly', env.ASSEMBLY_KEY && `https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn?KEY=${encodeURIComponent(env.ASSEMBLY_KEY)}&Type=json&pIndex=1&pSize=1&AGE=22`, { 'user-agent': UA, accept: 'application/json' }],
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
     ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
   ];
@@ -364,12 +545,28 @@ async function diag(req, env) {
   return json(out);
 }
 
+// An outside answer, kept at the edge for ttl seconds when real(text) says it is a real one (not an error, a daily-limit answer
+// or a maintenance page, which go out again next time). id names the question (the URL asked, or a key of our own), hashed.
+const KEPT = 'https://kept.bookshelf.invalid/';
+async function kept(ctx, id, ttl, ask, real) {
+  const key = new Request(KEPT + (await sha256hex(id)));
+  const hit = await caches.default.match(key).catch(() => null);
+  if (hit) return { ok: true, status: 200, type: hit.headers.get('content-type'), text: await hit.text() };
+  let up;
+  try { up = await ask(); } catch (e) { return { ok: false, status: 504, type: 'application/json', text: JSON.stringify({ error: 'upstream_unreachable' }) }; }
+  const text = await up.text();
+  const out = { ok: up.ok, status: up.status, type: up.headers.get('content-type'), text };
+  if (up.ok && ttl > 0 && text.length <= 4 * 1024 * 1024 && real(text)) {
+    ctx.waitUntil(caches.default.put(key, new Response(text, { headers: { 'content-type': out.type || 'text/plain; charset=utf-8', 'cache-control': `public, max-age=${ttl}` } })).catch(() => {}));
+  }
+  return out;
+}
 // the answer as it came, with the key taken out wherever it is echoed (links in the answer carry it)
-async function passOn(up, key) {
-  let text = await up.text();
+function passOn(res, key) {
+  let text = res.text;
   if (text.length > 4 * 1024 * 1024) return err('too_large', 502);
-  if (key) text = text.split(key).join('');
-  return new Response(text, { status: up.ok ? 200 : 502, headers: { 'content-type': up.headers.get('content-type') || 'application/json; charset=utf-8', 'cache-control': 'private, max-age=600' } });
+  for (const k of [].concat(key || [])) if (k) text = text.split(k).join('');
+  return new Response(text, { status: res.ok ? 200 : 502, headers: { 'content-type': res.type || 'application/json; charset=utf-8', 'cache-control': 'private, max-age=600' } });
 }
 
 /* ---------------- sign-in ---------------- */

@@ -448,7 +448,7 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .law-note { color: var(--muted); font-size: 13.5px; line-height: 1.65; margin: 14px 4px; max-width: 640px; }
 .law-note.faint { color: var(--faint); }
 .law-card .law-note { margin: 4px 0 10px; }
-.law-sec { margin-bottom: 6px; }
+.law-sec, .bill-sec { margin-bottom: 6px; }
 .law-list .lrow { display: grid; gap: 3px; width: 100%; text-align: left; padding: 12px 18px; border-top: 1px solid var(--rule); }
 .law-list .lrow:first-child { border-top: 0; }
 .lrow b { font-size: 14.5px; font-weight: 600; line-height: 1.45; }
@@ -535,6 +535,24 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .lw-next-arts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 2px; }
 .lw-next-arts button { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border-radius: 14px; background: var(--card); box-shadow: var(--shadow); font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
 .lw-next-arts button small { color: var(--accent); font-size: 11px; font-weight: 700; }
+/* 국회 계류 법안: under an article or a law, and one bill in a sheet */
+.bill-sec .sec-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.bill-read { font-weight: 600; color: var(--accent); letter-spacing: 0; }
+.bill-read::before { content: ""; display: inline-block; width: 7px; height: 7px; margin: 0 6px 1px 0; border-radius: 50%; background: currentColor; animation: billPulse 1.2s ease-in-out infinite; }
+@keyframes billPulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .bill-read::before { animation: none; } }
+.bill-row b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bill-foot { margin: 8px 4px 18px; font-size: 12.5px; color: var(--faint); }
+.bill-none .law-note { margin: 2px 4px 16px; font-size: 13px; }
+.bill-when { color: var(--faint); }
+.bill-arts { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 2px; }
+.bill-arts button { height: 28px; padding: 0 11px; border-radius: 14px; background: var(--chip); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.bill-sum h4:first-child { margin-top: 16px; }
+.bill-sum p + p { margin-top: 8px; }
+.bill-mins { display: grid; gap: 6px; margin-top: 4px; }
+.bill-mins a { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 9px 12px; border-radius: 10px; background: var(--chip); color: var(--ink); text-decoration: none; }
+.bill-mins a b { font-size: 13.5px; font-weight: 600; }
+.bill-mins a span { font-size: 12.5px; color: var(--muted); }
 .lw-next-arts > span { font-size: 12px; color: var(--muted); align-self: center; }
 
 @media print { .rail, .bar, .toolrow, .uploads, .toast { display: none !important; } }

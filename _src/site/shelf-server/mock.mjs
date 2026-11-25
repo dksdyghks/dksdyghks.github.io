@@ -8,6 +8,19 @@ import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
 import worker from './worker.js';
 
+// Cloudflare's edge cache (caches.default), kept in memory here: put keeps a response for its max-age, match gives it back
+if (!globalThis.caches) {
+  const kept = new Map();
+  const keyOf = (req) => (typeof req === 'string' ? req : req.url);
+  globalThis.caches = {
+    default: {
+      async match(req) { const e = kept.get(keyOf(req)); if (!e || e.until < Date.now()) return undefined; return new Response(e.body, { headers: e.headers }); },
+      async put(req, res) { const age = Number((/max-age=(\d+)/.exec(res.headers.get('cache-control') || '') || [])[1] || 0); kept.set(keyOf(req), { body: await res.text(), headers: [...res.headers], until: Date.now() + age * 1000 }); },
+      async delete(req) { return kept.delete(keyOf(req)); },
+    },
+  };
+}
+
 export class MockR2 {
   constructor(dir) { this.dir = dir; fs.mkdirSync(dir, { recursive: true }); this.mpu = new Map(); }
   #file(key) { return path.join(this.dir, encodeURIComponent(key)); }

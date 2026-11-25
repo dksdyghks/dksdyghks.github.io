@@ -76,6 +76,8 @@ export const lawItem = (params) => call('/law/item?' + new URLSearchParams(param
 export const nlib = (op, params) => call('/nl/' + op + '?' + new URLSearchParams(params));   // 국립중앙도서관 (소장자료 검색 …)
 export const nanet = (op, params) => call('/nanet/' + op + '?' + new URLSearchParams(params));   // 국회도서관 국가학술정보 클라우드 (통합검색 search, 상세보기 view)
 export const scienceon = (op, params) => call('/scienceon/' + op + '?' + new URLSearchParams(params));   // KISTI ScienceON 논문 (search: q, field, page; view: cn)
+export const bills = (law) => call('/bills?' + new URLSearchParams({ law }));   // 국회 계류 법안 of a law (the server reads more on each call)
+export const bill = (no, id) => call('/bills/one?' + new URLSearchParams({ no, id }));   // one bill: 제안이유 및 주요내용, 회의록
 export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: list } });
 
 export const getMarks = (id) => call('/marks/' + id);
