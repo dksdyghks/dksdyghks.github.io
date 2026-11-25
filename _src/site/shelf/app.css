@@ -553,6 +553,14 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .bill-mins a { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 9px 12px; border-radius: 10px; background: var(--chip); color: var(--ink); text-decoration: none; }
 .bill-mins a b { font-size: 13.5px; font-weight: 600; }
 .bill-mins a span { font-size: 12.5px; color: var(--muted); }
+/* 비교법 원문: the law's own words (Japanese and English wrap by their own rules), and a box to find in it */
+.foreign-art .lc-t p, .foreign-law .lw-a span { word-break: normal; overflow-wrap: anywhere; }
+.fl-find { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; margin: 2px 0 10px; border-radius: 12px; background: var(--chip); color: var(--faint); cursor: text; }
+.fl-find svg { width: 18px; height: 18px; flex: none; }
+.fl-find input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
+.fl-find:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+.fl-n { margin: 4px 0 2px; font-size: 12.5px; }
+.fl-src { margin: 6px 0 0; font-size: 12.5px; }
 .lw-next-arts > span { font-size: 12px; color: var(--muted); align-self: center; }
 
 @media print { .rail, .bar, .toolrow, .uploads, .toast { display: none !important; } }

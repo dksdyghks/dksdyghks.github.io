@@ -13,6 +13,12 @@ globalThis.fetch = async (url, init) => {
   const u = String(url);
   const fake = fakeAssembly(u);
   if (fake) { asked.push(u); sentHeaders.push(new Headers((init && init.headers) || {})); return fake; }
+  if (u.startsWith('https://www.govinfo.gov/content/pkg/USCODE-')) {   // only the 2024 edition is there
+    asked.push(u);
+    return u.includes('USCODE-2024-') ? new Response('<html><head><title>U.S.C. Title 52</title></head><body><h3 class="section-head">&sect;30106. Federal Election Commission</h3></body></html>', { headers: { 'content-type': 'text/html' } })
+      : new Response('<!DOCTYPE html><html><head><link rel="canonical" href="https://www.govinfo.gov/error" /><title>Page Not Found | GovInfo</title></head><body>…</body></html>', { headers: { 'content-type': 'text/html' } });
+  }
+  if (u.startsWith('https://laws.e-gov.go.jp/')) { asked.push(u); return new Response(JSON.stringify({ law_info: { law_id: '325AC1000000100' } }), { headers: { 'content-type': 'application/json' } }); }
   if (u.startsWith('https://www.law.go.kr/') || u.startsWith('https://open.assembly.go.kr/')) {
     asked.push(u); sentHeaders.push(new Headers((init && init.headers) || {}));
     return new Response(JSON.stringify({ asked: u, link: '/DRF/lawService.do?OC=' + OC + '&KEY=' + KEY }), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -112,6 +118,15 @@ ok(r.status === 200 && /활동기한/.test(b.summary) && b.minutes.length === 1 
 ok((await call('/bills/one?no=1&id=x', T)).status === 400, 'bills/one: odd numbers -> 400');
 r = await call('/bills/one?no=2223999&id=PRC_75598305B0484647B86910AE3ECBFB', T); b = await r.json();
 ok(r.status === 200 && b.summary === '', 'bills/one: a bill without a summary yet -> an empty summary');
+
+// 비교법 원문: named laws only, the first source that is really there, kept after
+r = await call('/foreign/us-title52', T); b = await r.text();
+ok(r.status === 200 && /30106/.test(b) && r.headers.get('x-source').includes('USCODE-2024-') && asked.filter((a) => a.includes('USCODE-')).length === 4, "foreign: govinfo's newest edition that is there (2027, 2026, 2025 answered 'Page Not Found'; 2024 passed on)");
+const nf = asked.length; r = await call('/foreign/us-title52', T); await r.text();
+ok(r.status === 200 && asked.length === nf, 'foreign: kept at the edge (asked once)');
+r = await call('/foreign/jp-koshoku', T);
+ok(r.status === 200 && /325AC1000000100/.test(await r.text()), 'foreign: 公職選挙法 from e-Gov');
+ok((await call('/foreign/' + encodeURIComponent('https://evil.example/'), T)).status === 400 && (await call('/foreign/toString', T)).status === 400 && (await call('/foreign/us52-301', T)).status === 400, 'foreign: anything not named is refused (no fetching of other places)');
 
 server.close();
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');

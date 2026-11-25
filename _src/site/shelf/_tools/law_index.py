@@ -5,8 +5,11 @@ each folder's main file (a ranged request: the first 700 bytes).
   git clone --filter=blob:none --no-checkout --depth 1 https://github.com/legalize-kr/legalize-kr laws
   git -C laws -c core.quotePath=false ls-tree -r --name-only HEAD kr/ | sed 's#^kr/##' > law-files.txt
   python3 law_index.py law-files.txt ../lawidx.json
+
+When the index is there already (the weekly refresh), the names it holds are kept and only new folders are read, with
+an eighth of the others read again each week (a law renamed in its own folder is caught within two months).
 """
-import json, ssl, sys, urllib.parse, urllib.request, concurrent.futures as cf
+import datetime, hashlib, json, os, ssl, sys, urllib.parse, urllib.request, concurrent.futures as cf
 
 ORDER = ['법률', '헌법', '대통령령']
 KEEP = ['헌법', '법률', '대통령령', '시행령', '시행규칙']
@@ -40,8 +43,21 @@ def main(listing, dst, cafile=None):
                 pass
         return d, ''
 
+    prev = {}
+    if os.path.exists(dst):
+        try:
+            prev = {d: v[0] for d, v in json.load(open(dst, encoding='utf-8')).items() if v and v[0] and v[0] != d}
+        except Exception:
+            prev = {}
+    week = datetime.date.today().isocalendar()[1]
+    again = lambda d: int(hashlib.sha1(d.encode()).hexdigest(), 16) % 8 == week % 8
+    ask = [d for d in files if d not in prev or again(d)]
     with cf.ThreadPoolExecutor(6) as ex:
-        names = dict(ex.map(name, files))
+        names = {d: n for d, n in ex.map(name, ask)}
+    for d in files:
+        if not names.get(d) and d in prev:
+            names[d] = prev[d]          # kept (or read again and not answered: the name it had)
+    print(len(ask), 'folders read,', len(files) - len(ask), 'names kept')
     out = {}
     for d in sorted(files):
         fs = sorted(files[d], key=lambda f: (KEEP.index(f) if f in KEEP else len(KEEP), f))

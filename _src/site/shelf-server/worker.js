@@ -28,6 +28,7 @@
 //   /api/nanet/<op>          국회도서관 국가학술정보 클라우드 (통합검색·상세보기·연구자·주제어·연관 연구자/학술지/발행기관/주제어·추이): env.NANET_KEY
 //   /api/scienceon/search|view  KISTI ScienceON 논문 (권호·쪽·초록·DOI·원문): env.SCIENCEON_CLIENT_ID, SCIENCEON_KEY, SCIENCEON_MAC
 //                           (its access token, issued with those, is kept in R2 at auth/scienceon.json and renewed when it runs out)
+//   /api/foreign/<id>       비교법 원문: a few foreign election laws from their official sources, by name only (FOREIGN)
 //   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
 // Their answers are kept at Cloudflare's edge for a while (kept()), but only real answers: an error, a daily-limit answer or a
 // maintenance page is never kept, so the next ask goes out again.
@@ -140,6 +141,9 @@ async function route(req, env, ctx) {
       case 'assembly':
         if (m === 'GET' && p.length === 3) return await assemblyApi(env, ctx, p[2], url);
         break;
+      case 'foreign':
+        if (m === 'GET' && p.length === 3) return await foreignLaw(ctx, p[2]);
+        break;
       case 'bills':
         if (m === 'GET' && p.length === 2) return await billsApi(env, url);
         if (m === 'GET' && p[2] === 'one' && p.length === 3) return await billOne(env, ctx, url);
@@ -207,6 +211,57 @@ async function assemblyApi(env, ctx, service, url) {
   for (const [k, v] of url.searchParams) if (/^[A-Za-z_]{2,30}$/.test(k) && !/^(KEY|Type)$/i.test(k) && v.length <= 200) q.set(k, v);
   const u = `https://open.assembly.go.kr/portal/openapi/${service}?${q}`;
   return passOn(await kept(ctx, u, ASM_TTL[service] || 3600, () => asmGet(u), realAssembly), env.ASSEMBLY_KEY);
+}
+
+/* ---------------- 비교법 원문 ---------------- */
+// A few foreign election laws for comparative work (일본·캐나다·미국), each from its official source and passed on as it
+// comes (the app reads it): only these, by name — this is no way to fetch anything else. Kept at the edge for a day; an
+// answer that is not the expected kind (a maintenance page) is passed over and not kept.
+const FOREIGN = {
+  'jp-koshoku': ['https://laws.e-gov.go.jp/api/2/law_data/325AC1000000100?law_full_text_format=json', /json/],   // 公職選挙法 (e-Gov 法令API)
+  'jp-seiji': ['https://laws.e-gov.go.jp/api/2/law_data/323AC1000000194?law_full_text_format=json', /json/],     // 政治資金規正法
+  'ca-elections': ['https://laws-lois.justice.gc.ca/eng/XML/E-2.01.xml', /xml/],                                   // Canada Elections Act (Justice Laws)
+  // 52 U.S.C. Voting and Elections (govinfo's yearly editions, the newest that is there)
+  // (govinfo answers a missing edition with its "Page Not Found" page, and status 200: told by its first bytes)
+  'us-title52': [['2027', '2026', '2025', '2024'].map((y) => `https://www.govinfo.gov/content/pkg/USCODE-${y}-title52/html/USCODE-${y}-title52.htm`), /html/, /govinfo\.gov\/error|<title>[^<]*Page Not Found/i],
+};
+// the first bytes of a body (as text), and the whole body still to be read
+async function peek(body, n = 4096) {
+  const r = body.getReader(), first = await r.read();
+  const head = first.value ? new TextDecoder().decode(first.value.slice(0, n)) : '';
+  const rest = new ReadableStream({
+    start(c) { if (first.done) c.close(); else c.enqueue(first.value); },
+    async pull(c) { const { done, value } = await r.read(); if (done) c.close(); else c.enqueue(value); },
+    cancel(reason) { return r.cancel(reason); },
+  });
+  return [head, rest];
+}
+async function foreignLaw(ctx, id) {
+  // one section of 52 U.S.C. (선거법), through govinfo's link service: us52-30106 (§ 30106, the Federal Election Commission)
+  const sec = /^us52-(\d{5})$/.exec(id);
+  const src = sec ? [`https://www.govinfo.gov/link/uscode/52/${sec[1]}?type=usc&year=mostrecent&link-type=html`, /html/] : Object.prototype.hasOwnProperty.call(FOREIGN, id) ? FOREIGN[id] : null;
+  if (!src) return err('bad_law', 400);
+  const urls = [].concat(src[0]);
+  const key = new Request(KEPT + 'foreign/' + id + '/' + (await sha256hex(urls.join(' '))).slice(0, 16));   // (a new source is a new key)
+  const hit = await caches.default.match(key).catch(() => null);
+  if (hit) return new Response(hit.body, { headers: { 'content-type': hit.headers.get('content-type') || 'application/octet-stream', 'x-source': hit.headers.get('x-source') || '', 'cache-control': 'private, max-age=3600' } });
+  let last = 0;
+  for (const u of urls) {   // the first source that gives the expected kind
+    let up;
+    try { up = await fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(30000) }); } catch (e) { continue; }
+    const type = up.headers.get('content-type') || '';
+    if (!up.ok || !up.body || !src[1].test(type)) { last = up.status; if (up.body) await up.body.cancel().catch(() => {}); continue; }
+    let body = up.body;
+    if (src[2]) {   // its first bytes say it is not the law (a page saying there is no such edition): the next source
+      const [head, rest] = await peek(body);
+      if (src[2].test(head)) { await rest.cancel().catch(() => {}); continue; }
+      body = rest;
+    }
+    const [a, b] = body.tee();
+    ctx.waitUntil(caches.default.put(key, new Response(b, { headers: { 'content-type': type, 'x-source': u, 'cache-control': 'public, max-age=86400' } })).catch(() => {}));
+    return new Response(a, { headers: { 'content-type': type, 'x-source': u, 'cache-control': 'private, max-age=3600' } });
+  }
+  return err('upstream', 502, { status: last });
 }
 
 /* ---------------- 국회 계류 법안 ---------------- */

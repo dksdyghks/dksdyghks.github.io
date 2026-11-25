@@ -13,6 +13,8 @@ import * as papers from './papers.js';
 import * as research from './research.js';
 import * as biblio from './biblio.js';
 import * as bills from './bills.js';
+import * as kci from './kci.js';
+import * as foreign from './foreign.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -928,6 +930,7 @@ function lawHome(mine) {
   return `<div class="law-home">
     ${mineRows ? `<h2 class="sec-h">내 연구 조문</h2><div class="lh">${mineRows}${caseRow}</div>` : ''}
     <h2 class="sec-h">내 연구 분야 법령</h2><div class="lh">${fields}</div>
+    <h2 class="sec-h">비교법 원문</h2><div class="lh">${['일본', '미국', '캐나다'].map((c) => row(c, foreign.LAWS.filter((l) => l.country === c).map((l) => chip(l.cite, l.kind === 'uscode' ? '52 U.S.C. 선거' : l.cite, l.kind === 'uscode' ? 'FECA · HAVA · NVRA' : '')).join(''))).join('')}</div>
     ${recent}
     <p class="law-note">사건번호(헌재·대법원·각급 법원), 조문, 법령 이름, 낱말로 찾습니다 — ${ex.map((x) => `<button type="button" class="law-eg" data-lq="${esc(x)}">${esc(x)}</button>`).join(' · ')}. 법령은 법제처가 공개한 모든 법률·시행령·규칙의 현행 조문을, 시행 예정인 개정이 있으면 바뀌는 내용도 함께 보여 드립니다.</p>
   </div>`;
@@ -951,6 +954,8 @@ async function renderLaw(cIn) {
   rememberLaw(q);
   c.innerHTML = '<div class="law-res"></div>';
   const box = $('.law-res', c);
+  const fq = foreign.query(q);
+  if (fq) { foreignView(box, fq, live); return; }
   const cno = cases.caseQuery(q), court = laws.courtQuery(q), art = laws.articleQuery(q), whole = laws.lawKey(q);
   if (cno) { box.innerHTML = '<div class="case-sec"></div>'; caseCard($('.case-sec', box), cno, live); mineSec(box, [cno.toLowerCase()], q, live); return; }
   if (court) { box.innerHTML = '<div class="court-sec"></div>'; courtCard($('.court-sec', box), court, live); mineSec(box, [court.no.toLowerCase()], q, live); return; }
@@ -1109,6 +1114,56 @@ async function lawWhole(box, key, live, quiet) {
   const out = `<a class="lc-out" href="${laws.lawGoKr.law(law.full)}" target="_blank" rel="noopener">국가법령정보센터</a>`;
   box.innerHTML = `<div class="law-card law-whole"><div class="lc-h"><b>${esc(law.title)}</b><span>${law.arts.length}개 조</span>${rel ? `<span class="lw-rels">${rel}</span>` : ''}${out}</div>${law.ahead ? aheadNote(law) : next}${law.preamble ? `<details class="cs-fold"><summary>전문</summary><p>${esc(law.preamble)}</p></details>` : ''}${html}</div>`;
   return law;
+}
+
+/* ---------- 비교법 원문 ---------- */
+// A foreign election law in its own words (일본 e-Gov, 미국 govinfo, 캐나다 Justice Laws): the whole law by its parts with a box
+// to find words or an article in it, or one article with the ones before and after it, its citation, and its page at the source.
+const fArtLink = (law, a) => (law.kind === 'egov' ? `${law.page}#Mp-At_${a.key}` : law.kind === 'uscode' ? `https://www.govinfo.gov/link/uscode/52/${a.key}?type=usc&year=mostrecent&link-type=html` : `https://laws-lois.justice.gc.ca/eng/acts/E-2.01/section-${a.key}.html`);
+async function foreignView(box, fq, live) {
+  const law = foreign.byId(fq.id);
+  box.innerHTML = `<div class="law-card"><p class="none">${esc(law.cite)} 원문을 불러오는 중…</p></div>`;
+  let d;
+  try { d = await foreign.load(fq.id); } catch (e) {
+    if (live()) box.innerHTML = `<div class="law-card"><div class="lc-h"><b>${esc(law.name)}</b><span>${esc(law.ko)}</span></div><p class="law-note">${e && e.code === 'offline' ? '인터넷에 연결되면 원문을 볼 수 있습니다.' : '지금은 원문을 불러오지 못했습니다. 잠시 뒤 다시 열어 보세요.'}</p><div class="lc-acts"><a class="btn ghost small" href="${law.page}" target="_blank" rel="noopener">${esc(law.src)}에서 보기</a></div></div>`;
+    return;
+  }
+  if (!live()) return;
+  const all = foreign.arts(d);
+  const asOf = d.asOf ? `${esc(bills.dateText(d.asOf))} 기준` : '';
+  const line = (a) => `<button type="button" class="lw-a" data-lq="${esc(foreign.ask(law, a))}"><b>${esc(a.label)}${a.cap ? ` ${esc(a.cap)}` : ''}</b><span>${esc((a.paras[0] || '').replace(/^\u2003+/, ''))}</span></button>`;
+  if (fq.art) {
+    const i = all.findIndex((a) => a.key === String(fq.art)), a = all[i];
+    if (!a) { box.innerHTML = `<div class="law-card"><div class="lc-h"><b>${esc(law.cite)}</b><span>${esc(law.ko)}</span></div><p class="none">그 조문을 찾지 못했습니다 · <button type="button" class="law-eg" data-lq="${esc(law.cite)}">${esc(law.cite)} 전체 보기</button></p></div>`; return; }
+    const prev = all[i - 1], next = all[i + 1];
+    const go = (y, text) => `<button type="button" class="btn ghost small" data-lq="${esc(foreign.ask(law, y))}">${esc(text)}</button>`;
+    box.innerHTML = `<div class="law-card foreign-art" lang="${law.kind === 'egov' ? 'ja' : 'en'}">
+      <div class="lc-h"><b>${esc(law.cite)} ${esc(a.label)}${a.cap ? `<span class="lc-tt">(${esc(a.cap)})</span>` : ''}</b><span>${esc([a.part, law.ko].filter(Boolean).join(' · '))}</span></div>
+      <div class="lc-t">${a.paras.map((t) => `<p>${esc(t)}</p>`).join('')}</div>
+      <p class="law-note faint fl-src">${esc(law.src)}${asOf ? ' · ' + asOf : ''} · <button type="button" class="law-eg" data-lq="${esc(law.cite)}">전체 보기</button></p>
+      <div class="lc-acts">${prev ? go(prev, '‹ ' + prev.label) : ''}<span class="sp"></span><button type="button" class="btn ghost small lc-copy">복사</button><a class="btn ghost small" href="${fArtLink(law, a)}" target="_blank" rel="noopener">원문 사이트</a><span class="sp"></span>${next ? go(next, next.label + ' ›') : ''}</div>
+    </div>`;
+    $('.lc-copy', box).onclick = () => copyText(`${foreign.cite(law, a)}${a.cap ? ` (${a.cap})` : ''}\n${a.paras.map((t) => t.replace(/^\u2003+/, '')).join('\n')}`);
+    return;
+  }
+  const fold = (p) => `<details class="lw-fold"><summary><b>${esc(p.head || '처음 조문')}</b><span>${esc(p.arts[0].label)}${p.arts.length > 1 ? ' ~ ' + esc(p.arts[p.arts.length - 1].label) : ''}</span></summary>${p.arts.map(line).join('')}</details>`;
+  box.innerHTML = `<div class="law-card law-whole foreign-law" lang="${law.kind === 'egov' ? 'ja' : 'en'}">
+    <div class="lc-h"><b>${esc(d.title)}</b><span>${esc(law.ko)} · ${all.length}개 조${asOf ? ' · ' + asOf : ''}</span><a class="lc-out" href="${law.page}" target="_blank" rel="noopener">${esc(law.src)}</a></div>
+    <label class="fl-find">${I.search}<input type="search" placeholder="이 법 안에서 찾기 — 낱말이나 조 번호" enterkeyhint="search" autocomplete="off" aria-label="이 법 안에서 찾기"></label>
+    <div class="fl-parts">${d.parts.map(fold).join('')}</div><div class="fl-hits" hidden></div>
+  </div>`;
+  const inp = $('.fl-find input', box), parts = $('.fl-parts', box), hits = $('.fl-hits', box);
+  let t = 0;
+  inp.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const w = inp.value.trim().toLowerCase();
+      if (!w) { parts.hidden = false; hits.hidden = true; hits.innerHTML = ''; return; }
+      const found = all.filter((a) => a.key === w || `${a.label} ${a.cap} ${a.paras.join(' ')}`.toLowerCase().includes(w));
+      parts.hidden = true; hits.hidden = false;
+      hits.innerHTML = found.length ? `<p class="law-note fl-n">${found.length}개 조</p>${found.slice(0, 80).map(line).join('')}${found.length > 80 ? '<p class="law-note faint">앞의 80개만 보입니다 · 낱말을 더 넣어 좁혀 보세요</p>' : ''}` : '<p class="none">이 법에서 찾지 못했습니다</p>';
+    }, 180);
+  });
 }
 
 /* ---------- 국회 계류 법안 ---------- */
@@ -2016,7 +2071,7 @@ async function fillPaperInfo() {
    Only what is missing is filled — a date (or a whole date where only the year was read) and the society that published it;
    what the page itself said is never changed. The answer is written into the paper's texts like the rest, so every device
    has it. A paper the library does not know is asked about again after a month. */
-let libAsked = null, libRunning = false;
+let libAsked = null, kciAsked = null, libRunning = false;
 const libNorm = biblio.norm;
 const hasAuthor = (name) => /^[^_]{2,20}_\S/.test(name);
 const mainTitle = (t) => { const m = /^(.{8,}?)\s+[-―—–]\s*\S.*$/.exec(t) || /^(.{8,}?)\s*:\s*\S.*$/.exec(t); return (m ? m[1] : t).trim(); };   // the subtitle off
@@ -2041,11 +2096,24 @@ function nanetAuthor(same) {   // one name text when every record of the title a
 // asked again a few seconds after a paper arrives or is read (several arrivals: one round); a call while a round runs comes after it
 function libSoon(ms = 4000) { clearTimeout(libSoon.t); libSoon.t = setTimeout(() => libraryInfo(), ms); }
 let libAgain = false;
+// a paper's line, set in its texts (the server's copy and this device's) when it says more than before; true when written
+async function writePaper(f, cur, merged) {
+  if (!paperOf(merged) || JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) return false;
+  try {
+    const t = (await store.get('texts', f.id).catch(() => null)) || await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
+    t.paper = paperOf(merged);
+    await store.put('texts', f.id, t);
+    await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
+    notePaper(f.id, t, true);
+    return true;
+  } catch (e) { return false; }   // next time
+}
 async function libraryInfo() {
   if (libRunning) { libAgain = true; return; }
   if (!syncOn || !navigator.onLine) return;
   libRunning = true;
   let changed = false;
+  const wrote = new Map();   // the lines written in this round
   try {
   // (3: every paper whose line wants something asked again once, now that the libraries' records are merged)
   if (!libAsked) libAsked = (await store.get('kv', 'libAsked3').catch(() => null)) || {};
@@ -2093,14 +2161,23 @@ async function libraryInfo() {
       if (cr) merged = biblio.merge(cur, { nanet, nl, cr }).info;
       await new Promise((ok) => setTimeout(ok, 350));   // Crossref is asked gently, one paper at a time
     }
-    if (!paperOf(merged) || JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) continue;
-    try {
-      const t = (await store.get('texts', f.id).catch(() => null)) || await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
-      t.paper = paperOf(merged);
-      await store.put('texts', f.id, t);
-      await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
-      notePaper(f.id, t, true); changed = true;
-    } catch (e) { /* next time */ }
+    if (await writePaper(f, cur, merged)) { changed = true; wrote.set(f.id, merged); }
+  }
+  // KCI (한국연구재단): the month, and the issue when it can be told, of papers whose line names the journal but not yet both
+  // (the issue a line names gives the month; a known month gives the issue) — asked once a month, apart from the round above
+  if (!kciAsked) kciAsked = (await store.get('kv', 'kciAsked1').catch(() => null)) || {};
+  for (const f of liveFiles()) {
+    if (!navigator.onLine || document.hidden) break;
+    const cur = wrote.get(f.id) || infoOf(f);   // (a line written just now reaches the index a moment later)
+    if (!cur || !cur.journal || (cur.issue && /^\d{4}-\d{2}/.test(cur.date || '')) || Date.now() - (kciAsked[f.id] || 0) < 30 * 864e5) continue;
+    kciAsked[f.id] = Date.now(); store.put('kv', 'kciAsked1', kciAsked).catch(() => {});
+    await fgWait();
+    const name = stem(f.name), cut = hasAuthor(f.name) ? name.indexOf('_') : -1, title = (cut > 0 ? name.slice(cut + 1) : name).trim();
+    let k = null;
+    try { k = await kci.fill(cur, title); } catch (e) { if (api.isOffline(e)) { delete kciAsked[f.id]; store.put('kv', 'kciAsked1', kciAsked).catch(() => {}); break; } }
+    if (!k) continue;
+    const merged = { ...cur, issue: cur.issue || k.issue, society: cur.society || k.society, date: /^\d{4}-\d{2}/.test(cur.date || '') ? cur.date : k.date };
+    if (await writePaper(f, cur, merged)) changed = true;
   }
   } finally {
     libRunning = false;
