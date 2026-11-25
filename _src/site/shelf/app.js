@@ -138,6 +138,10 @@ async function startLibrary() {
   setTimeout(() => fetchAllMarks(), 4000);
   ocrSoon(6000);
   setTimeout(() => fillPaperInfo(), 9000);
+  setTimeout(async () => {   // once a day: which outside sources answer from here (the server keeps the answer, for fixing what is blocked)
+    if (Date.now() - ((await store.get('kv', 'diagAt').catch(() => 0)) || 0) < 864e5 || !navigator.onLine) return;
+    store.put('kv', 'diagAt', Date.now()); api.diagnose().catch(() => {});
+  }, 20000);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
   if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
 }

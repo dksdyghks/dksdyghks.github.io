@@ -68,6 +68,7 @@ export const dropDevice = (id) => call('/devices/' + id, { method: 'DELETE' });
 export const makeShareKey = (name) => call('/devices/sharekey', { method: 'POST', body: { name } });
 
 export const library = () => call('/lib');
+export const diagnose = () => call('/diag');   // which outside sources (KCI, 법령, 국회, 공공데이터) answer from where this device is
 export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: list } });
 
 export const getMarks = (id) => call('/marks/' + id);

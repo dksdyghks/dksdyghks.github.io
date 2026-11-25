@@ -20,6 +20,9 @@
 // Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
 //   /api/law/search|item   국가법령정보 공동활용 (법령·판례·헌재결정례…): env.LAW_OC
 //   /api/assembly/<service> 열린국회정보 (의안 등): env.ASSEMBLY_KEY
+//   /api/data/<기관>/<서비스>[/<기능>] 공공데이터포털 (헌법재판소·국회입법조사처·법제처): env.DATA_GO_KR_KEY
+//   /api/kci/oai            KCI OAI-PMH (no key)
+//   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
 
 const ID = /^[0-9a-f]{24}$/;
 const FOLDER_ID = /^f_[0-9a-z]{10}$/;
@@ -129,6 +132,16 @@ async function route(req, env, ctx) {
       case 'assembly':
         if (m === 'GET' && p.length === 3) return await assemblyApi(env, p[2], url);
         break;
+      case 'data':
+        if (m === 'GET' && p.length >= 4 && p.length <= 5) return await dataApi(env, p.slice(2), url);
+        break;
+      case 'kci':
+        if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(url);
+        break;
+      case 'diag':
+        if (m === 'GET' && p.length === 2) return await diag(req, env);
+        if (m === 'GET' && p[2] === 'last') { const o = await env.BUCKET.get('diag/last.json'); return o ? new Response(o.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : err('none', 404); }
+        break;
     }
   } catch (e) {
     if (e && e.status) return err(e.message.replace(/\s+/g, '_'), e.status);
@@ -161,6 +174,51 @@ async function assemblyApi(env, service, url) {
   for (const [k, v] of url.searchParams) if (/^[A-Za-z_]{2,30}$/.test(k) && !/^(KEY|Type)$/i.test(k) && v.length <= 200) q.set(k, v);
   const up = await fetch(`https://open.assembly.go.kr/portal/openapi/${service}?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
   return passOn(up, env.ASSEMBLY_KEY);
+}
+
+// 공공데이터포털: https://apis.data.go.kr/<기관>/<서비스>[/<기능>]?serviceKey=… (one key for every API the owner applied for)
+const DATA_SEG = /^[A-Za-z0-9_-]{1,60}$/;
+async function dataApi(env, segs, url) {
+  if (!env.DATA_GO_KR_KEY) return err('no_key', 503);
+  if (!segs.every((x) => DATA_SEG.test(x))) return err('bad_service', 400);
+  const q = new URLSearchParams({ serviceKey: env.DATA_GO_KR_KEY });
+  for (const [k, v] of url.searchParams) if (/^[A-Za-z_][A-Za-z0-9_]{0,40}$/.test(k) && !/^servicekey$/i.test(k) && v.length <= 300) q.set(k, v);
+  const up = await fetch(`https://apis.data.go.kr/${segs.join('/')}?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
+  return passOn(up, env.DATA_GO_KR_KEY);
+}
+
+// KCI OAI-PMH (open, no key): one record, or a page of records
+const OAI_PARAMS = new Set(['verb', 'identifier', 'metadataPrefix', 'set', 'from', 'until', 'resumptionToken']);
+async function kciOai(url) {
+  const verb = url.searchParams.get('verb');
+  if (!['GetRecord', 'ListRecords', 'ListIdentifiers', 'Identify', 'ListSets'].includes(verb)) return err('bad_verb', 400);
+  const q = new URLSearchParams();
+  for (const [k, v] of url.searchParams) if (OAI_PARAMS.has(k) && v.length <= 200) q.set(k, v);
+  const up = await fetch(`https://open.kci.go.kr/oai/request?${q}`, { cf: { cacheTtl: 86400, cacheEverything: true } });
+  return passOn(up, '');
+}
+
+// which outside sources answer, asked from where we run now (near the device that asked); the answer is kept for reading later
+async function diag(req, env) {
+  const tries = [
+    ['kci', 'https://open.kci.go.kr/oai/request?verb=Identify'],
+    ['law', env.LAW_OC && `https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(env.LAW_OC)}&target=law&type=JSON&display=1&query=${encodeURIComponent('헌법')}`],
+    ['assembly', env.ASSEMBLY_KEY && `https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn?KEY=${encodeURIComponent(env.ASSEMBLY_KEY)}&Type=json&pIndex=1&pSize=1&AGE=22`],
+    ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&dataType=JSON&numOfRows=1&pageNo=1&base_date=20250101&base_time=0600&nx=60&ny=127`],
+  ];
+  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY].filter(Boolean);
+  const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, results: {} };
+  await Promise.all(tries.map(async ([k, u]) => {
+    if (!u) { out.results[k] = { status: 'no key' }; return; }
+    try {
+      const r = await fetch(u, { signal: AbortSignal.timeout(12000) });
+      let t = (await r.text()).slice(0, 400);
+      for (const key of keys) t = t.split(key).join('');
+      out.results[k] = { status: r.status, head: t };
+    } catch (e) { out.results[k] = { error: String((e && e.message) || e).slice(0, 200) }; }
+  }));
+  await env.BUCKET.put('diag/last.json', JSON.stringify(out), { httpMetadata: { contentType: 'application/json' } });
+  return json(out);
 }
 
 // the answer as it came, with the key taken out wherever it is echoed (links in the answer carry it)
