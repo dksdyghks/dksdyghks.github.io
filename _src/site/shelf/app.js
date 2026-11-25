@@ -211,7 +211,7 @@ async function preparePending() {
         try {
           const p1 = (await pdfkit.pageItems(doc, 0)).page;
           const p2 = doc.numPages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
-          first = naming.readFirstPages(p1, p2);
+          first = naming.withFileName(naming.readFirstPages(p1, p2), f.orig || f.name);
           if ((S.prefs.autoName !== false || /^공유로 넣은 PDF/.test(f.name)) && first && first.name) set.name = first.name + '.pdf';
         } catch (e) { /* keeps its name */ }
         try { const th = await pdfkit.thumbnail(doc); await api.putMeta(f.id, 'thumb', th, 'image/jpeg'); await store.put('thumbs', f.id, th); set.thumb = true; } catch (e) { /* no picture */ }
@@ -828,7 +828,7 @@ async function uploadOne(u) {
     try {
       const p1 = (await pdfkit.pageItems(doc, 0)).page;
       const p2 = pages > 1 ? (await pdfkit.pageItems(doc, 1)).page : null;
-      first = naming.readFirstPages(p1, p2);
+      first = naming.withFileName(naming.readFirstPages(p1, p2), u.orig || u.name);
       if (S.prefs.autoName !== false && first && first.name) { u.name = first.name + '.pdf'; renderUploads(); }
     } catch (e) { /* keeps the file's own name */ }
     let thumb = null;
@@ -1128,7 +1128,7 @@ async function ocrFile(f, mod) {
     try { const L = A.pageLabels(pages); if (L && L.confident) t.labels = L; } catch (e) { /* no numbering */ }
     try { const o = A.outline(pages, A.docStats(pages)); if (o && o.length && !(t.outline || []).length) t.outline = o; } catch (e) { /* no headings */ }
     t.chars = t.pages.reduce((s, x) => s + x.length, 0);
-    const first = (() => { try { return naming.readFirstPages(pages[0], pages[1] || null); } catch (e) { return null; } })();
+    const first = (() => { try { return naming.withFileName(naming.readFirstPages(pages[0], pages[1] || null), f.orig || f.name); } catch (e) { return null; } })();
     if (!t.paper && paperOf(first)) t.paper = paperOf(first);
     if (t.paper === undefined) t.paper = null;
     notePaper(f.id, t);

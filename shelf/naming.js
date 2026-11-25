@@ -122,7 +122,7 @@ function cleanTitle(s) {
   // a closing bracket the text layer moved to the end: 「행정규제기본법 의 규제 개념에 대한 고찰」 → 「행정규제기본법」의 … (a particle never stands alone)
   t = t.replace(/^([「『])([^」』\s]+)\s(의|은|는|이|가|을|를|과|와|에|에서|으로|로|상)(\s.*)[」』]$/, (m, o, a, p, rest) => o + a + (o === '「' ? '」' : '』') + p + rest);
   t = t.replace(/^\s*\d{1,3}\)\s*/, '').replace(/^[*†‡§¶⁎∗\s]+/, '');                       // a footnote number in front
-  t = t.replace(/[*†‡§¶⁎∗]+(?=\s|$)/g, '').replace(/\s*\d{1,2}\)$/, '').trim();               // footnote marks after it
+  t = t.replace(/[*†‡§¶⁎∗#]+(?=\s|$)/g, '').replace(/\s*\d{1,2}\)$/, '').trim();              // footnote marks after it (a scan may read * as #)
   const cut = (re) => { const m = re.exec(t); if (m && m.index >= 4) t = t.slice(0, m.index).trim(); };
   cut(new RegExp(`\\s[${DASH}]{1,2}\\s?`));                                                   // 제목 - 부제 -
   cut(/[—―─－]/);                                                                              // 제목—부제
@@ -378,6 +378,17 @@ export function readFirstPages(p1, p2) {
     out.name = name.length > 150 ? name.slice(0, name.lastIndexOf(' ', 150) > 60 ? name.lastIndexOf(' ', 150) : 150).trim() : name;
   }
   return out;
+}
+// a middle dot the text layer turned into a space (사 보임 for 사·보임), put back from the file's own name when that holds the
+// same title with the dot there; nothing else is taken from the file name
+export function withFileName(r, fileName) {
+  if (!r || !r.name || !r.title || !fileName || !r.name.endsWith(r.title) || !r.title.includes(' ')) return r;
+  const base = String(fileName).replace(/\.pdf$/i, '').normalize('NFC');
+  const pat = r.title.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s·ㆍ･・‧]');
+  const m = new RegExp(pat).exec(base);
+  if (!m || m[0] === r.title || !/[·ㆍ･・‧]/.test(m[0])) return r;
+  const title = m[0].replace(/[ㆍ･・‧]/g, '·');
+  return { ...r, title, name: r.name.slice(0, r.name.length - r.title.length) + title };
 }
 export function nameFromPages(p1, p2) {   // "저자_제목", or null when either is unclear
   const r = readFirstPages(p1, p2);
