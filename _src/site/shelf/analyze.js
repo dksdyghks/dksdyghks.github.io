@@ -389,6 +389,22 @@ function headingKind(t) {
   return null;
 }
 
+// a contents list cleaned of what the paper's own printed 목차 box puts into it: a line holding two headings side by side
+// (Ⅰ. 서론 Ⅳ. 결론 — the box's two columns read across), and a heading listed in the box before the same heading in the text
+const MARK = /(?:^|\s)(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]{1,4}\s*[.．]|(?:I|II|III|IV|V|VI|VII|VIII|IX|X)\.\s|\d{1,2}\.\s*(?=[가-힣A-Za-z「『‘“(]))\s*\S/g;
+const headKey = (t) => String(t || '').replace(/^[\sⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX\d.．()가-하]{1,6}?[.．)]\s*/, '').replace(/[\s「」｢｣『』‘’“”'"·:：\-–—]/g, '').slice(0, 24);
+export function tidyOutline(list) {
+  const xs = (list || []).filter((x) => x && x.title);
+  const two = (t) => { const ms = [...String(t).matchAll(MARK)]; return ms.length >= 2 && ms[1].index > 2; };
+  let out = xs.filter((x) => !two(x.title));
+  // a heading of the box on the first pages met again on a later page (the text itself): the later one stays (a heading
+  // that comes back in another chapter — 1. 개관, 소결 — is not the box's, and stays where it is)
+  // (only a run of them: the box lists several headings together, a heading of the text stands alone)
+  const twin = out.map((x, i) => { const k = headKey(x.title); return !!k && x.page <= 1 && out.slice(i + 1).some((y) => headKey(y.title) === k && (y.page > x.page || (y.page === x.page && (y.y || 0) > (x.y || 0)))); });
+  out = out.filter((x, i) => !(twin[i] && (twin[i - 1] || twin[i + 1])));
+  return out.length >= 2 ? out : xs;
+}
+
 export function outline(pages, stats) {
   try {
     const ps = (pages || []).filter((p) => p && p.items);
@@ -435,6 +451,7 @@ export function outline(pages, stats) {
       if (!['roman', 'chapter', 'special'].includes(c.kind)) level = Math.min(3, (fixed[c.kind] || 0) || 2 + order.indexOf(c.kind));
       return { title: c.title, level, page: c.page, y: Math.round(c.y * 10) / 10 };
     });
+    out = tidyOutline(out);
     if (out.length > 60) out = out.filter((o) => o.level <= 2);
     if (out.length > 60) return [];
     return out;

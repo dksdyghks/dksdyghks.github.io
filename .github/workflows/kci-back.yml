@@ -1,0 +1,40 @@
+# 연구실 책장: KCI's law papers of the last three years, gathered going back from the first day the weekly refresh read
+# (shelf/kci/law/, by the month each paper came out), a little every hour — about twenty minutes of KCI's OAI-PMH, one page
+# at a time with a pause — until three years are covered; after that each run only finds it is done.
+name: 연구실 책장 KCI 지난 논문 모으기
+on:
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: shelf-indexes
+  cancel-in-progress: false
+jobs:
+  back:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: The days before (KCI OAI-PMH)
+        timeout-minutes: 30
+        run: python3 _src/site/shelf/_tools/kci_oai.py shelf/kci --back
+      - name: Publish when changed
+        run: |
+          if git diff --quiet -- shelf/kci && [ -z "$(git ls-files --others --exclude-standard shelf/kci)" ]; then
+            echo "no change"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A shelf/kci
+          git commit -q -m '연구실 책장: KCI 지난 법학 논문 모으기'
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 10; done
+          curl -s -o /dev/null -w 'pages build: %{http_code}\n' -X POST -H "Authorization: Bearer ${{ github.token }}" \
+            -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${{ github.repository }}/pages/builds" || true

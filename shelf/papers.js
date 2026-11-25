@@ -162,6 +162,21 @@ export async function researcher(name, id) {
 // keeps it as the 'original-title') and its year agreeing — for its volume, issue, pages and DOI. null when not there.
 const crSeen = new Map();
 const crYear = (it) => Number((((it.issued || it.published || {})['date-parts'] || [[0]])[0] || [0])[0]) || 0;
+// a DOI printed on a paper (its own, at the head of its first page): the journal, volume, issue and month Crossref keeps for it
+const doiSeen = new Map();
+export async function crossrefDoi(doi) {
+  const d = String(doi || '').trim();
+  if (!/^10\.\d{4,9}\/\S+$/.test(d)) return null;
+  if (doiSeen.has(d)) return doiSeen.get(d);
+  const r = await fetch('https://api.crossref.org/works/' + encodeURIComponent(d), { signal: AbortSignal.timeout(12000) });
+  if (r.status === 404) { doiSeen.set(d, null); return null; }
+  if (!r.ok) throw Object.assign(new Error('crossref'), { code: r.status === 429 ? 'busy' : 'unavailable' });
+  const m = (await r.json()).message || {};
+  const dp = ((m['published-print'] || m['published'] || m.issued || {})['date-parts'] || [[]])[0] || [];
+  const out = { journal: clean((m['container-title'] || [])[0]), volume: clean(m.volume), issue: clean(m.issue), year: dp[0] ? String(dp[0]) : '', month: dp[1] ? String(dp[1]).padStart(2, '0') : '', title: clean((m.title || [])[0]) };
+  doiSeen.set(d, out);
+  return out;
+}
 export async function crossref(p) {
   const want = norm(mainTitle(p.title));
   const key = want + '|' + p.year;

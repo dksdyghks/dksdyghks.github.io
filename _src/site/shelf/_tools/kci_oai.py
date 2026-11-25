@@ -1,23 +1,29 @@
-"""New law papers in KCI (한국학술지인용색인), gathered from its OAI-PMH (open.kci.go.kr/oai/request, metadataPrefix oai_kci):
+"""Law papers in KCI (한국학술지인용색인), gathered from its OAI-PMH (open.kci.go.kr/oai/request, metadataPrefix oai_kci):
 shelf/kci/new.json — the law papers KCI took in over the last eight weeks, newest first:
   [{ id, t, a: [authors], j, p, y, m, v, i, s, fp, lp, open, ab, d }]
   (id ART…, title, authors, journal, publisher, year, month, volume, issue, 통권, pages, 원문 공개, the start of the abstract,
   the day KCI took it in). The app shows the ones in its owner's fields on 논문 찾기's first screen.
-shelf/kci/state.json — { "through": the last day gathered }.
+shelf/kci/law/YYYY-MM.json — every law paper gathered, kept by the month it came out (YYYY-00 when KCI gives no month),
+  for the last YEARS years and this one: [{ id, t, a, j, p, y, m, v, i, s, fp, lp, open, ab }], newest issue first;
+  shelf/kci/law/index.json — { months: { "YYYY-MM": count }, back, through }.
+shelf/kci/state.json — { "through": the last day gathered going forward, "back": the earliest day gathered going back }.
 
-KCI's records come by the day they were taken in (OAI has no search), a hundred to a page and some seconds a page: the
-days since the last run are read one page at a time with a pause between pages, at most MAX_DAYS days a run and within
-a time budget; a day not answered ends the run (the next run goes on from there). Law papers are told by KCI's subject
-(법학) or, when a record has none, by the journal's name.
+KCI's records come by the day they were last changed (a journal's new issue comes in as one batch; OAI has no search), a
+hundred to a page and some seconds a page: the days since the last run are read one page at a time with a pause between
+pages, at most MAX_DAYS days a run and within a time budget; a day not answered ends the run (the next run goes on from
+there). Going back (--back), the days before the earliest one read are read the same way, newest first, until YEARS years
+are covered — a little every hour, so KCI is never asked much at once. Law papers are told by KCI's subject (법학) or, when
+a record has none, by the journal's name.
 
   python3 kci_oai.py ../kci            (the weekly refresh runs it)
+  python3 kci_oai.py ../kci --back     (the hourly gathering of the years before, until done)
   python3 kci_oai.py ../kci --file page.xml     (reads one saved page, for a check)
 """
 import datetime, html, json, os, re, sys, time, urllib.parse, urllib.request
 
 BASE = 'https://open.kci.go.kr/oai/request'
 UA = '0128-bookshelf/1.0 (+https://0128.kr/shelf/)'
-KEEP_DAYS, MAX_DAYS, BUDGET = 56, 21, 25 * 60
+KEEP_DAYS, MAX_DAYS, BUDGET, YEARS = 56, 21, 25 * 60, 3
 LAWISH = re.compile(r'법|입법|헌정|선거|의정|인권|정치|규제|행정')
 
 
@@ -85,14 +91,87 @@ def day(d, started):
         time.sleep(1.5)
 
 
+def archive(dst, recs, through=None, back=None):
+    """the papers into their months (a paper read again replaces the one kept); papers older than YEARS years are not kept"""
+    law = os.path.join(dst, 'law')
+    os.makedirs(law, exist_ok=True)
+    first_year = datetime.date.today().year - YEARS
+    by_month = {}
+    for r in recs:
+        y = r.get('y', '')
+        if not (y.isdigit() and int(y) >= first_year):
+            continue
+        m = r.get('m', '')
+        key = '%s-%02d' % (y, int(m)) if m.isdigit() and 1 <= int(m) <= 12 else y + '-00'
+        by_month.setdefault(key, []).append({k: v for k, v in r.items() if k != 'd'})
+    idx_f = os.path.join(law, 'index.json')
+    idx = json.load(open(idx_f, encoding='utf-8')) if os.path.exists(idx_f) else {'months': {}}
+    for key, rs in by_month.items():
+        f = os.path.join(law, key + '.json')
+        have = {r['id']: r for r in (json.load(open(f, encoding='utf-8')) if os.path.exists(f) else [])}
+        for r in rs:
+            have[r['id']] = r
+        out = sorted(have.values(), key=lambda r: (r.get('m', ''), r.get('v', '').zfill(4), r.get('i', '').zfill(4), r.get('fp', '').zfill(5), r['id']), reverse=True)
+        with open(f, 'w', encoding='utf-8') as fh:
+            json.dump(out, fh, ensure_ascii=False, separators=(',', ':'))
+        idx['months'][key] = len(out)
+    for key in list(idx['months']):   # months now older than kept
+        if int(key[:4]) < first_year:
+            idx['months'].pop(key)
+            try:
+                os.remove(os.path.join(law, key + '.json'))
+            except OSError:
+                pass
+    idx['months'] = dict(sorted(idx['months'].items(), reverse=True))
+    if through:
+        idx['through'] = through
+    if back:
+        idx['back'] = back
+    with open(idx_f, 'w', encoding='utf-8') as fh:
+        json.dump(idx, fh, ensure_ascii=False, separators=(',', ':'))
+
+
+def go_back(dst):
+    """the days before the earliest one read, newest first, within the time budget, until YEARS years are covered"""
+    state_f = os.path.join(dst, 'state.json')
+    state = json.load(open(state_f, encoding='utf-8')) if os.path.exists(state_f) else {}
+    today = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)).date()
+    goal = today.replace(year=today.year - YEARS, month=1, day=1)
+    first = state.get('back') or state.get('first') or state.get('through')
+    if not first:
+        print('nothing gathered going forward yet')
+        return
+    d = datetime.date.fromisoformat(first) - datetime.timedelta(days=1)
+    if d < goal:
+        print('done: gathered back to', first)
+        return
+    started, got, days = time.time(), [], 0
+    while d >= goal:
+        recs = day(d.isoformat(), started)
+        if recs is None:
+            print('stopped at', d, '(not answered, or out of time)')
+            break
+        got += recs
+        state['back'] = d.isoformat()
+        days += 1
+        if recs:
+            print(d, len(recs), 'law papers')
+        d -= datetime.timedelta(days=1)
+    archive(dst, got, back=state.get('back'))
+    with open(state_f, 'w', encoding='utf-8') as fh:
+        json.dump(state, fh)
+    print(len(got), 'law papers in', days, 'days; gathered back to', state.get('back'))
+
+
 def main(dst):
     os.makedirs(dst, exist_ok=True)
     state_f, new_f = os.path.join(dst, 'state.json'), os.path.join(dst, 'new.json')
     state = json.load(open(state_f, encoding='utf-8')) if os.path.exists(state_f) else {}
     have = json.load(open(new_f, encoding='utf-8')) if os.path.exists(new_f) else []
-    today = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).date()
+    today = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)).date()
     last = today - datetime.timedelta(days=1)
     start = datetime.date.fromisoformat(state['through']) + datetime.timedelta(days=1) if state.get('through') else today - datetime.timedelta(days=14)
+    state.setdefault('first', start.isoformat())
     started, got, days = time.time(), [], 0
     d = start
     while d <= last and days < MAX_DAYS:
@@ -105,6 +184,7 @@ def main(dst):
         print(d, len(recs), 'law papers')
         d += datetime.timedelta(days=1)
         days += 1
+    archive(dst, got, through=state.get('through'))
     keep_from = (today - datetime.timedelta(days=KEEP_DAYS)).isoformat()
     by = {r['id']: r for r in have if r.get('d', '') >= keep_from}
     for r in got:
@@ -120,5 +200,7 @@ def main(dst):
 if __name__ == '__main__':
     if len(sys.argv) > 3 and sys.argv[2] == '--file':
         print(json.dumps(records(open(sys.argv[3], encoding='utf-8').read())[:3], ensure_ascii=False, indent=1))
+    elif len(sys.argv) > 2 and sys.argv[2] == '--back':
+        go_back(sys.argv[1])
     else:
         main(sys.argv[1])

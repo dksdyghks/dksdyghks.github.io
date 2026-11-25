@@ -15,6 +15,8 @@ import * as biblio from './biblio.js';
 import * as bills from './bills.js';
 import * as kci from './kci.js';
 import * as foreign from './foreign.js';
+import * as precq from './precq.js';
+import * as verify from './verify.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -157,6 +159,13 @@ async function startLibrary() {
   }, 20000);
   const m = /#r=([0-9a-f]{24})/.exec(location.hash);
   if (m && fileById(m[1])) openFile(m[1], { replace: true, resume: true });
+  else {
+    const h = /^#(law|papers)(?:=(.*))?$/.exec(location.hash), f = /^#f=(.+)$/.exec(location.hash);
+    if (h) { S.view = { kind: h[1], folder: null }; if (h[1] === 'law') S.lq = decodeURIComponent(h[2] || ''); else S.pq = decodeURIComponent(h[2] || ''); render(); }
+    else if (f && folderById(f[1])) { S.view = { kind: 'home', folder: f[1] }; render(); }
+    else if (location.hash === '#trash') { S.view = { kind: 'trash', folder: null }; render(); }
+    history.replaceState({ nav: navNow(), depth: 0 }, '', location.pathname + location.search + (navHash(navNow()) === '#' ? '' : navHash(navNow())));
+  }
 }
 
 const syncTags = { lib: '', state: '', marks: '', marksId: '' };
@@ -291,7 +300,6 @@ function renderShell() {
       <button class="btn primary up-btn">${I.up}<span>PDF 올리기</span></button>
       <nav class="views">
         <button data-view="home">${I.home}<span>내 책장</span></button>
-        <button data-view="recent">${I.clock}<span>최근 읽은 글</span></button>
         <button data-view="papers">${I.papers}<span>논문 찾기</span></button>
         <button data-view="law">${I.law}<span>판례·법령</span></button>
       </nav>
@@ -322,28 +330,28 @@ function renderShell() {
   $('.up-btn').onclick = () => uploadBox();
   $('.file-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); closeRail(); };
   $('.dir-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); else toast('그 폴더에 PDF가 없습니다'); closeRail(); };
-  $('.views').onclick = (e) => { const b = e.target.closest('[data-view]'); if (!b) return; S.view = { kind: b.dataset.view, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
-  $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
+  $('.views').onclick = (e) => { const b = e.target.closest('[data-view]'); if (!b) return; noteScroll(); S.view = { kind: b.dataset.view, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); };
+  $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; noteScroll(); S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); };
   $('.settings-btn').onclick = () => { closeRail(); settings(); };
-  $('.tabs-btn').onclick = () => { const t = S.tabs.slice().sort((a, b) => b.at - a.at)[0]; if (t) openFile(t.id, { tab: true }); };
-  $('.trash-btn').onclick = () => { S.view = { kind: 'trash', folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); };
+  $('.tabs-btn').onclick = (e) => tabsPanel(e.currentTarget);
+  $('.trash-btn').onclick = () => { noteScroll(); S.view = { kind: 'trash', folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); };
   $('.menu-btn').onclick = () => app.classList.toggle('rail-open');
   $('.scrim').onclick = closeRail;
   const fin = $('.find input');
   fin.addEventListener('input', () => { clearTimeout(S.qT); S.qT = setTimeout(() => { S.q = fin.value.trim(); render(); }, 220); });
   fin.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fin.value = ''; S.q = ''; render(); } });
   $('.content').addEventListener('click', onContentClick);
-  $('.crumbs').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (b) { S.view = { kind: 'home', folder: b.dataset.folder || null }; S.select = null; render(); } };
+  $('.crumbs').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (b) { noteScroll(); S.view = { kind: 'home', folder: b.dataset.folder || null }; S.select = null; render(); nav(); } };
   $('.tools').onclick = onTools;
   // drop PDFs anywhere on the library to upload them into the folder being shown
   const main = $('.main');
   main.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); main.classList.add('drop'); } });
   main.addEventListener('dragleave', (e) => { if (e.target === main || !main.contains(e.relatedTarget)) main.classList.remove('drop'); });
   main.addEventListener('drop', (e) => { e.preventDefault(); main.classList.remove('drop'); filesFromDrop(e.dataTransfer).then((fs) => { if (fs.length) upload(fs); }); });
-  let lp = null;   // long press on a row (or a 이어 읽기 card) starts selecting
-  $('.content').addEventListener('pointerdown', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid], .card-w[data-file]'); if (!row || e.pointerType === 'mouse') return; lp = setTimeout(() => { lp = null; pressedAt = Date.now(); startSelect(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); }, 550); });
+  let lp = null;   // a long press on a row starts selecting
+  $('.content').addEventListener('pointerdown', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid]'); if (!row || e.pointerType === 'mouse') return; lp = setTimeout(() => { lp = null; pressedAt = Date.now(); startSelect(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); }, 550); });
   for (const t of ['pointerup', 'pointercancel', 'pointermove']) $('.content').addEventListener(t, (e) => { if (lp && (t !== 'pointermove' || Math.abs(e.movementY) > 3)) { clearTimeout(lp); lp = null; } });
-  $('.content').addEventListener('contextmenu', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid], .card-w[data-file]'); if (!row) return; e.preventDefault(); row.dataset.file ? fileMenu(row.dataset.file, e.clientX, e.clientY) : folderMenu(row.dataset.fid, e.clientX, e.clientY); });
+  $('.content').addEventListener('contextmenu', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid]'); if (!row) return; e.preventDefault(); row.dataset.file ? fileMenu(row.dataset.file, e.clientX, e.clientY) : folderMenu(row.dataset.fid, e.clientX, e.clientY); });
 }
 function closeRail() { const a = $('.app'); if (a) a.classList.remove('rail-open'); }
 
@@ -367,6 +375,7 @@ function paint(c, html) {
 }
 function render() {
   if (!$('.app')) return;
+  if (S.view.kind === 'recent') S.view = { kind: 'home', folder: null };
   for (const b of document.querySelectorAll('.views [data-view]')) b.classList.toggle('on', !S.q && b.dataset.view === S.view.kind && !(S.view.kind === 'home' && S.view.folder));
   $('.trash-btn').classList.toggle('on', !S.q && S.view.kind === 'trash');
   renderTree(); renderUsage(); renderCrumbs(); renderTools(); renderTabsBtn();
@@ -376,8 +385,7 @@ function render() {
   if (S.q) { renderSearch(c); return; }
   if (S.view.kind === 'law') { const b = c.querySelector(':scope > .law-body:not(.pp-body)'); if (!b || b.dataset.law !== (S.lq || '').trim() || !b.querySelector('.law-home, .law-res')) renderLaw(c); return; }   // asked of servers: drawn again only for a new question
   if (S.view.kind === 'papers') { const b = c.querySelector(':scope > .pp-body'); if (!b || b.dataset.ppkey !== paperKey() || !b.querySelector('.pp-home, .pp-res')) renderPapers(c); return; }
-  if (S.view.kind === 'recent') renderRecent(c);
-  else if (S.view.kind === 'trash') renderTrash(c);
+  if (S.view.kind === 'trash') renderTrash(c);
   else renderFolder(c, S.view.folder);
   lazyThumbs();
 }
@@ -386,7 +394,11 @@ function renderTabsBtn() {
   pruneTabs();
   const b = $('.tabs-btn'); if (!b) return;
   b.hidden = !S.tabs.length;
-  b.innerHTML = `${I.tabs}<span>읽던 문서</span><em>${S.tabs.length}</em>`;
+  if (!S.tabs.length) { b._html = ''; b.innerHTML = ''; return; }
+  const front = S.tabs.slice().sort((x, y) => y.at - x.at).slice(0, 3);
+  const html = `<span class="tb-covers">${front.map((t) => { const f = fileById(t.id); return `<span class="thumb" data-thumb="${f && f.thumb ? f.id : ''}"></span>`; }).join('')}</span><span class="tb-t">열린 문서</span><em>${S.tabs.length}</em>`;
+  b.setAttribute('aria-label', `열린 문서 ${S.tabs.length}개`);
+  if (b._html !== html) { b._html = html; b.innerHTML = html; }
 }
 // the papers open as tabs; only the one in front is drawn, the others keep just their place
 const MAX_TABS = 8;
@@ -425,13 +437,58 @@ function closeTab(id) {
   if (next) openFile(next.id, { tab: true, replace: true, noRemember: true });
   else history.back();   // the last tab: back to the shelf
 }
-function tabsSheet() {
-  const box = sheet(`<h2>열린 문서</h2><ul class="tab-list">${S.tabs.map((t) => { const f = fileById(t.id); return `<li class="${t.id === S.readerId ? 'on' : ''}"><button class="go" data-go="${t.id}"><span class="thumb" data-thumb="${f && f.thumb ? f.id : ''}">${coverMark(f && f.stars)}</span><b>${esc(stem(f ? f.name : ''))}</b></button><button class="ib" data-x="${t.id}" aria-label="닫기">${I.close}</button></li>`; }).join('')}</ul>`);
-  lazyThumbs();
-  box.onclick = (e) => {
-    const g = e.target.closest('[data-go]'); if (g) { closeSheet(); switchTab(g.dataset.go); return; }
-    const x = e.target.closest('[data-x]'); if (x) { x.closest('li').remove(); closeTab(x.dataset.x); if (!S.tabs.length) closeSheet(); }
+// the papers left open, newest first: a tap goes back to one, × closes it, 모두 닫기 closes them all (undone from the toast)
+function tabsSheet() { tabsPanel(null); }
+function tabsPanel(anchor) {
+  document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
+  const list = S.tabs.slice().sort((x, y) => y.at - x.at);
+  if (!list.length) return;
+  const where = (t) => {
+    const f = fileById(t.id), st = S.state.files[t.id];
+    const pg = t.page != null ? t.page : st && !st.done ? st.page : null;
+    return [t.id === S.readerId ? '지금 보는 문서' : '', f && f.pages && pg != null ? pageOf({ page: pg, o: st && st.o }, f.pages) : ''].filter(Boolean).join(' · ');
   };
+  const sheetLike = !anchor || (innerWidth < 600 && matchMedia('(pointer: coarse)').matches);
+  const w = el('div', 'menu-wrap tabs-wrap' + (sheetLike ? ' as-sheet' : ''), `<div class="menu tabs-pop" role="dialog" aria-label="열린 문서" tabindex="-1">
+    <div class="tp-h"><b>열린 문서</b><span class="tp-n">${list.length}</span><button type="button" class="tp-all">모두 닫기</button></div>
+    <ul class="tp-list">${list.map((t) => { const f = fileById(t.id); return `<li class="${t.id === S.readerId ? 'on' : ''}"><button type="button" class="tp-go" data-go="${t.id}"><span class="thumb" data-thumb="${f && f.thumb ? f.id : ''}">${coverMark(f && f.stars)}</span><span class="tp-m"><b>${esc(f ? stem(f.name) : '')}</b><small>${esc(where(t))}</small></span></button><button type="button" class="ib tp-x" data-x="${t.id}" aria-label="닫기" title="닫기">${I.close}</button></li>`; }).join('')}</ul></div>`);
+  document.body.appendChild(w);
+  const m = $('.menu', w);
+  if (!sheetLike) {
+    const r = anchor.getBoundingClientRect(), mw = m.offsetWidth;
+    const left = Math.max(8, Math.min(innerWidth - mw - 8, r.right - mw));
+    m.style.left = left + 'px'; m.style.top = (r.bottom + 6) + 'px';
+    m.style.transformOrigin = `${Math.round(Math.min(mw, Math.max(0, r.right - left)))}px 0`;
+  }
+  lazyThumbs();
+  requestAnimationFrame(() => w.classList.add('in'));
+  const close = () => { document.removeEventListener('keydown', onKey, true); w.classList.remove('in'); w.classList.add('out'); setTimeout(() => w.remove(), 140); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  m.focus({ preventScroll: true });
+  w.addEventListener('click', (e) => {
+    if (!e.target.closest('.menu')) { close(); return; }
+    if (e.target.closest('.tp-all')) { close(); closeAllTabs(); return; }
+    const x = e.target.closest('[data-x]');
+    if (x) {
+      const li = x.closest('li'); li.classList.add('going');
+      setTimeout(() => { li.remove(); const n = m.querySelectorAll('.tp-list li').length; $('.tp-n', m).textContent = n; if (!n) close(); }, 160);
+      closeTab(x.dataset.x);
+      if (!S.reader) render();
+      return;
+    }
+    const g = e.target.closest('[data-go]');
+    if (g) { close(); if (S.reader) switchTab(g.dataset.go); else openFile(g.dataset.go, { tab: true }); }
+  });
+}
+function closeAllTabs() {
+  const before = S.tabs.map((t) => ({ ...t }));
+  if (!before.length) return;
+  if (S.reader) rememberTab();
+  const kept = S.tabs.map((t) => ({ ...t }));
+  S.tabs = []; saveTabs();
+  if (S.readerId) history.back(); else render();
+  toast(`열린 문서 ${kept.length}개를 닫았습니다`, 6000, { label: '되돌리기', fn: () => { S.tabs = kept; saveTabs(); if (S.reader) S.reader.setTabs(tabInfo()); render(); } });
 }
 
 function renderTree() {
@@ -452,7 +509,6 @@ function renderUsage() {
 function renderCrumbs() {
   const c = $('.crumbs');
   if (S.q) { c.innerHTML = `<b>찾기</b>`; return; }
-  if (S.view.kind === 'recent') { c.innerHTML = '<b>최근 읽은 글</b>'; return; }
   if (S.view.kind === 'law') { c.innerHTML = '<b>판례·법령</b>'; return; }
   if (S.view.kind === 'papers') { c.innerHTML = '<b>논문 찾기</b>'; return; }
   if (S.view.kind === 'trash') { c.innerHTML = '<b>휴지통</b>'; return; }
@@ -474,7 +530,7 @@ function renderTools() {
     t.innerHTML = `<span class="hint">휴지통의 파일은 7일 동안 보관된 뒤 자동으로 지워집니다</span>${any ? '<button class="btn danger" data-t="empty">휴지통 비우기</button>' : ''}`;
     return;
   }
-  if (S.view.kind === 'recent' || S.view.kind === 'law') { t.innerHTML = ''; return; }
+  if (S.view.kind === 'law') { t.innerHTML = ''; return; }
   const label = { added: '최근 올린 순', name: '이름순', opened: '최근 읽은 순', published: '발간일 순', stars: '★ 순' }[S.sort];
   t.innerHTML = `<button class="btn" data-t="newfolder">${I.newfolder}<span>새 폴더</span></button><button class="btn" data-t="upload">${I.up}<span>올리기</span></button><span class="sp"></span><button class="btn ghost" data-t="sort">${I.sort}<span>${label}</span></button>`;
 }
@@ -490,10 +546,6 @@ function renderFolder(c, folder) {
   const folders = childFolders(folder);
   const files = sorted(liveFiles().filter((f) => (f.folder ?? null) === (folder ?? null)));
   let html = '';
-  if (!folder) {
-    const resume = liveFiles().map((f) => ({ f, s: S.state.files[f.id] })).filter((x) => x.s && !x.s.done && x.f.pages && x.s.page < x.f.pages - 1).sort((a, b) => b.s.at - a.s.at).slice(0, 4);
-    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<div class="card-w ${S.select && S.select.files.has(f.id) ? 'sel' : ''}" data-file="${f.id}"><button class="card" data-open="${f.id}" data-resume="1"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>${ckBox(S.select && S.select.files.has(f.id))}${S.select ? '' : `<button class="card-x" data-unresume="${f.id}" aria-label="이어 읽기에서 빼기" title="이어 읽기에서 빼기">${I.close}</button>`}</div>`).join('')}</div>`;
-  }
   if (!folders.length && !files.length) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
     paint(c, html); return;
@@ -524,28 +576,27 @@ function folderRow(f) {
 function fileRow(f, extra = '') {
   const s = S.state.files[f.id];
   const sel = S.select && S.select.files.has(f.id);
-  const where = (S.q || S.view.kind === 'recent') && f.folder ? esc((folderById(f.folder) || {}).name || '') : '';
+  const where = S.q && f.folder ? esc((folderById(f.folder) || {}).name || '') : '';
   return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">
-    <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}${boxes() ? ckBox(sel) : ''}</span>
+    <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}${readBar(f, s)}${boxes() ? ckBox(sel) : ''}</span>
     <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${[paperLine(f) || (f.pages ? f.pages + '쪽' : ''), where, f.pending ? '정리하는 중' : ''].filter(Boolean).join(' · ')}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
 
+// how far a paper has been read: a thin line along the foot of its cover (none before the first page is left, or once read through)
+function readBar(f, s) {
+  if (!s || s.done || !f.pages || f.pages < 2 || !(s.page > 0)) return '';
+  const p = Math.min(100, Math.max(4, Math.round(100 * (s.page + 1) / f.pages)));
+  return `<i class="th-read" style="--p:${p}%" title="${s.page + 1} / ${f.pages}쪽까지 읽음"></i>`;
+}
 function gradeRank(v) { return v > 0 ? v : v === -2 ? 0.5 : v === -1 ? -1 : 0; }   // ★★★ ★★ ★ △ (none) ✕
 function coverMark(v) { return v ? `<i class="cover-mark" aria-label="${v > 0 ? '별 ' + v + '개' : v === -2 ? '세모' : '엑스'}">${gradeSVG(v)}</i>` : ''; }
 
-const recentList = () => liveFiles().filter((f) => S.state.files[f.id]).sort((a, b) => S.state.files[b.id].at - S.state.files[a.id].at).slice(0, 60);
 function shownItems() {   // what the list in view shows (전체 선택 picks these)
-  if (S.view.kind === 'recent') return { files: recentList().map((f) => f.id), folders: [] };
   if (S.view.kind === 'home') return { files: liveFiles().filter((f) => (f.folder ?? null) === (S.view.folder ?? null)).map((f) => f.id), folders: childFolders(S.view.folder).map((f) => f.id) };
   return { files: [], folders: [] };
 }
-function renderRecent(c) {
-  const list = recentList();
-  paint(c, list.length ? listHead(`${list.length}편`) + '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`);
-}
-
 function renderTrash(c) {
   const fs = S.index.folders.filter((f) => f.trashed), files = S.index.files.filter((f) => f.trashed || folderTrashed(f.folder));
   const topFiles = files.filter((f) => f.trashed && !folderTrashed(f.folder));
@@ -671,20 +722,21 @@ function syncFind() {
 /* ---------- 논문 찾기: 국회도서관 국가학술정보 (학술논문·학위논문·단행본) ----------
    Asked through the shelf's server (which holds the key). A paper already on this shelf is marked; a paper opens a sheet with its
    abstract, contents and keywords, and the ways to its full text (국회전자도서관) and to other catalogues (RISS, 구글 학술검색). */
-let paperRecent = null;
 const ppRows = new Map();   // the papers on screen, for their sheets
 const paperKey = () => [(S.pq || '').trim(), S.pk ?? 'ARTICLE', S.ps || ''].join('|');
 function paperFrame(c) {
   if (c.querySelector(':scope > .pp-top')) return;
-  c.innerHTML = `<div class="law-top pp-top"><label class="law-find">${I.search}<input type="search" placeholder="제목 · 주제어 · 연구자" enterkeyhint="search" autocomplete="off" aria-label="논문 찾기"></label>
+  c.innerHTML = `<div class="law-top pp-top"><button type="button" class="ib nav-back" aria-label="뒤로" title="뒤로" hidden>${I.back}</button><label class="law-find">${I.search}<input type="search" placeholder="제목 · 주제어 · 연구자" enterkeyhint="search" autocomplete="off" aria-label="논문 찾기"></label>
     <div class="pp-opts" role="group" aria-label="찾는 자료와 순서">${papers.KINDS.map(([k, t]) => `<button type="button" data-pk="${k}">${t}</button>`).join('')}<span class="sep"></span><button type="button" data-ps="">정확도순</button><button type="button" data-ps="new">최신순</button></div></div><div class="law-body pp-body"></div>`;
   const inp = $('.law-find input', c);
   inp.value = S.pq || '';
-  const ask = () => { clearTimeout(S.pqT); S.pq = inp.value.trim(); renderPapers(c); };
-  inp.addEventListener('input', () => { clearTimeout(S.pqT); S.pqT = setTimeout(ask, 650); });
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; ask(); } if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ask(); inp.blur(); } });
+  const ask = (how = 'push') => { clearTimeout(S.pqT); noteScroll(); S.pq = inp.value.trim(); renderPapers(c); nav(how); };
+  inp.addEventListener('input', () => { clearTimeout(S.pqT); S.pqT = setTimeout(() => ask('typing'), 650); });
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; ask('typing'); } if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ask(); inp.blur(); } });
   $('.pp-opts', c).onclick = (e) => { const b = e.target.closest('[data-pk], [data-ps]'); if (!b) return; if (b.dataset.pk !== undefined) S.pk = b.dataset.pk; else S.ps = b.dataset.ps; renderPapers(c); };
   if (matchMedia('(hover: hover) and (pointer: fine)').matches && !S.pq) setTimeout(() => inp.focus(), 0);
+  $('.nav-back', c).onclick = () => history.back();
+  paintBack();
 }
 async function renderPapers(cIn) {
   const q = (S.pq || '').trim(), kind = S.pk ?? 'ARTICLE', sort = S.ps || '', key = paperKey();
@@ -697,22 +749,19 @@ async function renderPapers(cIn) {
   c.dataset.ppkey = key;
   const live = () => S.view.kind === 'papers' && !S.q && paperKey() === key;
   if (!q) {
-    if (!paperRecent) paperRecent = (await store.get('kv', 'paperRecent').catch(() => null)) || [];
     if (!live()) return;
-    const chips = (xs) => `<div class="law-ex">${xs.map((x) => `<button type="button" data-pq="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
     c.innerHTML = `<div class="pp-home">
       <h2 class="sec-h">내 논문</h2><div class="law-ex"><button type="button" data-pq="${esc(research.ME)}"><span>${esc(research.ME)}</span><small>내가 쓴 글 · 연구자 정보</small></button></div>
-      <h2 class="sec-h">내 연구 주제</h2>${chips(research.TOPICS)}
-      <section class="kci-new" hidden></section>
-      ${paperRecent.length ? `<h2 class="sec-h">최근 찾은 것</h2>${chips(paperRecent)}` : ''}
-      <p class="law-note">국회도서관 국가학술정보에서 학술논문·학위논문·단행본을 찾습니다. 연구자 이름을 넣으면 그 연구자가 쓴 글을 따로 모아 보여 드립니다. 논문을 누르면 초록·목차·주제어와 원문(국회전자도서관)으로 가는 길이 나오고, 이미 내 책장에 있는 논문에는 ‘내 책장’ 표시가 붙습니다.</p></div>`;
+      <section class="kci-new" hidden></section></div>`;
+    store.del('kv', 'paperRecent').catch(() => {});   // what was asked before is not kept (it was, once)
     kciNewSec($('.kci-new', c), live);
     return;
   }
-  rememberPaper(q);
-  c.innerHTML = `<div class="pp-res">${ppSec('author', '저자 ' + esc(q))}${ppSec('all', '국회도서관 국가학술정보')}</div>`;
+  c.innerHTML = `<div class="pp-res">${ppSec('author', '저자 ' + esc(q))}${ppSec('all', '국회도서관 국가학술정보')}</div>${elsewhereRow(q)}`;
   const box = $('.pp-res', c);
   $('[data-sec="author"]', box).hidden = true;
+  // the papers on this shelf whose own text has the words (their pages, the words marked), under the libraries' answer
+  if (q.replace(/\s+/g, '').length >= 2) mineSec(box, [q.replace(/\s+/g, '')], q, live, null, '편 본문에');
   const first = await fillPapers(box, 'all', (pg) => papers.search(q, { kind, page: pg, sort }), live, true);
   // a person asked for: someone of exactly that name wrote some of what was found — their own writings, newest first
   if (live() && first && papers.authorAsked(q, first.rows)) {
@@ -722,11 +771,18 @@ async function renderPapers(cIn) {
     fillPapers(box, 'author', (pg) => papers.search(q.replace(/\s+/g, ''), { kind, page: pg, sort: 'new', by: 'author' }), live, false);
   }
 }
-/* ---------- KCI 새 법학 논문 ----------
-   The law papers KCI took in over the last eight weeks (kci/new.json beside the app, gathered every week from KCI's OAI-PMH):
-   on 논문 찾기's first screen, those in the owner's fields first; one opens with the start of its abstract and its KCI page. */
-let kciNewP = null;
-const kciNew = () => (kciNewP ||= fetch(new URL('./kci/new.json', location.href), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciNewP = null; return []; }));
+/* ---------- KCI 법학 논문 ----------
+   The law papers in KCI by the month they came out (kci/law/ beside the app: gathered from KCI's OAI-PMH every week going
+   forward, and every hour going back until three years are covered), newest month first: on 논문 찾기's first screen, those
+   in the owner's fields (or every law paper); one opens with the start of its abstract and its KCI page. Months are read
+   only as the list reaches them. (kci/new.json, the last eight weeks, stands in while the months are not there.) */
+const kciUrl = (path) => new URL('./kci/' + path, location.href);
+let kciIdxP = null, kciNewP = null;
+const kciIndex = () => (kciIdxP ||= fetch(kciUrl('law/index.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { kciIdxP = null; return null; }));
+const kciNew = () => (kciNewP ||= fetch(kciUrl('new.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciNewP = null; return []; }));
+const kciMonthP = new Map();
+const kciMonth = (key) => { if (!kciMonthP.has(key)) kciMonthP.set(key, fetch(kciUrl(`law/${key}.json`)).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciMonthP.delete(key); return []; })); return kciMonthP.get(key); };
+const monthName = (key) => (key.endsWith('-00') ? `${key.slice(0, 4)}년` : `${key.slice(0, 4)}년 ${Number(key.slice(5))}월`);
 // the owner's fields, as words a law paper's title or abstract would use
 const MY_FIELDS = /선거|정당|정치자금|선관위|국회|입법|헌법|헌정|기본권|탄핵|대통령|적극행정|행정절차|행정소송|행정조사|민간투자|공공조달|조달|국가계약|공법상 계약|군사|국방|군형법|안보|사이버|정보기관|우주|항공|영장|집회|민주주의|대의제|국민투표/;
 const kciRows = new Map();
@@ -741,21 +797,40 @@ function kciRow(x, shelf) {
 }
 async function kciNewSec(sec, live) {
   if (!sec) return;
-  const all = await kciNew();
-  if (!live() || !sec.isConnected || !all.length) return;
-  const mine = all.filter((x) => MY_FIELDS.test(`${x.t} ${x.ab || ''}`));   // (by what the paper says, not by its journal's name)
-  let showAll = false, more = 6;
-  const draw = () => {
-    const rows = showAll ? all : mine, shelf = shelfTitles();
-    const list = rows.slice(0, more);
-    sec.hidden = false;
-    sec.innerHTML = `<h2 class="sec-h">KCI 새 법학 논문 <span class="sec-n">${showAll ? `법학 전체 ${all.length}편` : `내 분야 ${mine.length}편`} · 최근 8주</span></h2>
-      <div class="list law-list">${list.map((x) => kciRow(x, shelf)).join('') || '<p class="none">최근 8주 사이 내 분야의 새 논문이 없습니다</p>'}${rows.length > list.length ? `<button type="button" class="more kci-more">더 보기 · ${list.length} / ${rows.length}</button>` : ''}</div>
-      <p class="law-note faint kci-foot">KCI(한국학술지인용색인)가 새로 받은 법학 논문을 매주 모읍니다 · <button type="button" class="law-eg kci-all">${showAll ? '내 분야만 보기' : `법학 전체 ${all.length}편 보기`}</button></p>`;
-    $('.kci-more', sec) && ($('.kci-more', sec).onclick = () => { more += 20; draw(); });
-    $('.kci-all', sec).onclick = () => { showAll = !showAll; more = showAll ? 20 : 6; draw(); };
+  const idx = await kciIndex();
+  const months = idx && idx.months ? Object.keys(idx.months).filter((k) => idx.months[k] > 0).sort().reverse() : [];
+  if (!months.length && !(await kciNew()).length) return;
+  if (!live() || !sec.isConnected) return;
+  const fits = (x) => MY_FIELDS.test(`${x.t} ${x.ab || ''}`);   // (by what the paper says, not by its journal's name)
+  let showAll = false, want = 8, busy = false;
+  const seen = new Set(), got = [];   // [{ key, x }] in order
+  let mi = 0;
+  // read months (newest first) until there are enough rows for the list, or none is left
+  const fill = async () => {
+    if (!months.length && !got.length) { for (const x of await kciNew()) { if (!seen.has(x.id)) { seen.add(x.id); got.push({ key: '', x }); } } return; }
+    while (mi < months.length && got.filter((g) => showAll || fits(g.x)).length < want) {
+      const key = months[mi++];
+      for (const x of await kciMonth(key)) if (!seen.has(x.id)) { seen.add(x.id); got.push({ key, x }); }
+    }
   };
-  draw();
+  const draw = () => {
+    const shelf = shelfTitles(), rows = got.filter((g) => showAll || fits(g.x)), list = rows.slice(0, want);
+    let html = '', last = null;
+    for (const g of list) {
+      if (g.key && g.key !== last) { html += `<div class="kci-month">${esc(monthName(g.key))}</div>`; last = g.key; }
+      html += kciRow(g.x, shelf);
+    }
+    const more = rows.length > list.length || mi < months.length;
+    const oldest = months.length ? monthName(months[months.length - 1]) : '';
+    sec.hidden = false;
+    sec.innerHTML = `<div class="list-h"><h2 class="sec-h">KCI 법학 논문 <span class="sec-n">${showAll ? '법학 전체' : '내 분야'}${oldest ? ` · ${esc(oldest)}부터` : ''}</span></h2><button type="button" class="sec-act kci-all">${showAll ? '내 분야만' : '법학 전체'}</button></div>
+      <div class="list law-list kci-list">${html || '<p class="none">아직 내 분야의 논문이 없습니다</p>'}${more ? '<button type="button" class="more kci-more">더 보기</button>' : ''}</div>`;
+    const mb = $('.kci-more', sec);
+    if (mb) mb.onclick = async () => { if (busy) return; busy = true; mb.textContent = '불러오는 중…'; want += 20; await fill(); busy = false; if (live() && sec.isConnected) draw(); };
+    $('.kci-all', sec).onclick = async () => { showAll = !showAll; want = 8; await fill(); if (live() && sec.isConnected) draw(); };
+  };
+  await fill();
+  if (live() && sec.isConnected) draw();
 }
 // one KCI paper: who wrote it, where it came out, the start of its abstract; KCI's page (its full text where open), 국회도서관
 function kciSheet(x) {
@@ -769,19 +844,20 @@ function kciSheet(x) {
   $('.kci-nanet', box).onclick = () => { closeSheet(); paperGo(papers.mainTitle(x.t)); };
   box.addEventListener('click', (e) => { const au = e.target.closest('.pp-au[data-pq]'); if (au) { closeSheet(); paperGo(au.dataset.pq); } });
 }
-function rememberPaper(q) {
-  clearTimeout(S.paperRemT);
-  S.paperRemT = setTimeout(() => {
-    if (!q || (S.pq || '').trim() !== q) return;
-    paperRecent = [q, ...(paperRecent || []).filter((x) => x !== q)].slice(0, 8);
-    store.put('kv', 'paperRecent', paperRecent).catch(() => {});
-  }, 1500);
-}
 function paperGo(q) {   // to 논문 찾기, asking q
+  noteScroll();
   S.view = { kind: 'papers', folder: null }; S.q = ''; S.pq = q;
   const fi = $('.find input'); if (fi) fi.value = '';
   render(); closeRail();
   const c = $('.content'); if (c) c.scrollTop = 0; window.scrollTo(0, 0);
+  nav();
+}
+// the same words asked of the other places a paper is found, each in a new tab (구글 학술검색 reads the papers' text too)
+function elsewhereRow(q) {
+  const u = encodeURIComponent(q);
+  const go = [['구글 학술검색', `https://scholar.google.com/scholar?hl=ko&q=${u}`], ['RISS', `https://www.riss.kr/search/Search.do?isDetailSearch=N&searchGubun=true&viewYn=OP&query=${u}`],
+    ['KCI', `https://www.kci.go.kr/kciportal/po/search/poTotalSearList.kci?sereArticleSearchBean.keyword=${u}`], ['DBpia', `https://www.dbpia.co.kr/search/topSearch?searchOption=all&query=${u}`]];
+  return `<div class="pp-else"><span>다른 곳에서</span>${go.map(([t, href]) => `<a href="${href}" target="_blank" rel="noopener">${t}</a>`).join('')}</div>`;
 }
 function ppSec(kind, title) { return `<section class="law-sec pp-sec" data-sec="${kind}"><h2 class="sec-h">${title} <span class="sec-n"></span></h2><div class="list law-list"><p class="none">찾는 중…</p></div></section>`; }
 // one section of papers, a page at a time; resolves to the first page's answer (or null)
@@ -928,11 +1004,11 @@ function yearBars(years) {
 
 function lawFrame(c) {
   if (c.querySelector(':scope > .law-top:not(.pp-top)')) return;   // its own frame (논문 찾기's frame looks alike: it is replaced)
-  c.innerHTML = `<div class="law-top"><label class="law-find">${I.search}<input type="search" placeholder="사건번호 · 조문 · 법령 이름 · 낱말" enterkeyhint="search" autocomplete="off" aria-label="판례·법령 찾기" aria-autocomplete="list" aria-controls="law-sugg" aria-expanded="false"></label><div class="law-sugg" id="law-sugg" role="listbox" aria-label="법령 이름" hidden></div></div><div class="law-body"></div>`;
+  c.innerHTML = `<div class="law-top"><button type="button" class="ib nav-back" aria-label="뒤로" title="뒤로" hidden>${I.back}</button><label class="law-find">${I.search}<input type="search" placeholder="사건번호 · 조문 · 법령 이름 · 낱말" enterkeyhint="search" autocomplete="off" aria-label="판례·법령 찾기" aria-autocomplete="list" aria-controls="law-sugg" aria-expanded="false"></label><div class="law-sugg" id="law-sugg" role="listbox" aria-label="법령 이름" hidden></div></div><div class="law-body"></div>`;
   const inp = $('.law-find input', c), sug = $('.law-sugg', c);
   inp.value = S.lq || '';
   // asked of the courts' servers: it waits a little longer for the typing to settle, and Enter asks at once
-  const ask = () => { clearTimeout(S.qT); clearTimeout(S.sugT); hide(); S.lq = inp.value.trim(); renderLaw(c); };
+  const ask = (how = 'push') => { clearTimeout(S.qT); clearTimeout(S.sugT); hide(); noteScroll(); S.lq = inp.value.trim(); renderLaw(c); nav(how); };
   // the names of laws that begin with (or hold) what is typed, from the app's own index: one tap and the law opens
   let shown = [], at = -1, seq = 0;
   function hide() { seq++; shown = []; at = -1; sug.hidden = true; sug.textContent = ''; inp.setAttribute('aria-expanded', 'false'); inp.removeAttribute('aria-activedescendant'); }
@@ -955,14 +1031,16 @@ function lawFrame(c) {
   const pick = (i) => { const x = shown[i]; if (!x) return; inp.value = x.name; ask(); inp.blur(); };
   sug.addEventListener('pointerdown', (e) => e.preventDefault());   // the box keeps the focus (and a phone its keyboard) while a name is picked
   sug.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) pick(Number(b.dataset.i)); });
-  inp.addEventListener('input', () => { clearTimeout(S.qT); S.qT = setTimeout(ask, 650); clearTimeout(S.sugT); S.sugT = setTimeout(suggest, 80); });
+  inp.addEventListener('input', () => { clearTimeout(S.qT); S.qT = setTimeout(() => ask('typing'), 650); clearTimeout(S.sugT); S.sugT = setTimeout(suggest, 80); });
   inp.addEventListener('blur', () => { clearTimeout(S.sugT); setTimeout(() => { if (document.activeElement !== inp) hide(); }, 150); });
   inp.addEventListener('keydown', (e) => {
     if (!sug.hidden && shown.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); at = e.key === 'ArrowDown' ? (at + 1 >= shown.length ? -1 : at + 1) : (at - 1 < -1 ? shown.length - 1 : at - 1); mark(); return; }
-    if (e.key === 'Escape') { e.preventDefault(); if (!sug.hidden) { hide(); return; } inp.value = ''; ask(); return; }   // a search box would clear itself
+    if (e.key === 'Escape') { e.preventDefault(); if (!sug.hidden) { hide(); return; } inp.value = ''; ask('typing'); return; }   // a search box would clear itself
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (!sug.hidden && at >= 0) { pick(at); return; } ask(); inp.blur(); }
   });
   if (matchMedia('(hover: hover) and (pointer: fine)').matches && !S.lq) setTimeout(() => inp.focus(), 0);   // a keyboard at hand: ready to type
+  $('.nav-back', c).onclick = () => history.back();
+  paintBack();
 }
 // the first screen: the provisions of the owner's research, the cases of the papers, each field's laws, and the recent asks
 function lawHome(mine) {
@@ -1010,8 +1088,12 @@ async function renderLaw(cIn) {
   if (court) { box.innerHTML = '<div class="court-sec"></div>'; courtCard($('.court-sec', box), court, live); mineSec(box, [court.no.toLowerCase()], q, live); return; }
   if (art) {
     const own = !!laws.LAWS[art.law];   // 헌법, 헌법재판소법: the court's own text; any other law: 국가법령정보
-    box.innerHTML = '<div class="art-sec"></div><section class="bill-sec" hidden></section>' + (own ? lawSec('holding', '이 조문이 나오는 결정요지') : lawSec('law', '이 조문을 심판한 헌재 결정'));
-    articleCard($('.art-sec', box), art, live).then((law) => { if (law && live()) billsSec($('.bill-sec', box), law, art, live); });
+    box.innerHTML = '<div class="art-sec"></div><section class="bill-sec" hidden></section>' + (own ? lawSec('holding', '이 조문이 나오는 결정요지') : lawSec('law', '이 조문을 심판한 헌재 결정')) + lawSec('court', '이 조문을 참조한 법원 판결 <small>대법원 · 하급심</small>');
+    // and the courts' judgments that name this article in their 참조조문 (by the law's own name, as judgments write it)
+    articleCard($('.art-sec', box), art, live).then((law) => {
+      if (law && live()) billsSec($('.bill-sec', box), law, art, live);
+      if (live()) fillSec(box, 'court', (pg) => precq.citing(art.law === '헌법' ? '헌법' : (law && law.full) || art.law, art.art, art.sub, pg), live);
+    });
     const ref = `${art.law} ${laws.artLabel(art)}${art.para ? ` 제${art.para}항` : ''}`;
     if (own) fillSec(box, 'holding', (pg) => cases.byHolding(ref, pg), live);
     else fillSec(box, 'law', (pg) => cases.byLaw(art.law, art.art, art.para, pg), live, true);
@@ -1029,15 +1111,18 @@ async function renderLaw(cIn) {
   const named = await laws.lawOf(q).catch(() => null);
   if (!live()) return;
   const lawLike = !!named || /(?:법|법률|령|규칙|규정)$/.test(q.replace(/\s+/g, ''));
-  const secs = [['name', '사건명', (pg) => cases.byName(q, pg)], ['holding', '결정요지 (판례요지집)', (pg) => cases.byHolding(q, pg)], ['leading', '주요 결정', (pg) => cases.byLeading(q, pg)]];
-  if (lawLike) secs.unshift(['law', '이 법률을 심판한 헌재 결정', (pg) => cases.byLaw(named ? named.name : q.replace(/\s+/g, ''), 0, 0, pg)]);
-  box.innerHTML = (lawLike ? '<div class="whole-sec"></div><section class="bill-sec" hidden></section>' : '') + secs.map(([k, t]) => lawSec(k, t)).join('') + `<p class="none law-empty" hidden>${named ? '이 법령을 다룬 헌법재판소 결정은 찾지 못했습니다' : '헌법재판소 자료에서 찾지 못했습니다'}</p>`;
+  // the courts' judgments (대법원 first) by their 사건명·판시사항·판결요지, then 헌법재판소: its cases by name, its digest of holdings,
+  // its leading decisions (and, for a law, the decisions on it)
+  const courtSec = ['court', '법원 판결 <small>대법원 · 하급심</small>', (pg) => precq.search(named ? named.name : q, pg)];
+  const secs = [courtSec, ['name', '헌재 사건명', (pg) => cases.byName(q, pg)], ['holding', '헌재 결정요지 <small>판례요지집</small>', (pg) => cases.byHolding(q, pg)], ['leading', '헌재 주요 결정', (pg) => cases.byLeading(q, pg)]];
+  if (lawLike) { secs.shift(); secs.unshift(['law', '이 법률을 심판한 헌재 결정', (pg) => cases.byLaw(named ? named.name : q.replace(/\s+/g, ''), 0, 0, pg)], courtSec); }
+  box.innerHTML = (lawLike ? '<div class="whole-sec"></div><section class="bill-sec" hidden></section>' : '') + secs.map(([k, t]) => lawSec(k, t)).join('') + `<p class="none law-empty" hidden>${named ? '이 법령을 다룬 판례는 찾지 못했습니다' : '판례에서 찾지 못했습니다 · 낱말을 바꾸거나 줄여 보세요'}</p>`;
   if (lawLike) lawWhole($('.whole-sec', box), named ? named.name : q, live, !named).then((law) => { if (law && live()) billsSec($('.bill-sec', box), law, null, live); });
   let left = secs.length, any = false;
   for (const [k, , ask] of secs) fillSec(box, k, ask, live).then((n) => { any = any || n > 0; if (--left === 0 && !any && live()) $('.law-empty', box).hidden = false; });
 }
 // the papers on this shelf that cite what was looked up, right under it
-function mineSec(box, keys, q, live, after) {
+function mineSec(box, keys, q, live, after, says = '편이 인용') {
   const sec = el('section', 'mine-sec', '<h2 class="sec-h">내 책장에서 <span class="sec-n"></span></h2><div class="list mine-list"></div>');
   sec.hidden = true;
   if (after) after.after(sec); else box.appendChild(sec);
@@ -1046,7 +1131,7 @@ function mineSec(box, keys, q, live, after) {
     sec.hidden = !results.length && done === all;
     if (!results.length && done < all) { sec.hidden = false; n.textContent = `찾는 중 ${done}/${all}`; return; }
     list.innerHTML = results.slice(0, 40).map((r) => fileRow(r.f, snipsHtml(r, q))).join('');
-    n.textContent = done < all ? `찾는 중 ${done}/${all}` : `${results.length}편이 인용`;
+    n.textContent = done < all ? `찾는 중 ${done}/${all}` : `${results.length}${says}`;
     lazyThumbs();
   });
 }
@@ -1059,6 +1144,7 @@ function rememberLaw(q) {   // kept once the question has stood a moment (not ev
   }, 1500);
 }
 const lawRow = {
+  court: (r) => `<button type="button" class="lrow pq-row" data-court-open="${esc(r.court + ' ' + r.no)}"><b>${esc(r.name || r.no)}</b><span>${esc([r.court, r.date ? r.date + (/^\d{2,4}(?:마|그|스|브|카|모|로|초|라|느|무|루|아|즈)/.test(r.no) ? '자' : ' 선고') : '', r.no].filter(Boolean).join(' '))}${r.cat ? ` · ${esc(r.cat)}` : ''}</span><span class="pq-snip" data-snip="${esc(r.court + ' ' + r.no)}" data-at="${r.at || ''}"></span></button>`,
   name: (r) => caseRow(r.no, r.name, [r.no, r.date, r.court], r.result),
   law: (r) => caseRow(r.no, r.name, [r.no, r.date, r.target], r.result, r.order),
   leading: (r) => caseRow(r.no, r.nick ? `${r.nick} · ${r.name}` : r.name, [r.no, r.date, r.area]),
@@ -1069,6 +1155,37 @@ const lawRow = {
     return `<button type="button" class="lrow" data-holding="${esc(r.seq)}"><b>${esc(head)}</b><span>${esc(law ? '심판대상 · ' + parts.slice(1, -1).filter((x) => !/^</.test(x)).join(' > ') : r.path)}</span></button>`;
   },
 };
+// under each judgment found, its 판시사항 (or 판결요지) at the words asked, marked: read from the judgment itself, three at a time
+async function courtSnips(list, q, live) {
+  const ws = precq.words(q).filter((w) => w.length > 1);
+  const todo = [...list.querySelectorAll('.pq-snip:not([data-done])')];
+  todo.forEach((x) => { x.dataset.done = '1'; });
+  let i = 0;
+  const one = async () => {
+    while (i < todo.length && live()) {
+      const x = todo[i++];
+      try {
+        const d = await laws.courtCase(x.dataset.snip);
+        // where the words were found: the 판결요지 when only it has them, else the 판시사항
+        const t = d && (x.dataset.at === 'summary' ? d.summary || d.points : d.points || d.summary);
+        if (t && x.isConnected) { x.innerHTML = (x.dataset.at === 'summary' ? '<em class="pq-at">판결요지</em> ' : '') + snipAt(t, ws); x.classList.add('on'); }
+      } catch (e) { /* the row stays as it is */ }
+    }
+  };
+  await Promise.all([one(), one(), one()]);
+}
+function snipAt(text, ws) {
+  const flat = String(text).replace(/\s+/g, ' ').replace(/^[\[［]\d+[\]］]\s*/, '').trim();
+  const low = flat.toLowerCase();
+  let at = -1;
+  for (const w of ws) { const k = low.indexOf(w); if (k >= 0 && (at < 0 || k < at)) at = k; }
+  let start = at > 60 ? flat.lastIndexOf(' ', at - 40) + 1 : 0;
+  if (start < 0) start = 0;
+  const piece = (start ? '… ' : '') + flat.slice(start, start + 150) + (flat.length > start + 150 ? ' …' : '');
+  let html = esc(piece);
+  for (const w of ws) html = html.replace(new RegExp(esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (m) => `<mark>${m}</mark>`);
+  return html;
+}
 function caseRow(no, name, meta, result, order) {
   if (!no) return '';
   return `<button type="button" class="lrow" data-case-open="${esc(no)}"><b>${esc(name || no)}</b><span>${meta.filter(Boolean).map(esc).join(' · ')}${result ? ` · <em>${esc(result)}</em>` : ''}</span>${order ? `<span class="lr-o">${esc(order.split('\n')[0])}</span>` : ''}</button>`;
@@ -1085,7 +1202,8 @@ async function fillSec(box, kind, ask, live, keep, page = 1) {
     const more = list.querySelector('.more'); if (more) more.remove();
     if (!r.total && page === 1) { if (keep) list.innerHTML = '<p class="none">없습니다</p>'; else sec.hidden = true; return 0; }
     list.insertAdjacentHTML('beforeend', r.rows.map(lawRow[kind]).join(''));
-    n.textContent = `${r.total}건`;
+    n.textContent = `${r.total.toLocaleString()}건`;
+    if (kind === 'court') courtSnips(list, S.lq || '', live);
     const shown = list.querySelectorAll('.lrow').length;
     if (shown < r.total && r.rows.length) {
       list.insertAdjacentHTML('beforeend', `<button type="button" class="more">더 보기 · ${shown} / ${r.total}</button>`);
@@ -1096,7 +1214,7 @@ async function fillSec(box, kind, ask, live, keep, page = 1) {
     if (!live()) return 0;
     const more = list.querySelector('.more');
     if (page > 1 && more) more.textContent = '불러오지 못했습니다 · 다시 누르기';   // the rows already shown stay
-    else list.innerHTML = `<p class="none">${e && e.code === 'offline' ? '인터넷에 연결되면 찾을 수 있습니다' : '지금은 헌법재판소 자료에 닿지 않습니다'}</p>`;
+    else list.innerHTML = `<p class="none">${e && e.code === 'offline' ? '인터넷에 연결되면 찾을 수 있습니다' : kind === 'court' ? '지금은 판결 색인에 닿지 않습니다' : '지금은 헌법재판소 자료에 닿지 않습니다'}</p>`;
     return 0;
   }
 }
@@ -1334,8 +1452,9 @@ function sheetLinks(box, again, self, back) {
   });
 }
 function lawGo(q) {   // to 판례·법령, asking q
+  noteScroll();
   S.view = { kind: 'law', folder: null }; S.q = ''; S.select = null; S.lq = q; $('.find input').value = '';
-  render(); $('.content').scrollTop = 0; window.scrollTo(0, 0);
+  render(); $('.content').scrollTop = 0; window.scrollTo(0, 0); nav();
 }
 function holdingSheet(seq) {
   const box = sheet(`<div class="cs-head"><h2>결정요지</h2></div><div class="cs-body"><p class="cs-wait">불러오는 중…</p></div>`);
@@ -1423,7 +1542,6 @@ let pressedAt = 0;
 function onContentClick(e) {
   if (Date.now() - pressedAt < 800) return;   // the tap that ended a long press
   const t = e.target;
-  const un = t.closest('[data-unresume]'); if (un) { unresume(un.dataset.unresume); return; }
   const co = t.closest('[data-case-open]'); if (co) { caseSheet(co.dataset.caseOpen); return; }
   const cc = t.closest('[data-court-open]'); if (cc) { courtSheet(cc.dataset.courtOpen); return; }
   const il = t.closest('.case-ln');   // a citation inside an article's text: the decision, the judgment, or that article
@@ -1431,14 +1549,13 @@ function onContentClick(e) {
   const pq = t.closest('[data-pq]'); if (pq) { paperGo(pq.dataset.pq); return; }
   const pw = t.closest('[data-who]'); if (pw) { researcherSheet(pw.dataset.who, pw.dataset.aid); return; }
   const pp = t.closest('[data-paper]'); if (pp) { const row = ppRows.get(pp.dataset.paper); if (row) paperSheet(row); return; }
-  const lq = t.closest('[data-lq]'); if (lq) { S.lq = lq.dataset.lq; const li = $('.law-find input'); if (li) li.value = S.lq; renderLaw($('.content')); $('.content').scrollTop = 0; window.scrollTo(0, 0); return; }
+  const lq = t.closest('[data-lq]'); if (lq) { const c = $('.content'); noteScroll(); S.lq = lq.dataset.lq; const li = $('.law-find input'); if (li) li.value = S.lq; renderLaw(c); c.scrollTop = 0; window.scrollTo(0, 0); nav(); return; }
   const ho = t.closest('[data-holding]'); if (ho) { holdingSheet(ho.dataset.holding); return; }
   const bl = t.closest('[data-bill]'); if (bl) { const b = billRows.get(bl.dataset.bill); if (b) billSheet(b.x, b.law); return; }
   const kc = t.closest('[data-kci]'); if (kc) { const x = kciRows.get(kc.dataset.kci); if (x) kciSheet(x); return; }
   if (t.closest('[data-selall]')) { pickAll(); return; }
   const ck = t.closest('[data-ck]');
-  if (ck) { const row = ck.closest('.row, .card-w[data-file]'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
-  if (S.select) { const cw = t.closest('.card-w[data-file]'); if (cw) { pick({ file: cw.dataset.file }); return; } }
+  if (ck) { const row = ck.closest('.row'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
   const up = t.closest('[data-t="upload"]'); if (up) { uploadBox(); return; }
   const r = t.closest('[data-restore]'); if (r) { doOps([{ op: 'restoreFile', id: r.dataset.restore }], '되살렸습니다'); return; }
   const rf = t.closest('[data-restore-folder]'); if (rf) { doOps([{ op: 'restoreFolder', id: rf.dataset.restoreFolder }], '되살렸습니다'); return; }
@@ -1446,11 +1563,11 @@ function onContentClick(e) {
   const pf = t.closest('[data-purge-folder]'); if (pf) { confirmBox('영구 삭제', '이 폴더와 안의 파일을 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFolder', id: pf.dataset.purgeFolder }], '지웠습니다')); return; }
   const mm = t.closest('[data-menu]'); if (mm) { const b = mm.getBoundingClientRect(); fileMenu(mm.dataset.menu, b.right, b.bottom); return; }
   const fm = t.closest('[data-fmenu]'); if (fm) { const b = fm.getBoundingClientRect(); folderMenu(fm.dataset.fmenu, b.right, b.bottom); return; }
-  const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.mark ? { page: Number(sn.dataset.page), mark: sn.dataset.mark } : sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : sn.dataset.resume ? { resume: true } : {}); return; }
+  const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.mark ? { page: Number(sn.dataset.page), mark: sn.dataset.mark } : sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : {}); return; }
   const row = t.closest('.row');
   if (!row) return;
   if (S.select) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); return; }
-  if (row.dataset.fid) { S.view = { kind: 'home', folder: row.dataset.fid }; S.q = ''; $('.find input').value = ''; render(); return; }
+  if (row.dataset.fid) { noteScroll(); S.view = { kind: 'home', folder: row.dataset.fid }; S.q = ''; $('.find input').value = ''; render(); nav(); return; }
   if (row.dataset.file && S.view.kind !== 'trash') openFile(row.dataset.file);
 }
 function toggleSet(set, v) { if (set.has(v)) set.delete(v); else set.add(v); }
@@ -1497,13 +1614,10 @@ async function onTools(e) {
 
 async function fileMenu(id, x, y) {
   const f = fileById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ...(needsOcr(f) && isScan(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ...(needsOcr(f) && isScan(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']], null, { title: stem(f.name), sub: paperLineText(f) || (f.pages ? f.pages + '쪽' : '') });
   if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
-  if (k === 'open') openFile(id);
-  else if (k === 'start') openFile(id, { page: 0 });
-  else if (k === 'rename') { const n = await promptBox('이름 바꾸기', '파일 이름', stem(f.name), '바꾸기', f.orig && f.orig !== f.name ? stem(f.orig) : null); if (n) doOps([{ op: 'updateFile', id, set: { name: n.endsWith('.pdf') ? n : n + '.pdf' } }]); }
+  if (k === 'rename') { const n = await promptBox('이름 바꾸기', '파일 이름', stem(f.name), '바꾸기', f.orig && f.orig !== f.name ? stem(f.orig) : null); if (n) doOps([{ op: 'updateFile', id, set: { name: n.endsWith('.pdf') ? n : n + '.pdf' } }]); }
   else if (k === 'move') { const to = await pickFolder('옮길 곳'); if (to !== undefined) doOps([{ op: 'updateFile', id, set: { folder: to } }], '옮겼습니다'); }
-  else if (k === 'dl') exportPdf(f, { marks: true, mode: 'download' });
   else if (k === 'print') exportPdf(f, { marks: true, mode: 'print' });
   else if (k === 'orig') exportPdf(f, { marks: false, mode: 'download' });
   else if (k === 'clear') clearAllMarks(f);
@@ -1561,7 +1675,7 @@ async function clearAllMarks(f) {
 }
 async function folderMenu(id, x, y) {
   const f = folderById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['trash', '휴지통으로', 'danger']]);
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['trash', '휴지통으로', 'danger']], null, { title: f.name, sub: '폴더' });
   if (k === 'rename') { const n = await promptBox('폴더 이름 바꾸기', '폴더 이름', f.name, '바꾸기'); if (n) doOps([{ op: 'renameFolder', id, name: n }]); }
   else if (k === 'move') { const to = await pickFolder('옮길 곳', new Set([id])); if (to !== undefined && to !== id) doOps([{ op: 'moveFolder', id, parent: to }], '옮겼습니다'); }
   else if (k === 'trash') doOps([{ op: 'trashFolder', id }], '휴지통으로 옮겼습니다');
@@ -1749,7 +1863,7 @@ async function openFile(id, at = {}) {
     const ocr = f.ocr ? await ocrData(f) : null;
     S.reader = new Reader(host, {
       doc, title: stem(f.name), analyze: A, marks, index, ocr: ocr && ocr.pages,
-      at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query, mark: at.mark } : (s ? { page: s.page, y: s.y } : {}),
+      at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query, mark: at.mark } : (s && !s.done ? { page: s.page, y: s.y } : {}),
       zoom: at.zoom,
       id, tabs: tabInfo(),
       onTab: (t) => switchTab(t),
@@ -1775,7 +1889,6 @@ async function openFile(id, at = {}) {
     await S.reader.start();
     fgUntil = Date.now() + 1500;   // drawn: the background goes on a moment later
     keepAwake();
-    if (at.page == null && !at.resume && !at.tab && s && s.page > 0) S.reader.askResume(S.reader.label(s.page) + S.reader.unit());
     if (!index && f.text) textOf(f).then((t) => { if (S.reader && S.readerId === id) S.reader.setIndex(t); }).catch(() => {});
   } catch (e) {
     fgUntil = 0;
@@ -1804,13 +1917,63 @@ function closeReader(silent, noRemember) {
   document.querySelectorAll('.reader-host').forEach((h) => h.remove());
   if (!silent) render();
 }
-function onPop() { if (S.readerId && !/#r=/.test(location.hash)) closeReader(); }
+function onPop(e) {
+  if (S.readerId && !/#r=/.test(location.hash)) { closeReader(); return; }
+  const st = e && e.state;
+  if (S.readerId || !st || !st.nav) return;
+  closeSheet(); document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
+  const n = st.nav;
+  S.view = { kind: n.kind || 'home', folder: n.folder || null }; S.q = ''; S.select = null;
+  S.lq = n.lq || ''; S.pq = n.pq || ''; if (n.pk !== undefined) S.pk = n.pk; if (n.ps !== undefined) S.ps = n.ps;
+  const fi = $('.find input'); if (fi) fi.value = '';
+  render(); closeRail();
+  const c = $('.content');
+  if (c) {
+    c.scrollTop = 0;
+    if (st.scroll) {   // the answers come a moment later: once the screen is long enough again, back to where it was (for up to 3 s)
+      const t0 = Date.now();
+      const tick = () => {
+        if (!history.state || history.state.key !== st.key) return;
+        const max = c.scrollHeight - c.clientHeight;
+        if (max >= st.scroll - 2 || Date.now() - t0 > 3000) { c.scrollTop = Math.min(st.scroll, max); return; }
+        setTimeout(tick, 90);
+      };
+      setTimeout(tick, 60);
+    }
+  }
+}
+// the screen one is on, as history keeps it
+const navNow = () => ({ kind: S.view.kind, folder: S.view.folder || null, lq: S.view.kind === 'law' ? S.lq || '' : '', pq: S.view.kind === 'papers' ? S.pq || '' : '', pk: S.pk, ps: S.ps });
+const navHash = (n) => (n.kind === 'law' ? '#law' + (n.lq ? '=' + encodeURIComponent(n.lq) : '') : n.kind === 'papers' ? '#papers' + (n.pq ? '=' + encodeURIComponent(n.pq) : '') : n.kind === 'trash' ? '#trash' : n.folder ? '#f=' + n.folder : '#');
+const sameNav = (a, b) => !!a && !!b && a.kind === b.kind && (a.folder || null) === (b.folder || null) && (a.lq || '') === (b.lq || '') && (a.pq || '') === (b.pq || '');
+// how: 'push' (a question asked, a view or folder opened: going back returns to the screen before) or 'typing' (what is
+// being typed: one passing place on top of the history, taken over by the question once it is asked — so going back never
+// stops at half a word)
+function nav(how = 'push') {
+  if (S.readerId) return;
+  const n = navNow(), st = history.state || {}, cur = st.nav;
+  const url = location.pathname + location.search + (navHash(n) === '#' ? '' : navHash(n));
+  const key = Math.random().toString(36).slice(2);
+  if (!cur) history.replaceState({ nav: n, depth: 0, typed: how === 'typing', key }, '', url);
+  else if (st.typed) history.replaceState({ nav: n, depth: st.depth || 0, typed: how === 'typing', key }, '', url);
+  else if (!sameNav(cur, n)) history.pushState({ nav: n, depth: (st.depth || 0) + 1, typed: how === 'typing', key }, '', url);
+  paintBack();
+}
+// before a screen is changed: how far it is scrolled, kept with it (so going back returns there)
+function noteScroll() {
+  const st = history.state, c = $('.content');
+  if (st && st.nav && !st.typed && c) history.replaceState({ ...st, scroll: c.scrollTop }, '');
+}
+// ‹ beside the search box, when there is a screen to go back to (an app on the home screen has no back button of its own)
+function paintBack() {
+  const can = !!(history.state && history.state.depth > 0);
+  document.querySelectorAll('.law-top .nav-back').forEach((b) => { b.hidden = !can; });
+}
 
 async function shareMenu(f, btn) {
   const r = btn.getBoundingClientRect();
-  const k = await menu(r, [['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기']]);
-  if (k === 'dl') exportPdf(f, { marks: true, mode: 'download' });
-  else if (k === 'print') exportPdf(f, { marks: true, mode: 'print' });
+  const k = await menu(r, [['print', '인쇄'], ['orig', '원본 내려받기']]);
+  if (k === 'print') exportPdf(f, { marks: true, mode: 'print' });
   else if (k === 'orig') exportPdf(f, { marks: false, mode: 'download' });
 }
 
@@ -2063,6 +2226,12 @@ function paperLine(f) {   // 학술지 · 학회 · 발간일, as a citation lis
   if (i.date) s += (s ? ' · ' : '') + esc(pubText(i.date));
   return s;
 }
+function paperLineText(f) {   // the same, as plain words (a menu's head)
+  const i = infoOf(f);
+  if (!i || !(i.journal || i.date)) return '';
+  const jn = String(i.journal || '').replace(/[\s┃│|ㅣ]+$/, '');
+  return [[jn, jn && i.issue].filter(Boolean).join(' '), i.society, i.date ? pubText(i.date) : ''].filter(Boolean).join(' · ');
+}
 // papers whose texts were made before this was read: fetch the newer texts once, or read the first page here and share it
 let filling = false;
 const askedInfo = new Set();
@@ -2162,6 +2331,7 @@ async function writePaper(f, cur, merged) {
     return true;
   } catch (e) { return false; }   // next time
 }
+let verAsked = null;
 async function libraryInfo() {
   if (libRunning) { libAgain = true; return; }
   if (!syncOn || !navigator.onLine) return;
@@ -2238,7 +2408,38 @@ async function libraryInfo() {
     }
     if (!k) continue;
     const merged = { ...cur, issue: cur.issue || k.issue, society: cur.society || k.society, date: /^\d{4}-\d{2}/.test(cur.date || '') ? cur.date : k.date };
-    if (await writePaper(f, cur, merged)) changed = true;
+    if (await writePaper(f, cur, merged)) { changed = true; wrote.set(f.id, merged); }
+  }
+  // what the paper itself prints, over every record: the issue and month printed with its journal's name, or the issue its
+  // DOI names; a printer named as the society gives way to the journal's society; a line with no journal takes the one the
+  // DOI at the head of its first page names (Crossref) — once for each paper (and again when this check is made better)
+  if (!verAsked) verAsked = (await store.get('kv', 'verify1').catch(() => null)) || {};
+  for (const f of liveFiles()) {
+    if (!navigator.onLine || document.hidden) break;
+    if (verAsked[f.id] || OCR.id === f.id) continue;
+    const t = await store.get('texts', f.id).catch(() => null);
+    if (!t || !Array.isArray(t.pages) || !t.pages.length) continue;   // (its text is not on this device yet: next time)
+    const cur = wrote.get(f.id) || infoOf(f);
+    verAsked[f.id] = Date.now(); store.put('kv', 'verify1', verAsked).catch(() => {});
+    if (!cur) continue;
+    await fgWait();
+    let kj = null;
+    try { kj = cur.journal ? await kci.journalOf(cur.journal, cur.society) : null; } catch (e) { kj = null; }
+    let next = verify.check(cur, t.pages[0] || '', t.pages[1] || '', kj).line;
+    if (!next.journal) {
+      const dois = verify.doisOf(t.pages[0] || '');
+      const found = [];
+      for (const doi of dois.slice(0, 3)) { try { const c = await papers.crossrefDoi(doi); if (c && c.journal) found.push(c); } catch (e) { break; } }
+      if (found.length && found.every((c) => c.journal === found[0].journal)) {
+        const c = found[0], kc = await kci.journalOf(c.journal).catch(() => null);
+        const vol = String(+c.volume || ''), no = String(+c.issue || '');
+        const ser = (/^제(\d+)호$/.exec(next.issue || '') || [])[1];
+        next = { ...next, journal: kc ? kc.k : c.journal, society: next.society || (kc && kc.p) || '',
+          issue: vol && no ? `제${vol}권 제${no}호${ser ? ` (통권 제${ser}호)` : ''}` : next.issue,
+          date: c.year && c.month && (!next.date || next.date.slice(0, 4) === c.year) ? `${c.year}-${c.month}` : next.date };
+      }
+    }
+    if (await writePaper(f, cur, next)) { changed = true; wrote.set(f.id, next); }
   }
   } finally {
     libRunning = false;
@@ -2371,15 +2572,6 @@ ${files.map((f) => `<h2>${esc(stem(f.name))}</h2>${paperLine(f) ? `<p class="j">
   toast('내려받았습니다');
 }
 
-/* ---------- 이어 읽기에서 빼기: the paper counts as finished for now; reading on in it brings it back ---------- */
-function unresume(id) {
-  const s = S.state.files[id]; if (!s) return;
-  const before = { ...s };
-  const put = (v) => { S.state.files[id] = { ...v, at: (S.state.files[id].at || 0) + 1 }; stateDirty.add(id); store.put('kv', 'state', S.state); pushState(); render(); };
-  put({ ...s, done: true });
-  toast('이어 읽기에서 뺐습니다', 6000, { label: '되돌리기', fn: () => put(before) });
-}
-
 /* ---------- reading positions ---------- */
 let stateT = null; const stateDirty = new Set();
 function savePosition(id, pos, pages, now) {
@@ -2482,9 +2674,12 @@ async function settings() {
 let toastT = null;
 function toast(msg, ms = 2600, action) {
   const t = $('.toast') || (() => { const x = el('div', 'toast'); document.body.appendChild(x); return x; })();
-  t.textContent = msg; t.hidden = false; t.classList.add('in');
+  t.textContent = '';
+  const m = el('span', 'toast-m'); m.textContent = msg; t.appendChild(m);
+  t.hidden = false; t.classList.add('in');
   t.classList.toggle('has-act', !!action);
   t.classList.toggle('over-tools', !!document.querySelector('.reader-host'));
+  t.setAttribute('role', 'status');
   if (action) { const b = el('button', 'toast-act'); b.type = 'button'; b.textContent = action.label; b.onclick = () => { hideToast(); action.fn(); }; t.appendChild(b); }
   clearTimeout(toastT); toastT = setTimeout(hideToast, ms);
 }
@@ -2563,19 +2758,53 @@ function marksRow(v) {
   const b = (g, on, label) => `<button data-k="g:${g}" class="${on ? 'on' : ''}" aria-label="${label}">${gradeSVG(g > 0 ? 1 : g)}</button>`;
   return `<div class="menu-marks" role="group" aria-label="표시">${b(1, v >= 1, '별 1개')}${b(2, v >= 2, '별 2개')}${b(3, v >= 3, '별 3개')}<span class="sep"></span>${b(-2, v === -2, '세모')}${b(-1, v === -1, '엑스')}${v ? '<button data-k="g:0" class="grade-none">표시 없음</button>' : ''}</div><hr>`;   // 표시 없음 takes the mark off
 }
-function menu(rect, items, current) {
+const MI = {
+  rename: '<svg viewBox="0 0 24 24"><path d="M4 20h4.5L19 9.5 14.5 5 4 15.5z"/><path d="M12.5 7l4.5 4.5"/></svg>',
+  move: '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M10 13h6M13.5 10.5L16 13l-2.5 2.5"/></svg>',
+  print: '<svg viewBox="0 0 24 24"><path d="M7 9V4h10v5"/><rect x="4" y="9" width="16" height="7" rx="2"/><path d="M7 14h10v6H7z"/></svg>',
+  orig: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 19h14"/></svg>',
+  ocr: '<svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 9h8M8 12h8M8 15h5"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4h4"/><path d="M12 8v4.5l3 1.8"/></svg>',
+  clear: '<svg viewBox="0 0 24 24"><path d="M15.6 4.4l4 4a1.5 1.5 0 0 1 0 2.1L11 19H6.5l-3-3a1.5 1.5 0 0 1 0-2.1l10-9.5a1.5 1.5 0 0 1 2.1 0z"/><path d="M10 8.5l5.5 5.5M11 19h9"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+};
+function menu(rect, items, current, head) {
   return new Promise((resolve) => {
     document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
-    const w = el('div', 'menu-wrap', `<div class="menu" role="menu">${items.map(([k, label, cls]) => k === '-' ? '<hr>' : k === 'marks' ? marksRow(label) : `<button data-k="${k}" class="${cls || ''} ${k === current ? 'on' : ''}" role="menuitem">${esc(label)}</button>`).join('')}</div>`);
+    const sheetLike = innerWidth < 600 && matchMedia('(pointer: coarse)').matches;
+    const row = ([k, label, cls]) => (k === '-' ? '<hr>' : k === 'marks' ? marksRow(label)
+      : `<button type="button" data-k="${k}" class="mi-b ${cls || ''} ${k === current ? 'on' : ''}" role="menuitem">${MI[k] ? `<i class="mi">${MI[k]}</i>` : ''}<span>${esc(label)}</span>${k === current ? `<i class="mi-on">${I.check}</i>` : ''}</button>`);
+    const w = el('div', 'menu-wrap' + (sheetLike ? ' as-sheet' : ''), `<div class="menu" role="menu" tabindex="-1">${head ? `<div class="menu-h"><b>${esc(head.title)}</b>${head.sub ? `<span>${esc(head.sub)}</span>` : ''}</div>` : ''}${items.map(row).join('')}</div>`);
     document.body.appendChild(w);
-    const m = $('.menu', w), W = innerWidth, H = innerHeight;
-    const mw = m.offsetWidth, mh = m.offsetHeight;
-    m.style.left = Math.max(8, Math.min(W - mw - 8, rect.right - mw)) + 'px';
-    m.style.top = (rect.bottom + mh + 8 < H ? rect.bottom + 6 : Math.max(8, rect.top - mh - 6)) + 'px';
-    const done = (v) => { w.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
-    const onKey = (e) => { if (e.key === 'Escape') done(null); };
+    const m = $('.menu', w);
+    if (!sheetLike) {
+      const W = innerWidth, H = innerHeight, mw = m.offsetWidth, mh = m.offsetHeight;
+      const left = Math.max(8, Math.min(W - mw - 8, rect.right - mw));
+      const below = rect.bottom + mh + 8 < H;
+      m.style.left = left + 'px';
+      m.style.top = (below ? rect.bottom + 6 : Math.max(8, rect.top - mh - 6)) + 'px';
+      m.style.transformOrigin = `${Math.round(Math.min(mw, Math.max(0, rect.right - left)))}px ${below ? 0 : mh}px`;   // it grows out of the button
+    }
+    requestAnimationFrame(() => w.classList.add('in'));
+    const done = (v) => {
+      document.removeEventListener('keydown', onKey, true);
+      w.classList.remove('in'); w.classList.add('out');
+      setTimeout(() => w.remove(), 140);
+      resolve(v);
+    };
+    const btns = () => [...m.querySelectorAll('.mi-b:not([disabled])')];
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); done(null); return; }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const bs = btns(), i = bs.indexOf(document.activeElement);
+        const n = e.key === 'ArrowDown' ? (i + 1) % bs.length : (i <= 0 ? bs.length - 1 : i - 1);
+        if (bs[n]) bs[n].focus();
+      }
+    };
     document.addEventListener('keydown', onKey, true);
-    w.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); done(b ? b.dataset.k : null); });
+    m.focus({ preventScroll: true });
+    w.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b || !e.target.closest('.menu')) done(b ? b.dataset.k : null); });
   });
 }
 

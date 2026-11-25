@@ -1,6 +1,7 @@
-// The reader: pages in one continuous column, pinch or buttons to zoom, highlight and underline by dragging over the text.
-//   Tools: 읽기 (finger scrolls; a selection offers colours and copy), 형광펜, 밑줄 (one finger or the mouse drags over text
-//   to mark it; two fingers scroll). An Apple Pencil always marks, with the last marking tool.
+// The reader: pages in one continuous column, pinch or buttons to zoom; text is chosen first, then marked.
+//   A finger scrolls; a long press chooses the word under it, and moving on (without lifting) takes in more, letter by letter.
+//   The mouse drags over the text to choose it. Either way, two handles then set its ends exactly, and a small bar offers
+//   형광펜 and 밑줄 colours and 복사. An Apple Pencil marks at once, in the way the last mark was made.
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
 import { lib, pageItems } from './pdfkit.js';
 import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
@@ -47,6 +48,7 @@ const ICON = {
   copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
+  top: '<svg viewBox="0 0 24 24"><path d="M6 4.5h12"/><path d="M12 20V9M7.5 13.5L12 9l4.5 4.5"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
@@ -62,11 +64,12 @@ export class Reader {
     this.A = o.analyze;
     this.labels = (o.index && o.index.labels) || { offset: null, confident: false };
     this.texts = (o.index && o.index.pages) || null;
-    this.outlineData = (o.index && o.index.outline) || [];
+    this.outlineData = o.analyze && o.analyze.tidyOutline ? o.analyze.tidyOutline((o.index && o.index.outline) || []) : (o.index && o.index.outline) || [];
     this.allMarks = (o.marks || []).slice();   // includes deletions (kept for syncing)
     this.undoStack = [];   // this reading's changes to marks, newest last (되돌리기)
     this.ocr = o.ocr || null;   // a scan's words, page by page (read by ocr.js)
-    this.zoom = o.zoom > 0 ? o.zoom : 1; this.tool = 'read';
+    this.zoom = o.zoom > 0 ? o.zoom : 1;
+    this.sel = null;   // the text chosen: { a, b } (two carets), its range and text
     const pref = o.prefs || {};
     this.hlColor = HL.includes(pref.hl) ? pref.hl : HL[0];
     this.ulColor = UL.includes(pref.ul) ? pref.ul : UL[0];
@@ -107,13 +110,10 @@ export class Reader {
         </aside>
       </div>
       <div class="rd-tools" role="toolbar" aria-label="도구">
-        <button data-tool="read" class="on" aria-label="읽기">${ICON.read}<span>읽기</span></button>
-        <button data-tool="hl" aria-label="형광펜">${ICON.hl}<span>형광펜</span><i class="dot"></i></button>
-        <button data-tool="ul" aria-label="밑줄">${ICON.ul}<span>밑줄</span><i class="dot"></i></button>
         <button data-walk aria-label="표시한 곳만 넘겨 보기">${ICON.walk}<span>넘겨 보기</span></button>
         <button data-undo aria-label="되돌리기" title="되돌리기 (⌘Z)" hidden>${ICON.undo}<span>되돌리기</span></button>
         <button data-erase aria-label="밑줄 지우기" title="밑줄 지우기">${ICON.erase}<span>지우기</span></button>
-        <div class="rd-colors" hidden></div>
+        <button data-top aria-label="맨 위로" title="맨 위로">${ICON.top}<span>맨 위로</span></button>
         <div class="rd-erase" hidden></div>
       </div>
       <div class="rd-walk" role="toolbar" aria-label="표시한 곳만 넘겨 보기" hidden>
@@ -152,15 +152,11 @@ export class Reader {
     fin.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (this.findQ === fin.value.trim() && this.hits && this.hits.length) this.gotoHit((this.hitI + (e.shiftKey ? -1 : 1) + this.hits.length) % this.hits.length); else this.find(fin.value); } if (e.key === 'Escape') this.action('closefind'); });
     fin.addEventListener('input', () => { clearTimeout(this.findT); this.findT = setTimeout(() => this.find(fin.value), 350); });
     this.$('.rd-tools').onclick = (e) => {
-      const c = e.target.closest('[data-color]');
-      if (c) { this.setColor(c.dataset.color); return; }
       if (e.target.closest('[data-walk]')) { this.walkStart(); return; }
       if (e.target.closest('[data-undo]')) { this.undo(); return; }
       const er = e.target.closest('[data-er]'); if (er) { this.$('.rd-erase').hidden = true; this.erase(er.dataset.er); return; }
       if (e.target.closest('[data-erase]')) { this.toggleErase(); return; }
-      const b = e.target.closest('[data-tool]'); if (!b) return;
-      if (b.dataset.tool === this.tool && b.dataset.tool !== 'read') { this.toggleColors(); return; }
-      this.setTool(b.dataset.tool);
+      if (e.target.closest('[data-top]')) { this.$('.rd-erase').hidden = true; this.clearSel(); this.scrollToPage(0, 0, false); }
     };
     this.$('.rd-panel .seg').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) this.showTab(b.dataset.tab); };
     this.$('.rd-walk').onclick = (e) => {
@@ -172,7 +168,6 @@ export class Reader {
       else this.walkStop();
     };
     this.$('.rd-panel-in').onclick = (e) => this.panelClick(e);
-    this.paintTools();
     this.wire();
   }
 
@@ -210,7 +205,7 @@ export class Reader {
     if (!index || this.dead) return;
     this.texts = index.pages || this.texts;
     if (index.labels && index.labels.confident) { this.labels = index.labels; this.updateInd(); }
-    if (index.outline && index.outline.length && (!this.outline || !this.outline.length || this.outline === this.outlineData)) { this.outlineData = index.outline; this.outline = index.outline; if (!this.$('.rd-panel').hidden && this.tab === 'toc') this.showTab('toc'); }
+    if (index.outline && index.outline.length && (!this.outline || !this.outline.length || this.outline === this.outlineData)) { this.outlineData = this.A && this.A.tidyOutline ? this.A.tidyOutline(index.outline) : index.outline; this.outline = this.outlineData; if (!this.$('.rd-panel').hidden && this.tab === 'toc') this.showTab('toc'); }
     if (!this.$('.rd-panel').hidden && this.tab === 'marks') this.showTab('marks');
   }
 
@@ -643,7 +638,7 @@ export class Reader {
   /* ---------------- only the marked passages, one after another ---------------- */
   walkStart() {
     if (!this.marks().length) { this.o.toast && this.o.toast('아직 표시한 곳이 없습니다'); return; }
-    this.setTool('read'); this.hidePop();
+    this.clearSel(); this.hidePop();
     this.walking = true; this.walkColor = null;
     this.root.classList.add('walking'); this.$('.rd-walk').hidden = false;
     this.walkBuild();
@@ -676,24 +671,11 @@ export class Reader {
   }
   walkStop() { this.walking = false; this.root.classList.remove('walking'); this.$('.rd-walk').hidden = true; }
 
-  // opened from the list with a saved place: continue there, or go back to the first page
-  askResume(label) {
-    const box = el('div', 'rd-resume');
-    box.innerHTML = `<button type="button" class="go-on">이어 읽기 <em>${esc(label)}</em></button><button type="button" class="from-start">처음부터</button>`;
-    this.root.appendChild(box);
-    const done = () => { box.remove(); this.scroller.removeEventListener('scroll', onScroll); };
-    const start = this.scroller.scrollTop;
-    const onScroll = () => { if (Math.abs(this.scroller.scrollTop - start) > 240) done(); };
-    setTimeout(() => this.scroller.addEventListener('scroll', onScroll, { passive: true }), 900);
-    box.querySelector('.go-on').onclick = done;
-    box.querySelector('.from-start').onclick = () => { done(); this.scrollToPage(0, 0, false); };
-    this.resumeBox = box;
-  }
   marks() { return this.allMarks.filter((m) => !m.del); }
   drawAllMarks() { for (const p of this.pages) this.drawMarks(p); }
   drawMarks(p) {
     const layer = p.el.querySelector('.pg-marks');
-    layer.querySelectorAll('.mk, .mk-g').forEach((x) => x.remove());
+    layer.querySelectorAll('.mk:not(.sel), .mk-g').forEach((x) => x.remove());   // (what is chosen stays)
     const groups = new Map();   // highlighter boxes of one colour share one translucent layer: strokes over strokes stay one coat
     for (const m of this.marks()) {
       if (m.p !== p.n) continue;
@@ -734,7 +716,6 @@ export class Reader {
   }
   toggleErase() {
     const box = this.$('.rd-erase');
-    this.$('.rd-colors').hidden = true;
     if (!box.hidden) { box.hidden = true; return; }
     const page = this.current().page, all = this.marks().length, here = this.marks().filter((m) => m.p === page).length;
     box.innerHTML = `<button type="button" data-er="page" ${here ? '' : 'disabled'}>이 면의 밑줄 지우기<em>${here}</em></button><button type="button" data-er="all" ${all ? '' : 'disabled'}>이 문서의 밑줄 모두 지우기<em>${all}</em></button>`;
@@ -841,36 +822,85 @@ export class Reader {
     return null;
   }
 
-  /* ---------------- tools ---------------- */
-  setTool(t) {
-    this.tool = t;
-    this.root.classList.toggle('marking', t !== 'read');
-    this.paintTools();
-    this.$('.rd-colors').hidden = true;
-    if (t !== 'read') { this.lastMark = t; this.o.onPrefs && this.o.onPrefs({ hl: this.hlColor, ul: this.ulColor, last: t }); }
-    this.hidePop();
-    window.getSelection().removeAllRanges();
-  }
-  setColor(c) {
-    if (this.tool === 'ul') this.ulColor = c; else this.hlColor = c;
-    this.$('.rd-colors').hidden = true;
-    this.paintTools();
-    this.o.onPrefs && this.o.onPrefs({ hl: this.hlColor, ul: this.ulColor, last: this.lastMark });
-  }
-  toggleColors() {
-    this.$('.rd-erase').hidden = true;
-    const box = this.$('.rd-colors');
-    const list = this.tool === 'ul' ? UL : HL, cur = this.tool === 'ul' ? this.ulColor : this.hlColor;
-    const names = this.tool === 'ul' ? UL_NAMES : HL_NAMES;
-    box.innerHTML = list.map((c, i) => `<button data-color="${c}" class="${c === cur ? 'on' : ''}" style="--c:${c}" aria-label="${names[i]}"><i></i></button>`).join('');
-    box.dataset.kind = this.tool;
-    box.hidden = !box.hidden;
-  }
-  paintTools() {
-    for (const b of this.root.querySelectorAll('.rd-tools [data-tool]')) {
-      b.classList.toggle('on', b.dataset.tool === this.tool);
-      const d = b.querySelector('.dot'); if (d) d.style.background = b.dataset.tool === 'ul' ? this.ulColor : this.hlColor;
+  /* ---------------- the text chosen ---------------- */
+  // drawn as a light tint with a handle at each end (each handle drags that end, letter by letter)
+  drawSel() {
+    this.root.querySelectorAll('.mk.sel, .sel-h').forEach((x) => x.remove());
+    const s = this.sel; if (!s) return false;
+    if (!s.a.node.isConnected || !s.b.node.isConnected) { this.sel = null; return false; }   // its page was put away
+    if (this.before(s.b, s.a)) { const t = s.a; s.a = s.b; s.b = t; }
+    let range; try { range = this.rangeBetween(s.a, s.b); } catch (e) { return false; }
+    s.range = range;
+    const list = this.marksFromRange(range, 'hl', '#2F6FEB');
+    for (const m of list) {
+      const layer = this.pages[m.p].el.querySelector('.pg-marks');
+      for (const r of m.rects) {
+        const x = el('i', 'mk sel');
+        x.style.left = (r[0] * 100) + '%'; x.style.top = (r[1] * 100) + '%'; x.style.width = (r[2] * 100) + '%'; x.style.height = (r[3] * 100) + '%';
+        layer.appendChild(x);
+      }
     }
+    const handle = (m, r, end) => {
+      const h = el('b', 'sel-h ' + end);
+      h.dataset.h = end;
+      h.style.left = ((end === 'a' ? r[0] : r[0] + r[2]) * 100) + '%';
+      h.style.top = ((end === 'a' ? r[1] : r[1] + r[3]) * 100) + '%';
+      h.style.setProperty('--lh', `${Math.max(12, r[3] * this.pages[m.p].ch)}px`);
+      const pg = this.pages[m.p].el;
+      let layer = pg.querySelector('.pg-selh');
+      if (!layer) { layer = el('div', 'pg-selh'); pg.appendChild(layer); }
+      layer.appendChild(h);
+    };
+    const first = list[0], last = list[list.length - 1];
+    if (first) handle(first, first.rects[0], 'a');
+    if (last) handle(last, last.rects[last.rects.length - 1], 'b');
+    s.text = list.map((m) => m.text).join(' ');
+    return list.length > 0;
+  }
+  clearSel() {
+    this.sel = null;
+    this.root.querySelectorAll('.mk.sel, .sel-h').forEach((x) => x.remove());
+    if (this.popKind === 'sel') this.hidePop();
+  }
+  // the word a caret stands in (letters and digits, Hangul and Hanja alike); the caret itself when it is not in one
+  wordAt(c) {
+    const t = c.node.data || '', isW = (ch) => /[\p{L}\p{N}]/u.test(ch || '');
+    let i = c.offset, j = c.offset;
+    if (!isW(t[i]) && isW(t[i - 1])) i = j = i - 1;
+    if (!isW(t[i])) return { a: c, b: { node: c.node, offset: Math.min(t.length, c.offset + 1) } };
+    while (i > 0 && isW(t[i - 1])) i--;
+    while (j < t.length && isW(t[j])) j++;
+    return { a: { node: c.node, offset: i }, b: { node: c.node, offset: j } };
+  }
+  before(x, y) {   // the caret x comes before y in the text
+    if (x.node === y.node) return x.offset < y.offset;
+    try { return !!(x.node.compareDocumentPosition(y.node) & Node.DOCUMENT_POSITION_FOLLOWING); } catch (e) { return false; }
+  }
+  // the bar over what is chosen: 형광펜 and 밑줄 in their colours (the last used first in mind), and 복사
+  selPop() {
+    const s = this.sel; if (!s || !s.range) return;
+    const rect = s.range.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    const pop = this.$('.rd-pop');
+    const sr = this.scroller.getBoundingClientRect();
+    if (rect.bottom < sr.top + 40 || rect.top > sr.bottom - 40) { pop.hidden = true; this.popKind = 'sel'; return; }   // scrolled out of sight: back when it returns
+    pop.innerHTML = `<div class="pop-row pick">${HL.map((c, i) => `<button data-mk="hl" data-c="${c}" class="${c === this.hlColor && this.lastMark === 'hl' ? 'on' : ''}" style="--c:${c}" aria-label="형광펜 ${HL_NAMES[i]}" title="형광펜 ${HL_NAMES[i]}"><i class="pk hl"><b>가</b></i></button>`).join('')}</div>
+      <div class="pop-row pick">${UL.map((c, i) => `<button data-mk="ul" data-c="${c}" class="${c === this.ulColor && this.lastMark === 'ul' ? 'on' : ''}" style="--c:${c}" aria-label="밑줄 ${UL_NAMES[i]}" title="밑줄 ${UL_NAMES[i]}"><i class="pk ul"><b>가</b></i></button>`).join('')}
+      <span class="sep"></span><button data-act="copy">${ICON.copy}<span>복사</span></button></div>`;
+    pop.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b || !this.sel) return;
+      if (b.dataset.mk) {
+        const kind = b.dataset.mk, color = b.dataset.c;
+        if (kind === 'ul') this.ulColor = color; else this.hlColor = color;
+        const range = this.sel.range;
+        this.clearSel(); this.hidePop();
+        this.addMarks(this.marksFromRange(range, kind, color));
+      } else if (b.dataset.act === 'copy') {
+        this.copy(this.clean(this.sel.range.toString()));
+        this.clearSel(); this.hidePop();
+      }
+    };
+    this.showPop('sel', rect, true);
   }
 
   /* ---------------- input ---------------- */
@@ -879,8 +909,16 @@ export class Reader {
     let raf = 0;
     s.addEventListener('scroll', () => {
       this.lastScroll = Date.now();
+      this.root.classList.add('scrolling');
+      clearTimeout(this.fadeT); this.fadeT = setTimeout(() => this.root.classList.remove('scrolling'), 650);
       if (this.resting) for (const p of this.pages) if (p.ptask) { try { p.ptask.cancel(); } catch (e) { /* ignore */ } }
       if (!raf) raf = requestAnimationFrame(() => { raf = 0; this.update(); });
+      // the bar over what is chosen steps aside while the pages move, and comes back over it when they rest
+      if (this.sel && !this.drag && (!this.popKind || this.popKind === 'sel')) {
+        if (this.popKind === 'sel') this.$('.rd-pop').hidden = true;
+        clearTimeout(this.selPopT);
+        this.selPopT = setTimeout(() => { if (this.sel && !this.drag && (!this.popKind || this.popKind === 'sel') && this.drawSel()) this.selPop(); }, 280);
+      }
       clearTimeout(this.posT); this.posT = setTimeout(() => this.o.onPosition && this.o.onPosition(this.current()), 700);
     }, { passive: true });
     // A change of the screen's height alone (a phone's address bar or keyboard, a bar opening above the pages) moves nothing
@@ -898,14 +936,20 @@ export class Reader {
     s.addEventListener('touchstart', (e) => { if (e.target.closest && e.target.closest('.rd-end')) return; if ([...e.changedTouches].some((t) => t.touchType === 'stylus')) e.preventDefault(); }, { passive: false });
     s.addEventListener('touchmove', (e) => { if ([...e.changedTouches].some((t) => t.touchType === 'stylus')) e.preventDefault(); }, { passive: false });
 
-    s.addEventListener('pointerdown', (e) => { const tl = e.target.closest && e.target.closest('.textLayer'); if (tl && this.tool === 'read' && e.pointerType !== 'pen') { this.root.querySelectorAll('.textLayer.selecting').forEach((x) => x.classList.remove('selecting')); tl.classList.add('selecting'); } this.down(e); });
-    this.onUpSel = () => setTimeout(() => this.root.querySelectorAll('.textLayer.selecting').forEach((x) => x.classList.remove('selecting')), 0);
-    document.addEventListener('pointerup', this.onUpSel, true);
+    s.addEventListener('pointerdown', (e) => this.down(e));
     s.addEventListener('pointermove', (e) => this.move(e));
     s.addEventListener('pointerup', (e) => this.up(e));
-    s.addEventListener('pointercancel', () => this.cancelDrag());
+    s.addEventListener('pointercancel', () => { this.endPress(); if (this.drag && this.drag.mode !== 'mark') { this.drag = null; if (this.sel) this.selPop(); } else this.cancelDrag(); });
+    // once a long press has chosen a word, the finger no longer scrolls: it moves the end of what is chosen
+    s.addEventListener('touchmove', (e) => { if (this.drag && (this.drag.mode === 'touchsel' || this.drag.mode === 'handle')) e.preventDefault(); }, { passive: false });
+    s.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.textLayer, .sel-h')) e.preventDefault(); });
+    s.addEventListener('dblclick', (e) => {   // the mouse: a double click chooses the word
+      const c = this.caretAt(e.clientX, e.clientY); if (!c) return;
+      const w = this.wordAt(c); this.sel = { a: w.a, b: w.b };
+      if (this.drawSel()) this.selPop(); else this.clearSel();
+    });
 
-    // two fingers: scroll while a marking tool is on; pinch zooms in every mode
+    // two fingers: pinch zooms (and, without a pinch, they scroll)
     s.addEventListener('touchstart', (e) => this.twoStart(e), { passive: false });
     s.addEventListener('touchstart', (e) => { this.swipe = this.walking && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null; }, { passive: true });
     s.addEventListener('touchend', (e) => {
@@ -926,20 +970,15 @@ export class Reader {
       this.zoomBy(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
     }, { passive: false });
 
-    this.onSel = () => { clearTimeout(this.selT); this.selT = setTimeout(() => this.selection(), 180); };
-    document.addEventListener('selectionchange', this.onSel);
     this.onKey = (e) => this.key(e);
     document.addEventListener('keydown', this.onKey);
-    this.onDocDown = (e) => { if (!e.target.closest('.rd-pop, .rd-note, .rd-colors, .rd-tools')) { if (!this.drag) { this.$('.rd-colors').hidden = true; this.$('.rd-erase').hidden = true; } } };
+    this.onDocDown = (e) => { if (!e.target.closest('.rd-pop, .rd-note, .rd-tools')) { if (!this.drag) this.$('.rd-erase').hidden = true; } };
     document.addEventListener('pointerdown', this.onDocDown, true);
   }
 
-  // caret position under a point, inside a page's text layer (snapping to the nearest letter when between them)
+  // caret position under a point: by the page's own letters, the line nearest the point first (the middle of each line, so a
+  // point between two lines goes to the nearer, and a tall box of one line does not reach into the next), then the letter
   caretAt(x, y) {
-    let node = null, offset = 0;
-    if (document.caretPositionFromPoint) { const c = document.caretPositionFromPoint(x, y); if (c) { node = c.offsetNode; offset = c.offset; } }
-    else if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); if (r) { node = r.startContainer; offset = r.startOffset; } }
-    if (node && node.nodeType === 3 && node.parentElement && node.parentElement.closest('.textLayer') && this.root.contains(node)) return { node, offset };
     const pgEl = document.elementsFromPoint(x, y).map((e) => e.closest && e.closest('.pg')).find(Boolean);
     const p = pgEl ? this.pages[Number(pgEl.dataset.n)] : null;
     if (!p || !p.tl) return null;
@@ -947,12 +986,13 @@ export class Reader {
     for (const sp of p.tl.querySelectorAll('span')) {
       if (!sp.firstChild || sp.firstChild.nodeType !== 3 || !sp.textContent.trim()) continue;
       const r = sp.getBoundingClientRect(); if (!r.width) continue;
-      const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+      const h = Math.max(4, r.height), cy = (r.top + r.bottom) / 2;
+      const dy = Math.max(0, Math.abs(y - cy) - h * 0.35);
       const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
-      const d = dy * 4 + dx;   // prefer the same line
+      const d = dy * 4 + dx;   // the same line before a nearer word on another
       if (d < bd) { bd = d; best = { sp, r }; }
     }
-    if (!best || bd > 120) return null;
+    if (!best || bd > 160) return null;
     const t = best.sp.firstChild;
     if (x <= best.r.left) return { node: t, offset: 0 };
     if (x >= best.r.right) return { node: t, offset: t.length };
@@ -974,30 +1014,79 @@ export class Reader {
     return r;
   }
 
+  // where a touch, a click or the Pencil goes: a handle of what is chosen, the Pencil marking, the mouse choosing, or a finger
+  // that scrolls — unless it rests (a long press), which chooses the word under it
   down(e) {
     if (e.target.closest && e.target.closest('.rd-end')) return;
     this.tapStart = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
     if (e.button && e.button !== 0) return;
-    const pen = e.pointerType === 'pen';
-    if (this.two) return;
-    if (!pen && this.tool === 'read') return;
-    if (!e.isPrimary) return;
-    const kind = pen && this.tool === 'read' ? this.lastMark : this.tool;
-    this.drag = { kind, color: kind === 'ul' ? this.ulColor : this.hlColor, start: this.caretAt(e.clientX, e.clientY), cur: null, moved: false, pid: e.pointerId, x: e.clientX, y: e.clientY, pointerType: e.pointerType };
-    try { this.scroller.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-    if (e.pointerType !== 'touch') e.preventDefault();   // no system text selection while marking
+    if (this.two || !e.isPrimary) return;
+    const capture = () => { try { this.scroller.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ } };
+    const hd = e.target.closest && e.target.closest('.sel-h');
+    if (hd && this.sel) {
+      const hr = hd.getBoundingClientRect(), lh = parseFloat(hd.style.getPropertyValue('--lh')) || 16;
+      const px = hr.left + hr.width / 2, py = hd.dataset.h === 'a' ? hr.bottom - lh / 2 : hr.top + lh / 2;   // the middle of its line
+      this.drag = { mode: 'handle', end: hd.dataset.h, moved: false, pid: e.pointerId, x: e.clientX, y: e.clientY, ox: px - e.clientX, oy: py - e.clientY, pointerType: e.pointerType };
+      capture(); e.preventDefault(); this.hidePop();
+      return;
+    }
+    if (e.pointerType === 'pen') {
+      const kind = this.lastMark;
+      this.clearSel();
+      this.drag = { mode: 'mark', kind, color: kind === 'ul' ? this.ulColor : this.hlColor, start: this.caretAt(e.clientX, e.clientY), cur: null, moved: false, pid: e.pointerId, x: e.clientX, y: e.clientY, pointerType: 'pen' };
+      capture(); e.preventDefault(); this.hidePop();
+      return;
+    }
+    const onText = !!(e.target.closest && e.target.closest('.textLayer'));
+    if (e.pointerType === 'mouse') {
+      if (!onText) return;
+      this.drag = { mode: 'sel', start: this.caretAt(e.clientX, e.clientY), cur: null, moved: false, pid: e.pointerId, x: e.clientX, y: e.clientY, pointerType: 'mouse' };
+      capture(); e.preventDefault();
+      return;
+    }
+    if (!onText) return;
+    this.endPress();
+    this.press = { x: e.clientX, y: e.clientY, pid: e.pointerId };
+    this.pressT = setTimeout(() => this.longPress(), 420);
+  }
+  endPress() { clearTimeout(this.pressT); this.press = null; }
+  longPress() {
+    const lp = this.press; this.press = null;
+    if (!lp || this.two || this.drag) return;
+    const c = this.caretAt(lp.x, lp.y); if (!c) return;
+    const w = this.wordAt(c);
+    this.sel = { a: w.a, b: w.b, word: w };
+    if (!this.drawSel()) { this.clearSel(); return; }
     this.hidePop();
+    this.drag = { mode: 'touchsel', moved: false, pid: lp.pid, x: lp.x, y: lp.y, pointerType: 'touch' };
+    try { this.scroller.setPointerCapture(lp.pid); } catch (err) { /* ignore */ }
+    if (navigator.vibrate) navigator.vibrate(8);
   }
   move(e) {
+    if (this.press && e.pointerId === this.press.pid && Math.hypot(e.clientX - this.press.x, e.clientY - this.press.y) > 8) this.endPress();   // a scroll
     const d = this.drag; if (!d || e.pointerId !== d.pid) return;
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
     d.moved = true;
     e.preventDefault();
     d.lastX = e.clientX; d.lastY = e.clientY;
-    const c = this.caretAt(e.clientX, e.clientY);
-    if (!d.start) { d.start = c; return; }
-    if (c) d.cur = c;
-    this.preview();
+    const c = d.mode === 'handle' ? this.caretAt(e.clientX + d.ox, e.clientY + d.oy) : this.caretAt(e.clientX, e.clientY);
+    if (d.mode === 'mark') {
+      if (!d.start) { d.start = c; return; }
+      if (c) d.cur = c;
+      this.preview();
+    } else if (d.mode === 'sel') {
+      if (!d.start) { d.start = c; return; }
+      if (c) { this.sel = { a: d.start, b: c }; this.drawSel(); }
+    } else if (d.mode === 'touchsel' && c && this.sel) {
+      // from the word first chosen to wherever the finger goes, before it or after it
+      const w = this.sel.word;
+      if (this.before(c, w.a)) { this.sel.a = c; this.sel.b = w.b; } else { this.sel.a = w.a; this.sel.b = this.before(c, w.b) ? w.b : c; }
+      this.drawSel();
+    } else if (d.mode === 'handle' && c && this.sel) {
+      this.sel[d.end] = c;
+      if (this.before(this.sel.b, this.sel.a)) { const t = this.sel.a; this.sel.a = this.sel.b; this.sel.b = t; d.end = d.end === 'a' ? 'b' : 'a'; }
+      this.drawSel();
+    }
     this.autoScroll();
   }
   preview() {
@@ -1025,33 +1114,38 @@ export class Reader {
       const r = this.scroller.getBoundingClientRect(), edge = 56;
       let v = 0;
       if (d.lastY < r.top + edge) v = -(r.top + edge - d.lastY) / 3; else if (d.lastY > r.bottom - edge) v = (d.lastY - (r.bottom - edge)) / 3;
-      if (v) { this.scroller.scrollTop += v; const c = this.caretAt(d.lastX, d.lastY); if (c) { d.cur = c; this.preview(); } this.asRaf = requestAnimationFrame(step); }
+      if (v) { this.scroller.scrollTop += v; if (d.mode === 'mark') { const c = this.caretAt(d.lastX, d.lastY); if (c) { d.cur = c; this.preview(); } } else this.move({ pointerId: d.pid, clientX: d.lastX, clientY: d.lastY, preventDefault() {} }); this.asRaf = requestAnimationFrame(step); }
       else this.asRaf = 0;
     };
     this.asRaf = requestAnimationFrame(step);
   }
   up(e) {
+    if (this.press && e.pointerId === this.press.pid) this.endPress();
     const d = this.drag;
     const ts = this.tapStart;
     const isTap = ts && e.pointerId === ts.id && Math.hypot(e.clientX - ts.x, e.clientY - ts.y) < 6 && Date.now() - ts.t < 600;
     if (d && e.pointerId === d.pid) {
       this.drag = null;
       try { this.scroller.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-      if (d.moved && d.range) {
-        const list = this.marksFromRange(d.range, d.kind, d.color);
+      if (d.mode === 'mark') {
+        if (d.moved && d.range) {
+          const list = this.marksFromRange(d.range, d.kind, d.color);
+          this.clearPreview();
+          this.addMarks(list);
+          return;
+        }
         this.clearPreview();
-        this.addMarks(list);
+      } else if (d.mode === 'touchsel' || d.mode === 'handle' || (d.mode === 'sel' && d.moved && this.sel)) {
+        if (this.sel && this.drawSel()) this.selPop(); else this.clearSel();
         return;
       }
-      this.clearPreview();
     }
     if (isTap && !this.two) this.tap(e.clientX, e.clientY);
   }
   cancelDrag() { this.drag = null; this.clearPreview(); }
 
   tap(x, y) {
-    const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
+    if (this.sel) { this.clearSel(); this.hidePop(); return; }   // a tap away from what is chosen lets it go
     const pgEl = document.elementsFromPoint(x, y).map((e) => e.closest && e.closest('.pg')).find(Boolean);
     if (!pgEl) { this.hidePop(); return; }
     const p = this.pages[Number(pgEl.dataset.n)];
@@ -1072,7 +1166,8 @@ export class Reader {
 
   twoStart(e) {
     if (e.touches.length !== 2) return;
-    this.cancelDrag();
+    this.endPress();
+    if (this.drag && this.drag.mode !== 'mark') this.drag = null; else this.cancelDrag();
     const [a, b] = e.touches;
     this.two = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2, top: this.scroller.scrollTop, left: this.scroller.scrollLeft, k: 1 };
     e.preventDefault();
@@ -1100,6 +1195,7 @@ export class Reader {
       this.pagesEl.style.transform = ''; this.pagesEl.style.transformOrigin = '';
       this.zoomBy(t.k, t.mx, t.my);
     }
+    if (this.sel && !this.drag) setTimeout(() => { if (this.sel && !this.drag && this.drawSel()) this.selPop(); }, 60);   // what is chosen, at the new size
   }
   zoomBy(k, cx, cy) { this.setZoom(this.zoom * k, cx, cy); }
   setZoom(z, cx, cy) {
@@ -1128,41 +1224,14 @@ export class Reader {
       if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); this.walkGo(this.walkI - 1); return; }
       if (e.key === 'Escape') { this.walkStop(); return; }
     }
-    if (e.key === 'Escape') { this.hidePop(); this.$('.rd-colors').hidden = true; this.$('.rd-erase').hidden = true; return; }
+    if (e.key === 'Escape') { this.clearSel(); this.hidePop(); this.$('.rd-erase').hidden = true; return; }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && this.sel && this.sel.range) { e.preventDefault(); this.copy(this.clean(this.sel.range.toString())); return; }
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); this.undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.zoomBy(1.15); }
     else if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); this.zoomBy(1 / 1.15); }
     else if ((e.metaKey || e.ctrlKey) && e.key === '0') { e.preventDefault(); this.setZoom(1); }
   }
 
-  /* ---------------- selection (read tool) ---------------- */
-  selection() {
-    if (this.drag) return;
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) { if (this.popKind === 'sel') this.hidePop(); return; }
-    const r = sel.getRangeAt(0);
-    if (!this.pagesEl.contains(r.commonAncestorContainer)) return;
-    const rect = r.getBoundingClientRect();
-    if (!rect.width && !rect.height) return;
-    this.selRange = r.cloneRange();
-    const pop = this.$('.rd-pop');
-    pop.innerHTML = `<div class="pop-row">${HL.map((c, i) => `<button data-mk="hl" data-c="${c}" style="--c:${c}" aria-label="형광펜 ${HL_NAMES[i]}"><i class="sw"></i></button>`).join('')}</div>
-      <div class="pop-row">${UL.map((c, i) => `<button data-mk="ul" data-c="${c}" style="--c:${c}" aria-label="밑줄 ${UL_NAMES[i]}"><i class="uw"></i></button>`).join('')}
-      <span class="sep"></span><button data-act="copy">${ICON.copy}<span>복사</span></button></div>`;
-    pop.onclick = (e) => {
-      const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.mk) {
-        const kind = b.dataset.mk, color = b.dataset.c;
-        if (kind === 'ul') this.ulColor = color; else this.hlColor = color;
-        this.addMarks(this.marksFromRange(this.selRange, kind, color));
-        window.getSelection().removeAllRanges(); this.hidePop(); this.paintTools();
-      } else if (b.dataset.act === 'copy') {
-        this.copy(this.clean(this.selRange.toString()));
-        window.getSelection().removeAllRanges(); this.hidePop();
-      }
-    };
-    this.showPop('sel', rect);
-  }
   markPop(m, x, y) {
     const pop = this.$('.rd-pop');
     const list = m.kind === 'ul' ? UL : HL;
@@ -1309,17 +1378,17 @@ export class Reader {
     else { n.style.top = 'auto'; n.style.bottom = (H - (y - 18)) + 'px'; n.style.maxHeight = Math.min(max, above) + 'px'; }
   }
   hideNote() { this.$('.rd-note').hidden = true; }
-  showPop(kind, rect) {
+  showPop(kind, rect, above) {
     const pop = this.$('.rd-pop');
     pop.hidden = false; this.popKind = kind;
     const R = this.root.getBoundingClientRect();
     const W = this.root.clientWidth, w = pop.offsetWidth, h = pop.offsetHeight;
     let left = (rect.left + rect.right) / 2 - R.left - w / 2;
     left = clamp(left, 8, W - w - 8);
-    // below the selection (the system's own menu sits above it on iPad and iPhone)
-    let top = rect.bottom - R.top + 12;
-    if (top + h > this.root.clientHeight - 80) top = rect.top - R.top - h - 12;
-    pop.style.left = left + 'px'; pop.style.top = Math.max(56, top) + 'px';
+    let top = above ? rect.top - R.top - h - 16 : rect.bottom - R.top + 12;
+    if (above && top < 56) top = rect.bottom - R.top + 26;   // no room above: below, clear of the handle
+    else if (!above && top + h > this.root.clientHeight - 80) top = rect.top - R.top - h - 12;
+    pop.style.left = left + 'px'; pop.style.top = clamp(top, 56, Math.max(56, this.root.clientHeight - h - 84)) + 'px';
     this.hideNote();
   }
   hidePop() { const pop = this.$('.rd-pop'); if (pop) pop.hidden = true; this.popKind = null; this.hideNote(); }
@@ -1402,7 +1471,10 @@ export class Reader {
           }
         };
         await walk(ol, 1);
-        if (flat.some((x) => x.page != null)) this.outline = flat.filter((x) => x.page != null);
+        // the PDF's own bookmarks, when they are a real contents list (three or more, on more than one page); a file with one
+        // or two (its title, its journal) shows the list made from its headings instead
+        const real = flat.filter((x) => x.page != null);
+        if (real.length >= 3 && new Set(real.map((x) => x.page)).size >= 2) this.outline = real;
       }
     } catch (e) { /* none */ }
     if (!this.outline) this.outline = this.outlineData || [];
@@ -1528,11 +1600,9 @@ export class Reader {
     this.dead = true;
     clearTimeout(this.posT);
     if (this.ro) this.ro.disconnect();
-    document.removeEventListener('selectionchange', this.onSel);
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('pointerdown', this.onDocDown, true);
-    document.removeEventListener('pointerup', this.onUpSel, true);
-    clearTimeout(this.restT);
+    clearTimeout(this.restT); this.endPress();
     for (const p of this.pages) {
       this.release(p);
       if (p.ptask) { try { p.ptask.cancel(); } catch (e) { /* ignore */ } }

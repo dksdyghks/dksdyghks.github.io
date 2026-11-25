@@ -1,6 +1,7 @@
-# 연구실 책장: the indexes of the courts' judgments (shelf/prec/) and of the laws (shelf/lawidx.json), made again every week
-# from the public mirrors of 법제처's texts (legalize-kr), so newly published judgments and laws are found in the app; and the
-# law papers KCI took in since the last run (shelf/kci/new.json, from KCI's OAI-PMH), for 논문 찾기's first screen.
+# 연구실 책장: the indexes of the courts' judgments (shelf/prec/, by number) and of the laws (shelf/lawidx.json), made again
+# every week from the public mirrors of 법제처's texts (legalize-kr), so newly published judgments and laws are found in the
+# app; the index of the judgments by their words (shelf/precq/), made again once a month; and the law papers KCI took in
+# since the last run (shelf/kci/, from KCI's OAI-PMH), for 논문 찾기.
 # Nothing is published when a mirror could not be read or an index comes out much smaller than the one it would replace;
 # KCI not answering leaves its list as it was and does not hold back the rest.
 name: 연구실 책장 색인 갱신
@@ -34,6 +35,16 @@ jobs:
           git clone --filter=blob:none --no-checkout --depth 1 https://github.com/legalize-kr/precedent-kr /tmp/prec-src
           git -C /tmp/prec-src -c core.quotePath=false ls-tree -r --name-only HEAD > /tmp/prec-files.txt
           python3 _src/site/shelf/_tools/prec_index.py /tmp/prec-files.txt shelf/prec
+      - name: The courts' judgments by their words (precq, once a month)
+        run: |
+          cp -r shelf/precq /tmp/precq-before 2>/dev/null || mkdir -p /tmp/precq-before
+          if python3 -c "import json,datetime,sys; v=json.load(open('shelf/precq/v.json')); sys.exit(0 if (datetime.date.today()-datetime.date.fromisoformat(v['built'])).days >= 27 else 1)" 2>/dev/null || [ ! -f shelf/precq/v.json ]; then
+            git clone -q --depth 1 https://github.com/legalize-kr/precedent-kr /tmp/prec-full
+            python3 _src/site/shelf/_tools/prec_search.py /tmp/prec-full /tmp/precq-new "$(git -C /tmp/prec-full rev-parse HEAD)"
+            rm -rf shelf/precq && mv /tmp/precq-new shelf/precq
+          else
+            echo "made less than four weeks ago"
+          fi
       - name: The laws (legalize-kr)
         run: |
           cp shelf/lawidx.json /tmp/lawidx-before.json
@@ -51,18 +62,20 @@ jobs:
           count = lambda d: sum(len(json.load(open(f, encoding='utf-8'))) for f in glob.glob(d + '/*.json'))
           before, after = count('/tmp/prec-before'), count('shelf/prec')
           laws_before, laws_after = len(json.load(open('/tmp/lawidx-before.json', encoding='utf-8'))), len(json.load(open('shelf/lawidx.json', encoding='utf-8')))
-          print('judgments', before, '->', after, '| laws', laws_before, '->', laws_after)
-          if after < before * 0.9 or laws_after < laws_before * 0.9:
+          n = lambda f: json.load(open(f, encoding='utf-8')).get('n', 0) if os.path.exists(f) else 0
+          words_before, words_after = n('/tmp/precq-before/v.json'), n('shelf/precq/v.json')
+          print('judgments', before, '->', after, '| by words', words_before, '->', words_after, '| laws', laws_before, '->', laws_after)
+          if after < before * 0.9 or laws_after < laws_before * 0.9 or words_after < words_before * 0.9:
               sys.exit('an index came out much smaller than before: not published')
           PY
       - name: Publish when changed
         run: |
-          if git diff --quiet -- shelf/prec shelf/lawidx.json shelf/kci && [ -z "$(git ls-files --others --exclude-standard shelf/prec shelf/kci)" ]; then
+          if git diff --quiet -- shelf/prec shelf/precq shelf/lawidx.json shelf/kci && [ -z "$(git ls-files --others --exclude-standard shelf/prec shelf/precq shelf/kci)" ]; then
             echo "no change"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add shelf/prec shelf/lawidx.json shelf/kci 2>/dev/null || git add shelf/prec shelf/lawidx.json
+          git add -A shelf/prec shelf/precq shelf/lawidx.json shelf/kci
           git commit -m '연구실 책장: 판결·법령 색인과 KCI 새 법학 논문 매주 갱신'
           for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 10; done
           # a push made here does not start the site's build by itself: it is asked for
