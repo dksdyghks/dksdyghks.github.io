@@ -115,6 +115,7 @@ async function startLibrary() {
   S.state = (await store.get('kv', 'state')) || S.state;
   S.cached = new Set(await store.keys('files').catch(() => []));
   S.info = (await store.get('kv', 'paperInfo').catch(() => null)) || {};
+  infoAsked = (await store.get('kv', 'paperInfoAsked').catch(() => null)) || {};
   await loadTabs();
   renderShell();
   render();
@@ -434,13 +435,14 @@ function renderTools() {
     return;
   }
   if (S.view.kind === 'recent') { t.innerHTML = ''; return; }
-  const label = { added: '최근 올린 순', name: '이름순', opened: '최근 읽은 순', stars: '★ 순' }[S.sort];
+  const label = { added: '최근 올린 순', name: '이름순', opened: '최근 읽은 순', published: '발간일 순', stars: '★ 순' }[S.sort];
   t.innerHTML = `<button class="btn" data-t="newfolder">${I.newfolder}<span>새 폴더</span></button><button class="btn" data-t="upload">${I.up}<span>올리기</span></button><span class="sp"></span><button class="btn ghost" data-t="sort">${I.sort}<span>${label}</span></button>`;
 }
 
 function sorted(files) {
   const opened = (f) => (S.state.files[f.id] && S.state.files[f.id].at) || 0;
-  const by = { added: (a, b) => b.added - a.added, name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }), opened: (a, b) => opened(b) - opened(a) || b.added - a.added, stars: (a, b) => gradeRank(b.stars) - gradeRank(a.stars) || b.added - a.added }[S.sort];
+  const pub = (f) => (S.info[f.id] && S.info[f.id].date) || '';
+  const by = { added: (a, b) => b.added - a.added, published: (a, b) => (pub(b) > pub(a) ? 1 : pub(b) < pub(a) ? -1 : b.added - a.added), name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }), opened: (a, b) => opened(b) - opened(a) || b.added - a.added, stars: (a, b) => gradeRank(b.stars) - gradeRank(a.stars) || b.added - a.added }[S.sort];
   return files.slice().sort(by);
 }
 
@@ -482,10 +484,10 @@ function folderRow(f) {
 function fileRow(f, extra = '') {
   const s = S.state.files[f.id];
   const sel = S.select && S.select.files.has(f.id);
-  const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
+  const where = (S.q || S.view.kind === 'recent') && f.folder ? esc((folderById(f.folder) || {}).name || '') : '';
   return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">
     <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}${boxes() ? ckBox(sel) : ''}</span>
-    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${paperLine(f) || `${f.pages ? f.pages + '쪽 · ' : ''}${date(f.added)} 올림`}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
+    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${[paperLine(f) || (f.pages ? f.pages + '쪽' : ''), where, f.pending ? '정리하는 중' : ''].filter(Boolean).join(' · ')}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
@@ -648,7 +650,7 @@ async function onTools(e) {
     const name = await promptBox('새 폴더', '폴더 이름', '', '만들기');
     if (name) doOps([{ op: 'addFolder', folder: { id: 'f_' + rid(10), name, parent: S.view.folder || null } }]);
   } else if (t === 'sort') {
-    const k = await menu(b.getBoundingClientRect(), [['added', '최근 올린 순'], ['opened', '최근 읽은 순'], ['stars', '★ 순'], ['name', '이름순']], S.sort);
+    const k = await menu(b.getBoundingClientRect(), [['added', '최근 올린 순'], ['opened', '최근 읽은 순'], ['published', '발간일 순'], ['stars', '★ 순'], ['name', '이름순']], S.sort);
     if (k) { S.sort = k; render(); }
   } else if (t === 'select') startSelect();
   else if (t === 'endsel') { S.select = null; render(); }
@@ -1187,19 +1189,25 @@ function paperLine(f) {   // 학술지 · 학회 · 발간일, as a citation lis
 // papers whose texts were made before this was read: fetch the newer texts once, or read the first page here and share it
 let filling = false;
 const askedInfo = new Set();
+// A paper known as "nothing found" is asked about again at most once a day: the server may know more by now
+// (another device read it, or the reading improved). What is shown meanwhile stays as it was.
+let infoAsked = {};
+const askAgain = (id) => S.info[id] === null && Date.now() - (infoAsked[id] || 0) > 864e5;
 async function fillPaperInfo() {
   if (filling || !syncOn) return;
   filling = true;
   try {
-    for (const f of liveFiles().filter((x) => x.text && !(x.id in S.info))) {
+    for (const f of liveFiles().filter((x) => x.text && !askedInfo.has(x.id) && (!(x.id in S.info) || askAgain(x.id)))) {
       if (!navigator.onLine || document.hidden) break;
       if (needsOcr(f) || OCR.id === f.id) continue;   // a scan still to be read: its reading fills this in (and writes its texts)
       let t = await store.get('texts', f.id).catch(() => null);
-      if (t && t.paper !== undefined) { notePaper(f.id, t); continue; }
-      if (!askedInfo.has(f.id)) {   // perhaps another device filled it in already
-        askedInfo.add(f.id);
-        try { const s = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text')); if (s && s.paper !== undefined) { await store.put('texts', f.id, s); notePaper(f.id, s); continue; } t = s || t; } catch (e) { /* later */ }
-      }
+      if (t && t.paper !== undefined && !(f.id in S.info)) { notePaper(f.id, t); if (t.paper) continue; }
+      askedInfo.add(f.id); infoAsked[f.id] = Date.now(); store.put('kv', 'paperInfoAsked', infoAsked);   // the server's page texts
+      try {
+        const s = await pdfkit.gunzipJSON(await api.getMeta(f.id, 'text'));
+        if (s && s.paper !== undefined) { await store.put('texts', f.id, s); notePaper(f.id, s); if (s.paper) continue; }
+        t = s || t;
+      } catch (e) { continue; }
       if (!t || !S.cached.has(f.id)) continue;   // the PDF is not on this device: a device that has it will do it
       let doc = null;
       try {
@@ -1219,10 +1227,13 @@ async function fillPaperInfo() {
           if (o && o.pages && o.pages[i]) { const pg = await doc.getPage(i + 1); const vp = pg.getViewport({ scale: 1 }); pg.cleanup(); return ocrPageItems(i, o.pages[i], vp.width, vp.height); }
           return (await pdfkit.pageItems(doc, i)).page;
         };
-        t.paper = paperOf(naming.readFirstPages(await items(0), await items(1)));
-        await store.put('texts', f.id, t);
-        await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
-        notePaper(f.id, t);
+        const paper = paperOf(naming.readFirstPages(await items(0), await items(1)));
+        if (paper || t.paper === undefined) {   // written only when it says something new
+          t.paper = paper;
+          await store.put('texts', f.id, t);
+          await api.putMeta(f.id, 'text', await pdfkit.gzipJSON(t), 'application/gzip');
+        }
+        notePaper(f.id, { paper });
       } catch (e) { /* next time */ } finally { if (doc) doc.destroy(); }
     }
   } finally { filling = false; }
