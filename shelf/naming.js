@@ -165,7 +165,8 @@ function pickTitle(ls, body, H, korean) {
   for (let k = i + 1, gapFrom = top; k < ls.length; k++) { const L = ls[k]; if (MARK_ONLY.test(L.s)) continue; if (same(L) && L.y - gapFrom.y <= top.h * 2.6) { z = k; gapFrom = L; } else break; }
   const block = ls.slice(a, z + 1).filter((L) => !MARK_ONLY.test(L.s));
   const title = cleanTitle(block.map((L) => L.s).join(' '));
-  if (letters(title) < 4 || title.length > 160 || isHeading(title) || misread(title)) return null;
+  if (letters(title) < 4 || title.length > 160 || isHeading(title)) return null;
+  if (misread(title)) return { title: '', misread: title, end: z };   // the letters were read wrong: no title from it, but the author line below is still found
   return { title, end: z };
 }
 // letters a scan reader got wrong (한-8ㅁ 87^의 …): a loose consonant or vowel, or signs no title uses
@@ -333,7 +334,7 @@ function fromArticle(pg, next) {
   if (!authors) { const a = titleAboveAuthors(ls, body, H, korean); if (a) { t = a.t; authors = a.authors; } }
   const info = infoFrom(ls, H, t ? ls[ls.findIndex((L) => cleanTitle(L.s) && t.title.startsWith(cleanTitle(L.s).slice(0, 6)))]?.y : null, runningHeads(next));
   if (!t) return { info };
-  return { title: t.title, authors, info };
+  return { title: t.title, misread: t.misread, authors, info };
 }
 function titleAboveAuthors(ls, body, H, korean) {   // the first author line in the upper page, and the title just above it
   for (let k = 1; k < ls.length && ls[k].y < H * 0.6; k++) {
@@ -372,7 +373,7 @@ export function readFirstPages(p1, p2) {
   } catch (e) { r = null; }
   if (!r) return null;
   const info = r.info || {};
-  const out = { journal: info.journal || '', society: info.society || '', issue: info.issue || '', date: info.date || '', title: r.title || '', authors: r.authors || null, name: null };
+  const out = { journal: info.journal || '', society: info.society || '', issue: info.issue || '', date: info.date || '', title: r.title || '', misread: r.misread || '', authors: r.authors || null, name: null };
   if (!r.thesis && out.title && out.authors && out.authors.length) {
     const name = (authorText(out.authors) + '_' + out.title).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
     out.name = name.length > 150 ? name.slice(0, name.lastIndexOf(' ', 150) > 60 ? name.lastIndexOf(' ', 150) : 150).trim() : name;
@@ -382,6 +383,16 @@ export function readFirstPages(p1, p2) {
 // a middle dot the text layer turned into a space (사 보임 for 사·보임), put back from the file's own name when that holds the
 // same title with the dot there; nothing else is taken from the file name
 export function withFileName(r, fileName) {
+  if (r && !r.name && r.misread && r.authors && r.authors.length && fileName) {   // a scan misread the title (한-8ㅁ 87^의 법적 쟁점): the file's own name, when it is that title
+    const ft = cleanTitle(String(fileName).replace(/\.pdf$/i, '').normalize('NFC').replace(/^[^_]{2,20}_/, ''));
+    const want = ft.match(/[가-힣]/g) || [];
+    let i = 0; for (const ch of r.misread) if (i < want.length && ch === want[i]) i++;
+    if (want.length >= 4 && i / want.length >= 0.7 && !misread(ft)) {
+      const name = (authorText(r.authors) + '_' + ft).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return { ...r, title: ft, name };
+    }
+    return r;
+  }
   if (!r || !r.name || !r.title || !fileName || !r.name.endsWith(r.title) || !r.title.includes(' ')) return r;
   const base = String(fileName).replace(/\.pdf$/i, '').normalize('NFC');
   const pat = r.title.split(' ').map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s·ㆍ･・‧]');
