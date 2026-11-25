@@ -1,0 +1,61 @@
+# 연구실 책장: the indexes of the courts' judgments (shelf/prec/) and of the laws (shelf/lawidx.json), made again every week
+# from the public mirrors of 법제처's texts (legalize-kr), so newly published judgments and laws are found in the app.
+# Nothing is published when a mirror could not be read or an index comes out much smaller than the one it would replace.
+name: 연구실 책장 색인 갱신
+on:
+  schedule:
+    - cron: '23 18 * * 0'   # every Monday, 03:23 in Korea
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency:
+  group: shelf-indexes
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: The courts' judgments (precedent-kr)
+        run: |
+          cp -r shelf/prec /tmp/prec-before
+          git clone --filter=blob:none --no-checkout --depth 1 https://github.com/legalize-kr/precedent-kr /tmp/prec-src
+          git -C /tmp/prec-src -c core.quotePath=false ls-tree -r --name-only HEAD > /tmp/prec-files.txt
+          python3 _src/site/shelf/_tools/prec_index.py /tmp/prec-files.txt shelf/prec
+      - name: The laws (legalize-kr)
+        run: |
+          cp shelf/lawidx.json /tmp/lawidx-before.json
+          git clone --filter=blob:none --no-checkout --depth 1 https://github.com/legalize-kr/legalize-kr /tmp/law-src
+          git -C /tmp/law-src -c core.quotePath=false ls-tree -r --name-only HEAD kr/ | sed 's#^kr/##' > /tmp/law-files.txt
+          python3 _src/site/shelf/_tools/law_index.py /tmp/law-files.txt shelf/lawidx.json
+      - name: No smaller than before
+        run: |
+          python3 - <<'PY'
+          import json, glob, os, sys
+          count = lambda d: sum(len(json.load(open(f, encoding='utf-8'))) for f in glob.glob(d + '/*.json'))
+          before, after = count('/tmp/prec-before'), count('shelf/prec')
+          laws_before, laws_after = len(json.load(open('/tmp/lawidx-before.json', encoding='utf-8'))), len(json.load(open('shelf/lawidx.json', encoding='utf-8')))
+          print('judgments', before, '->', after, '| laws', laws_before, '->', laws_after)
+          if after < before * 0.9 or laws_after < laws_before * 0.9:
+              sys.exit('an index came out much smaller than before: not published')
+          PY
+      - name: Publish when changed
+        run: |
+          if git diff --quiet -- shelf/prec shelf/lawidx.json && [ -z "$(git ls-files --others --exclude-standard shelf/prec)" ]; then
+            echo "no change"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add shelf/prec shelf/lawidx.json
+          git commit -m '연구실 책장: 판결·법령 색인 매주 갱신'
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 10; done
+          # a push made here does not start the site's build by itself: it is asked for
+          curl -s -o /dev/null -w 'pages build: %{http_code}\n' -X POST -H "Authorization: Bearer ${{ github.token }}" \
+            -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/${{ github.repository }}/pages/builds" || true
