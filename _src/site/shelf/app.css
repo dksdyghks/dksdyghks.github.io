@@ -886,3 +886,52 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
   .case-sheet .cs-out, .case-sheet > .row-btns { margin: 20px -20px calc(-18px - var(--safe-b)); padding: 12px 20px calc(var(--safe-b) + 16px); bottom: calc(-18px - var(--safe-b)); }
 }
 @keyframes sheet-up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+
+/* ---------- 논문 찾기: KCI 법학 논문 색인 검색 ---------- */
+.pp-kh { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 2px 6px; min-height: 30px; flex-wrap: wrap; }
+.pp-kh .sec-h { margin: 0; }
+.pp-sort { display: inline-flex; gap: 2px; padding: 2px; background: var(--chip); border-radius: 10px; }
+.pp-sort button { height: 28px; padding: 0 11px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pp-sort button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0F1A2B1F; }
+@media (hover: hover) { .pp-sort button:not(.on):hover { color: var(--ink-2); } }
+.pp-facet { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; margin: 0 0 8px; padding: 1px 2px 3px; -webkit-overflow-scrolling: touch; }
+.pp-facet::-webkit-scrollbar { display: none; }
+.pp-fc { flex: none; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--ink-2); background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); white-space: nowrap; }
+.pp-fc em { font-style: normal; color: var(--faint); font-weight: 700; margin-left: 2px; }
+.pp-fc.on { background: var(--accent); color: #fff; box-shadow: none; }
+.pp-fc.on em { color: #FFFFFFcc; }
+@media (hover: hover) { .pp-fc:not(.on):hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, var(--rule)); } }
+.pp-ab { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 3px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.lrow em.pp-cited { color: var(--faint); background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0 5px; border-radius: 5px; font-size: 11.5px; font-weight: 700; }
+.pp-jn { font-style: normal; color: var(--accent); font-weight: 600; cursor: pointer; border-radius: 3px; }
+@media (hover: hover) { .pp-jn:hover { text-decoration: underline; } }
+.pp-jn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pp-more { margin: 14px 0 4px; }
+.pp-morebtn { display: block; width: 100%; padding: 13px; border-radius: 12px; background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); color: var(--ink-2); font-weight: 600; font-size: 13.5px; }
+@media (hover: hover) { .pp-morebtn:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--rule)); } }
+.pp-more-body:not(:empty) { margin-top: 10px; }
+.pp-more-body .pp-res { margin-top: 0; }
+.pp-jvh { align-items: baseline; }
+.pp-jvh .sec-cnt { margin-left: auto; font-size: 13px; color: var(--faint); font-weight: 600; }
+.pp-mine-h { margin-top: 20px; }
+.kci-item.no-x .lrow { padding-right: 18px; }
+/* 논문 창: 초록·소속·원문 */
+.paper-sheet .cs-jn { padding: 0; margin-right: 4px; }
+.paper-sheet .cs-ab { white-space: pre-wrap; line-height: 1.6; max-height: 38vh; overflow: auto; margin: 4px 0 0; }
+.paper-sheet .cs-aff { margin-top: 10px; font-size: 12.5px; color: var(--faint); }
+.paper-sheet .cs-orig em { font-style: normal; color: var(--accent); font-weight: 700; margin-left: 3px; }
+/* 판례·결정 창 속 '내 책장에서 이 사건을 인용한 곳' */
+.cs-shelf .cs-cites { display: flex; flex-direction: column; gap: 10px; }
+.cs-cite > b { display: block; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.cs-cite .snips { margin-top: 2px; }
+/* 논문 창의 원문 링크들 */
+.paper-sheet .cs-src { margin-top: 12px; }
+.cs-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.cs-link { display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 13px; border-radius: 10px; background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); color: var(--ink-2); font-size: 13px; font-weight: 600; text-decoration: none; }
+.cs-link em { font-style: normal; color: var(--accent); font-weight: 700; }
+@media (hover: hover) { .cs-link:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--rule)); } }
+.cs-link:active { background: var(--chip); }
+.paper-sheet .cs-get { display: inline-flex; align-items: baseline; gap: 7px; margin: 2px 0 10px; height: auto; padding: 10px 16px; border-radius: 11px; }
+.paper-sheet .cs-get small { font-weight: 600; opacity: .8; font-size: 12px; }
+.paper-sheet .cs-get[disabled] { opacity: .7; }
+.paper-sheet .cs-links h4, .paper-sheet .cs-src > h4 { margin-bottom: 8px; }

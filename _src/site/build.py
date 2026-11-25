@@ -729,5 +729,5 @@ for app in ('psat', 'shelf', 'shelf-server', 'shelf-icon'):
         shutil.rmtree(sdst / app)
     # 연구실 책장's third-party code (vendor/: pdf.js, pdf-lib) and its index of the courts' judgments (prec/, made by
     # shelf/_tools/prec_index.py) are published with the app; they are not kept twice here
-    shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__', 'vendor', 'node_modules', 'prec', 'precq', 'kci'))
+    shutil.copytree(Path('/home/user/yohan-ahn') / app, sdst / app, ignore=shutil.ignore_patterns('__pycache__', 'vendor', 'node_modules', 'prec', 'precq', 'kci', 'kciq'))
 print('sources kept in _src/site')

@@ -162,6 +162,9 @@ async function route(req, env, ctx) {
       case 'kci':
         if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(ctx, url);
         break;
+      case 'paper':
+        if (m === 'POST' && p[2] === 'pdf' && p.length === 3) return await paperPdf(req, env);
+        break;
       case 'nanet':
         if (m === 'GET' && p.length === 3) return await nanetApi(env, ctx, p[2], url);
         break;
@@ -578,6 +581,56 @@ async function scienceonApi(env, op, url) {
     return json({ total: d.total, rows: d.rows });
   }
   return err('scienceon_token', 502);
+}
+
+// A paper's openly-posted PDF, found through open-access indexes and fetched here so the app can put it straight on the
+// shelf. Only openly-licensed copies are taken: the candidate URLs come from the indexes (OpenAlex, and Unpaywall/CORE when
+// their keys are set), never from the caller; KCI's own host is never fetched (it serves downloads only to a browser
+// session, which we do not imitate); and the bytes must really be a PDF. Where nothing open exists — most KCI law journals
+// live only on paid platforms — it answers { found: false } and the app shows the page links instead.
+const PDF_SKIP = /(?:^|\.)kci\.go\.kr$|dbpia\.co\.kr$|kyobobook|kstudy\.com$|earticle\.net$|riss\.kr$/i;
+async function openPdfUrls(body, env) {
+  const doi = String(body.doi || '').replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').trim();
+  const title = String(body.title || '').slice(0, 300);
+  const out = [];
+  const add = (u) => { if (u && /^https:\/\//i.test(u)) { try { if (!PDF_SKIP.test(new URL(u).hostname)) out.push(u); } catch (e) { /* skip */ } } };
+  const grab = async (u, headers) => { try { const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/json', ...headers }, signal: AbortSignal.timeout(12000) }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
+  if (doi) {
+    const oa = await grab(`https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=open_access,best_oa_location,locations${env.OA_MAILTO ? '&mailto=' + encodeURIComponent(env.OA_MAILTO) : ''}`);
+    if (oa) { add(oa.best_oa_location && oa.best_oa_location.pdf_url); for (const l of oa.locations || []) add(l.pdf_url); }
+    if (env.UNPAYWALL_EMAIL) {
+      const up = await grab(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(env.UNPAYWALL_EMAIL)}`);
+      if (up) { add(up.best_oa_location && up.best_oa_location.url_for_pdf); for (const l of up.oa_locations || []) add(l.url_for_pdf); }
+    }
+  }
+  if (env.CORE_KEY && (doi || title)) {
+    const q = doi ? `doi:"${doi.replace(/"/g, '')}"` : `title:"${title.replace(/"/g, '')}"`;
+    const cr = await grab(`https://api.core.ac.uk/v3/search/works?limit=3&q=${encodeURIComponent(q)}`, { authorization: 'Bearer ' + env.CORE_KEY });
+    for (const w of (cr && cr.results) || []) add(w.downloadUrl);
+  }
+  return [...new Set(out)].slice(0, 6);
+}
+async function paperPdf(req, env) {
+  const body = await readJSON(req, 8 * 1024);
+  const urls = await openPdfUrls(body || {}, env);
+  for (const u of urls) {
+    try {
+      const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/pdf,*/*' }, redirect: 'follow', signal: AbortSignal.timeout(15000) });
+      if (!r.ok) continue;
+      const final = new URL(r.url);
+      if (final.protocol !== 'https:') continue;   // a redirect must not drop to http
+      if (PDF_SKIP.test(final.hostname)) continue;   // a redirect that ended on a paywall host
+      const host = final.hostname;
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      if (ct && !/pdf|octet-stream|download/.test(ct)) continue;
+      const buf = await r.arrayBuffer();
+      if (buf.byteLength < 40 * 1024 || buf.byteLength > 40 * 1024 * 1024) continue;   // a reject/notice page is tiny
+      const head = new Uint8Array(buf, 0, 5);
+      if (!(head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46)) continue;   // %PDF
+      return new Response(buf, { status: 200, headers: { 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-pdf-source': host.slice(0, 60) } });
+    } catch (e) { /* try the next */ }
+  }
+  return json({ found: false });
 }
 
 const OAI_PARAMS = new Set(['verb', 'identifier', 'metadataPrefix', 'set', 'from', 'until', 'resumptionToken']);

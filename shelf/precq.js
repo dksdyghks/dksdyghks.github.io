@@ -15,18 +15,22 @@ const shardOf = (p, n) => { let h = 0; for (let i = 0; i < p.length; i++) h = (M
 
 let verP = null;
 function version() {
-  return (verP ||= fetch(new URL('v.json', BASE), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).then((v) => {
-    if (!v || !v.n) return null;
+  return (verP ||= (async () => {
+    let v = null;
+    try { const r = await fetch(new URL('v.json', BASE), { cache: 'no-cache' }); if (r.ok) { v = await r.json(); if (v && v.n) store.put('kv', 'pq:v', v).catch(() => {}); } }
+    catch (e) { /* offline: the last v.json kept on this device stands in, so the index (its parts also kept) still answers */ }
+    if (!v || !v.n) v = await store.get('kv', 'pq:v').catch(() => null);
+    if (!v || !v.n) { verP = null; return null; }
     v.stopSet = new Set(v.stop || []);
     forget(v.v);
     return v;
-  }).catch(() => { verP = null; return null; }));
+  })());
 }
 // the parts of an index made before this one are let go (once a session)
 let forgot = false;
 async function forget(cur) {
   if (forgot) return; forgot = true;
-  try { for (const k of await store.keys('kv')) if (typeof k === 'string' && k.startsWith('pq:') && !k.startsWith('pq:' + cur + ':')) store.del('kv', k).catch(() => {}); } catch (e) { /* kept */ }
+  try { for (const k of await store.keys('kv')) if (typeof k === 'string' && k.startsWith('pq:') && k !== 'pq:v' && !k.startsWith('pq:' + cur + ':')) store.del('kv', k).catch(() => {}); } catch (e) { /* kept */ }
 }
 const kept = new Map();   // the parts read in this session
 async function part(v, name, read) {

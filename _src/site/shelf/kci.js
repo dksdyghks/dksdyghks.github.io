@@ -26,6 +26,26 @@ export async function journalOf(name, society) {
   return c.length === 1 ? c[0] : null;
 }
 
+// a paper's whole record from KCI (by its OAI number o): the full abstract (Korean, then English), author affiliations, DOI.
+// Kept on this device a month, so a paper opened again shows at once.
+const stripTags = (s) => String(s || '').replace(/<[^>]+>/g, ' ');
+const oaiText = (xml, tag) => { const m = new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>').exec(xml || ''); return m ? unx(stripTags(m[1])) : ''; };
+export async function record(o) {
+  if (!o) return null;
+  return kept('kci-rec:' + o, 30 * DAY, async () => {
+    let xml = '';
+    try { xml = await api.kciOai({ verb: 'GetRecord', metadataPrefix: 'oai_kci', identifier: 'oai:kci.go.kr:ARTI/' + o }); } catch (e) { return null; }
+    if (!/<record>/.test(xml)) return null;
+    const abs = [...xml.matchAll(/<abstract(?:\s+lang="(\w+)")?>([\s\S]*?)<\/abstract>/g)].map((m) => ({ lang: m[1] || 'original', t: unx(stripTags(m[2])) }));
+    const ko = (abs.find((a) => a.lang === 'original') || abs[0] || {}).t || '';
+    const en = (abs.find((a) => a.lang === 'english') || {}).t || '';
+    const affs = [...xml.matchAll(/<affiliation>([\s\S]*?)<\/affiliation>/g)].map((m) => unx(stripTags(m[1]))).filter(Boolean);
+    const doi = oaiText(xml, 'doi').replace(/^https?:\/\/(?:dx\.)?doi\.org\//, '');
+    const cites = oaiText(xml, 'citation-count');
+    return { ab: ko, abEn: en, affs: [...new Set(affs)], doi: /^10\./.test(doi) ? doi : '', cites: /^\d+$/.test(cites) ? Number(cites) : null };
+  });
+}
+
 const unx = (s) => String(s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const items = (xml, fields) => [...String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => Object.fromEntries(fields.map((f) => [f, unx((new RegExp(`<${f}>([^<]*)</${f}>`).exec(m[1]) || [])[1])])));
 async function ask(op, params) {

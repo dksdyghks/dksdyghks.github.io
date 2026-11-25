@@ -20,6 +20,7 @@ a record has none, by the journal's name.
   python3 kci_oai.py ../kci --file page.xml     (reads one saved page, for a check)
 """
 import datetime, html, json, os, re, sys, time, urllib.parse, urllib.request
+import kci_scope
 
 BASE = 'https://open.kci.go.kr/oai/request'
 UA = '0128-bookshelf/1.0 (+https://0128.kr/shelf/)'
@@ -60,7 +61,9 @@ def records(xml):
                    o=oai.group(1) if oai else '',                      # KCI's OAI number: the whole record (full abstract) on demand
                    c=int(cites) if cites.isdigit() and int(cites) > 0 else None,   # times cited, as KCI counts
                    doi=doi if doi.startswith('10.') else '')
-        out.append({k: v for k, v in rec.items() if v not in ('', [], None, False) or k == 'open'})
+        if not kci_scope.in_field(journal):   # a journal entirely of another field (조세·민사·형사·지재 …): kept, but out of the feed
+            rec['pub'] = 0
+        out.append({k: v for k, v in rec.items() if v not in ('', [], None, False) or k in ('open', 'pub')})
     return out
 
 
@@ -149,6 +152,8 @@ def go_back(dst):
     state = json.load(open(state_f, encoding='utf-8')) if os.path.exists(state_f) else {}
     today = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=9)).date()
     goal = today.replace(year=today.year - YEARS, month=1, day=1)
+    if os.environ.get('KCI_UNTIL'):   # (a gathering of one stretch of the years before, alongside the main one)
+        goal = max(goal, datetime.date.fromisoformat(os.environ['KCI_UNTIL']))
     first = state.get('back') or state.get('first') or state.get('through')
     if not first:
         print('nothing gathered going forward yet')
