@@ -16,6 +16,10 @@
 //   state.json                     where each file was last being read (newest wins)
 //   auth/devices/<sha256(token)>   one small record per signed-in device
 //   auth/fails.json                failed sign-in counter
+//
+// Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
+//   /api/law/search|item   국가법령정보 공동활용 (법령·판례·헌재결정례…): env.LAW_OC
+//   /api/assembly/<service> 열린국회정보 (의안 등): env.ASSEMBLY_KEY
 
 const ID = /^[0-9a-f]{24}$/;
 const FOLDER_ID = /^f_[0-9a-z]{10}$/;
@@ -119,12 +123,52 @@ async function route(req, env, ctx) {
         if (m === 'GET') return await getState(env);
         if (m === 'PUT') return await putState(req, env);
         break;
+      case 'law':
+        if (m === 'GET' && (p[2] === 'search' || p[2] === 'item') && p.length === 3) return await lawApi(env, p[2], url);
+        break;
+      case 'assembly':
+        if (m === 'GET' && p.length === 3) return await assemblyApi(env, p[2], url);
+        break;
     }
   } catch (e) {
     if (e && e.status) return err(e.message.replace(/\s+/g, '_'), e.status);
     throw e;
   }
   return err('not_found', 404);
+}
+
+/* ---------------- 법령·판례 and 국회: asked from here so the keys stay on the server ---------------- */
+
+// 국가법령정보 공동활용 (law.go.kr DRF): lawSearch.do (search) and lawService.do (one item), as JSON
+const LAW_TARGETS = new Set(['law', 'prec', 'detc', 'expc', 'admrul']);   // 법령, 판례, 헌재결정례, 법령해석례, 행정규칙
+const LAW_PARAMS = new Set(['query', 'display', 'page', 'sort', 'search', 'ID', 'MST', 'LID', 'JO', 'efYd', 'nb', 'org', 'date']);
+async function lawApi(env, kind, url) {
+  if (!env.LAW_OC) return err('no_key', 503);
+  const target = url.searchParams.get('target') || 'law';
+  if (!LAW_TARGETS.has(target)) return err('bad_target', 400);
+  const q = new URLSearchParams({ OC: env.LAW_OC, target, type: 'JSON' });
+  for (const [k, v] of url.searchParams) if (LAW_PARAMS.has(k) && v.length <= 200) q.set(k, v);
+  const up = await fetch(`https://www.law.go.kr/DRF/${kind === 'item' ? 'lawService' : 'lawSearch'}.do?${q}`, { cf: { cacheTtl: 21600, cacheEverything: true } });
+  return passOn(up, env.LAW_OC);
+}
+
+// 열린국회정보 (open.assembly.go.kr): one service by its code, parameters passed on (KEY and Type are set here)
+const ASSEMBLY_SERVICE = /^[A-Za-z0-9]{6,40}$/;
+async function assemblyApi(env, service, url) {
+  if (!env.ASSEMBLY_KEY) return err('no_key', 503);
+  if (!ASSEMBLY_SERVICE.test(service || '')) return err('bad_service', 400);
+  const q = new URLSearchParams({ KEY: env.ASSEMBLY_KEY, Type: 'json', pIndex: '1', pSize: '20' });
+  for (const [k, v] of url.searchParams) if (/^[A-Za-z_]{2,30}$/.test(k) && !/^(KEY|Type)$/i.test(k) && v.length <= 200) q.set(k, v);
+  const up = await fetch(`https://open.assembly.go.kr/portal/openapi/${service}?${q}`, { cf: { cacheTtl: 3600, cacheEverything: true } });
+  return passOn(up, env.ASSEMBLY_KEY);
+}
+
+// the answer as it came, with the key taken out wherever it is echoed (links in the answer carry it)
+async function passOn(up, key) {
+  let text = await up.text();
+  if (text.length > 4 * 1024 * 1024) return err('too_large', 502);
+  if (key) text = text.split(key).join('');
+  return new Response(text, { status: up.ok ? 200 : 502, headers: { 'content-type': up.headers.get('content-type') || 'application/json; charset=utf-8', 'cache-control': 'private, max-age=600' } });
 }
 
 /* ---------------- sign-in ---------------- */
