@@ -1,6 +1,8 @@
 # 연구실 책장: the indexes of the courts' judgments (shelf/prec/) and of the laws (shelf/lawidx.json), made again every week
-# from the public mirrors of 법제처's texts (legalize-kr), so newly published judgments and laws are found in the app.
-# Nothing is published when a mirror could not be read or an index comes out much smaller than the one it would replace.
+# from the public mirrors of 법제처's texts (legalize-kr), so newly published judgments and laws are found in the app; and the
+# law papers KCI took in since the last run (shelf/kci/new.json, from KCI's OAI-PMH), for 논문 찾기's first screen.
+# Nothing is published when a mirror could not be read or an index comes out much smaller than the one it would replace;
+# KCI not answering leaves its list as it was and does not hold back the rest.
 name: 연구실 책장 색인 갱신
 on:
   schedule:
@@ -38,6 +40,10 @@ jobs:
           git clone --filter=blob:none --no-checkout --depth 1 https://github.com/legalize-kr/legalize-kr /tmp/law-src
           git -C /tmp/law-src -c core.quotePath=false ls-tree -r --name-only HEAD kr/ | sed 's#^kr/##' > /tmp/law-files.txt
           python3 _src/site/shelf/_tools/law_index.py /tmp/law-files.txt shelf/lawidx.json
+      - name: New law papers in KCI (OAI-PMH)
+        continue-on-error: true
+        timeout-minutes: 30
+        run: python3 _src/site/shelf/_tools/kci_oai.py shelf/kci
       - name: No smaller than before
         run: |
           python3 - <<'PY'
@@ -51,13 +57,13 @@ jobs:
           PY
       - name: Publish when changed
         run: |
-          if git diff --quiet -- shelf/prec shelf/lawidx.json && [ -z "$(git ls-files --others --exclude-standard shelf/prec)" ]; then
+          if git diff --quiet -- shelf/prec shelf/lawidx.json shelf/kci && [ -z "$(git ls-files --others --exclude-standard shelf/prec shelf/kci)" ]; then
             echo "no change"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add shelf/prec shelf/lawidx.json
-          git commit -m '연구실 책장: 판결·법령 색인 매주 갱신'
+          git add shelf/prec shelf/lawidx.json shelf/kci 2>/dev/null || git add shelf/prec shelf/lawidx.json
+          git commit -m '연구실 책장: 판결·법령 색인과 KCI 새 법학 논문 매주 갱신'
           for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && break; sleep 10; done
           # a push made here does not start the site's build by itself: it is asked for
           curl -s -o /dev/null -w 'pages build: %{http_code}\n' -X POST -H "Authorization: Bearer ${{ github.token }}" \
