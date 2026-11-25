@@ -111,6 +111,14 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .card { display: grid; grid-template-columns: 54px minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 12px; row-gap: 2px; padding: 12px; text-align: left;
   background: var(--card); border-radius: 14px; box-shadow: var(--shadow); }
 .card .thumb { grid-row: 1 / span 3; width: 54px; height: 72px; }
+.card-w { position: relative; display: grid; }
+.card-x { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--faint); background: transparent; }
+.card-x svg { width: 15px; height: 15px; }
+.card-x:hover { background: var(--chip); color: var(--ink); }
+.card-w .card { padding-right: 34px; }
+.card-w .ck { position: absolute; top: 10px; right: 10px; background: var(--card); }
+.card-w.sel .card { box-shadow: inset 0 0 0 2px var(--accent); }
+.card-w.sel .ck { background: var(--accent); box-shadow: none; color: var(--card); }
 .card-t { font-weight: 700; font-size: 14.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-s { font-size: 12.5px; color: var(--faint); }
 .pbar { align-self: end; height: 4px; border-radius: 4px; background: var(--chip); overflow: hidden; }
@@ -225,6 +233,11 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .rd-top { display: flex; align-items: center; gap: 8px; padding: calc(var(--safe-t) + 6px) 10px 6px; background: var(--card); box-shadow: 0 1px 0 var(--rule); z-index: 5; }
 .rd-back { width: auto; padding: 0 10px 0 4px; gap: 2px; display: inline-flex; font-weight: 600; font-size: 15px; }
 .rd-title { flex: 1; min-width: 0; text-align: center; }
+.rd-title.one { display: flex; justify-content: center; align-items: center; gap: 2px; }
+.rd-title.one b { min-width: 0; }
+.rd-close1 { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--muted); }
+.rd-close1 svg { width: 15px; height: 15px; }
+.rd-close1:hover { background: var(--chip); color: var(--ink); }
 .rd-title b { display: block; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rd-acts { display: flex; gap: 2px; }
 .rd-find { position: relative; display: flex; align-items: center; gap: 4px; padding: 8px 10px; background: var(--card); box-shadow: 0 1px 0 var(--rule); z-index: 6; }

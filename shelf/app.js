@@ -318,10 +318,10 @@ function renderShell() {
   main.addEventListener('dragover', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { e.preventDefault(); main.classList.add('drop'); } });
   main.addEventListener('dragleave', (e) => { if (e.target === main || !main.contains(e.relatedTarget)) main.classList.remove('drop'); });
   main.addEventListener('drop', (e) => { e.preventDefault(); main.classList.remove('drop'); filesFromDrop(e.dataTransfer).then((fs) => { if (fs.length) upload(fs); }); });
-  let lp = null;   // long press on a row starts selecting
-  $('.content').addEventListener('pointerdown', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid]'); if (!row || e.pointerType === 'mouse') return; lp = setTimeout(() => { lp = null; startSelect(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); }, 550); });
+  let lp = null;   // long press on a row (or a 이어 읽기 card) starts selecting
+  $('.content').addEventListener('pointerdown', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid], .card-w[data-file]'); if (!row || e.pointerType === 'mouse') return; lp = setTimeout(() => { lp = null; pressedAt = Date.now(); startSelect(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); }, 550); });
   for (const t of ['pointerup', 'pointercancel', 'pointermove']) $('.content').addEventListener(t, (e) => { if (lp && (t !== 'pointermove' || Math.abs(e.movementY) > 3)) { clearTimeout(lp); lp = null; } });
-  $('.content').addEventListener('contextmenu', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid]'); if (!row) return; e.preventDefault(); row.dataset.file ? fileMenu(row.dataset.file, e.clientX, e.clientY) : folderMenu(row.dataset.fid, e.clientX, e.clientY); });
+  $('.content').addEventListener('contextmenu', (e) => { const row = e.target.closest('.row[data-file], .row[data-fid], .card-w[data-file]'); if (!row) return; e.preventDefault(); row.dataset.file ? fileMenu(row.dataset.file, e.clientX, e.clientY) : folderMenu(row.dataset.fid, e.clientX, e.clientY); });
 }
 function closeRail() { const a = $('.app'); if (a) a.classList.remove('rail-open'); }
 
@@ -375,7 +375,8 @@ function addTab(id) {
 }
 function switchTab(id) { if (id && id !== S.readerId) openFile(id, { tab: true, replace: true }); }
 function closeTab(id) {
-  const i = S.tabs.findIndex((x) => x.id === id); if (i < 0) return;
+  const i = S.tabs.findIndex((x) => x.id === id);
+  if (i < 0) { if (id === S.readerId) history.back(); return; }
   S.tabs.splice(i, 1); saveTabs();
   if (id !== S.readerId) { if (S.reader) S.reader.setTabs(tabInfo()); return; }
   const next = S.tabs[i] || S.tabs[i - 1];
@@ -420,7 +421,8 @@ function renderTools() {
   const t = $('.tools');
   if (S.select) {
     const n = S.select.files.size + S.select.folders.size;
-    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">끝내기</button>`;
+    const all = shownItems(), everything = all.files.length + all.folders.length > 0 && all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id));
+    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="selall" ${all.files.length + all.folders.length ? '' : 'disabled'}>${everything ? '선택 해제' : '전체 선택'}</button><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">끝내기</button>`;
     return;
   }
   if (S.q) { t.innerHTML = ''; return; }
@@ -446,7 +448,7 @@ function renderFolder(c, folder) {
   let html = '';
   if (!folder) {
     const resume = liveFiles().map((f) => ({ f, s: S.state.files[f.id] })).filter((x) => x.s && !x.s.done && x.f.pages && x.s.page < x.f.pages - 1).sort((a, b) => b.s.at - a.s.at).slice(0, 4);
-    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<button class="card" data-open="${f.id}" data-resume="1"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>`).join('')}</div>`;
+    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<div class="card-w ${S.select && S.select.files.has(f.id) ? 'sel' : ''}" data-file="${f.id}"><button class="card" data-open="${f.id}" data-resume="1"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>${S.select ? `<span class="ck">${I.check}</span>` : `<button class="card-x" data-unresume="${f.id}" aria-label="이어 읽기에서 빼기" title="이어 읽기에서 빼기">${I.close}</button>`}</div>`).join('')}</div>`;
   }
   if (!folders.length && !files.length) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
@@ -477,8 +479,14 @@ function fileRow(f, extra = '') {
 function gradeRank(v) { return v > 0 ? v : v === -2 ? 0.5 : v === -1 ? -1 : 0; }   // ★★★ ★★ ★ △ (none) ✕
 function coverMark(v) { return v ? `<i class="cover-mark" aria-label="${v > 0 ? '별 ' + v + '개' : v === -2 ? '세모' : '엑스'}">${gradeSVG(v)}</i>` : ''; }
 
+const recentList = () => liveFiles().filter((f) => S.state.files[f.id]).sort((a, b) => S.state.files[b.id].at - S.state.files[a.id].at).slice(0, 60);
+function shownItems() {   // what the list in view shows (전체 선택 picks these)
+  if (S.view.kind === 'recent') return { files: recentList().map((f) => f.id), folders: [] };
+  if (S.view.kind === 'home') return { files: liveFiles().filter((f) => (f.folder ?? null) === (S.view.folder ?? null)).map((f) => f.id), folders: childFolders(S.view.folder).map((f) => f.id) };
+  return { files: [], folders: [] };
+}
 function renderRecent(c) {
-  const list = liveFiles().filter((f) => S.state.files[f.id]).sort((a, b) => S.state.files[b.id].at - S.state.files[a.id].at).slice(0, 60);
+  const list = recentList();
   c.innerHTML = list.length ? '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`;
 }
 
@@ -578,8 +586,12 @@ async function loadThumb(span) {
 }
 
 /* ---------- clicks in the list ---------- */
+let pressedAt = 0;
 function onContentClick(e) {
+  if (Date.now() - pressedAt < 800) return;   // the tap that ended a long press
   const t = e.target;
+  const un = t.closest('[data-unresume]'); if (un) { unresume(un.dataset.unresume); return; }
+  if (S.select) { const cw = t.closest('.card-w[data-file]'); if (cw) { toggleSet(S.select.files, cw.dataset.file); render(); return; } }
   const up = t.closest('[data-t="upload"]'); if (up) { uploadBox(); return; }
   const r = t.closest('[data-restore]'); if (r) { doOps([{ op: 'restoreFile', id: r.dataset.restore }], '되살렸습니다'); return; }
   const rf = t.closest('[data-restore-folder]'); if (rf) { doOps([{ op: 'restoreFolder', id: rf.dataset.restoreFolder }], '되살렸습니다'); return; }
@@ -618,6 +630,13 @@ async function onTools(e) {
     if (k) { S.sort = k; render(); }
   } else if (t === 'select') startSelect();
   else if (t === 'endsel') { S.select = null; render(); }
+  else if (t === 'selall' && S.select) {   // everything in this list, or nothing if it already was
+    const all = shownItems();
+    const every = all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id));
+    if (every) { S.select.files.clear(); S.select.folders.clear(); }
+    else { all.files.forEach((id) => S.select.files.add(id)); all.folders.forEach((id) => S.select.folders.add(id)); }
+    render();
+  }
   else if (t === 'trash' && S.select) {
     const ops = [...S.select.files].map((id) => ({ op: 'trashFile', id })).concat([...S.select.folders].map((id) => ({ op: 'trashFolder', id })));
     S.select = null; doOps(ops, '휴지통으로 옮겼습니다');
@@ -1233,6 +1252,15 @@ ${files.map((f) => `<h2>${esc(stem(f.name))}</h2><ol>${all.get(f.id).map((m) => 
   const a = el('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   toast('내려받았습니다');
+}
+
+/* ---------- 이어 읽기에서 빼기: the paper counts as finished for now; reading on in it brings it back ---------- */
+function unresume(id) {
+  const s = S.state.files[id]; if (!s) return;
+  const before = { ...s };
+  const put = (v) => { S.state.files[id] = { ...v, at: (S.state.files[id].at || 0) + 1 }; stateDirty.add(id); store.put('kv', 'state', S.state); pushState(); render(); };
+  put({ ...s, done: true });
+  toast('이어 읽기에서 뺐습니다', 6000, { label: '되돌리기', fn: () => put(before) });
 }
 
 /* ---------- reading positions ---------- */

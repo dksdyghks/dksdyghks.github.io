@@ -413,8 +413,11 @@ export class Reader {
   renderTabs() {
     const box = this.$('.rd-title'), tabs = this.tabs;
     if (!box) return;
-    if (tabs.length < 2) { box.innerHTML = `<b>${esc(this.o.title || '')}</b>`; box.classList.remove('has-tabs'); return; }
-    box.classList.add('has-tabs');
+    if (tabs.length < 2) {   // one paper: its name, and the same × as a tab has (closes it and goes back to the shelf)
+      box.innerHTML = `<b>${esc(this.o.title || '')}</b><button type="button" class="rd-close1" data-doc-x="${this.o.id}" aria-label="이 문서 닫기" title="닫기">${ICON.close}</button>`;
+      box.classList.remove('has-tabs'); box.classList.add('one'); return;
+    }
+    box.classList.remove('one'); box.classList.add('has-tabs');
     if (this.root.clientWidth < 600) {
       box.innerHTML = `<b>${esc(this.o.title || '')}</b><button type="button" class="rd-tabcount" aria-label="열린 문서 ${tabs.length}개">${tabs.length}</button>`;
       return;
