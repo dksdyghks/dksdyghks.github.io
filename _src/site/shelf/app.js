@@ -422,7 +422,7 @@ function renderTools() {
   if (S.select) {
     const n = S.select.files.size + S.select.folders.size;
     const all = shownItems(), everything = all.files.length + all.folders.length > 0 && all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id));
-    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="selall" ${all.files.length + all.folders.length ? '' : 'disabled'}>${everything ? '선택 해제' : '전체 선택'}</button><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">끝내기</button>`;
+    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="selall" ${all.files.length + all.folders.length ? '' : 'disabled'}>${everything ? '선택 해제' : '전체 선택'}</button><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">선택 끝</button>`;
     return;
   }
   if (S.q) { t.innerHTML = ''; return; }
@@ -433,7 +433,7 @@ function renderTools() {
   }
   if (S.view.kind === 'recent') { t.innerHTML = ''; return; }
   const label = { added: '최근 올린 순', name: '이름순', opened: '최근 읽은 순', stars: '★ 순' }[S.sort];
-  t.innerHTML = `<button class="btn" data-t="newfolder">${I.newfolder}<span>새 폴더</span></button><button class="btn" data-t="upload">${I.up}<span>올리기</span></button><span class="sp"></span><button class="btn ghost" data-t="select">${I.select}<span>선택</span></button><button class="btn ghost" data-t="sort">${I.sort}<span>${label}</span></button>`;
+  t.innerHTML = `<button class="btn" data-t="newfolder">${I.newfolder}<span>새 폴더</span></button><button class="btn" data-t="upload">${I.up}<span>올리기</span></button><span class="sp"></span><button class="btn ghost" data-t="sort">${I.sort}<span>${label}</span></button>`;
 }
 
 function sorted(files) {
@@ -459,19 +459,21 @@ function renderFolder(c, folder) {
   c.innerHTML = html;
 }
 
+const boxes = () => !S.q && S.view.kind !== 'trash';   // rows carry a checkbox here
+const ckBox = (on) => `<button type="button" class="ck" data-ck aria-label="선택" aria-pressed="${on ? 'true' : 'false'}">${I.check}</button>`;
 function folderRow(f) {
   const n = liveFiles().filter((x) => x.folder === f.id).length + childFolders(f.id).length;
   const sel = S.select && S.select.folders.has(f.id);
-  return `<div class="row folder ${sel ? 'sel' : ''}" data-fid="${f.id}">${S.select ? `<span class="ck">${I.check}</span>` : ''}<span class="ficon">${I.folder}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${n ? n + '개' : '비어 있음'}</span></span>${S.select ? '' : `<button class="ib more" data-fmenu="${f.id}" aria-label="폴더 메뉴">${I.more}</button>`}</div>`;
+  return `<div class="row folder ${sel ? 'sel' : ''}" data-fid="${f.id}">${boxes() ? ckBox(sel) : ''}<span class="ficon">${I.folder}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${n ? n + '개' : '비어 있음'}</span></span>${S.select ? '' : `<button class="ib more" data-fmenu="${f.id}" aria-label="폴더 메뉴">${I.more}</button>`}</div>`;
 }
 
 function fileRow(f, extra = '') {
   const s = S.state.files[f.id];
   const sel = S.select && S.select.files.has(f.id);
   const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
-  return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${S.select ? `<span class="ck">${I.check}</span>` : ''}
+  return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${boxes() ? ckBox(sel) : ''}
     <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span>
-    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : ''}</span></span>${extra}</span>
+    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${f.pages ? f.pages + '쪽 · ' : ''}${size(f.size)} · ${date(f.added)}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
@@ -591,7 +593,9 @@ function onContentClick(e) {
   if (Date.now() - pressedAt < 800) return;   // the tap that ended a long press
   const t = e.target;
   const un = t.closest('[data-unresume]'); if (un) { unresume(un.dataset.unresume); return; }
-  if (S.select) { const cw = t.closest('.card-w[data-file]'); if (cw) { toggleSet(S.select.files, cw.dataset.file); render(); return; } }
+  const ck = t.closest('[data-ck]');
+  if (ck) { const row = ck.closest('.row'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
+  if (S.select) { const cw = t.closest('.card-w[data-file]'); if (cw) { pick({ file: cw.dataset.file }); return; } }
   const up = t.closest('[data-t="upload"]'); if (up) { uploadBox(); return; }
   const r = t.closest('[data-restore]'); if (r) { doOps([{ op: 'restoreFile', id: r.dataset.restore }], '되살렸습니다'); return; }
   const rf = t.closest('[data-restore-folder]'); if (rf) { doOps([{ op: 'restoreFolder', id: rf.dataset.restoreFolder }], '되살렸습니다'); return; }
@@ -602,14 +606,17 @@ function onContentClick(e) {
   const sn = t.closest('[data-open]'); if (sn) { openFile(sn.dataset.open, sn.dataset.mark ? { page: Number(sn.dataset.page), mark: sn.dataset.mark } : sn.dataset.page != null ? { page: Number(sn.dataset.page), query: sn.dataset.q } : sn.dataset.resume ? { resume: true } : {}); return; }
   const row = t.closest('.row');
   if (!row) return;
-  if (S.select) {
-    if (row.dataset.file) toggleSet(S.select.files, row.dataset.file); else if (row.dataset.fid) toggleSet(S.select.folders, row.dataset.fid);
-    render(); return;
-  }
+  if (S.select) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); return; }
   if (row.dataset.fid) { S.view = { kind: 'home', folder: row.dataset.fid }; S.q = ''; $('.find input').value = ''; render(); return; }
   if (row.dataset.file && S.view.kind !== 'trash') openFile(row.dataset.file);
 }
 function toggleSet(set, v) { if (set.has(v)) set.delete(v); else set.add(v); }
+function pick(it) {   // tick or untick one row; with nothing ticked the selection ends
+  if (!S.select) S.select = { files: new Set(), folders: new Set() };
+  if (it.file) toggleSet(S.select.files, it.file); else if (it.folder) toggleSet(S.select.folders, it.folder);
+  if (!S.select.files.size && !S.select.folders.size) S.select = null;
+  render();
+}
 function startSelect(first) {
   S.select = { files: new Set(), folders: new Set() };
   if (first && first.file) S.select.files.add(first.file);
@@ -633,7 +640,7 @@ async function onTools(e) {
   else if (t === 'selall' && S.select) {   // everything in this list, or nothing if it already was
     const all = shownItems();
     const every = all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id));
-    if (every) { S.select.files.clear(); S.select.folders.clear(); }
+    if (every) { S.select = null; render(); return; }
     else { all.files.forEach((id) => S.select.files.add(id)); all.folders.forEach((id) => S.select.folders.add(id)); }
     render();
   }
@@ -653,7 +660,7 @@ async function onTools(e) {
 
 async function fileMenu(id, x, y) {
   const f = fileById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ...(needsOcr(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['open', '열기'], ['start', '처음부터 열기'], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['dl', '밑줄 넣어 내려받기'], ['print', '인쇄'], ['orig', '원본 내려받기'], ['-'], ...(needsOcr(f) && isScan(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']]);
   if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
   if (k === 'open') openFile(id);
   else if (k === 'start') openFile(id, { page: 0 });
@@ -916,6 +923,7 @@ async function openFile(id, at = {}) {
       stars: f.stars || 0,
       onRate: (v) => rate(id, v),
       onClearAll: () => clearAllMarks(fileById(id) || f),
+      confirm: (t, x, ok) => confirmBox(t, x, ok, true),
       toast,
     });
     S.reader.docRef = doc;
@@ -1050,6 +1058,7 @@ const OCR = { id: null, done: 0, total: 0 };
 let ocrRun = null;
 const isPhone = () => matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600 && !(navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const needsOcr = (f) => !!f && f.scan > 0 && !f.ocr && !f.trashed && !f.pending && !folderTrashed(f.folder);
+const isScan = (f) => !!f && f.scan > 0 && (!f.pages || f.scan * 2 >= f.pages);   // most of its pages are pictures
 function ocrSoon(ms = 3000) {
   if (isPhone()) return;
   clearTimeout(ocrSoon.t); ocrSoon.t = setTimeout(() => ocrQueue(), ms);
@@ -1129,7 +1138,8 @@ async function ocrFile(f, mod) {
 function showOcrProgress() {   // just the line under the paper's name, not the whole list
   for (const s of document.querySelectorAll('.row.file .ocr-p')) {
     const id = s.closest('.row').dataset.file;
-    s.textContent = OCR.id === id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(fileById(id)) ? ' · 스캔본' : '';
+    const f = fileById(id);
+    s.textContent = !isScan(f) ? '' : OCR.id === id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '';
   }
 }
 async function ocrData(f) {   // a read paper's words for the reader: kept here, else fetched once

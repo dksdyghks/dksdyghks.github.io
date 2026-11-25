@@ -44,6 +44,8 @@ const ICON = {
   up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  undo: '<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  erase: '<svg viewBox="0 0 24 24"><path d="M15.6 4.4l4 4a1.5 1.5 0 0 1 0 2.1L11 19H6.5l-3-3a1.5 1.5 0 0 1 0-2.1l10-9.5a1.5 1.5 0 0 1 2.1 0z"/><path d="M10 8.5l5.5 5.5M11 19h9"/></svg>',
   minus: '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>',
 };
@@ -57,6 +59,7 @@ export class Reader {
     this.texts = (o.index && o.index.pages) || null;
     this.outlineData = (o.index && o.index.outline) || [];
     this.allMarks = (o.marks || []).slice();   // includes deletions (kept for syncing)
+    this.undoStack = [];   // this reading's changes to marks, newest last (되돌리기)
     this.ocr = o.ocr || null;   // a scan's words, page by page (read by ocr.js)
     this.zoom = o.zoom > 0 ? o.zoom : 1; this.tool = 'read';
     const pref = o.prefs || {};
@@ -103,7 +106,10 @@ export class Reader {
         <button data-tool="hl" aria-label="형광펜">${ICON.hl}<span>형광펜</span><i class="dot"></i></button>
         <button data-tool="ul" aria-label="밑줄">${ICON.ul}<span>밑줄</span><i class="dot"></i></button>
         <button data-walk aria-label="표시한 곳만 넘겨 보기">${ICON.walk}<span>넘겨 보기</span></button>
+        <button data-undo aria-label="되돌리기" title="되돌리기 (⌘Z)" hidden>${ICON.undo}<span>되돌리기</span></button>
+        <button data-erase aria-label="밑줄 지우기" title="밑줄 지우기">${ICON.erase}<span>지우기</span></button>
         <div class="rd-colors" hidden></div>
+        <div class="rd-erase" hidden></div>
       </div>
       <div class="rd-walk" role="toolbar" aria-label="표시한 곳만 넘겨 보기" hidden>
         <button type="button" class="wb" data-w="prev" aria-label="이전">${ICON.prev}</button>
@@ -144,6 +150,9 @@ export class Reader {
       const c = e.target.closest('[data-color]');
       if (c) { this.setColor(c.dataset.color); return; }
       if (e.target.closest('[data-walk]')) { this.walkStart(); return; }
+      if (e.target.closest('[data-undo]')) { this.undo(); return; }
+      const er = e.target.closest('[data-er]'); if (er) { this.$('.rd-erase').hidden = true; this.erase(er.dataset.er); return; }
+      if (e.target.closest('[data-erase]')) { this.toggleErase(); return; }
       const b = e.target.closest('[data-tool]'); if (!b) return;
       if (b.dataset.tool === this.tool && b.dataset.tool !== 'read') { this.toggleColors(); return; }
       this.setTool(b.dataset.tool);
@@ -486,15 +495,18 @@ export class Reader {
   drawAllMarks() { for (const p of this.pages) this.drawMarks(p); }
   drawMarks(p) {
     const layer = p.el.querySelector('.pg-marks');
-    layer.querySelectorAll('.mk').forEach((x) => x.remove());
+    layer.querySelectorAll('.mk, .mk-g').forEach((x) => x.remove());
+    const groups = new Map();   // highlighter boxes of one colour share one translucent layer: strokes over strokes stay one coat
     for (const m of this.marks()) {
       if (m.p !== p.n) continue;
+      let host = layer;
+      if (m.kind === 'hl') { host = groups.get(m.color); if (!host) { host = el('div', 'mk-g'); groups.set(m.color, host); layer.appendChild(host); } }
       for (const r of m.rects) {
         const d = el('i', 'mk ' + m.kind);
         d.dataset.id = m.id;
         d.style.left = (r[0] * 100) + '%'; d.style.top = (r[1] * 100) + '%'; d.style.width = (r[2] * 100) + '%'; d.style.height = (r[3] * 100) + '%';
         d.style.setProperty('--c', m.color);
-        layer.appendChild(d);
+        host.appendChild(d);
       }
     }
   }
@@ -504,8 +516,59 @@ export class Reader {
     if (!this.$('.rd-panel').hidden && this.tab === 'marks') this.showTab('marks');
     this.o.onMarks && this.o.onMarks(this.allMarks.slice());
   }
+  remember(entries) {   // [id, the mark as it was (null: it did not exist)] for one change
+    if (!entries.length) return;
+    this.undoStack.push(entries);
+    if (this.undoStack.length > 80) this.undoStack.shift();
+    this.paintUndo();
+  }
+  paintUndo() { const b = this.$('.rd-tools [data-undo]'); if (b) b.hidden = !this.undoStack.length; }
+  undo() {
+    const e = this.undoStack.pop(); if (!e) return;
+    const now = Date.now();
+    for (const [id, prev] of e) {
+      const i = this.allMarks.findIndex((x) => x.id === id);
+      const v = prev ? { ...prev, t: now } : { id, del: true, t: now };
+      if (i >= 0) this.allMarks[i] = v; else if (prev) this.allMarks.push(v);
+    }
+    this.paintUndo();
+    this.changed();
+  }
+  toggleErase() {
+    const box = this.$('.rd-erase');
+    this.$('.rd-colors').hidden = true;
+    if (!box.hidden) { box.hidden = true; return; }
+    const page = this.current().page, all = this.marks().length, here = this.marks().filter((m) => m.p === page).length;
+    box.innerHTML = `<button type="button" data-er="page" ${here ? '' : 'disabled'}>이 면의 밑줄 지우기<em>${here}</em></button><button type="button" data-er="all" ${all ? '' : 'disabled'}>이 문서의 밑줄 모두 지우기<em>${all}</em></button>`;
+    box.hidden = false;
+  }
+  async erase(scope) {   // 'page': the page in view, 'all': the whole paper (the PDF itself stays as it is)
+    const page = this.current().page;
+    const list = this.marks().filter((m) => scope === 'all' || m.p === page);
+    if (!list.length) { this.o.toast && this.o.toast(scope === 'all' ? '지울 밑줄이 없습니다' : '이 면에는 밑줄이 없습니다'); return; }
+    if (scope === 'all' && this.o.confirm && !(await this.o.confirm('밑줄 모두 지우기', `이 문서의 형광펜과 밑줄 ${list.length}개를 모두 지웁니다. PDF 원본은 그대로이고, 바로 되돌릴 수 있습니다.`, '모두 지우기'))) return;
+    const now = Date.now();
+    this.remember(list.map((m) => [m.id, { ...m }]));
+    for (const m of list) { const i = this.allMarks.findIndex((x) => x.id === m.id); if (i >= 0) this.allMarks[i] = { id: m.id, del: true, t: now }; }
+    this.changed();
+    this.o.toast && this.o.toast(`${scope === 'all' ? '' : '이 면의 '}밑줄 ${list.length}개를 지웠습니다`, 7000, { label: '되돌리기', fn: () => this.undo() });
+  }
   addMarks(list) {
     if (!list.length) return;
+    const rec = [], keep = [], now = Date.now();
+    for (const n of list) {
+      const same = this.marks().filter((m) => m.p === n.p && m.kind === n.kind && m.color === n.color);
+      const over = same.find((m) => covers(m.rects, n.rects));
+      if (over) { this.flash(over.id); continue; }   // already marked just so: nothing new
+      for (const m of same) if (covers(n.rects, m.rects)) {   // the new stroke takes in an old one: one mark, not two
+        const i = this.allMarks.findIndex((x) => x.id === m.id);
+        rec.push([m.id, { ...m }]); this.allMarks[i] = { id: m.id, del: true, t: now };
+      }
+      keep.push(n); rec.push([n.id, null]);
+    }
+    this.remember(rec);
+    if (!keep.length) { if (rec.length) this.changed(); return; }
+    list = keep;
     this.allMarks.push(...list);
     this.lastMark = list[0].kind;
     this.o.onPrefs && this.o.onPrefs({ hl: this.hlColor, ul: this.ulColor, last: this.lastMark });
@@ -513,11 +576,13 @@ export class Reader {
   }
   setMark(id, patch) {
     const m = this.allMarks.find((x) => x.id === id); if (!m) return;
+    this.remember([[id, { ...m }]]);
     Object.assign(m, patch, { t: Date.now() });
     this.changed();
   }
   deleteMark(id) {
     const i = this.allMarks.findIndex((x) => x.id === id); if (i < 0) return;
+    if (!this.allMarks[i].del) this.remember([[id, { ...this.allMarks[i] }]]);
     this.allMarks[i] = { id, del: true, t: Date.now() };
     this.changed();
   }
@@ -595,6 +660,7 @@ export class Reader {
     this.o.onPrefs && this.o.onPrefs({ hl: this.hlColor, ul: this.ulColor, last: this.lastMark });
   }
   toggleColors() {
+    this.$('.rd-erase').hidden = true;
     const box = this.$('.rd-colors');
     const list = this.tool === 'ul' ? UL : HL, cur = this.tool === 'ul' ? this.ulColor : this.hlColor;
     const names = this.tool === 'ul' ? UL_NAMES : HL_NAMES;
@@ -656,7 +722,7 @@ export class Reader {
     document.addEventListener('selectionchange', this.onSel);
     this.onKey = (e) => this.key(e);
     document.addEventListener('keydown', this.onKey);
-    this.onDocDown = (e) => { if (!e.target.closest('.rd-pop, .rd-note, .rd-colors, .rd-tools')) { if (!this.drag) { this.$('.rd-colors').hidden = true; } } };
+    this.onDocDown = (e) => { if (!e.target.closest('.rd-pop, .rd-note, .rd-colors, .rd-tools')) { if (!this.drag) { this.$('.rd-colors').hidden = true; this.$('.rd-erase').hidden = true; } } };
     document.addEventListener('pointerdown', this.onDocDown, true);
   }
 
@@ -851,7 +917,8 @@ export class Reader {
       if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); this.walkGo(this.walkI - 1); return; }
       if (e.key === 'Escape') { this.walkStop(); return; }
     }
-    if (e.key === 'Escape') { this.hidePop(); this.$('.rd-colors').hidden = true; return; }
+    if (e.key === 'Escape') { this.hidePop(); this.$('.rd-colors').hidden = true; this.$('.rd-erase').hidden = true; return; }
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); this.undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.zoomBy(1.15); }
     else if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); this.zoomBy(1 / 1.15); }
     else if ((e.metaKey || e.ctrlKey) && e.key === '0') { e.preventDefault(); this.setZoom(1); }
@@ -1033,7 +1100,7 @@ export class Reader {
     }
   }
   panelClick(e) {
-    if (e.target.closest('[data-clear]')) { this.o.onClearAll && this.o.onClearAll(); return; }
+    if (e.target.closest('[data-clear]')) { this.erase('all'); return; }
     if (e.target.closest('[data-copyall]')) {   // every marked passage, in reading order, with its printed page
       const ms = this.marks().sort((a, b) => a.p - b.p || a.rects[0][1] - b.rects[0][1] || a.rects[0][0] - b.rects[0][0]);
       this.copy([this.o.title || '', '', ...ms.map((m) => `${this.label(m.p)}${this.unit()}  ${m.text}`)].join('\n'));
@@ -1144,6 +1211,14 @@ export class Reader {
 }
 
 let ocrMeasure = null;
+// every box of B lies within a box of A on the same line (A covers B)
+function covers(A, B) {
+  const e = 0.004;
+  return B.every((r) => A.some((q) => {
+    const top = Math.max(q[1], r[1]), bot = Math.min(q[1] + q[3], r[1] + r[3]);
+    return bot - top >= 0.6 * Math.min(q[3], r[3]) && q[0] <= r[0] + e && q[0] + q[2] >= r[0] + r[2] - e;
+  }));
+}
 
 // text without white space, with a map back to positions in the original
 function squeeze(t) {

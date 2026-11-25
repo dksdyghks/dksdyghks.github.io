@@ -139,6 +139,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .here svg { width: 18px; height: 18px; }
 .ck { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px var(--faint); color: transparent; flex: none; }
 .row.sel .ck { background: var(--accent); box-shadow: none; color: var(--card); }
+.row .ck { position: relative; padding: 0; cursor: pointer; }
+.row .ck::after { content: ""; position: absolute; inset: -11px -8px; }   /* an easy target for a finger */
+@media (hover: hover) { .row:not(.sel) .ck { opacity: .55; } .row:hover .ck { opacity: 1; } }
 .ck svg { width: 16px; height: 16px; stroke-width: 2.4; }
 .snips { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .snip { text-align: left; font-size: 13px; color: var(--ink-2); line-height: 1.45; padding: 4px 8px; border-radius: 8px; background: var(--chip); }
@@ -259,6 +262,8 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .pg-hits { z-index: 1; }
 .mk { position: absolute; display: block; }
 .mk.hl { background: var(--c); mix-blend-mode: multiply; opacity: .45; border-radius: 2px; margin-top: -0.06em; padding-bottom: 0.12em; }
+.mk-g { position: absolute; inset: 0; opacity: .45; mix-blend-mode: multiply; }   /* one coat per colour */
+.mk-g .mk.hl { opacity: 1; mix-blend-mode: normal; }
 .mk.ul { background: none; }
 .mk.ul::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: max(1.5px, 8%); background: var(--c); border-radius: 1px; }
 .mk.pre { opacity: .42; }
@@ -309,6 +314,11 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
   background: var(--navy); box-shadow: 0 14px 34px -12px #000A; }
 .rd-tools > button { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 42px; padding: 0 14px; border-radius: 12px; color: #C7D0DD; font-weight: 600; font-size: 14px; }
 .rd-tools > button.on { background: var(--gold); color: var(--navy); }
+.rd-erase { position: absolute; bottom: calc(100% + 8px); right: 0; display: flex; flex-direction: column; gap: 2px; padding: 6px; border-radius: 14px; background: var(--navy); box-shadow: 0 8px 28px #0004; min-width: 230px; }
+.rd-erase button { display: flex; justify-content: space-between; align-items: center; gap: 12px; height: 42px; padding: 0 12px; border-radius: 10px; color: #E6EBF2; font-size: 14px; font-weight: 600; text-align: left; }
+.rd-erase button:hover:not(:disabled) { background: #ffffff14; }
+.rd-erase button:disabled { opacity: .45; }
+.rd-erase em { font-style: normal; color: #9FB0C6; font-weight: 500; }
 .rd-tools .dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px #ffffff55; }
 .rd-tools > button.on .dot { box-shadow: 0 0 0 1.5px var(--navy); }
 .rd-colors { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px; border-radius: 14px; background: var(--navy); box-shadow: 0 14px 34px -12px #000A; }
