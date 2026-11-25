@@ -336,6 +336,7 @@ function render() {
   $('.trash-btn').classList.toggle('on', !S.q && S.view.kind === 'trash');
   renderTree(); renderUsage(); renderCrumbs(); renderTools(); renderTabsBtn();
   const c = $('.content');
+  c.classList.toggle('picking', !!S.select);
   if (S.q) { renderSearch(c); return; }
   if (S.view.kind === 'recent') renderRecent(c);
   else if (S.view.kind === 'trash') renderTrash(c);
@@ -451,7 +452,7 @@ function renderFolder(c, folder) {
   let html = '';
   if (!folder) {
     const resume = liveFiles().map((f) => ({ f, s: S.state.files[f.id] })).filter((x) => x.s && !x.s.done && x.f.pages && x.s.page < x.f.pages - 1).sort((a, b) => b.s.at - a.s.at).slice(0, 4);
-    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<div class="card-w ${S.select && S.select.files.has(f.id) ? 'sel' : ''}" data-file="${f.id}"><button class="card" data-open="${f.id}" data-resume="1"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>${S.select ? `<span class="ck">${I.check}</span>` : `<button class="card-x" data-unresume="${f.id}" aria-label="이어 읽기에서 빼기" title="이어 읽기에서 빼기">${I.close}</button>`}</div>`).join('')}</div>`;
+    if (resume.length) html += `<h2 class="sec-h">이어 읽기</h2><div class="resume">${resume.map(({ f, s }) => `<div class="card-w ${S.select && S.select.files.has(f.id) ? 'sel' : ''}" data-file="${f.id}"><button class="card" data-open="${f.id}" data-resume="1"><span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span><span class="card-t">${esc(stem(f.name))}</span><span class="card-s">${pageOf(s, f.pages)} · ${ago(s.at)}</span><span class="pbar"><i style="width:${Math.round(100 * (s.page + 1) / f.pages)}%"></i></span></button>${ckBox(S.select && S.select.files.has(f.id))}${S.select ? '' : `<button class="card-x" data-unresume="${f.id}" aria-label="이어 읽기에서 빼기" title="이어 읽기에서 빼기">${I.close}</button>`}</div>`).join('')}</div>`;
   }
   if (!folders.length && !files.length) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
@@ -467,15 +468,15 @@ const ckBox = (on) => `<button type="button" class="ck" data-ck aria-label="선�
 function folderRow(f) {
   const n = liveFiles().filter((x) => x.folder === f.id).length + childFolders(f.id).length;
   const sel = S.select && S.select.folders.has(f.id);
-  return `<div class="row folder ${sel ? 'sel' : ''}" data-fid="${f.id}">${boxes() ? ckBox(sel) : ''}<span class="ficon">${I.folder}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${n ? n + '개' : '비어 있음'}</span></span>${S.select ? '' : `<button class="ib more" data-fmenu="${f.id}" aria-label="폴더 메뉴">${I.more}</button>`}</div>`;
+  return `<div class="row folder ${sel ? 'sel' : ''}" data-fid="${f.id}"><span class="ficon">${I.folder}${boxes() ? ckBox(sel) : ''}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${n ? n + '개' : '비어 있음'}</span></span>${S.select ? '' : `<button class="ib more" data-fmenu="${f.id}" aria-label="폴더 메뉴">${I.more}</button>`}</div>`;
 }
 
 function fileRow(f, extra = '') {
   const s = S.state.files[f.id];
   const sel = S.select && S.select.files.has(f.id);
   const where = (S.q || S.view.kind === 'recent') && f.folder ? ` · ${esc((folderById(f.folder) || {}).name || '')}` : '';
-  return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">${boxes() ? ckBox(sel) : ''}
-    <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}</span>
+  return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">
+    <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}${boxes() ? ckBox(sel) : ''}</span>
     <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${paperLine(f) || `${f.pages ? f.pages + '쪽 · ' : ''}${date(f.added)} 올림`}${where}${f.pending ? ' · 정리하는 중' : ''}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
@@ -599,7 +600,7 @@ function onContentClick(e) {
   const t = e.target;
   const un = t.closest('[data-unresume]'); if (un) { unresume(un.dataset.unresume); return; }
   const ck = t.closest('[data-ck]');
-  if (ck) { const row = ck.closest('.row'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
+  if (ck) { const row = ck.closest('.row, .card-w[data-file]'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
   if (S.select) { const cw = t.closest('.card-w[data-file]'); if (cw) { pick({ file: cw.dataset.file }); return; } }
   const up = t.closest('[data-t="upload"]'); if (up) { uploadBox(); return; }
   const r = t.closest('[data-restore]'); if (r) { doOps([{ op: 'restoreFile', id: r.dataset.restore }], '되살렸습니다'); return; }
