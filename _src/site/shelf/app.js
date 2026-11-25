@@ -288,9 +288,8 @@ function renderShell() {
         <button class="ib menu-btn" aria-label="메뉴">${I.menu}</button>
         <nav class="crumbs"></nav>
         <button class="tabs-btn" hidden></button>
-        <label class="find">${I.search}<input type="search" placeholder="제목과 본문에서 찾기" enterkeyhint="search" autocomplete="off"></label>
       </header>
-      <div class="tools"></div>
+      <div class="toolrow"><div class="tools"></div><label class="find">${I.search}<input type="search" placeholder="제목과 본문에서 찾기" enterkeyhint="search" autocomplete="off"></label></div>
       <div class="offline" hidden>인터넷에 연결되어 있지 않습니다 · 이 기기에 받아 둔 파일만 열 수 있습니다</div>
       <section class="content"></section>
     </main>
@@ -425,8 +424,7 @@ function renderTools() {
   const t = $('.tools');
   if (S.select) {
     const n = S.select.files.size + S.select.folders.size;
-    const all = shownItems(), everything = all.files.length + all.folders.length > 0 && all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id));
-    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="selall" ${all.files.length + all.folders.length ? '' : 'disabled'}>${everything ? '선택 해제' : '전체 선택'}</button><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">선택 끝</button>`;
+    t.innerHTML = `<span class="sel-n">${n}개 선택</span><button class="btn" data-t="move" ${n ? '' : 'disabled'}>옮기기</button><button class="btn" data-t="trash" ${n ? '' : 'disabled'}>휴지통으로</button><button class="btn ghost" data-t="endsel">선택 끝</button>`;
     return;
   }
   if (S.q) { t.innerHTML = ''; return; }
@@ -458,12 +456,22 @@ function renderFolder(c, folder) {
     html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
     c.innerHTML = html; return;
   }
-  if (!folder && (folders.length || files.length)) html += `<h2 class="sec-h">${files.length ? '전체' : '폴더'}</h2>`;
+  html += listHead(folder ? `${folders.length + files.length}개` : files.length ? '전체' : '폴더');
   html += '<div class="list">' + folders.map(folderRow).join('') + files.map((f) => fileRow(f)).join('') + '</div>';
   c.innerHTML = html;
 }
 
 const boxes = () => !S.q && S.view.kind !== 'trash';   // rows carry a checkbox here
+const allPicked = () => { const all = shownItems(); return !!S.select && all.files.length + all.folders.length > 0 && all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id)); };
+function listHead(label) {   // the list's heading, with 전체 선택 at its right (it picks what this list shows)
+  return `<div class="list-h"><h2 class="sec-h">${esc(label)}</h2>${boxes() ? `<button type="button" class="sec-act" data-selall>${allPicked() ? '선택 해제' : '전체 선택'}</button>` : ''}</div>`;
+}
+function pickAll() {   // everything in this list, or nothing if it already was
+  const all = shownItems();
+  if (allPicked()) S.select = null;
+  else { S.select = S.select || { files: new Set(), folders: new Set() }; all.files.forEach((id) => S.select.files.add(id)); all.folders.forEach((id) => S.select.folders.add(id)); }
+  render();
+}
 const ckBox = (on) => `<button type="button" class="ck" data-ck aria-label="선택" aria-pressed="${on ? 'true' : 'false'}">${I.check}</button>`;
 function folderRow(f) {
   const n = liveFiles().filter((x) => x.folder === f.id).length + childFolders(f.id).length;
@@ -493,7 +501,7 @@ function shownItems() {   // what the list in view shows (전체 선택 picks th
 }
 function renderRecent(c) {
   const list = recentList();
-  c.innerHTML = list.length ? '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`;
+  c.innerHTML = list.length ? listHead(`${list.length}편`) + '<div class="list">' + list.map((f) => fileRow(f)).join('') + '</div>' : `<div class="empty-big">${I.clock}<p>아직 읽은 글이 없습니다</p></div>`;
 }
 
 function renderTrash(c) {
@@ -599,6 +607,7 @@ function onContentClick(e) {
   if (Date.now() - pressedAt < 800) return;   // the tap that ended a long press
   const t = e.target;
   const un = t.closest('[data-unresume]'); if (un) { unresume(un.dataset.unresume); return; }
+  if (t.closest('[data-selall]')) { pickAll(); return; }
   const ck = t.closest('[data-ck]');
   if (ck) { const row = ck.closest('.row, .card-w[data-file]'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
   if (S.select) { const cw = t.closest('.card-w[data-file]'); if (cw) { pick({ file: cw.dataset.file }); return; } }
@@ -643,13 +652,7 @@ async function onTools(e) {
     if (k) { S.sort = k; render(); }
   } else if (t === 'select') startSelect();
   else if (t === 'endsel') { S.select = null; render(); }
-  else if (t === 'selall' && S.select) {   // everything in this list, or nothing if it already was
-    const all = shownItems();
-    const every = all.files.every((id) => S.select.files.has(id)) && all.folders.every((id) => S.select.folders.has(id));
-    if (every) { S.select = null; render(); return; }
-    else { all.files.forEach((id) => S.select.files.add(id)); all.folders.forEach((id) => S.select.folders.add(id)); }
-    render();
-  }
+  else if (t === 'selall') pickAll();
   else if (t === 'trash' && S.select) {
     const ops = [...S.select.files].map((id) => ({ op: 'trashFile', id })).concat([...S.select.folders].map((id) => ({ op: 'trashFolder', id })));
     S.select = null; doOps(ops, '휴지통으로 옮겼습니다');
@@ -1172,7 +1175,7 @@ function notePaper(id, t) {
   clearTimeout(infoT); infoT = setTimeout(() => { store.put('kv', 'paperInfo', S.info); if (!S.reader) render(); }, 500);
 }
 const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal, society: r.society, issue: r.issue, date: r.date } : null);
-const pubText = (d) => (d ? d.replace(/^(\d{4})-(\d{2})(?:-\d{2})?$/, (m, y, mo) => `${y}. ${+mo}.`) : '');
+const pubText = (d) => (d ? d.replace(/^(\d{4})-(\d{2})(?:-\d{2})?$/, (m, y, mo) => `${y}. ${+mo}.`).replace(/^(\d{4})$/, '$1.') : '');   // 2018-03 → 2018. 3.; a year alone → 2018.
 function paperLine(f) {   // 학술지 · 학회 · 발간일, as a citation lists them (a narrow screen leaves the society out, so the date stays in view)
   const i = S.info[f.id];
   if (!i || !(i.journal || i.date)) return '';

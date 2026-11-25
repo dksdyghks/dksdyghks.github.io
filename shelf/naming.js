@@ -19,13 +19,16 @@ function initialRule(syl) {   // 두음법칙 for the first syllable of a word: 
   const L2 = L === 5 ? (iotized ? 11 : 2) : (L === 2 && iotized ? 11 : L);   // ㄹ→ㅇ/ㄴ, ㄴ→ㅇ
   return String.fromCharCode(0xAC00 + L2 * 588 + V * 28 + T);
 }
+const WORD_START = /[論](?=[叢集文壇考])/;   // 論叢 論集 論文 論壇 論考 begin a word of their own (法學論叢 → 법학논총)
 export function hangulize(s) {   // 公法學硏究 第18卷 → 공법학연구 제18권
   let out = '', prev = '';
-  for (const ch of String(s)) {
+  const cs = [...String(s)];
+  cs.forEach((ch, i) => {
     const r = IS_HAN.test(ch) ? readHan(ch) : null;
-    if (r) out += /[\p{L}\p{N}]/u.test(prev) ? r : initialRule(r); else out += ch;
+    const start = !/[\p{L}\p{N}]/u.test(prev) || WORD_START.test(ch + (cs[i + 1] || ''));
+    if (r) out += start ? initialRule(r) : r; else out += ch;
     prev = ch;
-  }
+  });
   return out;
 }
 function hanjaName(s) {   // 金大仁 → 김대인 (the surname and the given name's first syllable by the initial-sound rule)
@@ -63,7 +66,10 @@ const DASH = '-–—―－~∼〜─ㅡ';   // ㅡ: a dash as a scan reader rea
 const SUBTITLE_START = new RegExp(`^[${DASH}]`);
 function isSubtitle(s) {
   const t = s.trim();
-  return SUBTITLE_START.test(t) || new RegExp(`[${DASH}]\\s*[*†]*$`).test(t) && t.length < 80
+  if (SUBTITLE_START.test(t)) return true;
+  const sep = t.search(new RegExp(`[:：]\\s|\\s[${DASH}]\\s|[—―]`));
+  if (sep >= 4) return false;   // 제목: 부제를 중심으로 — the title with its subtitle on one line
+  return new RegExp(`[${DASH}]\\s*[*†]*$`).test(t) && t.length < 80
     || /(중심으로|관하여|대하여|위하여|통하여|focusingon|withspecial|withreference)[\s*†)）-]*$/i.test(t.replace(/\s/g, '')) && t.length < 90;
 }
 const hangulShare = (s) => { const h = (s.match(/[가-힣]/g) || []).length, l = (s.match(/[A-Za-z]/g) || []).length; return h + l ? h / (h + l) : 0; };
@@ -170,7 +176,8 @@ const nameCase = (w) => (/[a-z]/.test(w) ? w : w.toLowerCase().replace(/(^|\s)(\
 const NOT_ENGLISH_NAME = /\b(Study|Studies|Law|Laws|Legal|Korea|Korean|Journal|University|Review|Research|Rights?|Public|Court|Constitution\w*|Administrative|Act|Policy|Theory|Analysis|Comparative|System|Procurement|Contract|Focusing|Abstract|Introduction|Department|School|Professor)\b/i;
 function affiliationLine(s) { return /(대학교|대학원|연구원|연구소|법원|재판소|위원회|법무법인)/.test(s) && /(교수|강사|연구원|연구위원|박사|변호사|판사|검사|원장|소장)/.test(s); }
 function cleanNamePart(p) {
-  p = p.replace(/^\s*\d{1,3}\)\s*/, '').replace(/\s*\d{1,3}\)\s*$/, '').replace(/[*†‡§¶#⁎∗]+/g, ' ').replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, ' ')
+  p = p.replace(/[*†‡§¶#⁎∗]+/g, ' ').replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, ' ')
+    .replace(/^(\s*\d{1,3}\))+\s*/, '').replace(/(\s*\d{1,3}\))+\s*$/, '')                 // footnote numbers, also several (조 원 용 1)2))
     .replace(/["“”'’‘`´]+\s*$/, '').replace(/\d+$/, '').trim();
   return p;
 }
@@ -255,6 +262,10 @@ function dateInDoi(s) {   // …/plj.20.3.201908.012 → 2019-08
   const y = +m[1], mo = +m[2];
   return y >= 1950 && y <= 2100 && mo >= 1 && mo <= 12 ? `${y}-${String(mo).padStart(2, '0')}` : null;
 }
+function yearInDoi(s) {   // …/HYLR.2018.35.1.029 → 2018 (only the year)
+  const m = /(?:doi\.org\/|doi:?\s*)[^\s]*?[./]((?:19|20)\d{2})[./]\d/i.exec(s);
+  return m ? m[1] : null;
+}
 function issueIn(s) {
   let m = /제\s*(\d+)\s*([권집])\s*(?:제?\s*(\d+)\s*호)?/.exec(s);
   if (m) return `제${m[1]}${m[2]}${m[3] ? ` 제${m[3]}호` : ''}`;
@@ -293,6 +304,7 @@ function infoFrom(ls, H, titleY, more = []) {   // the header (above the title) 
     if (!info.date) info.date = dateIn(s) || '';
   }
   if (!info.date) for (const L of ls.slice(0, 40)) { const d = dateInDoi(L.s); if (d) { info.date = d; break; } }
+  if (!info.date) for (const L of ls.slice(0, 40)) { const y = yearInDoi(L.s); if (y) { info.date = y; break; } }   // at least the year
   if (info.journal) {
     const k = knownJournal(info.journal);
     if (k) { info.journal = k[0]; if (k[1]) info.society = k[1]; }
@@ -302,7 +314,11 @@ function infoFrom(ls, H, titleY, more = []) {   // the header (above the title) 
 }
 
 // ---------------------------------------------------------------- one page, a cover
-const runningHeads = (pg) => (pg ? lines(pg).filter((L) => L.y < (pg.H || 842) * 0.08 || L.y > (pg.H || 842) * 0.92) : []);
+const runningHeads = (pg) => {   // the lines at the top and foot of a page; a running head set a little lower counts too when it carries its page number
+  if (!pg) return [];
+  const H = pg.H || 842;
+  return lines(pg).filter((L) => L.y < H * 0.08 || L.y > H * 0.92 || (L.y < H * 0.14 && L.s.length <= 60 && /^\s*\d{1,4}\s|\s\d{1,4}\s*$/.test(L.s)));
+};
 function fromArticle(pg, next) {
   const ls = lines(pg);
   if (!ls.length) return null;
