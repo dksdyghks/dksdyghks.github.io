@@ -133,6 +133,7 @@ async function startLibrary() {
   infoAsked = (await store.get('kv', 'paperInfoAsked').catch(() => null)) || {};
   await loadTabs();
   renderShell();
+  laws.lawIndex();   // the names of every filed law, so a citation in a paper links to its law from the first page read
   render();
   await refresh(true);
   syncMarksAll();

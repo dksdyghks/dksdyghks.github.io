@@ -136,9 +136,29 @@ const ABBR = {
   행소법: '행정소송법', 행심법: '행정심판법', 행절법: '행정절차법', 민소법: '민사소송법', 형소법: '형사소송법', 민집법: '민사집행법',
   근기법: '근로기준법', 산안법: '산업안전보건법', 국배법: '국가배상법', 개인정보보호법: '개인정보 보호법', 가정폭력처벌법: '가정폭력범죄의 처벌 등에 관한 특례법',
 };
+// known law names (·/spaces removed → canonical), so a cited article resolves to its filed law even when the name is long
+// and spaced ("국가를 당사자로 하는 계약에 관한 법률 제27조") or abbreviated. Seeded here; lawIndex() adds every filed law, so
+// a citation links only to a law that actually exists — an unknown or foreign name stays plain.
+const NAME_NORM = (s) => String(s || '').replace(/[·ㆍ\s]/g, '');
+const LAW_NAMES = new Map();   // normalized → canonical (with spaces)
+export function addLawNames(ns) { for (const n of ns || []) { const k = NAME_NORM(n); if (k.length >= 2 && !LAW_NAMES.has(k)) LAW_NAMES.set(k, String(n).trim()); } }
+const CORE_NAMES = ['헌법', '헌법재판소법', '공직선거법', '정당법', '정치자금법', '국회법', '정부조직법', '지방자치법', '지방재정법',
+  '지방교부세법', '주민투표법', '국가재정법', '국가공무원법', '지방공무원법', '공무원연금법', '국세기본법', '국세징수법', '지방세법', '관세법',
+  '형법', '형사소송법', '민법', '민사소송법', '민사집행법', '상법', '행정소송법', '행정심판법', '행정절차법', '행정기본법', '행정규제기본법',
+  '질서위반행위규제법', '국가배상법', '행정대집행법', '공공기관의 정보공개에 관한 법률', '개인정보 보호법',
+  '국가를 당사자로 하는 계약에 관한 법률', '지방자치단체를 당사자로 하는 계약에 관한 법률', '도시 및 주거환경정비법',
+  '국토의 계획 및 이용에 관한 법률', '공익사업을 위한 토지 등의 취득 및 보상에 관한 법률', '건축법', '집회 및 시위에 관한 법률',
+  '통신비밀보호법', '국가정보원법', '정보통신망 이용촉진 및 정보보호 등에 관한 법률', '감염병의 예방 및 관리에 관한 법률',
+  '근로기준법', '노동조합 및 노동관계조정법', '국가보안법', '방송법', '교육기본법', '초·중등교육법', '고등교육법', '사립학교법', '병역법',
+  '군사법원법', '부패방지 및 국민권익위원회의 설치와 운영에 관한 법률', '공무원의 노동조합 설립 및 운영 등에 관한 법률'];
+addLawNames([...Object.values(ALIAS), ...Object.keys(ABBR), ...Object.values(ABBR), ...CORE_NAMES]);
+const resolveName = (tight) => ALIAS[tight] || ABBR[tight] || LAW_NAMES.get(tight) || null;
+
 let lawIdx = null;
 export function lawIndex() {   // folder → [name, files] (files: '' for a law alone, else '법률,시행령,시행규칙' and the like)
-  if (!lawIdx) lawIdx = fetch(new URL('./lawidx.json', import.meta.url)).then((r) => { if (!r.ok) throw new Error('index ' + r.status); return r.json(); }).catch(() => { lawIdx = null; return null; });
+  if (!lawIdx) lawIdx = fetch(new URL('./lawidx.json', import.meta.url)).then((r) => { if (!r.ok) throw new Error('index ' + r.status); return r.json(); })
+    .then((idx) => { if (idx) { const ns = []; for (const k in idx) { const [n, f] = idx[k]; if (n) { ns.push(n); if (/시행령/.test(f || '')) ns.push(n + ' 시행령'); if (/시행규칙/.test(f || '')) ns.push(n + ' 시행규칙'); } } addLawNames(ns); } return idx; })
+    .catch(() => { lawIdx = null; return null; });
   return lawIdx;
 }
 // names that begin with, or hold, what is being typed — for the search box: the owner's own laws first (prefer: their
@@ -519,39 +539,138 @@ async function drfCourt(no) {
 // 대법원 2004. 4. 22. 선고 2000두7735 판결 · 대법원 2010. 3. 2.자 2009마1234 결정
 export const courtCite = (d) => `${d.courtName || '법원'} ${d.date ? d.date + (d.kind === '결정' ? '자 ' : ' 선고 ') : ''}${d.no} ${d.kind || '판결'}`;
 
-/* ---------------- citations in a paper's text ---------------- */
-// 헌법 제37조 제2항 · 「공직선거법」 제82조의8 제1항 · 형법 제241조 — the law named right before the article (a "구 법률(…)"
-// with its version in between, or "같은 법", is left alone: the text shown would be today's, not that one)
-const CITE_RE = /(?:「\s*([^」\n]{2,60}?)\s*」|((?:대한민국)?헌법|[가-힣·ㆍ]{1,30}(?:법률|법|령|규칙)))\s*제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항)?/g;
-const NOT_A_LAW = /^(?:같은|동|이|위|본|해당|그|각|이사건|관계|관련|구|신|개정|현행|종전|입|방|불|위|사|공|행정|국제|실정|자연|위헌|합헌|모|부|당해|관련)(?:법률|법|령|규칙)$|^(?:법률|위헌법률|헌법률|수정헌법|기본법|특례법|특별법|조치법|처벌법|시행령|시행규칙|진흥법|촉진법|보호법|관리법|조직법|절차법)$|^(?:미국|독일|프랑스|일본|영국|연방|미|독|불|일|영)/;
+/* ---------------- citations in a paper's text (parser v2) ----------------
+   The law named just before 제N조. A known law (the name dictionary: every filed law, abbreviations) is matched by its longest
+   name, so a long spaced name links whole ("국가를 당사자로 하는 계약에 관한 법률 제27조"); a version note "(…개정된 것)"
+   between the name and 제 is stepped over. A name not in the dictionary (a repealed law, say) links as before, so it still
+   opens 국가법령정보센터 and the 헌재 decisions on it. A foreign jurisdiction governing the clause ("일본 공직선거법",
+   "수정헌법", "(Parliamentary Elections Act 1954)") never links to the same-named Korean law. Lists of articles, 항 and
+   circled numbers, 「」 names and 헌법 전문 are handled. */
+const SUFFIX = /(?:법률|법|령|규칙|헌법|법전)$/;
+// a foreign law written with a Korean name is not the Korean law of that name. A country must govern the name itself —
+// "일본국 민법", "일본의 행정절차법", "영국 1998년 인권법", glued "수정헌법"·"연방선거법" — not merely appear in the sentence
+// ("미국회사로부터 … 근로기준법 제24조", "[2] 영국 해상보험법 제33조, 상법 제693조" are Korean). "우리 민법", "현행 헌법" are Korean
+// always. The one reach-back: a parenthetical source right after a statement about that same foreign law ("일본
+// 형사소송법(…)도 …로 정하고 있다(형사소송법 제199조)"). 인도(引渡)·호주(戶主) are delivery and head of household, not countries.
+const CTRY = '일본|日本|독일|獨逸|미국|美國|프랑스|佛蘭西|영국|英國|영연방|캐나다|대만|臺灣|중국|中國|오스트리아|오스트레일리아|스위스|이탈리아|스페인|핀란드|뉴질랜드|네덜란드|벨기에|유럽연합|러시아|브라질';
+const GOVERNS = new RegExp(`(?:${CTRY})(?:국)?(?:의)?\\s*(?:(?:1[89]|20)\\d{2}\\s*년\\s*|연방\\s*|구\\s*)?$`);
+const GLUED_FOREIGN = /(?:수정|연방)\s*$/;
+const KOREAN_ANCHOR = /(?:우리|우리나라|한국|대한민국|현행|국내)\s*(?:의\s*)?$/;
+const reEsc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function foreignLaw(text, at, law) {
+  const near = text.slice(Math.max(0, at - 24), at);
+  if (KOREAN_ANCHOR.test(near)) return false;
+  if (GOVERNS.test(near) || GLUED_FOREIGN.test(text.slice(Math.max(0, at - 7), at))) return true;
+  if (/\(\s*$/.test(near)) {   // "(형사소송법 제199조" after "일본 형사소송법 … 정하고 있다"
+    const nm = reEsc(NAME_NORM(law)), under = new RegExp(`(?:${CTRY})(?:국)?(?:의)?(?:\\d{4}년)?${nm}`);
+    const sent = NAME_NORM(text.slice(Math.max(0, at - 160), at).split(/[.。!?]\s/).pop());   // a line break in a PDF is a wrap, not a sentence's end
+    const close = text.indexOf(')', at), inParen = NAME_NORM(text.slice(at, close > at ? Math.min(close, at + 200) : at + 200));
+    // …unless the same parenthesis names it again under a country: "(저작권법 제3조 제3항 및 중국 저작권법 제…)" — a contrast, so this one is Korean
+    if (under.test(sent) && !under.test(inParen)) return true;
+  }
+  return false;
+}
+// not a law's name on its own (the bare-name fallback): 같은 법, 동법, a bare 법률·특별법, or a name that begins with a country
+const NOT_A_LAW = /^(?:같은|동)(?:법|법률)(?:시행령|시행규칙)$|^(?:같은|동|이|위|본|해당|그|각|이사건|관계|관련|구|신|개정|현행|종전|입|방|불|위|사|공|행정|국제|실정|자연|위헌|합헌|모|부|당해|관련)(?:법률|법|령|규칙)$|^(?:법률|위헌법률|헌법률|수정헌법|기본법|특례법|특별법|조치법|처벌법|시행령|시행규칙|진흥법|촉진법|보호법|관리법|조직법|절차법)$|^(?:미국|독일|프랑스|일본|영국|연방|미|독|불|일|영)/;
 const SHORT = new Set(['헌법', '민법', '형법', '상법']);   // the two-letter laws; any other two letters before 법 is a word cut by a line break
+// a known name glued to the word before it is taken only after a qualifier (현행헌법, 신민법) or a particle (근거법률인국가공무원법);
+// otherwise it is part of another name — 임대주택법 is not 주택법, 수정헌법 is not 헌법
+const QUALIFIER = /^(?:현행|개정|신|新)$/;   // "the current one" only — 구민법 is the old 의용민법 and 제헌헌법 the 1948 text, not today's
+const PARTICLE = /[의은는을를과와에로인및]$/;   // not 상·중·등: they end nouns as often (보상·집중·평등) — 산업재해보상보험업법 is not 보험업법
+// the law named just before `end` (the index of 제); null when nothing is there
+function lawBefore(text, end) {
+  let s = end;
+  while (s > 0 && /\s/.test(text[s - 1])) s--;
+  if (text[s - 1] === ')') {   // step over "(…개정된 것)" only; any other paren (often a foreign original title) means do not link
+    const open = text.lastIndexOf('(', s - 1), inside = open >= 0 ? text.slice(open + 1, s - 1) : '';
+    const versionNote = /개정|신설|전의\s*것|된\s*것|법률\s*제\s*\d+\s*호|대통령령\s*제\s*\d+\s*호|시행|폐지|제정|이전의/.test(inside) && !/[A-Za-z]/.test(inside);
+    if (open >= 0 && s - open < 100 && versionNote) { s = open; while (s > 0 && /\s/.test(text[s - 1])) s--; }
+    else if (open >= 0) return null;
+  }
+  if (text[s - 1] === '」') {   // 「name」
+    const open = text.lastIndexOf('「', s - 1);
+    if (open >= 0) { const nm = text.slice(open + 1, s - 1).trim(); const canon = resolveName(NAME_NORM(nm)) || (SUFFIX.test(NAME_NORM(nm)) && /^[가-힣·ㆍ\s]{2,50}$/.test(nm) ? nm.replace(/\s+/g, ' ').trim() : null); if (canon) return { law: canon, start: open }; }
+    return null;
+  }
+  // a known law, by its longest name ending here
+  const hard = Math.max(0, s - 45);
+  let start = s;
+  // (the walk stops where an earlier "제N조"·"N항"·"N호" ends: "행정소송법 제14조민사소송법 제58조" is two citations)
+  const tokEnd = (k) => /[조항호]/.test(text[k - 1]) && /\d/.test(text[k - 2] || '');
+  while (start > hard && /[가-힣·ㆍ()\s]/.test(text[start - 1]) && !tokEnd(start)) start--;
+  const span = text.slice(start, s);
+  for (let a = 0; a < span.length; a++) {   // a grows → the candidate shortens; the first known one is the longest
+    const rest = span.slice(a), cand = rest.trimStart();
+    if (cand.length < 2) break;
+    if (!SUFFIX.test(NAME_NORM(cand))) continue;
+    const canon = resolveName(NAME_NORM(cand));
+    if (!canon) continue;
+    const abs = start + a + (rest.length - cand.length);
+    if (abs > 0 && /[가-힣]/.test(text[abs - 1]) && !tokEnd(abs)) {   // glued to the word before it
+      let q = abs; while (q > 0 && /[가-힣]/.test(text[q - 1])) q--;
+      const before = text.slice(q, abs);
+      if (QUALIFIER.test(before)) return { law: canon, start: q };
+      if (!PARTICLE.test(before)) continue;
+    }
+    return { law: canon, start: abs };
+  }
+  // not a known law: the bare name right before 제, as before (a repealed law still opens 국가법령정보센터 and its 헌재 decisions)
+  let b = s; while (b > 0 && s - b < 30 && /[가-힣·ㆍ]/.test(text[b - 1]) && !tokEnd(b)) b--;
+  const tight = text.slice(b, s).replace(/[·ㆍ]/g, '');
+  if (text[b - 1] === '\n') {   // a word cut by a line break ("연⏎방선거운동법"): a foreign name is still foreign
+    let q = b - 1; while (q > 0 && /[가-힣]/.test(text[q - 1])) q--;
+    if (/^(?:미국|독일|프랑스|일본|영국|연방|수정)/.test(text.slice(q, b - 1) + tight)) return null;
+  }
+  if (tight && /(?:법률|법|령|규칙)$/.test(tight) && !NOT_A_LAW.test(tight) && (tight.length > 2 || SHORT.has(tight))) return { law: lawKey(tight) || tight, start: b };
+  return null;
+}
+const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+const circ = (c) => (c ? CIRCLED.indexOf(c) + 1 : 0);
+// a circled number is a 항 only on the same line and not followed by digits: "제37조②", "제77조의2 ①과 동일" — not the
+// 판결요지집's "제53조②777면", nor "제54조⏎③ 원고는…" (the judgment's own list) or a quoted article's "⏎① 근로자가…"
+const ART_TAIL = /제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항|[ \t]*([①-⑳])(?![ \t]*\d))?/g;
+const ART_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항|[ \t]*([①-⑳])(?![ \t]*\d))?/y;
+const PARA_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*(?:제\s*(\d{1,3})\s*항|([①-⑳])(?![ \t]*\d))/y;
+const JEONMUN = /(?:대한민국)?헌법\s*전문/g;
 export function scanArticles(textIn) {
   const out = [];
   if (!textIn) return out;
-  CITE_RE.lastIndex = 0;
+  ART_TAIL.lastIndex = 0;
   let m;
-  while ((m = CITE_RE.exec(textIn))) {
-    const tight = (m[1] || m[2]).replace(/[·ㆍ\s]/g, '');
-    if (m[1] && (!/(?:법률|법|령|규칙)$/.test(tight) || !/^[가-힣]{2,50}$/.test(tight))) continue;   // 「…」 that is not a law's name
-    if (NOT_A_LAW.test(tight) || (tight.length <= 2 && !SHORT.has(tight))) continue;
-    const law = lawKey(tight) || (m[1] ? m[1].replace(/\s+/g, ' ').trim() : tight);   // a long name keeps its spaces (that is how it is filed)
-    out.push({ law, art: Number(m[3]), sub: m[4] ? Number(m[4]) : 0, para: m[5] ? Number(m[5]) : 0, i: m.index, len: m[0].length });
-    // the same law's further articles in a list: 헌법 제10조, 제37조 제2항 및 제21조
-    let at = m.index + m[0].length, n;
-    MORE_RE.lastIndex = at;
-    while ((n = MORE_RE.exec(textIn))) {
-      const k = n[0].search(/제/);
-      out.push({ law, art: Number(n[1]), sub: n[2] ? Number(n[2]) : 0, para: n[3] ? Number(n[3]) : 0, i: n.index + k, len: n[0].length - k });
-      at = MORE_RE.lastIndex;
+  while ((m = ART_TAIL.exec(textIn))) {
+    const tailEnd = m.index + m[0].length, nm = lawBefore(textIn, m.index);
+    if (!nm || foreignLaw(textIn, nm.start, nm.law)) continue;
+    let art = Number(m[1]), sub = m[2] ? Number(m[2]) : 0;
+    out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start });
+    let at = tailEnd;   // the same law's list: a new article, or another 항 of this article
+    for (;;) {
+      PARA_MORE.lastIndex = at; const p = PARA_MORE.exec(textIn);
+      ART_MORE.lastIndex = at; const a = ART_MORE.exec(textIn);
+      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); out.push({ law: nm.law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k }); at = PARA_MORE.lastIndex; }
+      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); out.push({ law: nm.law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
+      else break;
     }
-    CITE_RE.lastIndex = at;
+    ART_TAIL.lastIndex = at;
+  }
+  JEONMUN.lastIndex = 0; let j;   // 헌법 전문 (and the articles after it in "헌법 전문, 제1조 …" belong to 헌법)
+  while ((j = JEONMUN.exec(textIn))) {
+    if (foreignLaw(textIn, j.index, '헌법')) continue;
+    out.push({ law: '헌법', art: '전문', sub: 0, para: 0, i: j.index, len: j[0].length });
+    let at = j.index + j[0].length, a;
+    for (;;) { ART_MORE.lastIndex = at; a = ART_MORE.exec(textIn); if (!a) break; const k = a[0].search(/제/); out.push({ law: '헌법', art: Number(a[1]), sub: a[2] ? Number(a[2]) : 0, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
   }
   return out;
 }
-const MORE_RE = /\s*(?:,|·|ㆍ|및|와|과)\s*제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항)?/y;
-// a court's case cited in a paper: 대법원 2004. 4. 22. 선고 2000두7735 판결, 대판 2010다12345, 서울고법 2019누1234
-const COURT_KINDS = '가합|가단|가소|가|나|다|라|마|그|카합|카단|카|머|두|누|구합|구단|구|도|노|고합|고단|고정|고약|로|모|오|보|초|감도|재다|재두|재도|재노|재나|므|르|드|브|스|으|느합|느단|느|후|허|추|트|러|어|저|처|커|터|퍼|쿠|주|즈|츠|크|티|프|흐';
-const COURT_RE = new RegExp(`((?:19|20)\\d{2}|[4-9]\\d)\\s?(${COURT_KINDS})\\s?(\\d{1,7})(?!\\d)(?![,.]\\d)`, 'g');   // not 1,234
+// a court's case cited in a paper: 대법원 2004. 4. 22. 선고 2000두7735 판결, 대판 2010다12345, 85다카1151, 2016수64 (단기 4287민상…)
+// longer kinds first so 다카 is tried before 다 (alternation is ordered)
+const COURT_KINDS = ['다카', '재다카', '가합', '가단', '가소', '카합', '카단', '카기', '구합', '구단', '고합', '고단', '고정', '고약',
+  '느합', '느단', '감도', '재다', '재두', '재도', '재노', '재나', '재누', '민상', '형상', '행상', '드합', '드단',
+  '가', '나', '다', '라', '마', '머', '두', '누', '구', '도', '노', '로', '모', '오', '보', '초', '수', '무', '므', '르', '드', '카', '브', '스', '으', '느',
+  '후', '허', '추', '트', '러', '어', '저', '처', '커', '터', '퍼', '쿠', '주', '즈', '츠', '크', '티', '프', '흐', '그', '아', '부', '루'].join('|');
+const COURT_RE = new RegExp(`((?:19|20|42)\\d{2}|[4-9]\\d)\\s?(${COURT_KINDS})\\s?(\\d{1,7})(?!\\d)(?![,.]\\d)`, 'g');   // 42xx = 단기; not 1,234
+// a following bare number repeats year·kind (2009두23617, 23624) — not when it starts the next full number ("…, 2010두1234",
+// "…, 2004헌마554") or a date ("…, 2010. 1. 1. 선고")
+const CONT_NUM = /\s*[,·ㆍ]\s*(\d{1,7})(?!\d)(?![,.]\d)(?!\s?[가-힣]{1,3}\s?\d)(?!\s?\.\s?\d{1,2}\s?\.)/y;
 export function scanCourtCases(textIn) {
   const out = [];
   if (!textIn) return out;
@@ -561,10 +680,13 @@ export function scanCourtCases(textIn) {
     const before = textIn.slice(Math.max(0, m.index - 40), m.index), after = textIn.slice(m.index + m[0].length, m.index + m[0].length + 14);
     if (!/(?:법원|대판|선고|판결|결정)/.test(before + after)) continue;   // only where it is plainly a court's case
     if (/[가-힣]$/.test(textIn.slice(Math.max(0, m.index - 1), m.index)) && !/[원판]$/.test(before)) continue;
-    const named = /(대법원|대판|[가-힣]{2,10}(?:고등법원|지방법원|행정법원|가정법원|회생법원|특허법원|고법|지법|행법|가법)(?:\s?[가-힣]{2,4}지원)?)[^가-힣\d]{0,4}(?:(?:19|20)\d{2}\s?\.\s?\d{1,2}\s?\.\s?\d{1,2}\s?\.?\s?(?:자|선고)?\s?)?$/.exec(before);
-    const court = named ? courtName(named[1]) : '';
-    const no = m[1] + m[2] + Number(m[3]);
-    out.push({ no, court, ref: court && court !== '대법원' ? `${court} ${no}` : no, i: m.index, len: m[0].length });
+    const named = /(대법원|대판|[가-힣]{2,10}(?:고등법원|지방법원|행정법원|가정법원|회생법원|특허법원|고법|지법|행법|가법)(?:\s?[가-힣]{2,4}지원)?)[^가-힣\d]{0,4}(?:(?:19|20|42)\d{2}\s?\.\s?\d{1,2}\s?\.\s?\d{1,2}\s?\.?\s?(?:자|선고)?\s?)?$/.exec(before);
+    const court = named ? courtName(named[1]) : '', yr = m[1], kind = m[2];
+    const push = (digits, i, len) => { const no = yr + kind + Number(digits); out.push({ no, court, ref: court && court !== '대법원' ? `${court} ${no}` : no, i, len }); };
+    push(m[3], m.index, m[0].length);
+    let at = m.index + m[0].length, c; CONT_NUM.lastIndex = at;   // list continuation: same court·year·kind
+    while ((c = CONT_NUM.exec(textIn))) { const k = c[0].search(/\d/); push(c[1], c.index + k, c[0].length - k); at = CONT_NUM.lastIndex; }
+    COURT_RE.lastIndex = at;
   }
   return out;
 }

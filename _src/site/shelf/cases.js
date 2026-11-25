@@ -9,6 +9,9 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 // 2004헌마554, 89헌가113; a page's text sometimes spaces them (2004 헌마 554) or breaks the line inside one.
 // The court numbers its cases by year from 88 (1988): two digits until 99, four from 2000.
 const CASE_RE = /((?:19|20)\d{2}|[89]\d)\s?헌\s?([가나다라마바사아])\s?(\d{1,4})(?!\d)/g;
+// 2004헌마554·566(병합), 2004헌마554, 566 → the bare number repeats year·헌·kind. Not when that number is the start of the next
+// full one ("92헌마174, 93헌마186": 93 is a year) or a date ("…554, 2005. 2. 3.") — those are read as what they are.
+const CASE_CONT = /\s*[,·ㆍ]\s*(\d{1,4})(?!\d)(?!\s?[가-힣]{1,3}\s?\d)(?!\s?\.\s?\d{1,2}\s?\.)/y;
 export function scanCases(text) {
   const out = [];
   if (!text) return out;
@@ -22,7 +25,11 @@ export function scanCases(text) {
     else if (y < 2000) y -= 1900;
     const n = Number(m[3]);
     if (!n) continue;
-    out.push({ no: `${y}헌${m[2]}${n}`, i: m.index, len: m[0].length });
+    const kind = m[2];
+    out.push({ no: `${y}헌${kind}${n}`, i: m.index, len: m[0].length });
+    let at = m.index + m[0].length, c; CASE_CONT.lastIndex = at;
+    while ((c = CASE_CONT.exec(text))) { const num = Number(c[1]); if (num) { const k = c[0].search(/\d/); out.push({ no: `${y}헌${kind}${num}`, i: c.index + k, len: c[0].length - k }); } at = CASE_CONT.lastIndex; }
+    CASE_RE.lastIndex = at;
   }
   return out;
 }
