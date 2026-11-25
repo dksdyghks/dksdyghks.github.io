@@ -285,7 +285,7 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .mk.ul.pre { opacity: .8; }
 .mk.flash { animation: flash 1.2s ease; }
 @keyframes flash { 0%, 100% { filter: none; } 30% { filter: brightness(.7) saturate(1.6); } }
-.fn-ref { position: absolute; height: 0; border-bottom: 1.5px dotted #213C6999; }
+.fn-ref, .case-ref { position: absolute; height: 0; border-bottom: 1.5px dotted #213C6999; }
 .hit { position: absolute; background: #FF9F1A55; outline: 1px solid #FF9F1A; border-radius: 2px; mix-blend-mode: multiply; }
 .hit.cur { background: #FF7A0088; outline: 2px solid #E26100; }
 
@@ -381,6 +381,65 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .note-h b { flex: 1; font-size: 13px; color: var(--accent); }
 .note-h .ib { width: 34px; height: 34px; }
 .note-t { padding-right: 10px; font-size: 14.5px; line-height: 1.6; white-space: pre-wrap; }
+/* 헌재 결정: in the reader's box, and in a sheet from 찾기 */
+.case-ln { display: inline; font: inherit; color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+.rd-note.case { display: flex; flex-direction: column; overflow: hidden; padding: 6px 6px 0 16px; }
+.rd-note.case .note-t { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; white-space: normal; padding: 0 12px 16px 0; }
+.cs-name { font-size: 15.5px; font-weight: 700; line-height: 1.45; margin: 2px 0 3px; }
+.cs-meta { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.cs-res { color: var(--accent); font-weight: 700; }
+.cs-sec h4 { margin: 14px 0 4px; font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
+.cs-sec p, .cs-fold p { margin: 0; white-space: pre-line; font-size: 14.5px; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
+.cs-fold { border-top: 1px solid var(--rule); }
+.cs-sec + .cs-fold, .cs-wait + .cs-fold, .cs-meta + .cs-fold { margin-top: 14px; }
+.cs-fold summary { display: flex; align-items: center; gap: 8px; padding: 11px 0; font-size: 13.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; list-style: none; }
+.cs-fold summary::-webkit-details-marker { display: none; }
+.cs-fold summary::before { content: ""; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.cs-fold[open] summary::before { transform: rotate(45deg); }
+.cs-fold summary span { color: var(--muted); font-weight: 500; }
+.cs-fold p { padding-bottom: 14px; }
+.cs-wait { color: var(--muted); font-size: 13.5px; line-height: 1.6; margin: 8px 0 4px; }
+.case-card { display: grid; gap: 4px; width: 100%; text-align: left; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 18px; }
+.case-card b { font-size: 15px; line-height: 1.45; }
+.case-card span { font-size: 13px; color: var(--muted); }
+.case-card em { font-style: normal; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sheet.case-sheet { width: min(640px, 100%); }
+.cs-head { display: flex; align-items: center; gap: 4px; margin: -4px 40px 8px -8px; }
+.cs-head:not(:has(.cs-back)) { margin-left: 0; }
+.sheet .cs-head h2 { margin: 0; font-size: 16.5px; flex: 1; line-height: 1.4; }
+.case-sheet .cs-body { min-height: 60px; }
+/* 판례·법령 */
+.law-home, .law-res { max-width: 860px; }
+.law-ex { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 2px 4px; }
+.law-ex button { height: 36px; padding: 0 15px; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.law-note { color: var(--muted); font-size: 13.5px; line-height: 1.65; margin: 14px 4px; max-width: 640px; }
+.law-note.faint { color: var(--faint); }
+.law-card .law-note { margin: 4px 0 10px; }
+.law-sec { margin-bottom: 6px; }
+.law-list .lrow { display: grid; gap: 3px; width: 100%; text-align: left; padding: 12px 18px; border-top: 1px solid var(--rule); }
+.law-list .lrow:first-child { border-top: 0; }
+.lrow b { font-size: 14.5px; font-weight: 600; line-height: 1.45; }
+.lrow span { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.lrow em { font-style: normal; color: var(--accent); font-weight: 700; }
+.lrow .lr-o { color: var(--ink-2); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.law-list .more { display: block; width: 100%; padding: 12px; border-top: 1px solid var(--rule); color: var(--accent); font-weight: 600; font-size: 13.5px; }
+.law-list > .none { margin: 14px 18px; }
+.law-card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 16px 20px 10px; margin-bottom: 18px; }
+.law-card > .none { margin: 2px 0 8px; }
+.lc-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.lc-h b { font-size: 17px; }
+.lc-tt { font-weight: 600; margin-left: 4px; }
+.lc-h > span { font-size: 12.5px; color: var(--muted); }
+.lc-t p { margin: 0 0 6px; font-size: 15px; line-height: 1.75; white-space: pre-line; word-break: keep-all; overflow-wrap: anywhere; }
+.lc-t p.on { background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 8px; padding: 6px 10px; margin: 0 -10px 6px; }
+.lc-acts { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; border-top: 1px solid var(--rule); margin-top: 10px; padding-top: 8px; }
+.lc-acts .sp { flex: 1; }
+.lc-acts a.btn { text-decoration: none; }
+.law-whole .cs-fold { margin: 4px 0 8px; }
+.lw-ch { font-size: 13px; font-weight: 700; color: var(--accent); margin: 18px 0 2px; }
+.lw-a { display: grid; gap: 1px; width: 100%; text-align: left; padding: 8px 0; border-top: 1px solid var(--rule); min-width: 0; }
+.lw-a b { font-size: 14px; font-weight: 600; }
+.lw-a span { font-size: 13px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 @media print { .rail, .bar, .toolrow, .uploads, .toast { display: none !important; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

@@ -154,14 +154,17 @@ async function route(req, env, ctx) {
 
 // 국가법령정보 공동활용 (law.go.kr DRF): lawSearch.do (search) and lawService.do (one item), as JSON
 const LAW_TARGETS = new Set(['law', 'prec', 'detc', 'expc', 'admrul']);   // 법령, 판례, 헌재결정례, 법령해석례, 행정규칙
-const LAW_PARAMS = new Set(['query', 'display', 'page', 'sort', 'search', 'ID', 'MST', 'LID', 'JO', 'efYd', 'nb', 'org', 'date']);
+const LAW_PARAMS = new Set(['query', 'display', 'page', 'sort', 'search', 'section', 'ID', 'MST', 'LID', 'LM', 'JO', 'efYd', 'nb', 'org', 'curt', 'date', 'knd']);
+// 국가법령정보 OPEN API checks who is asking against what the owner registered there (open.law.go.kr → OPEN API 신청):
+// requests say plainly which site they are made for — the registered domain — and what is making them
+const lawHeaders = (env) => ({ referer: env.LAW_DOMAIN || 'https://0128.kr/', 'user-agent': '0128-bookshelf/1.0 (+https://0128.kr/shelf/)' });
 async function lawApi(env, kind, url) {
   if (!env.LAW_OC) return err('no_key', 503);
   const target = url.searchParams.get('target') || 'law';
   if (!LAW_TARGETS.has(target)) return err('bad_target', 400);
   const q = new URLSearchParams({ OC: env.LAW_OC, target, type: 'JSON' });
   for (const [k, v] of url.searchParams) if (LAW_PARAMS.has(k) && v.length <= 200) q.set(k, v);
-  const up = await fetch(`https://www.law.go.kr/DRF/${kind === 'item' ? 'lawService' : 'lawSearch'}.do?${q}`, { cf: { cacheTtl: 21600, cacheEverything: true } });
+  const up = await fetch(`https://www.law.go.kr/DRF/${kind === 'item' ? 'lawService' : 'lawSearch'}.do?${q}`, { headers: lawHeaders(env), cf: { cacheTtl: 21600, cacheEverything: true } });
   return passOn(up, env.LAW_OC);
 }
 
@@ -202,16 +205,16 @@ async function kciOai(url) {
 async function diag(req, env) {
   const tries = [
     ['kci', 'https://open.kci.go.kr/oai/request?verb=Identify'],
-    ['law', env.LAW_OC && `https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(env.LAW_OC)}&target=law&type=JSON&display=1&query=${encodeURIComponent('헌법')}`],
+    ['law', env.LAW_OC && `https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(env.LAW_OC)}&target=law&type=JSON&display=1&query=${encodeURIComponent('헌법')}`, lawHeaders(env)],
     ['assembly', env.ASSEMBLY_KEY && `https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn?KEY=${encodeURIComponent(env.ASSEMBLY_KEY)}&Type=json&pIndex=1&pSize=1&AGE=22`],
-    ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&dataType=JSON&numOfRows=1&pageNo=1&base_date=20250101&base_time=0600&nx=60&ny=127`],
+    ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
   ];
   const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY].filter(Boolean);
   const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, results: {} };
-  await Promise.all(tries.map(async ([k, u]) => {
+  await Promise.all(tries.map(async ([k, u, headers]) => {
     if (!u) { out.results[k] = { status: 'no key' }; return; }
     try {
-      const r = await fetch(u, { signal: AbortSignal.timeout(12000) });
+      const r = await fetch(u, { headers: headers || {}, signal: AbortSignal.timeout(12000) });
       let t = (await r.text()).slice(0, 400);
       for (const key of keys) t = t.split(key).join('');
       out.results[k] = { status: r.status, head: t };

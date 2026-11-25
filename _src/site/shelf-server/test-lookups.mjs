@@ -8,11 +8,11 @@ const dir = '/tmp/claude-0/-home-user/32c96ca5-ace8-5bfb-8ce5-1b09a2bc0eb1/scrat
 fs.rmSync(dir, { recursive: true, force: true });
 const env = { BUCKET: new MockR2(dir), ALLOWED_ORIGINS: ORIGIN, PEPPER, PIN_HASH: crypto.createHash('sha256').update(PEPPER + ':' + PIN).digest('hex') };
 // the outside sites: answer with what was asked (and echo the key the way law.go.kr links do)
-const realFetch = globalThis.fetch, asked = [];
+const realFetch = globalThis.fetch, asked = [], sentHeaders = [];
 globalThis.fetch = async (url, init) => {
   const u = String(url);
   if (u.startsWith('https://www.law.go.kr/') || u.startsWith('https://open.assembly.go.kr/')) {
-    asked.push(u);
+    asked.push(u); sentHeaders.push(new Headers((init && init.headers) || {}));
     return new Response(JSON.stringify({ asked: u, link: '/DRF/lawService.do?OC=' + OC + '&KEY=' + KEY }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
   return realFetch(url, init);
@@ -30,11 +30,13 @@ let r = await call('/law/search?target=law&query=' + encodeURIComponent('행정�
 let b = await r.json(), u = new URL(asked.at(-1));
 ok(r.status === 200 && u.pathname === '/DRF/lawSearch.do' && u.searchParams.get('OC') === OC && u.searchParams.get('target') === 'law' && u.searchParams.get('type') === 'JSON' && u.searchParams.get('query') === '행정기본법' && u.searchParams.get('display') === '5', 'law search: asked with the key, the target and the words');
 ok(!u.searchParams.has('evil'), 'law: parameters outside the list are not passed on');
+ok(sentHeaders.at(-1).get('referer') === 'https://0128.kr/' && /0128-bookshelf/.test(sentHeaders.at(-1).get('user-agent') || ''), 'law: says plainly which site asks (the registered domain) and what is asking');
 ok(!JSON.stringify(b).includes(OC), 'law: the key is taken out of the answer');
 r = await call('/law/item?target=prec&ID=123456', T); u = new URL(asked.at(-1));
 ok(r.status === 200 && u.pathname === '/DRF/lawService.do' && u.searchParams.get('target') === 'prec' && u.searchParams.get('ID') === '123456', 'law item: one 판례 by its number');
 ok((await call('/law/search?target=../../x&query=a', T)).status === 400, 'law: unknown target -> 400');
 r = await call('/assembly/TVBPMBILL11?BILL_NAME=' + encodeURIComponent('행정기본법') + '&KEY=other', T); b = await r.json(); u = new URL(asked.at(-1));
+ok(!sentHeaders.at(-1).get('referer'), 'assembly: no 법령 domain sent elsewhere');
 ok(r.status === 200 && u.pathname === '/portal/openapi/TVBPMBILL11' && u.searchParams.get('KEY') === KEY && u.searchParams.get('Type') === 'json' && u.searchParams.get('BILL_NAME') === '행정기본법', 'assembly: asked with the key and the bill name (a KEY sent along is ignored)');
 ok(!JSON.stringify(b).includes(KEY), 'assembly: the key is taken out of the answer');
 ok((await call('/assembly/..%2Fx', T)).status === 400 || (await call('/assembly/a', T)).status === 400, 'assembly: odd service names -> 400');
