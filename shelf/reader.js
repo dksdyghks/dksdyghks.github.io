@@ -1,12 +1,13 @@
 // The reader: pages in one continuous column, pinch or buttons to zoom; text is chosen first, then marked.
-//   A finger scrolls; a long press chooses the word under it, and moving on (without lifting) takes in more, letter by letter.
+//   A finger scrolls; a long press chooses the word under it, and moving on (without lifting) takes in more, letter by letter;
+//   while it does (and while it moves a handle) a loupe above it shows the letters it covers, magnified.
 //   The mouse drags over the text to choose it. Either way, two handles then set its ends exactly, and a small bar offers
 //   형광펜 and 밑줄 colours and 복사. An Apple Pencil marks at once, in the way the last mark was made.
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
 import { lib, pageItems } from './pdfkit.js';
 import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
-import { scanCases, linkCases, caseView, judgmentView, wireCase, cite } from './cases.js';
-import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText } from './laws.js';
+import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js';
+import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
 // soft tints: butter, mint, sky, pink, lilac, apricot.
@@ -35,6 +36,17 @@ function penDraw(v) {
   if (v === -2) return svg(STROKES.tri, 0.48);
   if (v === -1) return svg(STROKES.x, 0.2);
   return '';
+}
+// a line's end inside the letters of a range, until it is known whether the two lines meet across a space (rangeText)
+const LINE_END = '\uE000';
+const SYLLABLE = '\u3131-\u318E\uAC00-\uD7A3\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF';   // Hangul and Hanja
+const JOIN_WORD = new RegExp(`([${SYLLABLE}])${LINE_END}(?=[${SYLLABLE}])`, 'g');
+// a long press chooses a word only this near the finger, in heights of its line (caretAt's distance, in which a step up or
+// down counts four times one across: a finger between two lines, or a little before a line's first letter, still chooses)
+const NEAR = 4;
+function joinLines(s) {
+  return s.replace(/\uE000[\s\uE000]*/g, LINE_END)   // (lines passed over in between, and their spaces, as one line end)
+    .replace(JOIN_WORD, '$1').replace(/^\uE000|\uE000$/g, '').replace(/\uE000/g, '\n');
 }
 const MAX_PIXELS = 12e6;   // per canvas (Safari's hard limit is 16.7M)
 const KEEP = 2;            // pages kept rendered beyond the visible ones
@@ -98,7 +110,7 @@ export class Reader {
     const r = this.root = el('div', 'rd');
     r.innerHTML = `
       <header class="rd-top">
-        <button class="ib rd-back" aria-label="책장으로">${ICON.back}<span>책장</span></button>
+        <button class="ib rd-back" aria-label="서재로">${ICON.back}<span>서재</span></button>
         <div class="rd-title"><b></b></div>
         <div class="rd-acts">
           <button class="ib" data-a="search" aria-label="찾기">${ICON.search}</button>
@@ -586,6 +598,8 @@ export class Reader {
       if (n.nodeType === 1) { if (n.tagName === 'BR') { flat += '\n'; map.push(null); } continue; }   // a line ends: nothing runs over it
       for (let i = 0; i < n.data.length; i++) { flat += n.data[i]; map.push([n, i]); }
     }
+    // (HWP's ｢ ｣ and 뺷 뺸 read as 「 」 and 『 』, one letter for one: each place found is still the letter laid on the page)
+    flat = corners(flat);
     const found = [
       ...scanCases(flat).map((c) => ({ ...c, kind: 'case' })),
       ...scanCourtCases(flat).map((c) => ({ ...c, kind: 'court' })),
@@ -821,28 +835,116 @@ export class Reader {
     if (!this.$('.rd-panel').hidden && this.tab === 'marks') this.showTab('marks');
   }
 
-  // Text range -> one mark per page (boxes merged line by line)
-  marksFromRange(range, kind, color) {
+  // Text range -> one mark per page (boxes merged line by line). text = false: the boxes alone (the tint of what is being
+  // chosen, redrawn at every move of a finger, needs no letters)
+  marksFromRange(range, kind, color, text = true) {
     const out = [];
+    for (const q of this.rangeParts(range)) {
+      const rects = q.keep ? this.rectsFor(null, q.p, this.keptRects(q)) : this.rectsFor(q.sub, q.p);
+      if (!rects.length) continue;
+      const t = text ? this.clean(this.rangeText(q.sub, q.keep)) : q.sub.toString();
+      if (!t.trim()) continue;
+      out.push({ id: uid(), p: q.p.n, kind, color, rects, text: text ? t : '', t: Date.now() });
+    }
+    return out;
+  }
+  // what is copied of a range: the letters of its part on each page, read as one text (a word broken at the page's end
+  // joined as at a line's end)
+  rangeCopy(range) { return this.clean(joinLines(this.rangeParts(range).map((q) => this.rangeText(q.sub, q.keep, true)).join(LINE_END))); }
+  // The part of a range on each page it touches. A range over a page break follows the text layer's order, which is the
+  // PDF's: the foot of a page (its footnotes, its page number) comes after its last line of text, and the next page's
+  // running head before its first. A sentence that runs on over the break would take all of that in, so a range over
+  // pages keeps, on each, only the letters set no smaller than those it is chosen in (the body's, or a heading's): the
+  // small print between is passed over in the tint, the mark and what is copied. (keep: those letters' spans; within one
+  // page nothing is passed over, as before.)
+  rangeParts(range) {
+    const parts = [];
     for (const p of this.pages) {
       if (!p.tl || !range.intersectsNode(p.tl)) continue;
       const sub = document.createRange();
       const lr = document.createRange(); lr.selectNodeContents(p.tl);
-      if (range.compareBoundaryPoints(Range.START_TO_START, lr) > 0) sub.setStart(range.startContainer, range.startOffset); else sub.setStart(lr.startContainer, lr.startOffset);
-      if (range.compareBoundaryPoints(Range.END_TO_END, lr) < 0) sub.setEnd(range.endContainer, range.endOffset); else sub.setEnd(lr.endContainer, lr.endOffset);
-      const rects = this.rectsFor(sub, p);
-      const raw = sub.toString();
-      const text = this.clean(raw);
-      if (!rects.length || !text.trim()) continue;
-      out.push({ id: uid(), p: p.n, kind, color, rects, text, t: Date.now() });
+      const from = range.compareBoundaryPoints(Range.START_TO_START, lr) > 0, to = range.compareBoundaryPoints(Range.END_TO_END, lr) < 0;
+      if (from) sub.setStart(range.startContainer, range.startOffset); else sub.setStart(lr.startContainer, lr.startOffset);
+      if (to) sub.setEnd(range.endContainer, range.endOffset); else sub.setEnd(lr.endContainer, lr.endOffset);
+      parts.push({ p, sub, from, to });
+    }
+    if (parts.length < 2) return parts;
+    const sizeOf = (node, q) => { const sp = node && (node.nodeType === 3 ? node.parentNode : node); return sp && sp.tagName === 'SPAN' && q ? this.spanSize(sp, q.p.el.getBoundingClientRect().height) : 0; };
+    // the size the selection is set in: at its start (a heading or the body), never above the body's own (a bracket or a
+    // comma is set a size larger)
+    const at = sizeOf(range.startContainer, parts[0]) || sizeOf(range.endContainer, parts[parts.length - 1]);
+    for (const q of parts) {
+      const body = this.bodySize(q.p), ref = Math.min(at || body, body || at) * 0.88;
+      if (!ref) continue;
+      const H = q.p.el.getBoundingClientRect().height;
+      q.keep = new Set();
+      for (const sp of q.p.tl.querySelectorAll('span')) {
+        if (!sp.firstChild || sp.firstChild.nodeType !== 3 || !q.sub.intersectsNode(sp)) continue;   // (letters, not a span of spans)
+        if (this.spanSize(sp, H) >= ref) q.keep.add(sp);
+      }
+    }
+    return parts;
+  }
+  // a span's type size, as a share of its page's height H (the same at any zoom)
+  spanSize(sp, H) {
+    const r = sp.getBoundingClientRect();
+    return H && r.width ? r.height / H : 0;
+  }
+  // the size most of a page's letters are set in (kept with its text layer: a layer drawn afresh is measured again)
+  bodySize(p) {
+    if (p.bodySz && p.bodySz.tl === p.tl) return p.bodySz.v;
+    const acc = new Map(), H = p.el.getBoundingClientRect().height;
+    for (const sp of p.tl.querySelectorAll('span')) {
+      if (!sp.firstChild || sp.firstChild.nodeType !== 3) continue;
+      const n = sp.textContent.replace(/\s/g, '').length; if (!n) continue;
+      const k = Math.round(this.spanSize(sp, H) * 4000); if (!k) continue;
+      acc.set(k, (acc.get(k) || 0) + n);
+    }
+    let v = 0, best = -1;
+    for (const [k, n] of acc) if (n > best) { best = n; v = k / 4000; }
+    if (v) p.bodySz = { tl: p.tl, v };   // (not while the page has no size yet)
+    return v;
+  }
+  // the screen boxes of the kept letters of a part (each span clipped to the part's ends)
+  keptRects(q) {
+    const out = [], r = document.createRange();
+    for (const sp of q.keep) {
+      const t = sp.firstChild; if (!t) continue;
+      r.selectNodeContents(sp);
+      if (t === q.sub.startContainer) r.setStart(t, q.sub.startOffset);
+      if (t === q.sub.endContainer) r.setEnd(t, q.sub.endOffset);
+      for (const b of r.getClientRects()) out.push(b);
     }
     return out;
   }
   clean(s) { try { return this.A.cleanCopy(s); } catch (e) { return String(s).replace(/\s+/g, ' ').trim(); } }
-  rectsFor(range, p) {
+  // The letters of a range as they read. The text layer ends each line with a <br>, which has no letter, so toString() runs
+  // the last word of a line into the first of the next. Which is right depends on the script: Korean (and Hanja) is set
+  // breaking a word at any syllable, so two syllables meeting at a line's end are mostly one word ("시스템 미비|로 인해") and
+  // are joined as they are; anything else (Latin, digits, a full stop) meets the next line across a space, which clean()
+  // gives a line break (a word broken at a hyphen is joined without one). A line that ends in a space keeps it.
+  // keep: only these spans' letters (a part of a range over pages); open: leave a line end at the very end or start
+  // unresolved, for rangeCopy to join the parts of the next page to
+  rangeText(range, keep = null, open = false) {
+    const c = range.commonAncestorContainer;
+    let s = '';
+    if (c.nodeType === 3) s = range.toString();   // (within one run of letters)
+    else {
+      const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (!range.intersectsNode(n)) continue;
+        if (n.nodeType === 1) { if (n.tagName === 'BR') s += LINE_END; continue; }
+        if (keep && n.parentNode.tagName === 'SPAN' && !keep.has(n.parentNode) && n.data.trim()) continue;   // (a space stays)
+        s += n.data.slice(n === range.startContainer ? range.startOffset : 0, n === range.endContainer ? range.endOffset : n.data.length);
+      }
+    }
+    s = s.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '');   // (some journals' fonts map their own brackets 뺷 뺸 to control codes)
+    return open ? s : joinLines(s);
+  }
+  rectsFor(range, p, list = range.getClientRects()) {
     const pr = p.el.getBoundingClientRect();
     const boxes = [];
-    for (const r of range.getClientRects()) {
+    for (const r of list) {
       if (r.width < 0.5 || r.height < 0.5) continue;
       const x0 = Math.max(r.left, pr.left), x1 = Math.min(r.right, pr.right), y0 = Math.max(r.top, pr.top), y1 = Math.min(r.bottom, pr.bottom);
       if (x1 - x0 < 0.5 || y1 - y0 < 0.5) continue;
@@ -881,7 +983,7 @@ export class Reader {
     if (this.before(s.b, s.a)) { const t = s.a; s.a = s.b; s.b = t; }
     let range; try { range = this.rangeBetween(s.a, s.b); } catch (e) { return false; }
     s.range = range;
-    const list = this.marksFromRange(range, 'hl', '#2F6FEB');
+    const list = this.marksFromRange(range, 'hl', '#2F6FEB', false);
     for (const m of list) {
       const layer = this.pages[m.p].el.querySelector('.pg-marks');
       for (const r of m.rects) {
@@ -904,7 +1006,10 @@ export class Reader {
     const first = list[0], last = list[list.length - 1];
     if (first) handle(first, first.rects[0], 'a');
     if (last) handle(last, last.rects[last.rects.length - 1], 'b');
-    s.text = list.map((m) => m.text).join(' ');
+    // kept for the loupe, which draws them without asking the page again: the tint, and each end as a caret on its line
+    const end = (m, r, k) => ({ p: m.p, x: k === 'a' ? r[0] : r[0] + r[2], y: r[1], h: r[3] });
+    s.boxes = list;
+    s.ends = first ? { a: end(first, first.rects[0], 'a'), b: end(last, last.rects[last.rects.length - 1], 'b') } : null;
     return list.length > 0;
   }
   clearSel() {
@@ -948,11 +1053,135 @@ export class Reader {
         this.clearSel(); this.hidePop();
         this.addMarks(this.marksFromRange(range, kind, color));
       } else if (b.dataset.act === 'copy') {
-        this.copy(this.clean(this.sel.range.toString()));
+        this.copy(this.rangeCopy(this.sel.range));
         this.clearSel(); this.hidePop();
       }
     };
     this.showPop('sel', rect, true);
+  }
+
+  /* ---------------- the loupe ---------------- */
+  // A finger choosing text hides the very letters it is on. While it presses (before the word is taken), drags the end of
+  // what it took or moves a handle, a small magnified view of the letters under it floats above it (below it when there is
+  // no room above), the end being moved marked as a caret. It is copied from the page pictures already on screen (the PDF
+  // is never drawn again for it), once a frame, every position read before anything is drawn: it follows the finger
+  // without holding up the drag. The mouse needs none: a pointer hides nothing.
+  // x, y: the finger; tx, ty: where the end is looked for (a handle is held a little away from it); end: 'a', 'b' or none
+  loupeAt(x, y, tx = x, ty = y, end = null) {
+    let L = this.lp;
+    if (!L) {
+      L = this.lp = { el: el('div', 'rd-loupe'), cv: document.createElement('canvas'), raf: 0, on: false };
+      L.el.setAttribute('aria-hidden', 'true');
+      L.el.appendChild(el('div')).appendChild(L.cv);
+      this.root.appendChild(L.el);
+      L.ctx = L.cv.getContext('2d', { alpha: false });
+    }
+    if (!L.on) {   // measured afresh each time it comes (a phone turned, an iPad split since the last time)
+      L.on = true; L.shown = false; L.below = false;
+      L.w = Math.round(clamp(this.root.clientWidth * 0.44, 150, 216)); L.h = Math.round(L.w * 0.4);
+      L.dpr = Math.min(window.devicePixelRatio || 1, 3);
+      L.k = clamp(1.9 / this.scale, 1.6, 2);   // the small type of a page fitted to a phone twice as large, larger type a little less
+      const cw = Math.round(L.w * L.dpr), ch = Math.round(L.h * L.dpr);
+      if (L.cv.width !== cw || L.cv.height !== ch) { L.cv.width = cw; L.cv.height = ch; }
+      L.el.style.width = L.w + 'px'; L.el.style.height = L.h + 'px';
+      const bg = getComputedStyle(this.host).backgroundColor;
+      L.desk = bg && !/^transparent$|,\s*0\)$/.test(bg) ? bg : '#E6E9EE';   // around the pages, as on the screen
+      const top = this.$('.rd-top');
+      L.inset = top ? Math.max(0, parseFloat(getComputedStyle(top).paddingTop) - 6) : 0;   // a phone's status bar: not under it
+    }
+    L.x = x; L.y = y; L.tx = tx; L.ty = ty; L.end = end;
+    if (!L.raf) L.raf = requestAnimationFrame(() => { L.raf = 0; this.loupePaint(); });
+  }
+  // the loupe for what the finger is doing: pressing (nothing chosen yet), taking in more after a long press, or moving a
+  // handle (looked for at the handle's own distance from the finger, as move() does)
+  loupeFollow(x, y) {
+    const d = this.drag;
+    if (d && d.mode === 'handle') this.loupeAt(x, y, x + d.ox, y + d.oy, d.end);
+    else if (d && d.mode === 'touchsel') this.loupeAt(x, y, x, y, d.lend || 'b');
+    else this.loupeAt(x, y);
+  }
+  loupeOff() {
+    clearTimeout(this.loupeT);
+    const L = this.lp;
+    if (!L || !L.on) return;
+    L.on = false;
+    if (L.raf) { cancelAnimationFrame(L.raf); L.raf = 0; }
+    L.el.classList.remove('on');
+  }
+  loupePaint() {
+    const L = this.lp; if (!L || !L.on || this.dead) return;
+    // read: the screen, the end of what is chosen, the pages around the point
+    const R = this.root.getBoundingClientRect(), P = this.pagesEl.getBoundingClientRect();
+    const s = this.sel, e = s && s.ends && L.end ? s.ends[L.end] : null, er = e && this.pages[e.p] ? this.pages[e.p].el.getBoundingClientRect() : null;
+    const caret = er ? { x: er.left + e.x * er.width, y: er.top + e.y * er.height, h: e.h * er.height } : null;
+    const sw = L.w / L.k, sh = L.h / L.k;
+    let sx = L.tx - sw / 2;   // the part of the screen magnified: across, where the finger is;
+    // up and down, the line of the end being moved while it is in view (it stays still as the finger slides along it, the
+    // finger's own wobble not shaking it), else the finger
+    const held = caret && Math.abs(caret.y + caret.h / 2 - L.ty) < sh / 2, mid = held ? caret.y + caret.h / 2 : L.ty, sy = mid - sh / 2;
+    // and across, while it holds that line, never so far from the end that the end is out of it (a finger run on past
+    // the end of a line would show only the blank margin): the end stays at least a few letters inside its edge
+    if (held) { const m = Math.min(sw * 0.2, 24); sx = clamp(sx, caret.x - sw + m, caret.x - m); }
+    const near = [], n = this.pageAtY(mid - P.top);
+    for (let i = Math.max(0, n - 1); i <= Math.min(this.N - 1, n + 1); i++) {
+      const p = this.pages[i], r = p.el.getBoundingClientRect();
+      if (r.right > sx && r.left < sx + sw && r.bottom > sy && r.top < sy + sh) near.push([p, r]);
+    }
+    // where it goes: above the finger, clear of the fingertip and of the line being chosen; below it at the top of the
+    // screen (it stays below until there is room to spare above, so it does not flicker at the edge)
+    const gap = 30, top = R.top + L.inset + 4, up = Math.min(L.y, L.ty) - gap - L.h;
+    L.below = up < top + (L.below ? 14 : 0);
+    const lx = clamp(L.x - L.w / 2, R.left + 6, R.right - L.w - 6);
+    const ly = clamp(L.below ? Math.max(L.y, L.ty) + gap + 16 : up, top, R.bottom - L.h - 6);
+    // write: only the loupe's own picture and its place (a transform: nothing on the page is laid out again)
+    const ctx = L.ctx, z = L.k * L.dpr;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = L.desk; ctx.fillRect(0, 0, L.cv.width, L.cv.height);
+    ctx.setTransform(z, 0, 0, z, -sx * z, -sy * z);   // screen points → the loupe's pixels
+    for (const [p, r] of near) {
+      const x0 = Math.max(sx, r.left), x1 = Math.min(sx + sw, r.right), y0 = Math.max(sy, r.top), y1 = Math.min(sy + sh, r.bottom);
+      ctx.fillStyle = '#fff'; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      const c = p.canvas;   // (only the part shown is taken from the page's picture)
+      if (c && c.width) { const kx = c.width / r.width, ky = c.height / r.height; ctx.drawImage(c, (x0 - r.left) * kx, (y0 - r.top) * ky, (x1 - x0) * kx, (y1 - y0) * ky, x0, y0, x1 - x0, y1 - y0); }
+      ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+      this.loupeMarks(ctx, p, r, [sx, sy, sw, sh]);
+      ctx.restore();
+    }
+    if (caret) {   // the end being moved, as a caret of the handles' blue, the same weight at any magnification
+      ctx.setTransform(L.dpr, 0, 0, L.dpr, 0, 0);
+      const cx = (caret.x - sx) * L.k, y0 = (caret.y - sy) * L.k, y1 = y0 + caret.h * L.k;
+      ctx.fillStyle = '#2F6FEB';
+      ctx.fillRect(cx - 1, y0 - 1, 2, y1 - y0 + 2);
+      ctx.beginPath(); ctx.arc(cx, L.end === 'a' ? y0 - 4 : y1 + 4, 4, 0, 2 * Math.PI); ctx.fill();
+    }
+    L.el.style.transform = `translate3d(${Math.round(lx - R.left)}px, ${Math.round(ly - R.top)}px, 0)`;   // (whole pixels: a sharp picture)
+    L.el.classList.toggle('below', L.below);
+    if (!L.shown) { L.shown = true; L.el.classList.add('on'); }
+  }
+  // over a page in the loupe: its marks and what is chosen, as the page shows them — a highlighter's boxes of one colour as
+  // one coat, an underline's line, the chosen text's light blue — from their page-relative boxes (v: the part shown)
+  loupeMarks(ctx, p, r, v) {
+    const fit = (q) => { const x = r.left + q[0] * r.width, y = r.top + q[1] * r.height, w = q[2] * r.width, h = q[3] * r.height; return x < v[0] + v[2] && x + w > v[0] && y < v[1] + v[3] && y + h > v[1] ? [x, y, w, h] : null; };
+    const coat = (rects, color, alpha) => {
+      ctx.beginPath();
+      let any = false;
+      for (const q of rects) { const b = fit(q); if (b) { ctx.rect(b[0], b[1] - 1, b[2], b[3] + 2); any = true; } }
+      if (!any) return;
+      ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.fill();
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    };
+    const hl = new Map(), ul = [];
+    for (const m of this.marks()) {
+      if (m.p !== p.n || !m.rects) continue;
+      if (m.kind === 'hl') { if (!hl.has(m.color)) hl.set(m.color, []); hl.get(m.color).push(...m.rects); } else ul.push(m);
+    }
+    for (const [color, rects] of hl) coat(rects, color, 0.45);
+    for (const m of ul) {
+      ctx.fillStyle = m.color;
+      for (const q of m.rects) { const b = fit(q); if (b) { const t = Math.max(1.5, b[3] * 0.08); ctx.fillRect(b[0], b[1] + b[3] - t, b[2], t); } }
+    }
+    const s = this.sel;
+    if (s && s.boxes) for (const m of s.boxes) if (m.p === p.n) coat(m.rects, '#2F6FEB', 0.26);
   }
 
   /* ---------------- input ---------------- */
@@ -991,7 +1220,7 @@ export class Reader {
     s.addEventListener('pointerdown', (e) => this.down(e));
     s.addEventListener('pointermove', (e) => this.move(e));
     s.addEventListener('pointerup', (e) => this.up(e));
-    s.addEventListener('pointercancel', () => { this.endPress(); if (this.drag && this.drag.mode !== 'mark') { this.drag = null; if (this.sel) this.selPop(); } else this.cancelDrag(); });
+    s.addEventListener('pointercancel', () => { this.endPress(); this.loupeOff(); if (this.drag && this.drag.mode !== 'mark') { this.drag = null; if (this.sel) this.selPop(); } else this.cancelDrag(); });
     // once a long press has chosen a word, the finger no longer scrolls: it moves the end of what is chosen
     s.addEventListener('touchmove', (e) => { if (this.drag && (this.drag.mode === 'touchsel' || this.drag.mode === 'handle')) e.preventDefault(); }, { passive: false });
     s.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('.textLayer, .sel-h')) e.preventDefault(); });
@@ -1029,8 +1258,11 @@ export class Reader {
   }
 
   // caret position under a point: by the page's own letters, the line nearest the point first (the middle of each line, so a
-  // point between two lines goes to the nearer, and a tall box of one line does not reach into the next), then the letter
-  caretAt(x, y) {
+  // point between two lines goes to the nearer, and a tall box of one line does not reach into the next), then the letter.
+  // o.line: y is the middle of the line a finger is held on (stay()): a letter of that line, however far past its end the
+  // finger has gone (a paragraph's short last line is taken to its end, not traded for the full line above it);
+  // o.near: no farther than this many of its line's heights from a letter (a press on the margin chooses nothing)
+  caretAt(x, y, o = {}) {
     const pgEl = document.elementsFromPoint(x, y).map((e) => e.closest && e.closest('.pg')).find(Boolean);
     const p = pgEl ? this.pages[Number(pgEl.dataset.n)] : null;
     if (!p || !p.tl) return null;
@@ -1041,10 +1273,11 @@ export class Reader {
       const h = Math.max(4, r.height), cy = (r.top + r.bottom) / 2;
       const dy = Math.max(0, Math.abs(y - cy) - h * 0.35);
       const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
-      const d = dy * 4 + dx;   // the same line before a nearer word on another
+      const d = o.line && dy > 0 ? 1e6 + dy * 4 + dx : dy * 4 + dx;   // the same line before a nearer word on another
       if (d < bd) { bd = d; best = { sp, r }; }
     }
-    if (!best || bd > 160) return null;
+    if (o.line && bd < 1e6) bd = 0; else if (bd >= 1e6) bd -= 1e6;
+    if (!best || bd > (o.near != null ? o.near * Math.max(4, best.r.height) : 160)) return null;
     const t = best.sp.firstChild;
     if (x <= best.r.left) return { node: t, offset: 0 };
     if (x >= best.r.right) return { node: t, offset: t.length };
@@ -1080,6 +1313,7 @@ export class Reader {
       const px = hr.left + hr.width / 2, py = hd.dataset.h === 'a' ? hr.bottom - lh / 2 : hr.top + lh / 2;   // the middle of its line
       this.drag = { mode: 'handle', end: hd.dataset.h, moved: false, pid: e.pointerId, x: e.clientX, y: e.clientY, ox: px - e.clientX, oy: py - e.clientY, pointerType: e.pointerType };
       capture(); e.preventDefault(); this.hidePop();
+      if (e.pointerType !== 'mouse') this.loupeFollow(e.clientX, e.clientY);   // the finger is on the handle: its end shows above
       return;
     }
     if (e.pointerType === 'pen') {
@@ -1098,30 +1332,42 @@ export class Reader {
     }
     if (!onText) return;
     this.endPress();
-    this.press = { x: e.clientX, y: e.clientY, pid: e.pointerId };
+    this.press = { x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, pid: e.pointerId };   // (cx, cy: where it rests now)
     this.pressT = setTimeout(() => this.longPress(), 420);
+    // the loupe a moment into the press, close to the long press itself: not for a tap (a slow one on a mark or a cited
+    // case included), nor for a scroll (which ends the press before), nor for a finger resting on the margin, away from
+    // any letter (which chooses nothing either)
+    this.loupeT = setTimeout(() => { const q = this.press; if (q && !this.drag && !this.two && this.caretAt(q.cx, q.cy, { near: NEAR })) this.loupeFollow(q.cx, q.cy); }, 300);
   }
-  endPress() { clearTimeout(this.pressT); this.press = null; }
+  endPress() { clearTimeout(this.pressT); clearTimeout(this.loupeT); if (this.press && !this.drag) this.loupeOff(); this.press = null; }
   longPress() {
     const lp = this.press; this.press = null;
-    if (!lp || this.two || this.drag) return;
-    const c = this.caretAt(lp.x, lp.y); if (!c) return;
+    if (!lp || this.two || this.drag) { if (!this.drag) this.loupeOff(); return; }
+    // the word under the finger where it rests now (it may have crept a little since it came down): the one the loupe shows
+    const c = this.caretAt(lp.cx, lp.cy, { near: NEAR }); if (!c) { this.loupeOff(); return; }   // (not a stray word far off)
     const w = this.wordAt(c);
     this.sel = { a: w.a, b: w.b, word: w };
-    if (!this.drawSel()) { this.clearSel(); return; }
+    if (!this.drawSel()) { this.clearSel(); this.loupeOff(); return; }
     this.hidePop();
-    this.drag = { mode: 'touchsel', moved: false, pid: lp.pid, x: lp.x, y: lp.y, pointerType: 'touch' };
+    this.drag = { mode: 'touchsel', moved: false, pid: lp.pid, x: lp.cx, y: lp.cy, pointerType: 'touch', lend: 'b' };
     try { this.scroller.setPointerCapture(lp.pid); } catch (err) { /* ignore */ }
     if (navigator.vibrate) navigator.vibrate(8);
+    this.loupeFollow(lp.cx, lp.cy);
   }
   move(e) {
-    if (this.press && e.pointerId === this.press.pid && Math.hypot(e.clientX - this.press.x, e.clientY - this.press.y) > 8) this.endPress();   // a scroll
+    const q = this.press;
+    if (q && e.pointerId === q.pid) {
+      if (Math.hypot(e.clientX - q.x, e.clientY - q.y) > 8) this.endPress();   // a scroll
+      else { q.cx = e.clientX; q.cy = e.clientY; if (this.lp && this.lp.on) this.loupeFollow(q.cx, q.cy); }
+    }
     const d = this.drag; if (!d || e.pointerId !== d.pid) return;
-    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) return;
+    const lens = d.pointerType !== 'mouse' && (d.mode === 'touchsel' || d.mode === 'handle');   // (the loupe goes with the finger)
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 4) { if (lens) this.loupeFollow(e.clientX, e.clientY); return; }
     d.moved = true;
     e.preventDefault();
     d.lastX = e.clientX; d.lastY = e.clientY;
-    const c = d.mode === 'handle' ? this.caretAt(e.clientX + d.ox, e.clientY + d.oy) : this.caretAt(e.clientX, e.clientY);
+    const ty = e.clientY + (d.mode === 'handle' ? d.oy : 0), hy = lens ? this.stay(ty, d.mode === 'handle' ? d.end : d.lend) : ty;
+    const c = this.caretAt(e.clientX + (d.mode === 'handle' ? d.ox : 0), hy, { line: hy !== ty });
     if (d.mode === 'mark') {
       if (!d.start) { d.start = c; return; }
       if (c) d.cur = c;
@@ -1132,14 +1378,25 @@ export class Reader {
     } else if (d.mode === 'touchsel' && c && this.sel) {
       // from the word first chosen to wherever the finger goes, before it or after it
       const w = this.sel.word;
-      if (this.before(c, w.a)) { this.sel.a = c; this.sel.b = w.b; } else { this.sel.a = w.a; this.sel.b = this.before(c, w.b) ? w.b : c; }
+      if (this.before(c, w.a)) { this.sel.a = c; this.sel.b = w.b; d.lend = 'a'; } else { this.sel.a = w.a; this.sel.b = this.before(c, w.b) ? w.b : c; d.lend = 'b'; }
       this.drawSel();
     } else if (d.mode === 'handle' && c && this.sel) {
       this.sel[d.end] = c;
       if (this.before(this.sel.b, this.sel.a)) { const t = this.sel.a; this.sel.a = this.sel.b; this.sel.b = t; d.end = d.end === 'a' ? 'b' : 'a'; }
       this.drawSel();
     }
+    if (lens) this.loupeFollow(e.clientX, e.clientY);
     this.autoScroll();
+  }
+  // A finger dragging along a line drifts up and down, and on a phone the next line is a few pixels away: the end being
+  // moved stays on its line until the finger is well past the middle between the two lines (into the next one's letters),
+  // so it does not flick to the line above or below at the slightest slip, nor when the finger runs on past the end of a
+  // short line (caretAt's o.line). y: where the end is looked for; the line's middle is returned while it holds.
+  stay(y, end) {
+    const e = this.sel && this.sel.ends && end ? this.sel.ends[end] : null, p = e && this.pages[e.p];
+    if (!p) return y;
+    const r = p.el.getBoundingClientRect(), h = e.h * r.height, mid = r.top + e.y * r.height + h / 2;
+    return Math.abs(y - mid) < h * 1.25 ? mid : y;
   }
   preview() {
     const d = this.drag; if (!d || !d.start || !d.cur) return;
@@ -1147,7 +1404,7 @@ export class Reader {
     let range; try { range = this.rangeBetween(d.start, d.cur); } catch (e) { return; }
     for (const p of this.pages) {
       if (!p.tl || !range.intersectsNode(p.tl)) continue;
-      const tmp = this.marksFromRange(range, d.kind, d.color).filter((m) => m.p === p.n);
+      const tmp = this.marksFromRange(range, d.kind, d.color, false).filter((m) => m.p === p.n);
       const layer = p.el.querySelector('.pg-marks');
       for (const m of tmp) for (const r of m.rects) {
         const x = el('i', 'mk pre ' + d.kind);
@@ -1178,6 +1435,7 @@ export class Reader {
     const isTap = ts && e.pointerId === ts.id && Math.hypot(e.clientX - ts.x, e.clientY - ts.y) < 6 && Date.now() - ts.t < 600;
     if (d && e.pointerId === d.pid) {
       this.drag = null;
+      this.loupeOff();
       try { this.scroller.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       if (d.mode === 'mark') {
         if (d.moved && d.range) {
@@ -1213,7 +1471,7 @@ export class Reader {
 
   twoStart(e) {
     if (e.touches.length !== 2) return;
-    this.endPress();
+    this.endPress(); this.loupeOff();
     if (this.drag && this.drag.mode !== 'mark') this.drag = null; else this.cancelDrag();
     const [a, b] = e.touches;
     this.two = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), mx: (a.clientX + b.clientX) / 2, my: (a.clientY + b.clientY) / 2, top: this.scroller.scrollTop, left: this.scroller.scrollLeft, k: 1 };
@@ -1272,7 +1530,7 @@ export class Reader {
       if (e.key === 'Escape') { this.walkStop(); return; }
     }
     if (e.key === 'Escape') { this.clearSel(); this.hidePop(); this.$('.rd-erase').hidden = true; return; }
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && this.sel && this.sel.range) { e.preventDefault(); this.copy(this.clean(this.sel.range.toString())); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && this.sel && this.sel.range) { e.preventDefault(); this.copy(this.rangeCopy(this.sel.range)); return; }
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); this.undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.zoomBy(1.15); }
     else if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); this.zoomBy(1 / 1.15); }
@@ -1301,7 +1559,8 @@ export class Reader {
   // the box over the page for a cited 헌재 decision, court judgment or article; a case number in it opens that one, ‹ goes back
   refPop(c, x, y) {
     this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
-    this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para } } : { kind: c.kind, no: c.no });
+    // (an article the paper cites as it read before — 구 …법, "(… 개정되기 전의 것)" — keeps that: the box says the text is today's)
+    this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para, old: c.old || '' } } : { kind: c.kind, no: c.no });
   }
   noteShow(v) {
     this.noteView = v;
@@ -1319,10 +1578,13 @@ export class Reader {
       const lc = e.target.closest('[data-court]');
       if (lc) { if (!(v.kind === 'court' && v.no === lc.dataset.court)) go({ kind: 'court', no: lc.dataset.court }); return; }
       const la = e.target.closest('[data-art]');
-      if (la) { const r = articleQuery(la.dataset.art); if (r) go({ kind: 'art', ref: r }); return; }
+      if (la) { const r = articleQuery(la.dataset.art); if (r) go({ kind: 'art', ref: { ...r, old: la.dataset.old || '', by: la.dataset.by || '' } }); return; }
+      // (the court's search: the number copied on the way, to paste there; the link opens as it is)
+      const cn = e.target.closest('[data-copy-no]'); if (cn) { this.copy(cn.dataset.copyNo, COPY_NO); return; }
       const b = e.target.closest('[data-act]'); if (!b) return;
       if (b.dataset.act === 'back') { this.noteShow(this.noteTrail.pop()); return; }
-      if (b.dataset.act === 'copy') this.copy(v.copy);
+      // (a decision's copy is its full form, read when tapped: its 판례집 book may have come since it was shown)
+      if (b.dataset.act === 'copy') this.copy(typeof v.copy === 'function' ? v.copy() : v.copy, v.note ? v.note() : '');
       this.hideNote();
     };
     this.notePlace();
@@ -1330,18 +1592,23 @@ export class Reader {
   async caseFill(v, head, body) {
     const show = (d) => {
       if (this.noteView !== v) return;
-      head.textContent = cite(d); v.copy = cite(d);
-      body.innerHTML = caseView(d); wireCase(body, d);
+      // copied: 헌재 2014. 12. 19. 2013헌다1, 판례집 26-2하, 1 (the short form is in the box's 인용, with its own copy)
+      // (until its book is read, the number alone, said so — never '판례집 25-2, 398' where 25-2상 and 25-2하 differ: citeCopy)
+      head.textContent = cite(d); v.copy = () => citeCopy(d).text; v.note = () => citeCopy(d).note;
+      body.innerHTML = caseView(d); wireCase(body, d, { copy: (t, note) => this.copy(t, note), onBook: () => this.notePlace() });
       this.notePlace();
     };
     let d;
     try { d = await (this.o.decision ? this.o.decision(v.no, show) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
       if (this.noteView !== v) return;
-      body.innerHTML = `<p class="cs-wait">${e && e.code === 'offline' ? '인터넷에 연결되면 결정 내용을 볼 수 있습니다.' : '지금은 결정을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.'}</p>`;
+      // (and the ways to read it elsewhere, as when it is not found)
+      body.innerHTML = missingView(v.no, {}, {}, { failed: e && e.code === 'offline' ? '인터넷에 연결되면 결정 내용을 볼 수 있습니다.' : '지금은 결정을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.' });
       this.notePlace(); return;
     }
-    if (!d) { if (this.noteView === v) { body.innerHTML = '<p class="cs-wait">헌법재판소 판례정보에서 찾지 못했습니다. 병합된 사건의 뒷번호이거나 아직 실리지 않은 결정일 수 있습니다.</p>'; this.notePlace(); } return; }
+    // not in the court's data: what is known of it (a first number of joined cases is said so) and the ways to read it elsewhere
+    // (copied: the digest's cite of it, with its day and book, when the digest has one)
+    if (!d) { if (this.noteView === v) { const mc = missingCites(v.no); head.textContent = mc.short; v.copy = mc.full; body.innerHTML = missingView(v.no); this.notePlace(); } return; }
     show(d);
   }
   async courtFill(v, head, body) {
@@ -1396,17 +1663,22 @@ export class Reader {
       body.innerHTML = (law.preamble ? `<div class="lc-t"><p>${esc(law.preamble)}</p></div>` : '<p class="cs-wait">전문을 불러오지 못했습니다.</p>') + `<p>${outTo(law)}</p>`;
       this.notePlace(); return;
     }
+    // (an old text's article that today's law no longer has: the citation is right, the text is gone — said so, with the way
+    // to the versions compared at 국가법령정보센터)
+    if (!a && r.old) { body.innerHTML = `<p class="lc-ahead lc-old">${esc(oldBand(r.old, r.by || 'paper', true))}</p><p class="cs-wait">${esc(law.full)}의 마지막 조문은 ${artLabel(law.arts[law.arts.length - 1] || { art: 0 })}입니다.</p><p><a class="btn ghost small" href="${lawGoKr.oldNew(law.full)}" target="_blank" rel="noopener">국가법령정보센터 신구법 비교</a> ${outTo(law)}</p>${reviewed}`; wire(); this.notePlace(); return; }
     if (!a) { body.innerHTML = `<p class="cs-wait">${esc(law.full)}에 그 조문이 없습니다 · 마지막 조문은 ${artLabel(law.arts[law.arts.length - 1] || { art: 0 })}입니다.</p><p>${outTo(law)}</p>${reviewed}`; wire(); this.notePlace(); return; }
     const ps = paras(a), pick = r.para && ps[r.para - 1] ? r.para : 0;
     head.textContent = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}`;
-    v.copy = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}\n${pick ? ps[pick - 1] : a.text}`;
+    // (cited as it read before: what is copied says it is today's text, not the one the citation means)
+    v.copy = `${law.full} ${artLabel(a)}${pick ? ` 제${pick}항` : ''}${r.old ? ' (현행 조문)' : ''}\n${pick ? ps[pick - 1] : a.text}`;
+    const was = r.old ? `<p class="lc-ahead lc-old">${esc(oldBand(r.old, r.by || 'paper'))}</p>` : '';
     // a coming amendment: the article as it will read (what changes marked), or that it stays; a text not yet in force says so
     const pend = pendingArt(law, a);
     const coming = law.ahead ? `<p class="lc-ahead">${esc(dateText(law.rev))}부터 시행되는 조문입니다. 지금 시행 중인 조문은 국가법령정보센터에서 확인하세요.</p>`
       : !law.next ? '' : !pend ? `<p class="lc-same">${esc(dateText(law.next.rev))} 시행 예정 개정이 있으나 이 조문은 그대로입니다.</p>`
       : !pend.art ? `<p class="lc-ahead">${esc(pend.date)}부터 이 조문은 없어집니다.</p>`
       : `<details class="lc-next" open><summary>${esc(pend.date)}부터 이렇게 바뀝니다</summary><div class="lc-t">${pendingParas(a, pend.art).map((p) => (p.diff ? `<p class="chg">${p.diff.map(([k, t]) => (k === '=' ? esc(t) : k === '+' ? `<ins>${esc(t)}</ins>` : `<del>${esc(t)}</del>`)).join('')}</p>` : `<p>${linkCases(p.text)}</p>`)).join('')}</div></details>`;
-    body.innerHTML = `${a.title ? `<div class="cs-name">${artLabel(a)}(${esc(a.title)})</div>` : ''}<div class="cs-meta">${[a.chapter, law.title].filter(Boolean).map(esc).join(' · ')}</div>`
+    body.innerHTML = `${was}${a.title ? `<div class="cs-name">${artLabel(a)}(${esc(a.title)})</div>` : ''}<div class="cs-meta">${[a.chapter, law.title].filter(Boolean).map(esc).join(' · ')}</div>`
       + `<div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div>${coming}<p>${outTo(law, a)}</p>${reviewed}`;
     wire();
     this.notePlace();
@@ -1451,8 +1723,9 @@ export class Reader {
     this.hideNote();
   }
   hidePop() { const pop = this.$('.rd-pop'); if (pop) { pop.hidden = true; pop.classList.remove('slim', 'in', 'below'); } this.popKind = null; this.hideNote(); }
-  copy(text) {
-    const done = () => this.o.toast && this.o.toast('복사했습니다');
+  // note: what the copied text leaves unsaid, said with it ('판례집 상·하 권은 확인하지 못했습니다')
+  copy(text, note = '') {
+    const done = () => this.o.toast && this.o.toast(note ? `복사했습니다 · ${note}` : '복사했습니다', note ? 4200 : 2600);
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => this.copyFallback(text, done));
     else this.copyFallback(text, done);
   }
@@ -1665,7 +1938,7 @@ export class Reader {
     if (this.ro) this.ro.disconnect();
     document.removeEventListener('keydown', this.onKey);
     document.removeEventListener('pointerdown', this.onDocDown, true);
-    clearTimeout(this.restT); this.endPress();
+    clearTimeout(this.restT); this.endPress(); this.loupeOff();
     for (const p of this.pages) {
       this.release(p);
       if (p.ptask) { try { p.ptask.cancel(); } catch (e) { /* ignore */ } }

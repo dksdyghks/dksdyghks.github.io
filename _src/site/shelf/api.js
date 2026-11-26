@@ -52,9 +52,10 @@ async function call(path, { method = 'GET', body, headers = {}, raw = false, sig
     throw new ApiError('offline', 0);
   }
   if (r.status === 401 && path !== '/login') { await signedOut(sent); throw new ApiError('auth', 401); }
-  // raw: the answer itself; raw 'text': its text, and a refusal keeps the server's word for it (no_key, kci_refused …)
+  // raw: the answer itself; raw 'text': its text, and a refusal keeps the server's word for it (no_key, kci_refused …);
+  // raw 'stream': the answer itself, to be read as it comes, a refusal kept in the server's words too (글쓰기)
   if (raw) {
-    if (!r.ok) { const d = raw === 'text' ? await r.json().catch(() => null) : null; throw new ApiError((d && d.error) || 'http_' + r.status, r.status, d || {}); }
+    if (!r.ok) { const d = raw === 'text' || raw === 'stream' ? await r.json().catch(() => null) : null; throw new ApiError((d && d.error) || 'http_' + r.status, r.status, d || {}); }
     return raw === 'text' ? r.text() : r;
   }
   let data = null;
@@ -123,6 +124,14 @@ export async function paperPdf(body) {
   const d = await r.json().catch(() => null);
   return d && d.found ? { host: String(d.host || '') } : null;
 }
+// 글쓰기 도우미 (Claude, through the server, which holds the owner's Anthropic key): what the screen needs (key set?, the
+// models, limits, today's count, when the style was learned), the style itself, and one request — its answer streamed
+export const writeInfo = () => call('/write');
+export const writeStyle = () => call('/write/style');
+export const writeAsk = (body, signal) => call('/write', { method: 'POST', body, raw: 'stream', signal });
+// the latest answer as the server kept it (for an app that lost the connection), and 멈추기 told to the server
+export const writeLast = (id) => call('/write/last?id=' + encodeURIComponent(id));
+export const writeStop = (id) => call('/write/stop', { method: 'POST', body: { id } });
 export const bills = (law) => call('/bills?' + new URLSearchParams({ law }));   // 국회 계류 법안 of a law (the server reads more on each call)
 export const bill = (no, id) => call('/bills/one?' + new URLSearchParams({ no, id }));   // one bill: 제안이유 및 주요내용, 회의록
 export const ops = (list) => call('/lib/ops', { method: 'POST', body: { ops: list } });

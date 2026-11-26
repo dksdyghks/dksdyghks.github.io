@@ -337,27 +337,59 @@ const ASK = {
     const jf = r.jFacet && r.jFacet.length ? r.jFacet.map(([ji, n]) => [(r.journals[ji] || [''])[0], n]).filter((x) => x[0]) : null;
     return { total: r.total, rows: r.rows.map(fromIdx), common: r.common, jf };
   }),
-  nanet: (q, o, page) => papers.search(q, { kind: o.kind, page, sort: o.sort === 'new' ? 'new' : '' }).then((r) => ({ total: r.total, rows: r.rows.map(fromNanet) })),
+  // (o.author: a person's papers on o.topic — see nanetBy)
+  nanet: (q, o, page) => (o.author ? nanetBy(o, page) : papers.search(q, { kind: o.kind, page, sort: o.sort === 'new' ? 'new' : '' }).then((r) => ({ total: r.total, rows: r.rows.map(fromNanet) }))),
   // (o.author: a person's papers — KCI asked by that author's name alone; a KCI that will not take a question without a
-  // title refuses it, and then only that way of asking is left alone for this session, never KCI itself)
-  kci: (q, o, page) => once(['kci', wkey(q), page, o.sort, o.journal || '', o.author || ''].join('\u0001'), async () => {
-    if (o.author && kciNoAuthor) throw Object.assign(new Error('kci author'), { code: 'no_term' });
-    const params = o.author ? { author: o.author, page: String(page), displayCount: String(SIZE.kci) } : { title: String(q).trim().slice(0, 200), page: String(page), displayCount: String(SIZE.kci) };
+  // title refuses it, and then only that way of asking is left alone for this session, never KCI itself. With o.topic, that
+  // person's papers whose title has the topic: KCI asked for both, which it ANDs)
+  kci: (q, o, page) => once(['kci', wkey(q), page, o.sort, o.journal || '', o.author || '', o.topic || ''].join('\u0001'), async () => {
+    const alone = o.author && !o.topic;
+    if (alone && kciNoAuthor) throw Object.assign(new Error('kci author'), { code: 'no_term' });
+    const params = o.author ? { author: o.author, ...(o.topic ? { title: String(o.topic).trim().slice(0, 200) } : {}), page: String(page), displayCount: String(SIZE.kci) } : { title: String(q).trim().slice(0, 200), page: String(page), displayCount: String(SIZE.kci) };
     if (o.sort === 'new') { params.sortNm = 'pubiYr'; params.sortDir = 'desc'; }
     if (o.journal) params.journal = o.journal;
     let r;
     try { r = kciParse(await api.kciSearch(params, { mark: !o.author })); } catch (e) {
-      if (o.author && (e.code === 'kci_refused' || e.code === 'no_term')) { kciNoAuthor = true; e.code = 'no_term'; }
+      if (alone && (e.code === 'kci_refused' || e.code === 'no_term')) { kciNoAuthor = true; e.code = 'no_term'; }
       else api.markSource('kci', e);
       throw e;
     }
     return { total: r.total, rows: r.rows.map(fromKci) };
   }),
-  so: (q, o, page) => once(['so', wkey(q), page, o.sort, o.field || ''].join('\u0001'), async () => {
-    const d = await api.scienceon('search', { q: String(q).trim().slice(0, 200), field: o.field || 'BI', page: String(page), rows: String(SIZE.so), ...(o.sort === 'new' ? { sort: 'pubyear' } : {}) });
-    return { total: Number(d && d.total) || 0, rows: ((d && d.rows) || []).map(fromSo).filter((x) => x.t) };
+  // (o.term: asked for that instead of the question — an author's name, field AU; with o.topic, only that author's papers
+  // holding the topic's words are kept)
+  so: (q, o, page) => once(['so', wkey(q), page, o.sort, o.field || '', o.term || '', o.topic || ''].join('\u0001'), async () => {
+    const d = await api.scienceon('search', { q: String(o.term || q).trim().slice(0, 200), field: o.field || 'BI', page: String(page), rows: String(SIZE.so), ...(o.sort === 'new' ? { sort: 'pubyear' } : {}) });
+    const all = ((d && d.rows) || []).map(fromSo).filter((x) => x.t), total = Number(d && d.total) || 0;
+    if (!o.topic) return { total, rows: all };
+    const rows = all.filter((x) => (!o.term || x.a.some((a) => akey(a) === o.term)) && topicHolds(x, o.topic));
+    return { rows, kept: true, more: all.length > 0 && page * SIZE.so < total };
   }),
 };
+// a paper (one source's row) that holds every word of a topic — in its title, keywords, abstract, authors or journal, or a
+// long word by its two halves in its title or keywords ('공법상 계약' in 「공법상계약의 해지」)
+function topicHolds(p, topic) {
+  const ws = wordsOf(topic).filter((w) => w.length >= 2);
+  if (!ws.length) return true;
+  const T = norm(p.t), K = (p.kw || []).map(norm).join('|'), B = norm(p.ab), A = (p.a || []).map(akey), J = norm(p.journal);
+  return ws.every((w) => T.includes(w) || K.includes(w) || B.includes(w) || A.includes(w) || J.includes(w) || halves(T, w) > 0 || halves(K, w) > 0);
+}
+// 국회도서관 for a person's papers on a topic: asked by the author (its author search, newest first), those of exactly that name
+// and holding every word of the topic kept — a page holding none goes on to the next, three pages a time at most. `seen`: a
+// paper of exactly that author came back (so the word is a person's name, whatever the topic)
+async function nanetBy(o, page) {
+  let p = page - 1, more = true, seen = false;
+  const rows = [];
+  while (more && !rows.length && p < page + 2) {
+    p++;
+    const r = await papers.search(o.author, { kind: o.kind, page: p, sort: 'new', by: 'author' });
+    const theirs = r.rows.map(fromNanet).filter((x) => x.a.some((a) => akey(a) === o.author));
+    if (theirs.length) seen = true;
+    rows.push(...theirs.filter((x) => topicHolds(x, o.topic)));
+    more = r.rows.length > 0 && p * SIZE.nanet < r.total;
+  }
+  return { rows, kept: true, more, page: p, seen };
+}
 let kciNoAuthor = false;
 // a refusal (no key yet, the source says no) or a question it will not take: not asked again for this question
 const REFUSED = new Set(['no_key', 'kci_refused', 'scienceon', 'scienceon_token', 'auth', 'no_server', 'no_term', 'bad_service']);
@@ -378,10 +410,13 @@ class Feed {
     const page = s.page + 1;
     s.state = 'busy';
     return (s.p = ASK[s.base](this.q, { ...s.opts, kind: this.kind }, page).then((r) => {
-      s.page = page; s.total = Math.max(s.total, Number(r.total) || 0); s.state = 'ok'; s.err = null; s.common = !!r.common;
-      if (r.jf) s.jf = r.jf;
       const rows = r.rows || [];
-      s.more = rows.length > 0 && page * SIZE[s.base] < s.total;
+      // (r.kept: only some of what the source gave are this question's — a person's papers on a topic — so its count is of
+      // those kept so far, and the source says itself whether it has more, and up to which page it read)
+      s.page = r.page || page; s.total = r.kept ? s.total + rows.length : Math.max(s.total, Number(r.total) || 0); s.state = 'ok'; s.err = null; s.common = !!r.common;
+      if (r.jf) s.jf = r.jf;
+      if (r.seen) s.seen = true;
+      s.more = r.more != null ? !!r.more : rows.length > 0 && page * SIZE[s.base] < s.total;
       for (const p of rows) this.pool.add(p, this.seq++);
       this.tell(s);
     }, (e) => { s.state = 'err'; s.err = e; this.tell(s); }));
@@ -413,6 +448,16 @@ const ORDER = {
 const ym = (r) => (Number(r.y) || 0) * 100 + (Number(r.m) || 0);
 const tie = (a, b) => ym(b) - ym(a) || (a.fk < b.fk ? -1 : a.fk > b.fk ? 1 : 0) || a.pos - b.pos;
 const PERSON = /^[가-힣]{2,5}$/;
+// a word among others that may be a person's name: two or three letters beginning as a Korean surname does, or four beginning
+// with a two-letter one (남궁, 선우 …) — only ever tried as a name, never taken for one until some answer says so. Scholars'
+// names end as the words of the law do too (김중권, 윤재학, 박종권) and some have two letters (허영), so probe() asks for those
+// as well; but the screen offers '…의 글에서 … 찾기' (hint) only for a word that does not read as a word (WORDLIKE: 정당법,
+// 기본권, 정치학, 선거), unless an answer has shown that it is someone's
+const NAMELIKE = (w) => /^[가-힣]{2,4}$/.test(w) && (w.length === 4 ? /^(?:남궁|선우|독고|제갈|황보|사공|서문|동방|어금|망절)/.test(w) : naming.isSurnameStart(w));
+const WORDLIKE = (w) => w.length === 2 || /[법론적의권률령칙학]$/.test(w);
+// the names the app knows for people's (the owner's, the shelf's authors): setPeople, from the screen
+const PEOPLE = new Set();
+export function setPeople(names) { for (const n of names || []) { const k = String(n || '').replace(/\s+/g, ''); if (/^[가-힣]{2,4}$/.test(k)) PEOPLE.add(k); } }
 class View {
   constructor(f, sort, journal, idxJournals) {
     Object.assign(this, { f, sort, j: journal ? jkey(journal) : '', jname: journal ? String(journal).split('\u0001')[0] : '', shown: [], set: new Set(), who: '', addedAt: 0 });
@@ -421,7 +466,8 @@ class View {
     const by0 = ORDER[sort](this.score);
     // the group: [venue, not the person's own, said only in the abstract (최신) / no citation count (피인용)] as one number
     this.g = (r) => venue(r) * 4 + (this.who && !this.own(r) ? 2 : 0) + (sort === 'new' ? (holds(r) ? 0 : 1) : sort === 'cited' ? (r.c == null ? 1 : 0) : 0);
-    this.cmp = (a, b) => this.g(a) - this.g(b) || (sort === 'rel' && this.who && this.own(a) ? ym(b) - ym(a) : 0) || by0(a, b) || tie(a, b);
+    // (a person's own papers newest first — but those on a topic asked with the name by how well they hold it)
+    this.cmp = (a, b) => this.g(a) - this.g(b) || (sort === 'rel' && this.who && !this.topic && this.own(a) ? ym(b) - ym(a) : 0) || by0(a, b) || tie(a, b);
     const kind = f.kind, art = kind === 'ARTICLE' || kind === '';
     const by = this.by = sort === 'new' ? 'new' : 'rel';   // (피인용 orders the same answers as 관련도: nothing more is asked of the servers)
     this.ids = [];
@@ -452,7 +498,10 @@ class View {
   person() {
     if (this.who) return this.who;
     const w = String(this.f.q || '').replace(/\s+/g, '');
-    if (!PERSON.test(w) || !this.f.pool.recs.some((r) => (r.a || []).some((a) => akey(a) === w))) return '';
+    const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean);
+    const theirs = (x) => this.f.pool.recs.some((r) => (r.a || []).some((a) => akey(a) === x));
+    if (ws.length > 1 && !(PERSON.test(w) && theirs(w))) return this.named(ws, theirs);
+    if (!PERSON.test(w) || !theirs(w)) return '';
     this.who = w;
     if ((this.f.kind === 'ARTICLE' || this.f.kind === '') && !this.j) {
       this.add('kci:au:' + this.by, 'kci', { sort: this.by, author: w });
@@ -462,6 +511,59 @@ class View {
     }
     return w;
   }
+  /* A person among other words ('김대인 공법상 계약'): no catalogue finds it asked as words — no title holds a name — so the
+     name is asked as the author and the rest as the topic (split). A word is taken for a name once an answer here has a paper
+     of exactly that author (a source asked for that author by probe() included), or the app knows it for a person's
+     (setPeople: the owner, the shelf's authors). Their papers on the topic come first; others' under them. */
+  named(ws, theirs) {
+    if (this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return '';
+    const probed = this.srcs.find((s) => s.opts && s.opts.probe && s.seen);
+    const w = probed ? probed.opts.author : ws.find((x) => /^[가-힣]{2,4}$/.test(x) && (PEOPLE.has(x) || theirs(x)));
+    if (!w) return '';
+    this.split(w);
+    return w;
+  }
+  split(w) {
+    if (this.who) return;
+    const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean), topic = ws.filter((x) => x !== w).join(' ');
+    this.who = w; this.topic = topic;
+    this.add('nanet:by:' + w, 'nanet', { author: w, topic });
+    this.add('kci:by:' + this.by + ':' + w, 'kci', { sort: this.by, author: w, topic });
+    this.add('so:by:' + this.by + ':' + w, 'so', { sort: this.by, field: 'AU', term: w, topic });
+    this.addedAt = Date.now();
+    for (const s of this.srcs) { if (s.state === 'err' && !refused(s.err)) s.state = 'idle'; if (s.state === 'idle') this.f.pull(s); }   // (one that failed on the way, asked again)
+  }
+  // nothing found holds every word, and the first or last word could be a name: is it someone's? The KCI index on this device
+  // is asked first (its authors are in it: no server asked); then 국회도서관 for that author's papers on the rest — its answer
+  // decides (named). Once a question, two words at most; true when it asked anything (the screen waits for it)
+  async probe() {
+    if (this.who || this.probed || this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return false;
+    const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean);
+    if (ws.length < 2) return false;
+    const holds = holder(this.f.q);
+    if (this.f.pool.recs.some((r) => this.keep(r) && holds(r))) return false;
+    const cands = [...new Set([ws[0], ws[ws.length - 1]])].filter(NAMELIKE).sort((a, b) => WORDLIKE(a) - WORDLIKE(b));   // (a word that reads as a name first)
+    if (!cands.length) return false;
+    this.probed = true;
+    for (const w of cands) {
+      const r = await kciq.search(w, { size: 20 }).catch(() => null);
+      if (r && (r.rows || []).some((x) => (x.a || []).some((a) => akey(a) === w))) { PEOPLE.add(w); this.split(w); return true; }
+    }
+    for (const w of cands) this.add('nanet:by:' + w, 'nanet', { author: w, topic: ws.filter((x) => x !== w).join(' '), probe: true });
+    this.addedAt = Date.now();
+    for (const s of this.srcs) if (s.state === 'idle') this.f.pull(s);
+    return true;
+  }
+  // what the screen may offer when nothing was found: that person's papers on the rest ('김대인의 글에서 공법상 계약 찾기') —
+  // while the question is not so split and no probe has said the word is no one's (국회도서관 asked, and none of that name)
+  hint() {
+    if (this.who || this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return null;
+    const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean);
+    if (ws.length < 2) return null;
+    const w = [ws[0], ws[ws.length - 1]].find((x) => NAMELIKE(x) && !WORDLIKE(x) && !this.srcs.some((s) => s.opts && s.opts.probe && s.opts.author === x && s.state === 'ok'));
+    return w ? { who: w, topic: ws.filter((x) => x !== w).join(' ') } : null;
+  }
+  force(w) { if (!this.who && String(this.f.q || '').trim().split(/\s+/).includes(w)) this.split(w); }   // (the offer taken)
   // the sources asked (first pages), those that failed for a passing reason asked again: resolves at once
   start() {
     this.f.cur = this;

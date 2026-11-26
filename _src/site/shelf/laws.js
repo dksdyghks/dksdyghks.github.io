@@ -16,8 +16,9 @@ export const lawKey = (name) => ALIAS[String(name || '').replace(/\s+/g, '')] ||
 /* ---------------- what a search asks for ---------------- */
 // 헌법 제37조 제2항 · 헌법 37조 2항 · 형법 제269조 제1항 · 헌재법 68조 · 국가공무원법 제66조의2
 const ART_RE = /^(.+?)\s*제?\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제?\s*(\d{1,3})\s*항)?(?:\s*제?\s*(\d{1,3})\s*호)?$/;
+// (a citation copied from a paper keeps its brackets — "｢행정기본법｣ 제27조", "「행정기본법」 제27조" — and is the same ask)
 export function articleQuery(q) {
-  const s = String(q || '').trim().replace(/\s+/g, ' ');
+  const s = corners(q).replace(/[「」『』]/g, ' ').trim().replace(/\s+/g, ' ');
   if (/^(?:대한민국\s?)?헌법\s?전문$/.test(s)) return { law: '헌법', art: '전문', sub: 0, para: 0, item: 0 };   // the preamble
   const m = ART_RE.exec(s);
   if (!m) return null;
@@ -142,6 +143,28 @@ const ABBR = {
   행소법: '행정소송법', 행심법: '행정심판법', 행절법: '행정절차법', 민소법: '민사소송법', 형소법: '형사소송법', 민집법: '민사집행법',
   근기법: '근로기준법', 산안법: '산업안전보건법', 국배법: '국가배상법', 개인정보보호법: '개인정보 보호법', 가정폭력처벌법: '가정폭력범죄의 처벌 등에 관한 특례법',
   청소년성보호법: '아동ㆍ청소년의 성보호에 관한 법률', 아청법: '아동ㆍ청소년의 성보호에 관한 법률',
+  // (public-law papers name these by their short names as often as by their own; each checked against lawidx.json)
+  지방계약법: '지방자치단체를 당사자로 하는 계약에 관한 법률', 토지보상법: '공익사업을 위한 토지 등의 취득 및 보상에 관한 법률', 공익사업법: '공익사업을 위한 토지 등의 취득 및 보상에 관한 법률',
+  국토계획법: '국토의 계획 및 이용에 관한 법률', 국토이용법: '국토의 계획 및 이용에 관한 법률', 공정거래법: '독점규제 및 공정거래에 관한 법률', 독점규제법: '독점규제 및 공정거래에 관한 법률',
+  도시정비법: '도시 및 주거환경정비법', 도정법: '도시 및 주거환경정비법', 노동조합법: '노동조합 및 노동관계조정법', 노조법: '노동조합 및 노동관계조정법',
+  감염병예방법: '감염병의 예방 및 관리에 관한 법률', 개발제한구역법: '개발제한구역의 지정 및 관리에 관한 특별조치법',
+  부패방지법: '부패방지 및 국민권익위원회의 설치와 운영에 관한 법률', 부패방지권익위법: '부패방지 및 국민권익위원회의 설치와 운영에 관한 법률',
+  공무원노조법: '공무원의 노동조합 설립 및 운영 등에 관한 법률', 교원노조법: '교원의 노동조합 설립 및 운영 등에 관한 법률',
+  하도급법: '하도급거래 공정화에 관한 법률', 공유재산법: '공유재산 및 물품 관리법', 보조금법: '보조금 관리에 관한 법률', 국가유공자법: '국가유공자 등 예우 및 지원에 관한 법률',
+  장애인차별금지법: '장애인차별금지 및 권리구제 등에 관한 법률', 남녀고용평등법: '남녀고용평등과 일ㆍ가정 양립 지원에 관한 법률', 기간제법: '기간제 및 단시간근로자 보호 등에 관한 법률',
+  파견법: '파견근로자 보호 등에 관한 법률', 산재보험법: '산업재해보상보험법', 신문법: '신문 등의 진흥에 관한 법률', 언론중재법: '언론중재 및 피해구제 등에 관한 법률',
+  위치정보법: '위치정보의 보호 및 이용 등에 관한 법률', 형사보상법: '형사보상 및 명예회복에 관한 법률', 범죄수익은닉규제법: '범죄수익은닉의 규제 및 처벌 등에 관한 법률',
+  마약류관리법: '마약류 관리에 관한 법률', 폭력행위처벌법: '폭력행위 등 처벌에 관한 법률', 폭처법: '폭력행위 등 처벌에 관한 법률', 아동학대처벌법: '아동학대범죄의 처벌 등에 관한 특례법',
+  스토킹처벌법: '스토킹범죄의 처벌 등에 관한 법률', 국정감사법: '국정감사 및 조사에 관한 법률', 국회증언감정법: '국회에서의 증언ㆍ감정 등에 관한 법률',
+  제주특별법: '제주특별자치도 설치 및 국제자유도시 조성을 위한 특별법', 부동산실명법: '부동산 실권리자명의 등기에 관한 법률', 상가임대차법: '상가건물 임대차보호법',
+  주택임대차법: '주택임대차보호법', 가족관계등록법: '가족관계의 등록 등에 관한 법률', 채무자회생법: '채무자 회생 및 파산에 관한 법률', 자본시장법: '자본시장과 금융투자업에 관한 법률',
+  약관규제법: '약관의 규제에 관한 법률', 약관법: '약관의 규제에 관한 법률', 표시광고법: '표시ㆍ광고의 공정화에 관한 법률', 할부거래법: '할부거래에 관한 법률', 방문판매법: '방문판매 등에 관한 법률',
+  전자상거래법: '전자상거래 등에서의 소비자보호에 관한 법률', 학교폭력예방법: '학교폭력예방 및 대책에 관한 법률', 지방교육자치법: '지방교육자치에 관한 법률',
+  공원녹지법: '도시공원 및 녹지 등에 관한 법률', 도시재정비법: '도시재정비 촉진을 위한 특별법', 빈집법: '빈집 및 소규모주택 정비에 관한 특례법', 조달사업법: '조달사업에 관한 법률',
+  전자조달법: '전자조달의 이용 및 촉진에 관한 법률', 공공감사법: '공공감사에 관한 법률', 민원처리법: '민원 처리에 관한 법률', 공공데이터법: '공공데이터의 제공 및 이용 활성화에 관한 법률',
+  신용정보법: '신용정보의 이용 및 보호에 관한 법률', 금융실명법: '금융실명거래 및 비밀보장에 관한 법률', 특정금융정보법: '특정 금융거래정보의 보고 및 이용 등에 관한 법률',
+  근로자참여법: '근로자참여 및 협력증진에 관한 법률', 교육환경법: '교육환경 보호에 관한 법률', 재난안전법: '재난 및 안전관리 기본법', 경직법: '경찰관 직무집행법',
+  개인정보법: '개인정보 보호법', 공공주택법: '공공주택 특별법',
 };
 // known law names (·/spaces removed → canonical), so a cited article resolves to its filed law even when the name is long
 // and spaced ("국가를 당사자로 하는 계약에 관한 법률 제27조") or abbreviated. Seeded here; lawIndex() adds every filed law, so
@@ -203,6 +226,18 @@ export async function lawOf(q) {
   return { name: (idx[d][0] || d) + (m ? ' ' + m[2] : ''), dir: d };
 }
 export const sameLaw = (a, b) => dirOf(a) === dirOf(b);
+// one law however a text names it, spaces and dots out: its own name (헌법 for 대한민국헌법 too), so an abbreviation and the
+// full name (국가계약법, 국가를 당사자로 하는 계약에 관한 법률) compare as one
+export const lawId = (name) => NAME_NORM(resolveName(NAME_NORM(name)) || name);
+// every name a text may give that law (spaces and dots out): its own and those lawyers use for it — for finding where a
+// paper cites it, whichever it wrote
+export function lawAliases(name) {
+  const id = lawId(name), out = new Set([id]);
+  if (LAWS[id]) out.add(NAME_NORM(LAWS[id].full));
+  for (const [k, v] of Object.entries(ALIAS)) if (v === id) out.add(k);
+  for (const [k, v] of Object.entries(ABBR)) if (NAME_NORM(v) === id) out.add(k);
+  return [...out].filter((n) => n.length >= 2);
+}
 async function officialName(asked) {   // 법제처's list: the law's name as it stands, for a name or an abbreviation
   const xml = await api.publicDataText('1170000/law/lawSearchList.do', { target: 'law', query: asked, numOfRows: '20', pageNo: '1' });
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
@@ -235,11 +270,16 @@ async function resolveLaw(asked) {
   return hit;   // a word that only ends like a law's name (관습헌법) is not asked for
 }
 async function mirrorFile(dir, file, ref = 'main') {
-  const r = await fetch(`${RAW}${ref}/kr/${encodeURIComponent(dir)}/${encodeURIComponent(file)}.md`, ref === 'main' ? { cache: 'no-cache' } : {});
+  let r;
+  // (the connection dropping on the way: offline when the device says so, else unavailable — net marks it either way, so a
+  // search that was under way can say the connection failed it rather than the mirror)
+  try { r = await fetch(`${RAW}${ref}/kr/${encodeURIComponent(dir)}/${encodeURIComponent(file)}.md`, ref === 'main' ? { cache: 'no-cache' } : {}); } catch (e) { throw Object.assign(fail(navigator.onLine ? 'unavailable' : 'offline'), { net: true }); }
   if (r.status === 404) return null;
   if (!r.ok) throw fail('unavailable');
   return r.text();
 }
+// a text's size in UTF-8, as the mirror keeps it (a Korean letter is three bytes; what is sent is compressed besides)
+const u8 = (s) => { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c >= 0xd800 && c < 0xdc00 ? (i++, 4) : 3; } return n; };
 const front = (md) => {   // the YAML head of a mirror file: its plain fields
   const m = /^---\n([\s\S]*?)\n---\n/.exec(md);
   const out = {};
@@ -263,7 +303,8 @@ export function mirrorArts(md) {
     if (/^#/.test(l)) { cur = null; continue; }
     if (cur && l.trim()) cur.lines.push(mdLine(l));
   }
-  return { preamble: pre ? pre.join('\n') : '', page: head['출처'] || '', name: head['제목'] || '', rev: String(head['시행일자'] || '').replace(/-/g, ''), promulgated: head['공포일자'] || '', mst: head['법령MST'] || '', arts: arts.map((x) => ({ art: x.art, sub: x.sub, title: x.title, chapter: x.chapter, text: x.lines.join('\n') })) };
+  return { preamble: pre ? pre.join('\n') : '', page: head['출처'] || '', name: head['제목'] || '', rev: String(head['시행일자'] || '').replace(/-/g, ''), promulgated: head['공포일자'] || '', mst: head['법령MST'] || '',
+    num: String(head['공포번호'] || '').replace(/^0+/, ''), type: head['법령구분'] || '', arts: arts.map((x) => ({ art: x.art, sub: x.sub, title: x.title, chapter: x.chapter, text: x.lines.join('\n') })) };
 }
 // today in Korea, as 20261125
 const today = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
@@ -286,7 +327,8 @@ async function inForce(dir, file, now, head) {
   }
   return null;
 }
-const lawView = (key, k) => ({ key, title: `${k.full}${k.rev ? ` (${ymd(k.rev)} 시행)` : ''}`, rev: k.rev, full: k.full, preamble: k.preamble || '', page: k.page || '', arts: k.arts, src: k.src, next: k.next || null, later: k.later || [], ahead: !!k.ahead, files: k.files || null, dir: k.dir || '' });
+const lawView = (key, k) => ({ key, title: `${k.full}${k.rev ? ` (${ymd(k.rev)} 시행)` : ''}`, rev: k.rev, full: k.full, preamble: k.preamble || '', page: k.page || '', arts: k.arts, src: k.src, next: k.next || null, later: k.later || [], ahead: !!k.ahead, files: k.files || null, dir: k.dir || '',
+  file: k.file || '', promulgated: k.promulgated || '', num: k.num || '', type: k.type || '', bytes: k.bytes || 0 });   // (the version shown: its file in the mirror, 공포일자, 공포번호, size)
 async function loadAny(key, asked) {
   const kept = await store.get('kv', 'law:' + key).catch(() => null);
   const ok = kept && kept.v === 5 && kept.arts;
@@ -311,14 +353,15 @@ async function loadAny(key, asked) {
     }
     if (stub(got, md)) throw Object.assign(fail('repealed'), { date: got.rev || got.promulgated });   // (the day the repeal took effect)
     if (!got.arts.length) throw fail('unavailable');
-    let rec = { v: 5, at: Date.now(), full: got.name || hit.name || asked, rev: got.rev, mst: got.mst, arts: got.arts, preamble: got.preamble, page: got.page, dir: hit.dir, file: hit.file, files: hit.files || null, src: 'legalize-kr' };
+    let rec = { v: 5, at: Date.now(), full: got.name || hit.name || asked, rev: got.rev, mst: got.mst, arts: got.arts, preamble: got.preamble, page: got.page, dir: hit.dir, file: hit.file, files: hit.files || null, src: 'legalize-kr',
+      promulgated: got.promulgated, num: got.num, type: got.type, bytes: u8(md) };   // (bytes: what one version of it costs to read)
     if (got.rev && got.rev > now) {   // the newest text is not in force yet: today's text first, the nearest coming one beside it
-      if (ok && kept.mst === got.mst && kept.next) rec = { ...rec, full: kept.full, rev: kept.rev, arts: kept.arts, next: kept.next, later: kept.later || [] };
+      if (ok && kept.mst === got.mst && kept.next) rec = { ...rec, full: kept.full, rev: kept.rev, arts: kept.arts, next: kept.next, later: kept.later || [], promulgated: kept.promulgated || '', num: kept.num || '' };
       else {
         const found = await inForce(hit.dir, hit.file, now, got).catch(() => null);
         if (found) {
           const [near, ...rest] = found.coming;
-          rec = { ...rec, full: found.cur.name || rec.full, rev: found.cur.rev, arts: found.cur.arts, next: { rev: near.rev, promulgated: near.promulgated, arts: near.arts }, later: rest.map((x) => x.rev) };
+          rec = { ...rec, full: found.cur.name || rec.full, rev: found.cur.rev, arts: found.cur.arts, next: { rev: near.rev, promulgated: near.promulgated, arts: near.arts }, later: rest.map((x) => x.rev), promulgated: found.cur.promulgated, num: found.cur.num };
         } else rec.ahead = true;   // shown as it will read, and marked so
       }
     }
@@ -354,6 +397,7 @@ export function wordDiff(before, after) {
   const small = A.length * B.length <= 400000;
   const a = small ? [...A] : A.match(/\s+|[^\s\p{P}]+|\p{P}/gu) || [], b = small ? [...B] : B.match(/\s+|[^\s\p{P}]+|\p{P}/gu) || [];
   const n = a.length, m = b.length;
+  if (n && m && n * m > 400000 && /\n/.test(A) && /\n/.test(B)) return lineDiff(A, B);   // (a 항 of many 호 and 목: line by line)
   if (!n || !m || n * m > 400000) return [['-', A], ['+', B]].filter((x) => x[1]);
   const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
   for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
@@ -391,6 +435,34 @@ export function wordDiff(before, after) {
   }
   return out;
 }
+// a paragraph too long to be compared letter by letter or word by word (공직선거법 제112조 ②: 6,000 letters, 2,700 words, in
+// 44 lines): its lines (호, 목) are matched first, spaces aside, and only the lines that differ are compared within — the whole
+// paragraph struck out and written again would hide a one-목 change. In a run of differing lines the first dropped goes with
+// the first added, and so on; what is left over is dropped or added whole
+function lineDiff(A, B) {
+  const a = A.split('\n'), b = B.split('\n'), fa = a.map(flat), fb = b.map(flat);
+  const n = a.length, m = b.length;
+  if (n * m > 400000) return [['-', A], ['+', B]];
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = fa[i] === fb[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const rows = [];
+  let del = [], ins = [];
+  const flush = () => {
+    for (let k = 0; k < Math.max(del.length, ins.length); k++) rows.push(k < del.length && k < ins.length ? wordDiff(del[k], ins[k]) : k < del.length ? [['-', del[k]]] : [['+', ins[k]]]);
+    del = []; ins = [];
+  };
+  let i = 0, j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && fa[i] === fb[j]) { flush(); rows.push([['=', b[j]]]); i++; j++; }
+    else if (j >= m || (i < n && dp[i + 1][j] >= dp[i][j + 1])) del.push(a[i++]);
+    else ins.push(b[j++]);
+  }
+  flush();
+  const out = [];
+  const push = (k, t) => { if (!t) return; const l = out[out.length - 1]; if (l && l[0] === k) l[1] += t; else out.push([k, t]); };
+  rows.forEach((r, k) => { if (k) push('=', '\n'); for (const [kind, t] of r) push(kind, t); });
+  return out;
+}
 // each paragraph of an article as the coming amendment has it, with what changes in it: today's paragraph of the same
 // number (①, ② …) is its counterpart; null when the paragraph stays as it is
 export function pendingParas(today, coming) {
@@ -401,6 +473,226 @@ export function pendingParas(today, coming) {
     if (o && flat(o) === flat(t)) return { text: t, diff: null };
     return { text: t, diff: o ? wordDiff(o, t) : [['+', t]] };
   });
+}
+
+/* ---------------- 조문 연혁: when an article changed, and how ----------------
+   Each promulgation is a commit of the mirror, and each version's head gives its 공포일자, 공포번호 and 시행일자; an article's
+   연혁 is the versions in which it reads differently from the one before (titles and texts compared as above, spaces aside),
+   newest first, down to the version its record starts with: the mirror's first, its 신설, or the 전부개정 that wrote the law
+   anew under new numbers (what a number meant before that is another article).
+   A phone must not work this out by reading versions: 공직선거법 has 84 in the mirror (2005–2026), each 0.5–0.8 MB, 58 MB in
+   all; 헌법재판소법 24 (1988–2026), 41–66 KB each. So for the laws of the owner's research and the app's core laws (76) the
+   site's weekly workflow works it out (_tools/law_hist.py → lawhist/: one file for ten articles, 118 KB on average for
+   공직선거법, 9 KB as sent), and the device reads one file. For any other law it is found here only when the fold is opened,
+   within a budget: GitHub lists the file's versions (one call, kept a week — 60 calls an hour are allowed from one address),
+   and only the versions a search between them needs are read, comparing this article alone, the newest change first
+   (정당법 제22조, six changes in the 18 versions since its 2005 전부개정: 14 versions read, 0.7 MB, in two rounds); what a
+   round leaves is searched on when asked (더 찾기). A law larger than LIVE.big is not searched here at all (the page at
+   국가법령정보센터 instead). A change undone by a later one (A → B → A) is missed here, not by the workflow. */
+const ymdDash = (s) => { const m = /^(\d{4})-?(\d{2})-?(\d{2})$/.exec(String(s || '').trim()); return m ? `${m[1]}-${m[2]}-${m[3]}` : ''; };
+// what an article reads as, for telling its versions apart: the mirror's texts carry 법제처's pictures as markup
+// (<img src="…flDownload.do?flSeq=7399353" …>()</img>: the ㉥ of 공직선거법 제179조), whose file numbers, empty "()" and
+// "null" come and go between versions with no amendment; and 법제처 spelled 란 and 난 (투표용지의 란) one way and the other
+// in versions that did not touch the article. Neither is a change: the pictures are left out, the two spellings read as one,
+// spaces aside (shelf/_tools/law_hist.py compares the same way)
+// (a picture put in brackets, "(㉥)" for "㉥", is none either; a picture's own text — a table drawn in letters inside it — is
+// compared as text)
+const IMG = /<img\b[^>]*>(?:(?:null|\(\))?<\/img>)?/g;
+export const histSig = (title, text) => `${String(title || '').replace(/난/g, '란')}|${flat(String(text || '').replace(IMG, '\u0000').replace(/<\/img>/g, '')).replace(/\(\u0000\)/g, '').replace(/\u0000/g, '').replace(/난/g, '란')}`;
+// an article's text as the 연혁 shows it: each picture as 〔그림〕, not its markup
+export const histText = (t) => String(t || '').replace(IMG, '〔그림〕').replace(/\n?<\/img>/g, '');
+let histIdx = null, histNext = 0, histMiss = false;   // (asked once in six hours; see below after a failure)
+// lawhist/index.json: folder → [file, versions, first 공포일자, last 공포일자, articles]. Not reached (a slow phone past the
+// service worker's four seconds, a glitch; and when none is made yet — the service worker answers a missing file as a failed
+// one): asked again once, a moment later, and then not for a minute, unless again (an article's 연혁 being opened), so one
+// failure does not send the laws worked out beforehand to be searched on the device. histMiss: nothing to go by at all
+function histIndex(again = false) {
+  if (histIdx && Date.now() < histNext && !(again && histMiss)) return histIdx;
+  histNext = Date.now() + 6 * 3600e3; histMiss = false;
+  histIdx = (async () => {
+    const kept = await store.get('kv', 'lawhist:index').catch(() => null);
+    if (kept && kept.idx && (Date.now() - kept.at < 6 * 3600e3 || !navigator.onLine)) return kept.idx;
+    for (let k = 0; k < 2; k++) {
+      try {
+        const r = await fetch(new URL('./lawhist/index.json', import.meta.url), { cache: 'no-cache' });
+        const idx = r.ok ? await r.json() : null;
+        if (!idx || !idx.laws) throw new Error(String(r.status));
+        store.put('kv', 'lawhist:index', { at: Date.now(), idx }).catch(() => {});
+        return idx;
+      } catch (e) { if (!k && navigator.onLine) await new Promise((ok) => setTimeout(ok, 1500)); else break; }
+    }
+    if (kept && kept.idx) { histNext = Date.now() + 10 * 60e3; return kept.idx; }   // (last time's, until it is reached)
+    histNext = Date.now() + 60e3; histMiss = true;
+    return null;
+  })();
+  return histIdx;
+}
+const artKey = (a) => (a.sub ? `${a.art}-${a.sub}` : String(a.art));
+async function builtHistory(dir, file, a, again = false) {
+  const idx = await histIndex(again);
+  const e = idx && idx.laws && idx.laws[dir];
+  if (!e || (file && e[0] !== file)) return null;
+  const t = Math.floor(a.art / 10), key = `lawhist:${dir}/${e[0]}/${t}`;
+  const kept = await store.get('kv', key).catch(() => null);
+  let d = kept && kept.built === idx.built ? kept.d : null;
+  if (!d) {
+    try {
+      const r = await fetch(new URL(`./lawhist/${encodeURIComponent(dir)}/${encodeURIComponent(e[0])}/${t}.json`, import.meta.url), { cache: 'no-cache' });
+      if (!r.ok) throw new Error(String(r.status));   // (none: none of these ten articles was in the law when the record was made)
+      d = await r.json();
+      store.put('kv', key, { built: idx.built, d }).catch(() => {});
+    } catch (err) { if (kept && kept.d) d = kept.d; else d = { arts: {} }; }
+  }
+  return { list: (d.arts && d.arts[artKey(a)]) || [], type: d.type || '', n: e[1], from: e[2], last: e[3] || '', src: 'built', done: true };
+}
+// the version shown, as an entry of the record (one made after the record: this week's amendment)
+const shownEntry = (law, x) => ({ d: ymdDash(law.promulgated), no: law.num || '', kind: '', eff: ymdDash(law.rev), title: x.title, text: x.text, fresh: true });
+// a record made before the version shown: when that version changed the article, it comes first
+function fresher(h, law, x) {
+  const p = ymdDash(law.promulgated);
+  if (!h.list.length || !p || !(p > h.list[0].d)) return h;   // (the record reaches the version shown)
+  const top = h.list[0];
+  if (!top.gone && histSig(top.title, top.text) === histSig(x.title, x.text)) return h;   // (amended since, this article as it was)
+  return { ...h, list: [shownEntry(law, x), ...h.list] };
+}
+// the file's versions in the mirror, newest first, each with the kind of change and the day of its commit (the 공포일자).
+// Kept a week; asked again sooner when the text shown is newer than the newest version listed (an amendment since). only:
+// what is kept, never asked
+async function versionList(dir, file, { want = '', only = false } = {}) {
+  const path = `kr/${dir}/${file}.md`, key = 'lawvers:' + path;
+  const kept = await store.get('kv', key).catch(() => null);
+  const has = !!(kept && Array.isArray(kept.list) && kept.list.length);
+  const behind = has && want && kept.list[0].d && kept.list[0].d < want && Date.now() - kept.at > 3600e3;
+  if (has && (only || !navigator.onLine || (Date.now() - kept.at < 7 * 864e5 && !behind))) return kept.list;
+  if (only) return null;
+  if (!navigator.onLine) throw fail('offline');
+  const list = [];
+  for (let pg = 1; pg <= 3; pg++) {
+    let r = null;
+    try { r = await fetch(`${HIST}?path=${encodeURIComponent(path)}&per_page=100&page=${pg}`, { headers: { Accept: 'application/vnd.github+json' } }); } catch (e) { /* below */ }
+    if (!r || !r.ok) { if (has) return kept.list; throw fail(r && (r.status === 403 || r.status === 429) ? 'busy' : 'unavailable'); }
+    const got = await r.json().catch(() => null);
+    if (!Array.isArray(got)) { if (has) return kept.list; throw fail('unavailable'); }
+    for (const c of got) {
+      if (!c || !/^[0-9a-f]{40}$/.test(c.sha || '')) continue;
+      const at = String(((c.commit && (c.commit.author || c.commit.committer)) || {}).date || '');
+      list.push({ sha: c.sha, kind: (/\(([^()]*)\)\s*$/.exec(String((c.commit && c.commit.message) || '').split('\n')[0]) || [])[1] || '', d: /^\d{4}-\d{2}-\d{2}/.test(at) ? at.slice(0, 10) : '' });
+    }
+    if (got.length < 100) break;
+  }
+  // (the commits' order is not always their days': in 16 files a version backfilled later stands before newer ones, and a
+  // commit that only put the newest text back names no kind of change — by day, newest first, without such commits;
+  // an unknown day, 1970-01-01, is only ever a law's first versions)
+  const byDay = list.map((v, i) => [v, i]).filter(([v]) => v.kind).sort((p, q) => (q[0].d || '').localeCompare(p[0].d || '') || p[1] - q[1]).map(([v]) => v);
+  if (!byDay.length && has) return kept.list;
+  store.put('kv', key, { at: Date.now(), list: byDay }).catch(() => {});
+  return byDay;
+}
+// what one round may read (versions, and their size in UTF-8: a law of 50 KB, a round of 0.6 MB); a law larger than big is
+// not read version by version on this device
+const LIVE = { reads: 12, bytes: 3e6, big: 6e5 };
+const WHOLE = /^(?:제정|전부개정|폐지제정)$/;   // (a version that writes the law anew: an article's record starts there)
+const lives = new Map(), rounds = new Map();
+// peek: what earlier rounds found (kept here), nothing asked or read; null when this article was never searched.
+// One round at a time for an article: a card left while its round runs does not stop it, and the card drawn again (the
+// article asked once more) shares its state — a second round beside it would take the first one's segments off the list
+// under it, end with changes missing, and keep that as finished. A round asked meanwhile waits for the one running
+function liveHistory(dir, file, a, opt = {}) {
+  if (opt.peek) return liveRound(dir, file, a, opt);
+  const id = `${dir}/${file}|${artKey(a)}`;
+  const run = (rounds.get(id) || Promise.resolve()).catch(() => {}).then(() => liveRound(dir, file, a, opt));
+  const tail = run.catch(() => {});
+  rounds.set(id, tail);
+  tail.then(() => { if (rounds.get(id) === tail) rounds.delete(id); });
+  return run;
+}
+async function liveRound(dir, file, a, { onStep, want = '', bytes = 0, peek = false } = {}) {
+  const id = `${dir}/${file}|${artKey(a)}`;
+  const vs = await versionList(dir, file, { want, only: peek });
+  if (!vs || !vs.length) return null;
+  let s = lives.get(id);
+  if (!s || s.head !== vs[0].sha) {
+    const kept = await store.get('kv', 'arthist:' + id).catch(() => null);
+    if (kept && kept.head === vs[0].sha) s = { ...kept, at: new Map(kept.at) };
+    else if (peek) return null;
+    else {
+      const b = vs.findIndex((v) => WHOLE.test(v.kind));
+      s = { head: vs[0].sha, vs: vs.slice(0, b < 0 ? vs.length : b + 1), at: new Map(), found: [], todo: null, big: false };
+    }
+    lives.set(id, s);
+  }
+  if (peek && !s.todo && !s.big) return null;
+  if (bytes > LIVE.big) s.big = true;
+  const spent = { reads: 0, bytes: 0 };
+  const get = async (i) => {
+    if (s.at.has(i)) return s.at.get(i);
+    const md = await mirrorFile(dir, file, s.vs[i].sha);
+    const n = md ? u8(md) : 0;
+    spent.reads++; spent.bytes += n;
+    if (n > LIVE.big) s.big = true;
+    const g = md ? mirrorArts(md) : null, x = g && g.arts.find((y) => y.art === a.art && y.sub === a.sub);
+    const v = { d: ymdDash(g && g.promulgated) || s.vs[i].d || '', no: (g && g.num) || '', eff: ymdDash(g && g.rev), type: (g && g.type) || '', x: x ? { title: x.title, text: x.text } : null };
+    s.at.set(i, v);
+    if (onStep) onStep(s.at.size, s.vs.length);
+    return v;
+  };
+  const sig = (v) => (v.x ? histSig(v.x.title, v.x.text) : '');
+  const L = s.vs.length - 1;
+  let err = null;
+  if (!peek && !s.big) {
+    try {
+      if (!s.todo) { await get(0); if (!s.big && L > 0) await get(L); if (!s.big) s.todo = L > 0 ? [[0, L]] : []; }
+      while (s.todo && s.todo.length && !s.big && spent.reads < LIVE.reads && spent.bytes < LIVE.bytes) {
+        const [lo, hi] = s.todo[s.todo.length - 1];   // (the segment nearer today is on top: the newest changes are found first)
+        const A = await get(lo), B = await get(hi);
+        if (sig(A) === sig(B)) { s.todo.pop(); continue; }   // (the same at both ends: taken as unchanged between — a change undone later is missed)
+        if (hi - lo === 1) { s.todo.pop(); s.found.push(lo); continue; }
+        const mid = (lo + hi) >> 1;
+        await get(mid);
+        s.todo.pop(); s.todo.push([mid, hi], [lo, mid]);
+      }
+    } catch (e) {   // (a version that could not be read ends the round there: its segment stays on the list, what was found stays found)
+      err = e && e.code ? e : fail('unavailable');
+    } finally {
+      store.put('kv', 'arthist:' + id, { head: s.head, vs: s.vs, at: [...s.at], found: s.found, todo: s.todo, big: s.big }).catch(() => {});
+    }
+  }
+  const entry = (i, how) => { const v = s.at.get(i); return { d: v.d, no: v.no, kind: s.vs[i].kind, eff: v.eff, ...(v.type ? { type: v.type } : {}), ...(v.x ? { title: v.x.title, text: v.x.text } : { gone: true }), ...(how ? { how } : {}) }; };
+  const list = [...new Set(s.found)].sort((p, q) => p - q).map((i) => {
+    const before = s.at.get(i + 1), e = entry(i, before && !before.x ? 'new' : '');
+    return before && before.x ? { ...e, before: before.x } : e;   // (the text it replaced, for the marks: the version just before)
+  });
+  const done = !!s.todo && !s.todo.length && !s.big;
+  const base = s.at.get(L);
+  if (done && base && base.x) list.push(entry(L, WHOLE.test(s.vs[L].kind) ? 'whole' : 'start'));
+  return { list, src: 'live', done, big: s.big, read: s.at.size, n: s.vs.length, from: done && base ? base.d : '', ...(err ? { err: err.code, net: !!err.net } : {}) };
+}
+// the 연혁 of an article as the card shows it: { list (newest first), src 'built' | 'live', done, … }; null when the law is not
+// one the mirror keeps (a text from 국가법령정보 itself). A law not worked out beforehand is searched only when asked (live);
+// until then what an earlier search found here is shown, or { idle } (and big, when it is too large to be searched here)
+export async function artHistory(law, x, { live = false, onStep } = {}) {
+  if (!law || !x || typeof x.art !== 'number') return null;
+  const own = LAWS[law.key];
+  let dir = law.dir || (own ? dirOf(own.full) : ''), file = law.file || '';
+  if (!dir || (!own && law.src !== 'legalize-kr')) return null;
+  let b = await builtHistory(dir, file, x).catch(() => null);
+  // (the index not reached when the card was drawn: asked again now that the fold is opened, before searching on the device)
+  if (!b && histMiss && live) b = await builtHistory(dir, file, x, true).catch(() => null);
+  if (b && b.list.length) return fresher(b, law, x);
+  const want = ymdDash(law.promulgated);
+  if (b && b.last && want > b.last) return { ...b, list: [{ ...shownEntry(law, x), how: 'new' }] };   // (an article added since the record was made)
+  let bytes = law.bytes || 0;
+  if (!live) {
+    const kept = file ? await liveHistory(dir, file, x, { want, peek: true }).catch(() => null) : null;
+    // (unsure: the records worked out beforehand could not be asked — this law may be among them, so not called too large yet)
+    return kept || { list: [], src: 'live', done: false, idle: true, big: bytes > LIVE.big, ...(!b && histMiss ? { unsure: true } : {}) };
+  }
+  if (!file) {   // (the court's own texts of 헌법 and 헌법재판소법, and a law kept here from before files were noted: the mirror's file)
+    const m = own ? await loadAny('mirror:' + law.key, own.full) : await resolveLaw(law.full);
+    dir = (m && m.dir) || dir; file = (m && m.file) || ''; bytes = bytes || (m && m.bytes) || 0;
+    if (!file) return null;
+  }
+  return liveHistory(dir, file, x, { onStep, want, bytes });
 }
 
 /* ---------------- the courts' judgments: 국가법령정보 OPEN API (and the public mirror) ---------------- */
@@ -493,7 +785,7 @@ const courtAsking = new Map();
 export function courtCase(ref) {
   const q = courtQuery(ref) || { no: String(ref || '').replace(/\s+/g, ''), court: '' };
   const k = q.court && q.court !== '대법원' ? `${q.no}@${q.court}` : q.no;
-  if (!courtAsking.has(k)) courtAsking.set(k, askCourt(q.no, q.court, k).finally(() => courtAsking.delete(k)));
+  if (!courtAsking.has(k)) courtAsking.set(k, askCourt(q.no, q.court, k).then(enbanced).finally(() => courtAsking.delete(k)));
   return courtAsking.get(k);
 }
 // a court as papers write it: 대판 → 대법원, 서울고법 → 서울고등법원, 서울중앙지법 → 서울중앙지방법원, 서울행법 → 서울행정법원
@@ -562,7 +854,45 @@ async function drfCourt(no) {
   };
 }
 // 대법원 2004. 4. 22. 선고 2000두7735 판결 · 대법원 2010. 3. 2.자 2009마1234 결정
-export const courtCite = (d) => `${d.courtName || '법원'} ${d.date ? d.date + (d.kind === '결정' ? '자 ' : ' 선고 ') : ''}${d.no} ${d.kind || '판결'}`;
+// 대법원 2018. 11. 1. 선고 2016도10912 전원합의체 판결 — the whole court's judgment is cited as such, or the footnote is wrong
+export const courtCite = (d) => `${d.courtName || '법원'} ${d.date ? d.date + (d.kind === '결정' ? '자 ' : ' 선고 ') : ''}${d.no} ${d.enbanc ? '전원합의체 ' : ''}${d.kind || '판결'}`;
+// 전원합의체, read from the judgment itself: the whole court signs it (대법원장 presiding, with eight justices or more — the
+// Chief Justice sits in no 소부, which is four), or it has opinions besides the court's ([다수의견] · [반대의견] · [별개의견],
+// "반대의견이 있는 외에는"), which a 소부 never has (it decides as one), or it changes a precedent, which only the whole court
+// may (법원조직법 제7조 제1항 제3호). '전원합의체' alone is no sign: a 소부's judgment names the whole court's by it. A judgment
+// the index (precq) lists as 전원합의체 — signed so, or cited so by another — is marked by markEnbanc when its row is shown;
+// but the index is wrong for some (its builder took a mirror's repeated names, a presiding justice written as 대법원장, or
+// "…는 해외출장으로 서명날인 불능" for more signers: 99다68584, 2009마218, 95누4155), so a judgment whose own signature is a
+// 소부's (three to five justices, from 1961) is cited as the 소부's whatever the index says. Before 1961 the court was small and
+// its whole bench signed with five too (4285행상1, 대법원장 김병로 presiding), so there the index decides. (_tools/prec_search.py
+// reads the same.)
+const EN_BANC = new Set();
+export const markEnbanc = (no) => { if (no) EN_BANC.add(String(no).replace(/\s+/g, '')); };
+// how many justices signed: the distinct names on the judgment's last line (before the 【판례적용 주의】 note the mirror adds
+// after a rule) — null when that line is no signature. "대법원  장윤관(재판장)" is the mirror's split of 대법원장 윤관; a name
+// written twice, and the words of an absence note, count for none
+const NOT_NAME = /^(?:대법원장|대법관|대법원|재판장|주심|판사|불능|불능임|서명|날인|출장|해외|퇴직|퇴임|여행|못함|없음|없다|사유|전보|이므로)$/;
+export function signers(reason) {
+  const body = String(reason || '').replace(/\n\s*-{10,}\s*\n\s*【[\s\S]*$/, '').trimEnd();
+  const tail = body.slice(-700), last = tail.slice(tail.lastIndexOf('\n') + 1).trim().replace(/^대법원\s+장\s*/, '대법원장 ');
+  if (last.length > 300 || !/^(?:재판장\s*)?대법(?:원장|관|원판사)/.test(last)) return null;
+  return new Set(last.replace(/\([^)]*\)/g, ' ').split(/\s+/).filter((w) => /^[가-힣]{2,3}$/.test(w) && !NOT_NAME.test(w))).size;
+}
+const yearOf = (d) => { const m = /(?:19|20)\d{2}/.exec(d.date || ''); if (m) return Number(m[0]); const y = /^(\d{2,4})/.exec(String(d.no || '')); return !y ? 0 : y[1].length === 2 ? 1900 + Number(y[1]) : Number(y[1]) >= 4200 ? Number(y[1]) - 2333 : Number(y[1]); };
+export function enbancOf(d) {
+  if (!d || !/^대법원/.test(String(d.courtName || '').replace(/\s+/g, ''))) return false;
+  if (/전원합의체/.test(d.kind || '')) return true;
+  const reason = String(d.reason || '');
+  if (/\[(?:다수|반대|별개)의견\]/.test(`${d.points || ''}\n${d.summary || ''}`)) return true;
+  if (/(?:반대|별개)의견이\s*있는\s*(?:것\s*)?외에는|이\s*(?:판결|결정)의\s*견해에\s*배치되는\s*범위\s*(?:내)?에서\s*(?:이를\s*)?(?:모두\s*)?변경하기로\s*한다/.test(reason)) return true;
+  // (nine names or more under 대법원장, 대법관 or — in the 1960s and 70s — 대법원판사: a 소부 signs with four)
+  const n = signers(reason);
+  if (n !== null && n >= 9) return true;
+  if (n !== null && n >= 3 && n <= 5 && yearOf(d) >= 1961) return false;
+  return EN_BANC.has(String(d.no || '').replace(/\s+/g, ''));
+}
+// (a judgment kept here before this was read from it is told so too: the reading is the text's own)
+const enbanced = (d) => { if (d && typeof d === 'object') { d.enbanc = enbancOf(d); if (d.enbanc && /전원합의체/.test(d.kind || '')) d.kind = String(d.kind).replace(/\s*전원합의체\s*/, '') || '판결'; } return d; };
 
 /* ---------------- citations in a paper's text (parser v2) ----------------
    The law named just before 제N조. A known law (the name dictionary: every filed law, abbreviations) is matched by its longest
@@ -585,6 +915,10 @@ const GLUED_FOREIGN = /(?:수정|연방)\s*$/;
 const KOREAN_ANCHOR = /(?:우리|우리나라|한국|대한민국|현행|국내)\s*(?:의\s*)?$/;
 const reEsc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const unwrap = (s) => s.replace(/([가-힣])[ \t]*\n[ \t]*([가-힣])/g, '$1$2');   // a word broken across a line of the PDF is one word
+// 「」 and 『』 as HWP-made PDFs write them — the half-width ｢ ｣ (U+FF62/U+FF63), and 뺷 뺸 or U+0002/U+0003 as cite.js glyphs()
+// reads them — one letter for one, so every place found in the text is the text's own ("｢행정기본법｣ 제27조" is 「행정기본법」's)
+const CORNER = { '｢': '「', '｣': '」', '뺷': '『', '뺸': '』', '\u0002': '『', '\u0003': '』' };
+export const corners = (s) => String(s || '').replace(/[｢｣뺷뺸\u0002\u0003]/g, (c) => CORNER[c]);
 // what the clause says of the law named at `at`: 'f' foreign, 'k' Korean (우리 민법, 현행헌법, 대한민국 헌법), '' neither
 function foreignLaw(text, at, law) {
   const near = unwrap(text.slice(Math.max(0, at - 30), at));   // ('앞의 일⏎본 헌법 제33조' is Japan's)
@@ -759,7 +1093,8 @@ function lawBefore(text, end) {
   while (s > 0 && /\s/.test(text[s - 1])) s--;
   if (text[s - 1] === ')') {   // step over "(…개정된 것)" only; any other paren (often a foreign original title) means do not link
     const open = text.lastIndexOf('(', s - 1), inside = open >= 0 ? text.slice(open + 1, s - 1) : '';
-    const versionNote = /개정|신설|전의\s*것|된\s*것|법률\s*제\s*\d+\s*호|대통령령\s*제\s*\d+\s*호|시행|폐지|제정|이전의/.test(inside) && !/[A-Za-z]/.test(inside);
+    // (and a name given for later, "(이하 ‘토지보상법’이라 한다)", as judgments write after a long name before its 제N조)
+    const versionNote = (/개정|신설|전의\s*것|된\s*것|법률\s*제\s*\d+\s*호|대통령령\s*제\s*\d+\s*호|시행|폐지|제정|이전의/.test(inside) || /^\s*이하\s[^()]{1,40}(?:이)?라\s*(?:한다|함|칭한다|칭함)\s*$/.test(inside)) && !/[A-Za-z]/.test(inside);
     if (open >= 0 && s - open < 100 && versionNote) { s = open; while (s > 0 && /\s/.test(text[s - 1])) s--; }
     else if (open >= 0) return null;
   }
@@ -776,7 +1111,7 @@ function lawBefore(text, end) {
   while (start > hard && /[가-힣·ㆍ()\s]/.test(text[start - 1]) && !tokEnd(start)) start--;
   const span = text.slice(start, s);
   for (let a = 0; a < span.length; a++) {   // a grows → the candidate shortens; the first known one is the longest
-    const rest = span.slice(a), cand = rest.trimStart();
+    const rest = span.slice(a), cand = rest.replace(/^[\s·ㆍ]+/, '');   // (a list's middle dot before the name is not the name's: "제1조 · 행정기본법")
     if (cand.length < 2) break;
     if (!SUFFIX.test(NAME_NORM(cand))) continue;
     const canon = resolveName(NAME_NORM(cand));
@@ -812,11 +1147,38 @@ const PARA_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*(?:제\s*(\d{1,3})\s*항|([①-
 const JEONMUN = /(?:대한민국)?헌법\s*전문(?=[은는을를의과와](?![가-힣])|에|\s*(?:[,·ㆍ]|및|[)）.。"”’」]|$))/g;   // 전문과 제1조 ✓, 전문과정 ✗
 // scope: what the text before this one left (articleScope), when a page is read on its own
 export function scanArticles(textIn, scope = null) { return scan(textIn, scope, false); }
+// … and the citations of foreign laws too, each marked foreign (for a search that must leave out what reads like a Korean
+// article but is another country's: "(형사소송법 제199조)" in a section on Japan's)
+export function scanArticlesAll(textIn, scope = null) { return scan(textIn, scope, false, true); }
 // what a text (a page) leaves for the one after it: the headings above, the foreign laws named in the section
 export function articleScope(textIn, scope = null) { return scan(textIn, scope, true); }
-function scan(textIn, scope, wantScope) {
+// what a version note between a law's name and 제N조 says of the text cited: "(2011. 3. 31. 법률 제10522호로 개정되기 전의 것)"
+// → '2011. 3. 31. 개정 전', "(… 개정되어 2020. 12. 10. 시행되기 전의 것)" → '2020. 12. 10. 시행 전', "(2016. 1. 6. … 개정된 것)"
+// → '2016. 1. 6. 개정된 것' (each the date just before the words that say it); '' when the parenthesis is no version note
+// ("(이하 ‘법’이라 한다)") or names no date
+const VER_WORDS = /개정|신설|전의\s*것|된\s*것|법률\s*제\s*\d+\s*호|대통령령\s*제\s*\d+\s*호|시행|폐지|제정|이전의/;
+const OLD_NOTE = /전의\s*것|되기\s*전|개정\s*전|이전의|폐지/;   // (a note that says the text cited was before some change)
+const parenOf = (seg) => { const o = seg.lastIndexOf('('), c = seg.lastIndexOf(')'); return o >= 0 && c > o && /\)\s*$/.test(seg) ? seg.slice(o + 1, c) : ''; };
+function verNote(t) {
+  if (!t || !VER_WORDS.test(t)) return '';
+  const dates = [...t.matchAll(/((?:19|20)\d{2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{1,2})\s*\.?/g)].map((d) => ({ i: d.index, s: `${d[1]}. ${Number(d[2])}. ${Number(d[3])}.` }));
+  const at = (re) => { const m = re.exec(t); if (!m) return ''; const b = dates.filter((d) => d.i < m.index); return b.length ? b[b.length - 1].s : ''; };
+  let d;
+  if ((d = at(/시행되기\s*전/))) return `${d} 시행 전`;
+  if ((d = at(/전부\s*개정되기\s*전/))) return `${d} 전부 개정 전`;
+  if ((d = at(/개정되기\s*전|개정\s*전/))) return `${d} 개정 전`;
+  if ((d = at(/폐지되기\s*전/))) return `${d} 폐지 전`;
+  if ((d = at(/개정된\s*것|개정되어/))) return `${d} 개정된 것`;
+  if ((d = at(/제정된\s*것/))) return `${d} 제정된 것`;
+  return '';
+}
+function scan(textIn, scope, wantScope, all = false) {
   const out = [];
   if (!textIn) return wantScope ? (scope && scope.path ? scope : { path: [], named: [] }) : out;
+  textIn = corners(textIn);   // (one letter for one: the places found are the text's own)
+  // (what each law's last version note here said, by the law: "구 민간투자법 제4조" after "구 사회기반시설에 대한 민간투자법(2011. 3. 31.
+  // … 개정되기 전의 것, 이하 ‘구 민간투자법’이라 한다)" is that same version; carried over from the page before too)
+  const vers = new Map(scope && Array.isArray(scope.vers) ? scope.vers : []);
   const sec = sections(textIn, scope);
   ART_TAIL.lastIndex = 0;
   // (the law cited last, for "같은 법 시행령 제76조", "동법 제5조"; carried over from the page before when read page by page)
@@ -826,22 +1188,32 @@ function scan(textIn, scope, wantScope) {
     if (!nm) continue;
     prev = nm;
     let art = Number(m[1]), sub = m[2] ? Number(m[2]) : 0;
-    const old = /구\s*$/.test(textIn.slice(Math.max(0, nm.start - 2), nm.start)) || /\)\s*$/.test(textIn.slice(nm.start, m.index));
+    // (구 as a word of its own — "구 민간투자법", "(구 형법" — not the end of another: "선행연구 공직선거법")
+    const note = parenOf(textIn.slice(nm.start, m.index)), gu = /(?:^|[^가-힣])구\s*$/.test(textIn.slice(Math.max(0, nm.start - 3), nm.start));
+    // (an old text's citation says so, with the date its note gives — or the note before it on the same law, or just '구':
+    // the article opened from it is today's, and the reader is told. Only 구 or a note that says the text was before some
+    // change ("…개정되기 전의 것", "개정 전", "폐지") is old; "…개정된 것" names its version, which the reader is told as
+    // such; a bare date, 시행, 제정 or a law's number ("(2022. 1. 27. 시행)", "(법률 제17979호)") marks the text in force —
+    // no band, or the scholar is told a law in force is a repealed one)
+    const was = gu ? verNote(note) || vers.get(lawId(nm.law)) || '구' : OLD_NOTE.test(note) ? verNote(note) || '구' : verNote(note);
+    const old = !!was;
+    if (/ 전$/.test(was)) vers.set(lawId(nm.law), was);   // (only a text before some change is "구 …" again later)
+    const mark = was ? { old: was } : null;
     const said = foreignLaw(textIn, nm.start, nm.law) || sec.said(nm.law, nm.start, tailEnd, art, sub);
     // no such article in the Korean law: not linked, nor is the same article cited again in this section — but the list after
     // it goes on ("형법 제535조, 제55조 제1항": a slip of the pen, then a real one)
     const none = !old && beyond(nm.law, art, sub);
     if (said === 'fa' || (!said && none)) sec.note(nm.law, nm.start, 'f', art, sub);
     else if (said) sec.note(nm.law, nm.start, said);
-    if (said === 'f' || said === 'fa') { prev = { ...nm, foreign: true }; continue; }
+    if (said === 'f' || said === 'fa') { if (all) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start, foreign: true }); prev = { ...nm, foreign: true }; continue; }
     const keep = (a, s) => old || !beyond(nm.law, a, s);
-    if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start });
-    let at = tailEnd;   // the same law's list: a new article, or another 항 of this article
+    if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start, ...mark });
+    let at = tailEnd;   // the same law's list: a new article, or another 항 of this article (of the same version)
     for (;;) {
       PARA_MORE.lastIndex = at; const p = PARA_MORE.exec(textIn);
       ART_MORE.lastIndex = at; const a = ART_MORE.exec(textIn);
-      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k }); at = PARA_MORE.lastIndex; }
-      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
+      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k, ...mark }); at = PARA_MORE.lastIndex; }
+      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k, ...mark }); at = ART_MORE.lastIndex; }
       else break;
     }
     ART_TAIL.lastIndex = at;
@@ -853,7 +1225,7 @@ function scan(textIn, scope, wantScope) {
     let at = j.index + j[0].length, a;
     for (;;) { ART_MORE.lastIndex = at; a = ART_MORE.exec(textIn); if (!a) break; const k = a[0].search(/제/); out.push({ law: '헌법', art: Number(a[1]), sub: a[2] ? Number(a[2]) : 0, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
   }
-  return wantScope ? { ...sec.end(), prev: prev ? { law: prev.law, foreign: !!prev.foreign } : null } : out;
+  return wantScope ? { ...sec.end(), prev: prev ? { law: prev.law, foreign: !!prev.foreign } : null, vers: [...vers] } : out;
 }
 // a court's case cited in a paper: 대법원 2004. 4. 22. 선고 2000두7735 판결, 대판 2010다12345, 85다카1151, 2016수64 (단기 4287민상…)
 // longer kinds first so 다카 is tried before 다 (alternation is ordered)

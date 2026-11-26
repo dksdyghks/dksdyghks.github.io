@@ -79,14 +79,40 @@ def cites(text):
     return out, eb
 
 
-def enbanc(text):
-    """a 대법원 judgment signed by the whole court: 대법원장 presiding (대법원장 이용훈(재판장) 강신욱 …), or a dozen justices"""
-    tail = text.rstrip()[-700:]
+NOTE = re.compile(r'\n\s*-{10,}\s*\n\s*【[\s\S]*$')   # the 【판례적용 주의】 note the mirror adds after a judgment a later one overruled
+NOT_NAME = re.compile(r'^(?:대법원장|대법관|대법원|재판장|주심|판사|불능|불능임|서명|날인|출장|해외|퇴직|퇴임|여행|못함|없음|없다|사유|전보|이므로)$')
+OPINIONS = re.compile(r'\[(?:다수|반대|별개)의견\]')
+OPINIONS_REASON = re.compile(r'(?:반대|별개)의견이\s*있는\s*(?:것\s*)?외에는|이\s*(?:판결|결정)의\s*견해에\s*배치되는\s*범위\s*(?:내)?에서\s*'
+                             r'(?:이를\s*)?(?:모두\s*)?변경하기로\s*한다')
+
+
+def signers(reason):
+    """how many justices signed (distinct names on the last line, as laws.js signers() counts them), None when it is no signature"""
+    tail = NOTE.sub('', reason or '').rstrip()[-700:]
+    last = re.sub(r'^대법원\s+장\s*', '대법원장 ', tail[tail.rfind('\n') + 1:].strip())   # ('대법원  장윤관(재판장)': 대법원장 윤관)
+    if len(last) > 300 or not re.match(r'(?:재판장\s*)?대법(?:원장|관|원판사)', last):
+        return None
+    return len({w for w in re.sub(r'\([^)]*\)', ' ', last).split() if re.fullmatch(r'[가-힣]{2,3}', w) and not NOT_NAME.match(w)})
+
+
+def enbanc(reason, points, year):
+    """what the 대법원 judgment's own text says of 전원합의체 — True, False (a 소부's signature) or None (it cannot tell; then
+    another judgment's 참조판례 calling it so decides) — read as laws.js enbancOf reads it, so the index and the app agree:
+    opinions besides the court's, a precedent changed, nine signers or more → True; three to five signers from 1961 → False
+    (before 1961 the whole bench signed with five too); else the earlier reading: 대법원장 presiding, or 8 words under 대법관"""
+    if OPINIONS.search(points or '') or OPINIONS_REASON.search(reason or ''):
+        return True
+    n = signers(reason)
+    if n is not None and n >= 9:
+        return True
+    if n is not None and 3 <= n <= 5 and year >= 1961:
+        return False
+    tail = NOTE.sub('', reason or '').rstrip()[-700:]
     last = tail[tail.rfind('\n') + 1:].strip()
     if len(last) > 300:
-        return False
+        return None
     names = re.sub(r'\([^)]*\)', ' ', last).split()
-    return bool(names) and (re.sub(r'\s+', '', last).startswith('대법원장') or (names[0] in ('대법관', '대법원') and len(names) >= 8))
+    return True if names and (re.sub(r'\s+', '', last).startswith('대법원장') or (names[0] in ('대법관', '대법원') and len(names) >= 8)) else None
 
 
 def hash_of(s, n):   # the same as precq.js
@@ -180,7 +206,8 @@ def read(src):
                                  title=re.sub(r'\s+', ' ', head.get('사건명', '')).strip(),
                                  texts=(head.get('사건명', ''), secs.get('판시사항', ''), secs.get('판결요지', '')),
                                  refs=refs(secs.get('참조조문', '')), named=named, eb=eb,
-                                 self_eb=seg[0] == '대법원' and enbanc(secs.get('판례내용', '') or text)))
+                                 self_eb=enbanc(secs.get('판례내용', '') or text, secs.get('판시사항', '') + '\n' + secs.get('판결요지', ''),
+                                                int(day[:4]) if day else year_of(first)) if seg[0] == '대법원' else None))
     return docs
 
 
@@ -196,7 +223,8 @@ def main(src, dst, commit=''):
     for x in docs:
         k = x['court'] + '|' + x['no']
         x['cited'] = cited.get(k, 0)
-        x['enbanc'] = x['self_eb'] or k in eb
+        # (the judgment's own text first; another's 참조판례 only where the text cannot tell — a 소부's signature outweighs it)
+        x['enbanc'] = x['self_eb'] is True or (x['self_eb'] is None and k in eb)
         x['lead'] = 0 if LEAD and (x['enbanc'] or x['cited'] >= LEAD) else 1
     docs.sort(key=lambda x: (rank(x['court']), x['lead'], -x['at'], x['no']))
     # every piece, with the judgments holding it in their name, else their 판시사항, else their 판결요지: LEB128 gaps as they come

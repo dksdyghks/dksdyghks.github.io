@@ -17,6 +17,11 @@
 //   prefs.json                     a few choices kept across devices: the KCI papers set aside (관심 없음), newest wins
 //   auth/devices/<sha256(token)>   one small record per signed-in device
 //   auth/fails.json                failed sign-in counter
+//   write/style.json               the owner's writing style as Claude described it from the owner's own papers (글쓰기)
+//   write/use.json                 글쓰기 requests counted for the day (the owner's day, in Korea), for the daily cap, and
+//                                  what they cost (estimated from the usage Anthropic reports), for the day's budget
+//   write/last.json                the latest 글쓰기 answer as it was streamed (so an app that lost the connection gets it)
+//   write/stop.json                the id of a 글쓰기 answer the owner stopped (read by the request still running)
 //
 // Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
 //   /api/law/search|item   국가법령정보 공동활용 (법령·판례·헌재결정례…): env.LAW_OC
@@ -32,6 +37,7 @@
 //                           (its access token, issued with those, is kept in R2 at auth/scienceon.json and renewed when it runs out)
 //   /api/foreign/<id>       비교법 원문: a few foreign election laws from their official sources, by name only (FOREIGN)
 //   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
+//   /api/write              글쓰기 도우미: Anthropic's Messages API (Claude), the answer streamed on: env.ANTHROPIC_API_KEY
 // Their answers are kept at Cloudflare's edge for a while (kept()), but only real answers: an error, a daily-limit answer or a
 // maintenance page is never kept, so the next ask goes out again.
 
@@ -178,6 +184,13 @@ async function route(req, env, ctx) {
         break;
       case 'embed':
         if (m === 'POST' && p.length === 2) return await embed(req, env);
+        break;
+      case 'write':
+        if (m === 'GET' && p.length === 2) return await writeInfo(env);
+        if (m === 'POST' && p.length === 2) return await writeAsk(req, env, ctx);
+        if (m === 'GET' && p[2] === 'style' && p.length === 3) return await writeStyle(env);
+        if (m === 'GET' && p[2] === 'last' && p.length === 3) return await writeLast(env, url);
+        if (m === 'POST' && p[2] === 'stop' && p.length === 3) return await writeStop(req, env);
         break;
       case 'diag':
         if (m === 'GET' && p.length === 2) return await diag(req, env);
@@ -760,7 +773,7 @@ async function diag(req, env) {
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
     ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
   ];
-  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.MOLEG_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC, env.KCI_KEY, kciKeyOf(env)].filter(Boolean);
+  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.MOLEG_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC, env.KCI_KEY, kciKeyOf(env), env.ANTHROPIC_API_KEY].filter(Boolean);
   // the shape of each data.go.kr key (never its value): a 64-letter hex key is the portal's newer '일반 인증키'
   const shape = (k) => (k ? { len: k.length, hex: /^[0-9a-f]+$/i.test(k) } : null);
   // KCI's key as pasted (never its value): its length, and whether spaces, quotes or other letters came with it
@@ -768,6 +781,8 @@ async function diag(req, env) {
   const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, keys: { DATA_GO_KR_KEY: shape(env.DATA_GO_KR_KEY), MOLEG_KEY: shape(env.MOLEG_KEY), KCI_KEY: kshape(env.KCI_KEY) }, results: {} };
   tries.push(['nanet', env.NANET_KEY && (() => nanetAsk(env, 'searchTotal', { searchTerm: '관습헌법', printRowCnt: '1' }))]);
   // KCI's own Open API (논문 검색): whether the owner's key is taken, and the shape of its answer (the key taken out)
+  // the owner's Claude key: taken or not, and which models it may use (a list, no tokens spent)
+  tries.push(['anthropic', env.ANTHROPIC_API_KEY && (() => fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': env.ANTHROPIC_API_KEY.trim(), 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(12000) }))]);
   const kciKey = kciKeyOf(env);
   tries.push(['kcisearch', kciKey && `https://open.kci.go.kr/po/openapi/openApiSearch.kci?${new URLSearchParams({ apiCode: 'articleSearch', key: kciKey, title: '관습헌법', displayCount: '2' })}`, { 'user-agent': UA }]);
   tries.push(['moleg', dataKey(env, ['1170000']) && `https://apis.data.go.kr/1170000/law/lawSearchList.do?${new URLSearchParams({ serviceKey: dataKey(env, ['1170000']), target: 'law', query: '공직선거법', numOfRows: '1', pageNo: '1' })}`]);
@@ -781,7 +796,7 @@ async function diag(req, env) {
     if (!u) { out.results[k] = { status: 'no key' }; return; }
     try {
       const r = typeof u === 'function' ? await u() : await fetch(u, { headers: headers || {}, signal: AbortSignal.timeout(12000) });
-      let t = (await r.text()).slice(0, k === 'kcisearch' ? 8000 : 400);   // (KCI's: one whole record, to read its shape)
+      let t = (await r.text()).slice(0, k === 'kcisearch' ? 8000 : k === 'anthropic' ? 4000 : 400);   // (KCI's: one whole record, to read its shape)
       for (const key of keys) t = t.split(key).join('');
       t = t.replace(/\b[0-9A-Fa-f]{64}\b/g, '…');   // a token the answer repeats
       t = t.replace(/("(?:access|refresh)_token"\s*:\s*")[^"]*/g, '$1…');   // ScienceON's tokens, when it gives them
@@ -1379,6 +1394,391 @@ async function pull(env, url) {
   const id = q.get('marks');
   if (id && ID.test(id)) await look('marks/' + id + '.json', q.get('mtag') || '', 'marks');
   return json(out);
+}
+
+/* ---------------- 글쓰기 도우미: the owner's academic Korean, polished in the owner's own style by Claude ---------------- */
+// Asked of Anthropic's Messages API with the owner's own key (env.ANTHROPIC_API_KEY, a secret): it goes out only in the
+// request's x-api-key header and is never logged, kept or sent back (a word passed on from Anthropic has it taken out).
+// The answer is streamed (server-sent events: the API guide's raw-HTTP way, this worker being one plain module with no SDK)
+// and passed on as it comes: its text pieces just as Anthropic sends them (event: delta, the content_block_delta JSON as is,
+// so nothing is parsed per piece here: little CPU however long the answer), and this server's own word on how it goes
+// (event: shelf — start, wait, fallback, done, error). The models' thinking (always on for these models) is not passed on.
+// Before anything goes out: no key → no_key (nothing is asked of anyone); a text over WRITE_MAX letters → too_long; the
+// day's requests at WRITE_DAY_CAP → daily_cap (counted in R2, write/use.json, by the owner's day in Korea; a request that
+// never got an answer started is given back).
+// The models, in one place. The first is asked; the second takes over when the first declines (stop_reason "refusal":
+// a safety classifier's or the model's own — the app throws away any part already shown) or cannot be had (not offered
+// to this key, or still overloaded after one more try). Done here by hand, as the guide has it for raw HTTP: the API's own
+// fallback list takes only the models it names for Fable (claude-opus-4-8, claude-opus-5), and the owner chose Opus 5.5.
+// The guide's fallback credit is left out for the same reason (it is redeemed only on those models); without it a
+// refusal costs one cold cache write of a few thousand tokens on the second model.
+// usd: the price per million tokens (input, output, cache read; a cache write is input × 1.25), for the day's budget only
+// (an estimate: Anthropic's bill is the truth). Fable 5.2's price is not in the API guide this was written from; Fable
+// 5.1's ($10 / $50) is used, the higher of the two that have been named, so the budget errs on the safe side.
+const WRITE_MODELS = [
+  { id: 'claude-fable-5-2', name: 'Claude Fable 5.2', usd: { in: 10, out: 50, read: 0.25 } },
+  { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', usd: { in: 4, out: 20, read: 0.2 } },
+];
+const ANTHROPIC = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_VERSION = '2026-10-21';
+const WRITE_MAX = 12000;          // letters (Unicode characters: one Hangul syllable is one) a text may have
+const WRITE_SAMPLE_MAX = 40000;   // letters of the paragraphs sent to learn the style (내 문체 익히기)
+const WRITE_DAY_CAP = 150;        // requests a day
+// what a day may cost, in US dollars (estimated from each answer's usage). The request cap alone would allow far more:
+// one request may use up to WRITE_OUT tokens (about $3.20 on Fable), so 150 of them about $500 — a client stuck in a loop,
+// or a device token in the wrong hands, could spend that. Checked before each request; the request under way finishes.
+const WRITE_DAY_USD = 40;
+const WRITE_OUT = 64000;          // max_tokens: thinking and answer together; a ceiling only (what is used is what is billed)
+// how much a used answer cost: usage as Anthropic reports it, at the model's price
+const writeCost = (m, u = {}) => {
+  const p = (m && m.usd) || WRITE_MODELS[0].usd, n = (k) => Number(u[k]) || 0;
+  return (n('input_tokens') * p.in + n('cache_creation_input_tokens') * p.in * 1.25 + n('cache_read_input_tokens') * p.read + n('output_tokens') * p.out) / 1e6;
+};
+
+// What holds for every request (the system prompt's first part, the same bytes every time so it is read from the cache).
+// Then, when the owner's style has been learned, the style itself (the second part, where the cache mark goes).
+const WRITE_RULES = `당신은 한국의 헌법·공법 연구자가 쓰는 학술 논문을 다듬는 편집자입니다. 글쓴이는 당신이 내놓은 글을 그대로 원고(학술지 논문, 학위논문, 연구보고서)에 옮겨 씁니다.
+
+어떤 작업에서든 다음을 지킵니다.
+1. 인용과 근거 표시는 글자 그대로 둡니다. 사건번호(예: 2004헌마554, 2006두330), 선고일·결정일, 결정·판결의 표시, 법령의 이름과 조·항·호·목(예: 헌법 제37조 제2항, 「공직선거법」 제272조의2), 문헌의 저자·연도·제목·쪽수, 따옴표 안의 인용문, 각주 번호(예: 12), [12], ¹²)를 바꾸거나 빼거나 옮기지 않고, 붙어 있던 문장에 그대로 남깁니다.
+2. 없는 것을 만들지 않습니다. 원문에 없는 출처, 판례, 법령, 조문, 인용문, 수치, 사실을 지어내거나 기억에 기대어 보태지 않습니다. 근거가 더 필요해 보여도 근거를 만들어 넣지 않습니다(그런 자리를 어떻게 알릴지는 작업마다 정합니다).
+3. 글쓴이의 주장과 결론, 논증의 방향과 강도를 바꾸지 않습니다.
+4. 한국어로 쓸 때는 학술 문어체로 씁니다. 구어체, 번역투, 과장, 꾸밈을 위한 비유를 쓰지 않습니다.
+5. 요청한 결과만 내놓습니다. 인사, 작업 설명, 덧붙이는 말, 마크다운 기호(#, **, 글머리표)를 쓰지 않습니다.
+
+<글쓴이의 문체>가 주어지면, 그것은 글쓴이가 이미 발표한 논문들의 문단을 분석해 정리한 글쓴이의 문체입니다. 어느 작업에서든 글쓴이의 용어와 표기 방식(판례·조문을 부르는 방식 등)은 그에 맞춥니다.`;
+
+// Each request: how hard the model thinks (output_config.effort — the API's control for depth and spend; these models think
+// at every level) and what it is asked. The text comes first and the request after it (a long text above the question is
+// read best). Requests of one kind share their effort, so their cached prefix too.
+const NEEDS = '근거가 더 필요해 보이는 주장은 근거를 만들어 넣지 말고, 그 문장 끝에 [근거 필요: 어떤 근거가 필요한지 짧게]라고 표시합니다.';
+const WRITE_ACTIONS = {
+  polish: { effort: 'high', ask: `위 <글>을 글쓴이의 문체로 다듬어 주세요.
+- <글쓴이의 문체>에 적힌 문장 길이, 종결어미, 접속어, 주장을 펴는 수위, 판례·조문을 인용하는 방식, 즐겨 쓰는 용어를 따릅니다.
+- 어색한 문장, 겹치는 말, 주어와 서술어가 맞지 않는 곳, 지나치게 길어 읽기 어려운 문장을 고칩니다. 이미 좋은 문장은 그대로 둡니다.
+- 비유나 꾸밈말로 멋을 내지 않고 뜻을 곧바로 씁니다.
+- 내용을 더하거나 빼지 않습니다. 원문의 문단 나눔을 지킵니다.
+- ${NEEDS}
+- 다듬은 글만 내놓습니다.` },
+  concise: { effort: 'high', ask: `위 <글>을 간결하게 줄여 주세요.
+- 뜻, 주장, 논증의 단계는 그대로 두고 겹치는 말, 군더더기 수식어, 같은 내용의 되풀이, 꼭 필요하지 않은 접속 표현을 덜어냅니다.
+- 인용, 사건번호, 조문, 각주 번호는 하나도 빠뜨리지 않습니다. 글쓴이의 문체를 지킵니다. 원문의 문단 나눔을 지킵니다.
+- ${NEEDS}
+- 줄인 글만 내놓습니다.` },
+  proof: { effort: 'medium', ask: `위 <글>의 맞춤법, 띄어쓰기, 문법, 문장 부호만 바로잡아 주세요.
+- 한글 맞춤법과 표준어 규정을 따릅니다. 법령 이름과 법령에서 쓰는 용어는 법령의 표기를 따릅니다.
+- 문체, 어휘, 문장 구조는 바꾸지 않습니다. 틀린 곳만 고치고, 표시나 설명은 붙이지 않습니다. 원문의 문단 나눔을 지킵니다.
+- 고친 글만 내놓습니다.` },
+  logic: { effort: 'high', ask: `위 <글>의 논리를 점검해 주세요. 글은 고치지 말고 의견만 씁니다.
+- 살필 것: 주장과 근거의 연결이 약한 곳, 논리의 비약, 같은 개념을 다른 뜻으로 쓴 곳, 앞뒤가 어긋나는 곳, 다루지 않은 유력한 반론, 근거가 더 필요한 주장(어떤 근거가 필요한지), 인용한 판례·조문이 글 안에서 그 주장과 실제로 이어져 있는지(판례의 내용을 기억에 기대어 단정하지 않습니다).
+- 문제마다 해당 대목을 짧게 따옴표로 옮겨 위치를 밝히고, 왜 문제인지와 어떻게 보완할 수 있는지를 한두 문장으로 씁니다.
+- 중요한 것부터 번호(1. 2. 3.)를 붙여 씁니다. 문제가 없는 부분을 따로 칭찬하지 않습니다. 지적할 것이 없으면 '특별히 지적할 곳이 없습니다.'라고만 씁니다.
+- 새 출처나 판례를 제시하지 않습니다. 필요한 근거의 종류만 말합니다.` },
+  english: { effort: 'high', ask: `위 <글>을 바탕으로 학술 영어 초록(abstract)을 써 주세요.
+- 글이 이미 초록이면 충실하게 옮기고, 본문이면 그 내용을 초록으로 요약합니다. 글에 없는 내용을 더하지 않습니다.
+- 한 문단, 150~250단어로, 법학 학술지의 영어 초록 문체('This article…', 'This study…', 현재 시제 중심)로 씁니다.
+- 기관과 법령은 공식 영문 명칭으로 씁니다(예: the Constitutional Court of Korea, the Public Official Election Act, Article 37(2) of the Constitution). 공식 명칭이 확실하지 않으면 뜻을 옮기고 처음 나올 때 괄호 안에 로마자 표기를 붙입니다.
+- 사건번호는 숫자를 바꾸지 말고 헌법재판소·대법원의 영문 표기 방식(예: 2004Hun-Ma554, 2006Du330)으로 씁니다.
+- 글에 주제어가 있으면 마지막 줄에 'Keywords:'를 붙여 옮깁니다.
+- 초록만 내놓습니다.` },
+};
+const NO_STYLE = '- 아직 <글쓴이의 문체>가 없습니다. 원문에 드러난 글쓴이의 어투와 표기 방식을 그대로 살리면서 다듬습니다.';
+
+// 내 문체 익히기: paragraphs the app picked from the owner's own papers (introductions, arguments, conclusions; no notes,
+// tables or references), each with its paper's number and part only (no titles or names go out), and the request to
+// describe the style precisely enough for another editor to write in it. What comes back is kept (write/style.json) and
+// shown to the owner, and becomes the second part of every later request's system prompt.
+const STYLE_RULES = '당신은 한국어 학술 문체를 분석하는 편집자입니다. 한 헌법·공법 연구자가 이미 발표한 논문들에서 뽑은 문단을 읽고, 이 사람의 문체를 다른 편집자가 그대로 따라 쓸 수 있을 만큼 정확하게 정리합니다. 이 정리는 이후 이 사람의 새 원고를 이 사람의 문체로 다듬을 때 지침으로 쓰입니다.';
+const STYLE_ASK = `위 문단들을 바탕으로 글쓴이의 문체를 아래 항목별로 정리해 주세요.
+
+1. 문장: 문장의 길이(대략 몇 자 안팎인지), 한 문장에 담는 생각의 수, 자주 쓰는 문장 구조
+2. 종결 표현: 실제로 자주 쓰는 종결 표현과 대략의 비중(예: '-ㄴ다', '-이다', '-ㄹ 것이다', '-라고 할 수 있다', '-로 보인다', '-필요가 있다')
+3. 접속어와 전개: 문장과 문단을 잇는 말, 문단을 여는 방식과 맺는 방식
+4. 주장의 수위: 단정하는 경우와 유보하는 경우, 그때 쓰는 표현
+5. 인용: 판례(헌법재판소 결정, 법원 판결), 법령 조문, 문헌을 본문에서 부르는 방식과 표기(괄호, 낫표, '헌재', '동법', '본 법' 같은 약칭 등)
+6. 용어: 즐겨 쓰는 용어와 표기, 피하는 듯한 표현, 한자어와 외래어의 쓰임
+7. 서론, 본론, 결론에서 달라지는 점
+8. 이 문체로 다듬을 때 꼭 지킬 것과 하지 말 것(5~10가지)
+
+지킬 것:
+- 항목마다 문단에서 그대로 옮긴 짧은 구절을 예로 2~4개씩 큰따옴표에 넣어 붙입니다.
+- 문단에 드러나지 않은 것은 추측하지 않고 '자료에서 뚜렷하지 않음'이라고 씁니다.
+- 이 문단들은 PDF에서 뽑아 줄이 바뀌던 자리에 띄어쓰기가 잘못 들어가거나 빠진 곳이 있습니다(예: '문제 점이'). 띄어쓰기는 문체 판단에 쓰지 않습니다.
+- 사람의 이름이나 소속은 쓰지 않습니다.
+- 전체 2,500~4,000자로, 항목 번호와 제목 말고 다른 꾸밈(마크다운 기호 등)은 쓰지 않습니다.`;
+
+const writeClean = (s, max = 1e6) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, max);
+const letterCount = (s) => { let n = 0; for (const c of s) n++; return n; };   // (c of a string: one per code point)
+// the next midnight in Korea, when the day's count starts again
+const kstMidnight = (t = Date.now()) => Date.parse(kstDay(t) + 'T00:00:00+09:00') + 86400e3;
+
+// the day's requests and spend: d = 0 reads them, +1 takes a request (refused at the cap or once the budget is spent),
+// -1 gives one back; usd adds what an answer cost
+async function writeCount(env, d, usd = 0) {
+  const day = kstDay();
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const o = await env.BUCKET.get('write/use.json');
+    const cur = o ? await o.json().catch(() => ({})) : {};
+    const today = cur.day === day;
+    const n = today ? Number(cur.n) || 0 : 0, spent = today ? Number(cur.usd) || 0 : 0;
+    if (!d && !usd) return { n, usd: spent };
+    if (d > 0 && n >= WRITE_DAY_CAP) return { n, usd: spent, full: 'daily_cap' };
+    if (d > 0 && spent >= WRITE_DAY_USD) return { n, usd: spent, full: 'daily_budget' };
+    const next = { day, n: Math.max(0, n + d), usd: Math.round((spent + usd) * 1e4) / 1e4 };
+    const put = await env.BUCKET.put('write/use.json', JSON.stringify(next), { httpMetadata: { contentType: 'application/json' }, onlyIf: o ? { etagMatches: o.etag } : undefined });
+    if (put === null) { await new Promise((r) => setTimeout(r, 30 + Math.random() * 90)); continue; }
+    return { n: next.n, usd: next.usd };
+  }
+  return { n: 0, usd: 0, busy: true };
+}
+
+// what the app needs to draw the screen: whether a key is set (never the key), the models, the limits, today's count, and
+// when the style was learned (its text: /api/write/style)
+async function writeInfo(env) {
+  const [use, st] = await Promise.all([writeCount(env, 0), env.BUCKET.head('write/style.json')]);
+  const m = (st && st.customMetadata) || {};
+  return json({
+    key: !!env.ANTHROPIC_API_KEY, models: WRITE_MODELS, max: WRITE_MAX, sampleMax: WRITE_SAMPLE_MAX, cap: WRITE_DAY_CAP, used: use.n, reset: kstMidnight(),
+    budget: WRITE_DAY_USD, spent: use.usd,
+    style: st ? { at: Number(m.at) || 0, model: m.model || '', papers: Number(m.papers) || 0, paragraphs: Number(m.paragraphs) || 0, chars: Number(m.chars) || 0 } : null,
+  });
+}
+async function writeStyle(env) {
+  const o = await env.BUCKET.get('write/style.json');
+  return o ? new Response(o.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : err('none', 404);
+}
+// The latest answer, for an app that lost the connection while it was written (the page reloaded or closed, the phone
+// locked, the app sent to the background): { id, state: running | done, at, sse — the events as they were streamed }.
+// Only the latest is kept; an id that is not the latest's is gone.
+const WRITE_ID = /^[a-z0-9]{4,24}$/;
+async function writeLast(env, url) {
+  const id = url.searchParams.get('id') || '';
+  const o = WRITE_ID.test(id) ? await env.BUCKET.get('write/last.json') : null;
+  const d = o ? await o.json().catch(() => null) : null;
+  if (!d || d.id !== id) return err('gone', 404);
+  return json(d);
+}
+// 멈추기: the app lets go of the stream, which the server would otherwise read to the end (to keep it for the app); this
+// says the owner meant it, so the request still running stops too and is not billed further
+async function writeStop(req, env) {
+  const b = await readJSON(req, 4096);
+  const id = b && typeof b.id === 'string' && WRITE_ID.test(b.id) ? b.id : '';
+  if (!id) return err('bad_id', 400);
+  await env.BUCKET.put('write/stop.json', JSON.stringify({ id, at: Date.now() }), { httpMetadata: { contentType: 'application/json' }, customMetadata: { id } });
+  return json({ ok: true });
+}
+
+async function writeAsk(req, env, ctx) {
+  if (!env.ANTHROPIC_API_KEY) return err('no_key', 503);
+  const b0 = await readJSON(req, 512 * 1024), b = b0 && typeof b0 === 'object' ? b0 : {};
+  let body, keep = null;
+  if (b.action === 'profile') {
+    const parts = new Set(['서론', '본론', '결론']);
+    const paras = (Array.isArray(b.paragraphs) ? b.paragraphs : []).slice(0, 40)
+      .map((p) => ({ text: writeClean(p && p.text, 3000), part: parts.has(p && p.part) ? p.part : '본론', paper: Math.min(99, Math.max(1, Math.floor(Number(p && p.paper) || 1))) }))
+      .filter((p) => p.text.length >= 80);
+    if (paras.length < 5) return err('too_few', 400, { min: 5 });
+    const got = paras.reduce((s, p) => s + letterCount(p.text), 0);
+    if (got > WRITE_SAMPLE_MAX) return err('too_long', 413, { max: WRITE_SAMPLE_MAX, got });
+    const doc = paras.map((p, i) => `<문단 번호="${i + 1}" 논문="${p.paper}" 부분="${p.part}">\n${p.text}\n</문단>`).join('\n\n');
+    body = { max_tokens: WRITE_OUT, stream: true, output_config: { effort: 'high' }, system: [{ type: 'text', text: STYLE_RULES }], messages: [{ role: 'user', content: doc + '\n\n' + STYLE_ASK }] };
+    const sources = (Array.isArray(b.sources) ? b.sources : []).slice(0, 60).map((s) => ({ title: cleanName(s && s.title, 160), n: Math.max(0, Math.floor(Number(s && s.n) || 0)) })).filter((s) => s.title);
+    const papers = new Set(paras.map((p) => p.paper)).size;
+    keep = async (text, model) => {   // the style as described, kept for every device and every later request
+      const at = Date.now();
+      await env.BUCKET.put('write/style.json', JSON.stringify({ v: 1, text, at, model: model.id, papers, paragraphs: paras.length, chars: got, sources }), {
+        httpMetadata: { contentType: 'application/json' },
+        customMetadata: { at: String(at), model: model.id, papers: String(papers), paragraphs: String(paras.length), chars: String(got) },
+      });
+      return { at, model: model.id, papers, paragraphs: paras.length, chars: got };
+    };
+  } else {
+    const act = Object.prototype.hasOwnProperty.call(WRITE_ACTIONS, b.action) ? WRITE_ACTIONS[b.action] : null;
+    if (!act) return err('bad_action', 400);
+    const text = writeClean(b.text);
+    if (!text) return err('no_text', 400);
+    const got = letterCount(text);
+    if (got > WRITE_MAX) return err('too_long', 413, { max: WRITE_MAX, got });
+    const style = await env.BUCKET.get('write/style.json').then((o) => (o ? o.json() : null)).catch(() => null);
+    const system = [{ type: 'text', text: WRITE_RULES }];
+    if (style && style.text) system.push({ type: 'text', text: `<글쓴이의 문체>\n${style.text}\n</글쓴이의 문체>` });
+    system[system.length - 1].cache_control = { type: 'ephemeral' };   // the rules and the style: the same prefix every time
+    const ask = act.ask + (b.action === 'polish' && !(style && style.text) ? '\n' + NO_STYLE : '');
+    body = { max_tokens: WRITE_OUT, stream: true, output_config: { effort: act.effort }, system, messages: [{ role: 'user', content: `<글>\n${text}\n</글>\n\n${ask}` }] };
+  }
+  // the app's own name for this request: with it the answer is read to the end even if the app goes away (the style is
+  // then kept all the same; a rewrite or an opinion is kept in write/last.json for the app to fetch), unless it is stopped
+  const id = typeof b.id === 'string' && WRITE_ID.test(b.id) ? b.id : '';
+  const use = await writeCount(env, 1);
+  if (use.busy) return err('busy', 409);
+  if (use.full === 'daily_cap') return err('daily_cap', 429, { cap: WRITE_DAY_CAP, used: use.n, reset: kstMidnight() });
+  if (use.full) return err('daily_budget', 429, { budget: WRITE_DAY_USD, spent: use.usd, reset: kstMidnight() });
+  return writeStream(env, ctx, body, use.n, keep, { id, act: b.action, spent: use.usd });
+}
+
+// The answer to the app, as it comes. Runs on after the response has begun (ctx.waitUntil). Writes to the app are not
+// waited for: an app that is slow, or asleep on a locked phone with the connection still open, must not hold up the
+// reading (an answer is at most a few hundred KB, so what waits for it is small). When the app goes away (reloaded,
+// closed, sent to the background), a request with the app's id is read to the end all the same — the answer is billed
+// either way, so it is kept: a rewrite or an opinion in write/last.json, the events just as they were streamed, which
+// the app fetches when it is back; the style as always. The platform gives a request whose app has gone some 30 s more,
+// so a long answer may still be lost; the app says so then. A request the owner stopped (멈추기 → write/stop.json), or
+// one with no id (an older app), is let go at once, as before, so nothing more is billed.
+function writeStream(env, ctx, body, used, keep, job = {}) {
+  const { readable, writable } = new TransformStream();
+  const w = writable.getWriter(), enc = new TextEncoder();
+  const id = job.id || '', logIt = !!id && !keep, t0 = Date.now();
+  const halt = { on: false, reader: null };   // (claudeRelay hangs its reader here, so a stop can cancel it)
+  let gone = false, over = false, log = '';
+  const stop = () => { halt.on = true; if (halt.reader) halt.reader.cancel().catch(() => {}); };
+  // stopped on purpose? Asked of R2 every 2 s while the answer is read (a cheap HEAD), not only once the app is seen to
+  // have gone: that is seen only at the next write, and a model thinking for minutes writes nothing meanwhile
+  const watch = async () => {
+    while (!over && !halt.on) {
+      await sleep(2000);
+      if (over) break;
+      const h = await env.BUCKET.head('write/stop.json').catch(() => null);
+      if (h && h.customMetadata && h.customMetadata.id === id) stop();
+    }
+  };
+  const left = () => { if (gone) return; gone = true; if (!id) stop(); };
+  const send = (s) => { if (!gone) w.write(enc.encode(s)).catch(left); };
+  const put = (s) => { if (logIt) log += s; send(s); };
+  const ping = () => send(': ping\n\n');   // (not kept: it only keeps the line awake)
+  const tell = (o) => put(`event: shelf\ndata: ${JSON.stringify(o)}\n\n`);
+  const save = (state) => (logIt ? env.BUCKET.put('write/last.json', JSON.stringify({ id, act: job.act || '', state, at: t0, sse: log }), { httpMetadata: { contentType: 'application/json' } }).catch(() => {}) : null);
+  const key = env.ANTHROPIC_API_KEY;
+  const plain = (s) => String(s || '').split(key).join('').slice(0, 300);   // a word from Anthropic, the key taken out if ever there
+  let started = false;   // an answer was begun (billed): the day's count stands
+  let cost = 0, spent = Number(job.spent) || 0, settled = false;
+  const settle = async () => {   // what the answers cost, added to the day's spend (once)
+    if (settled || !cost) return;
+    settled = true;
+    const u = await writeCount(env, 0, cost).catch(() => null);
+    if (u && !u.busy) spent = u.usd;
+  };
+  const day = () => ({ used, cap: WRITE_DAY_CAP, spent: Math.round(spent * 100) / 100, budget: WRITE_DAY_USD });
+  const run = async () => {
+    const stub = save('running');
+    try {
+      tell({ type: 'start', model: WRITE_MODELS[0], ...day() });
+      for (let i = 0; i < WRITE_MODELS.length; i++) {
+        const m = WRITE_MODELS[i], next = WRITE_MODELS[i + 1];
+        const r = await claudeOpen(env, { ...body, model: m.id }, (sec, why) => tell({ type: 'wait', sec, why }));
+        if (!r.ok) {
+          if (r.unavailable && next) { tell({ type: 'fallback', from: m, to: next, why: 'unavailable' }); continue; }
+          await settle();
+          tell({ type: 'error', code: r.code, ...(r.sec ? { sec: r.sec } : {}), ...(r.message ? { message: plain(r.message) } : {}) });
+          return;
+        }
+        started = true;
+        const out = await claudeRelay(r.res, put, ping, !!keep, halt);
+        cost += writeCost(m, out.usage);
+        if (halt.on) { await settle(); tell({ type: 'error', code: 'stopped' }); return; }
+        if (out.stop === 'refusal') {
+          if (next) { tell({ type: 'fallback', from: m, to: next, why: 'refusal' }); continue; }
+          await settle();
+          tell({ type: 'error', code: 'refused' });
+          return;
+        }
+        // overloaded in the middle of the stream before any text: as if it could not be had
+        if (out.error && !out.any && next && /overloaded|api_error/.test(out.error)) { tell({ type: 'fallback', from: m, to: next, why: 'unavailable' }); continue; }
+        await settle();
+        if (out.error || !out.stop) { tell({ type: 'error', code: /overloaded/.test(out.error) ? 'overloaded' : 'cut', partial: out.any }); return; }
+        const style = keep && out.stop === 'end_turn' && out.text.length >= 200 ? await keep(out.text, m) : null;
+        tell({ type: 'done', model: m, stop: out.stop, usage: out.usage, ...day(), ...(style ? { style } : {}) });
+        return;
+      }
+    } catch (e) {
+      tell({ type: 'error', code: 'server', message: plain(e && e.message) });
+    } finally {
+      over = true;
+      await settle().catch(() => {});
+      if (!started) await writeCount(env, -1).catch(() => {});   // no answer was begun: not counted against the day
+      await stub;
+      await save(halt.on ? 'stopped' : 'done');
+      await w.close().catch(() => {});
+    }
+  };
+  ctx.waitUntil(run());
+  if (id) ctx.waitUntil(watch());
+  return new Response(readable, { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } });
+}
+
+// One model asked, with one more try (after the wait Anthropic gives, at most 20 s) when it is overloaded, failing, rate-
+// limited or out of reach; then: { ok, res } or { ok: false, code, unavailable (worth the next model), sec, message }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function claudeOpen(env, body, onWait) {
+  const payload = JSON.stringify(body);
+  for (let tries = 0; ; tries++) {
+    let res = null;
+    try {
+      res = await fetch(ANTHROPIC, { method: 'POST', body: payload, headers: { 'content-type': 'application/json', 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': ANTHROPIC_VERSION, 'user-agent': UA } });
+    } catch (e) { res = null; }
+    if (res && res.ok && res.body) return { ok: true, res };
+    const status = res ? res.status : 0;
+    const e = res ? await res.json().catch(() => null) : null;
+    const message = String((e && e.error && e.error.message) || '');
+    const after = res ? Math.ceil(Number(res.headers.get('retry-after'))) : NaN;
+    const busy = !res || status === 429 || status >= 500;
+    if (busy && tries === 0 && !(status === 429 && after > 20)) {
+      const sec = Math.min(20, Math.max(2, after > 0 ? after : 3));
+      await onWait(sec, status === 429 ? 'rate' : 'busy');
+      await sleep(sec * 1000);
+      continue;
+    }
+    if (status === 429) return { ok: false, code: 'rate_limited', sec: after > 0 ? after : 30 };
+    if (status >= 500) return { ok: false, code: 'overloaded', unavailable: true };
+    if (!res) return { ok: false, code: 'upstream' };
+    if (status === 401) return { ok: false, code: 'bad_key' };
+    if (status === 402 || /credit balance|billing/i.test(message)) return { ok: false, code: 'billing' };
+    // a model this key may not use (or not under the account's data-retention setting, which Fable requires)
+    if (status === 404 || status === 403 || (status === 400 && /retention/i.test(message))) return { ok: false, code: 'no_model', unavailable: true, message };
+    if (status === 413) return { ok: false, code: 'too_large' };
+    return { ok: false, code: 'bad_request', message };
+  }
+}
+
+// Anthropic's stream, passed on: text deltas as they are, a ping as a comment (keeps the connection to the app awake while
+// the model thinks); how it ended (stop_reason, usage, an error event) read from the few other events. keep: the text is
+// gathered too (the style, to be kept). halt: its reader is hung there (a stop cancels it), and halt.on ends the reading.
+async function claudeRelay(res, put, ping, keep, halt = {}) {
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  halt.reader = reader;
+  const out = { stop: '', usage: {}, any: false, error: '', text: '' };
+  const send = put;   // (never throws: an app gone away is noticed by the caller)
+  let buf = '';
+  for (;;) {
+    let chunk;
+    try { chunk = await reader.read(); } catch (e) { out.error = out.error || 'broken'; break; }
+    if (chunk.done || halt.on) { if (halt.on) await reader.cancel().catch(() => {}); break; }
+    buf += dec.decode(chunk.value, { stream: true }).replace(/\r/g, '');
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      let name = '', data = '';
+      for (const line of block.split('\n')) {
+        if (line.startsWith('event:')) name = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      if (name === 'content_block_delta') {
+        if (data.includes('"text_delta"')) {
+          send('event: delta\ndata: ' + data + '\n\n');
+          out.any = true;
+          if (keep) { try { out.text += JSON.parse(data).delta.text || ''; } catch (e) { /* a broken piece */ } }
+        }
+        continue;   // (thinking and its signature stay here)
+      }
+      if (name === 'ping') { ping(); continue; }
+      let d = null;
+      try { d = JSON.parse(data); } catch (e) { continue; }
+      if (name === 'message_start' && d.message) Object.assign(out.usage, d.message.usage || {});
+      else if (name === 'message_delta') { if (d.delta && d.delta.stop_reason) out.stop = d.delta.stop_reason; if (d.usage) Object.assign(out.usage, d.usage); }
+      else if (name === 'error') out.error = String((d.error && d.error.type) || 'error');
+    }
+  }
+  return out;
 }
 
 /* ---------------- a few choices kept across devices ---------------- */

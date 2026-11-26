@@ -345,6 +345,15 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .sel-h.a::after { top: 16px; }
 .sel-h.b::before { top: -1px; }
 .sel-h.b::after { top: calc(var(--lh) + 0px); }
+/* the loupe: the letters under a finger choosing text, magnified, held above it (below it at the top of the screen); placed
+   with a transform from reader.js, so following the finger lays nothing out again. It grows out of the side facing the finger. */
+.rd-loupe { position: absolute; left: 0; top: 0; z-index: 13; pointer-events: none; visibility: hidden; transition: visibility 0s .14s; will-change: transform; }
+.rd-loupe > div { width: 100%; height: 100%; border-radius: 14px; overflow: hidden; background: var(--desk); opacity: 0; transform: scale(.88); transform-origin: 50% 100%;
+  box-shadow: 0 14px 34px -12px #0F1A2BA6, 0 2px 6px -2px #0F1A2B40, 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent); transition: opacity .12s ease, transform .14s cubic-bezier(.2, .8, .2, 1); }
+.rd-loupe.below > div { transform-origin: 50% 0; }
+.rd-loupe.on { visibility: visible; transition: none; }
+.rd-loupe.on > div { opacity: 1; transform: none; }
+.rd-loupe canvas { display: block; width: 100%; height: 100%; }
 
 /* side panel: contents and marks */
 .rd-panel { width: 340px; flex: none; background: var(--card); box-shadow: -1px 0 0 var(--rule); display: flex; flex-direction: column; min-height: 0; z-index: 4; }
@@ -438,6 +447,8 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .cs-name { font-size: 15.5px; font-weight: 700; line-height: 1.45; margin: 2px 0 3px; }
 .cs-meta { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
 .cs-res { color: var(--accent); font-weight: 700; }
+/* 전원합의체: a judgment of the whole court, marked where its sheet says what it is */
+.cs-eb { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11.5px; line-height: 1.5; background: color-mix(in srgb, var(--accent) 12%, var(--card)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent); vertical-align: 1px; }
 .cs-sec h4 { margin: 14px 0 4px; font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
 .cs-sec p, .cs-fold p { margin: 0; white-space: pre-line; font-size: 14.5px; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
 .cs-fold { border-top: 1px solid var(--rule); }
@@ -519,6 +530,8 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .lrow .lr-o { color: var(--ink-2); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .law-list .more { display: block; width: 100%; padding: 12px; border-top: 1px solid var(--rule); color: var(--accent); font-weight: 600; font-size: 13.5px; }
 .law-list > .none { margin: 14px 18px; }
+/* 논문: nothing found, and a word may be a person's name — that person's papers on the rest, offered under the line */
+.law-list > .pp-split { margin: -4px 18px 16px; font-size: 14px; }
 .law-card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 16px 20px 10px; margin-bottom: 18px; }
 .law-card > .none { margin: 2px 0 8px; }
 .lc-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -590,6 +603,12 @@ a.btn { text-decoration: none; }   /* (a link dressed as a button is a button) *
 /* a coming amendment, and a text not yet in force */
 .lc-ahead { margin: 2px 0 10px; padding: 9px 12px; border-radius: 10px; border-left: 3px solid var(--gilt); background: var(--chip); color: var(--ink-2); font-size: 13.5px; line-height: 1.6; }
 .lc-ahead a { color: var(--accent); font-weight: 600; }
+/* a citation long enough to wrap inside its link reads from the left, as the text around it does */
+.case-ln { text-align: start; }
+/* an article opened from a citation of its old text (구 …법): the band says the text below is today's, with the way to its 연혁 */
+.lc-old { border-left-color: var(--danger); }
+.lc-old .lc-oldh { display: inline; margin-left: 8px; white-space: nowrap; }
+.lc-old .lc-oldh[hidden] { display: none; }
 .lc-same { margin: 4px 0 2px; font-size: 12.5px; color: var(--muted); }
 .lc-next { margin: 10px 0 4px; border-radius: 12px; background: var(--chip); padding: 2px 14px 4px; }
 .lc-next summary { display: flex; align-items: center; gap: 8px; padding: 10px 0; font-size: 13.5px; font-weight: 700; color: var(--accent); cursor: pointer; list-style: none; }
@@ -628,18 +647,122 @@ a.btn { text-decoration: none; }   /* (a link dressed as a button is a button) *
 .bill-mins a { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 9px 12px; border-radius: 10px; background: var(--chip); color: var(--ink); text-decoration: none; }
 .bill-mins a b { font-size: 13.5px; font-weight: 600; }
 .bill-mins a span { font-size: 12.5px; color: var(--muted); }
-/* 비교법 원문: the law's own words (Japanese and English wrap by their own rules), and a box to find in it */
-.foreign-art .lc-t p, .foreign-law .lw-a span { word-break: normal; overflow-wrap: anywhere; }
-.fl-find { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; margin: 2px 0 10px; border-radius: 12px; background: var(--chip); color: var(--faint); cursor: text; }
-.fl-find svg { width: 18px; height: 18px; flex: none; }
-.fl-find input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
-.fl-find:focus-within { box-shadow: 0 0 0 2px var(--accent); }
-.fl-n { margin: 4px 0 2px; font-size: 12.5px; }
-.fl-src { margin: 6px 0 0; font-size: 12.5px; }
 .lw-next-arts > span { font-size: 12px; color: var(--muted); align-self: center; }
+/* 법제처's lists (해석례 · 행정규칙 · 자치법규): rows that open their page at 국가법령정보센터; the 용어 line above the names */
+a.lrow { color: inherit; text-decoration: none; }
+.mo-row b::after { content: "\00a0\00a0↗"; font-size: 11.5px; font-weight: 600; color: var(--faint); }   /* (kept with the last word: it never wraps alone) */
+.mo-sec { margin-bottom: 6px; }
+.mo-term { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0 4px 12px; font-size: 13.5px; color: var(--muted); }
+.mo-term b { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
+.mo-term a { color: var(--ink-2); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; }
+.mo-term small { font-size: 12px; color: var(--faint); }
+.mo-term a small { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+@media (hover: hover) { a.lrow:hover b { color: var(--accent); } .mo-term a:hover { color: var(--accent); } }
+/* 조문 연혁: folded on the article card; each version opens in place, its changes marked as the coming amendment's are */
+.lc-hist { margin: 10px 0 2px; border-radius: 12px; background: var(--chip); padding: 0 14px; }
+.lc-hist > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; min-height: 44px; padding: 11px 0 10px; cursor: pointer; list-style: none; }
+.lc-hist > summary::-webkit-details-marker { display: none; }
+.lc-hist > summary::before { content: ""; align-self: center; width: 6px; height: 6px; margin: 0 2px; border-right: 1.5px solid var(--accent); border-bottom: 1.5px solid var(--accent); transform: rotate(-45deg); transition: transform .15s; }
+.lc-hist[open] > summary::before { transform: rotate(45deg); }
+.lc-hist > summary b { font-size: 13.5px; font-weight: 700; color: var(--accent); }
+.hs-n { font-size: 12.5px; color: var(--muted); }
+.hs-body { padding-bottom: 8px; }
+.hs-list { list-style: none; margin: 0; padding: 0; }
+.hs-list > li { border-top: 1px solid var(--rule); }
+.hs-v > summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; min-height: 42px; padding: 10px 0 9px; cursor: pointer; list-style: none; }
+.hs-v > summary::-webkit-details-marker { display: none; }
+.hs-v > summary b { font-size: 13.5px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.hs-v[open] > summary b { color: var(--accent); }
+.hs-v > summary > span { font-size: 12.5px; color: var(--muted); }
+.hs-now, .hs-soon { font-style: normal; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: 8px; }
+.hs-now { color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.hs-soon { color: var(--ink-2); background: color-mix(in srgb, var(--gilt) 30%, transparent); }
+.hs-eff { font-size: 12px; color: var(--faint); }
+.hs-in { padding: 0 0 10px; }
+.hs-in .lc-t p { font-size: 14px; line-height: 1.7; }
+.hs-tt { color: var(--ink-2); font-weight: 600; }
+.hs-in .law-note { margin: 4px 0 0; font-size: 12.5px; }
+.hs-more { margin: 10px 0 4px; font-size: 13px; }
+.hs-src { margin: 8px 0 0; font-size: 12px; }
+.hs-src a { color: var(--accent); font-weight: 600; }
 
 @media print { .rail, .bar, .toolrow, .uploads, .toast { display: none !important; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* ---------- 글쓰기: the text box, five requests, the answer with its changes marked (as tracked changes are), the style ---------- */
+.wr { max-width: 860px; padding-top: 4px; }
+.wr .sp { flex: 1; }
+.wr-edit { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); }
+.wr-edit:focus-within { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
+.wr-in { display: block; width: 100%; height: clamp(220px, 36vh, 480px); min-height: 160px; resize: vertical; border: 0; outline: 0; background: none; color: var(--ink);
+  font: inherit; font-size: 16px; line-height: 1.8; padding: 16px 18px 6px; border-radius: 16px; word-break: keep-all; overflow-wrap: anywhere; }
+.wr-in::placeholder { color: var(--faint); }
+.wr-foot { display: flex; align-items: center; gap: 8px; padding: 2px 10px 8px 18px; font-size: 12.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.wr-n.over { color: var(--danger); font-weight: 650; }
+.wr-clear { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 5px 9px; border-radius: 8px; }
+@media (hover: hover) { .wr-clear:hover { background: var(--chip); } }
+.wr-privacy { margin: 9px 4px 14px; font-size: 12.5px; line-height: 1.55; color: var(--faint); }
+.wr-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.wr-acts .btn { height: 42px; padding: 0 16px; font-size: 14.5px; }
+.wr-acts .btn small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 1px; }
+.wr-status { margin: 10px 4px 0; min-height: 18px; font-size: 12.5px; color: var(--faint); }
+.wr-status.warn { padding: 10px 14px; border-radius: 10px; background: color-mix(in srgb, #E8A33D 16%, var(--card)); color: var(--ink-2); font-size: 13.5px; line-height: 1.55; }
+.wr-card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 18px 12px; }
+.wr-res .wr-card { margin-top: 18px; }
+.wr-rh { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 32px; }
+.wr-rh b { font-size: 15px; font-weight: 700; }
+.wr-tag { font-size: 12px; font-weight: 650; color: var(--accent); padding: 2px 9px; border-radius: 10px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent); white-space: nowrap; }
+.wr-st { font-size: 12.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wr-msg { margin: 8px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.wr-msg.err { color: var(--danger); font-weight: 600; }
+.wr-out { margin-top: 10px; font-size: 15.5px; line-height: 1.85; color: var(--ink); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+.wr-out[lang="en"] { word-break: normal; }
+.wr-out ins { text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 70%, transparent); text-decoration-thickness: 1.5px; text-underline-offset: 3px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: 3px; }
+.wr-out del { color: var(--danger); text-decoration: line-through; text-decoration-thickness: 1.5px; opacity: .8; }
+.wr-need { background: color-mix(in srgb, var(--gold) 38%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; font-weight: 600; }
+.wr-think { display: flex; align-items: center; gap: 6px; padding: 16px 0 8px; color: var(--muted); font-size: 13.5px; }
+.wr-think i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .25; animation: wr-dot 1.2s ease-in-out infinite; }
+.wr-think i:nth-child(2) { animation-delay: .2s; } .wr-think i:nth-child(3) { animation-delay: .4s; margin-right: 6px; }
+@keyframes wr-dot { 40% { opacity: .9; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .wr-think i { animation: none; opacity: .6; } }
+.wr-rf { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-top: 1px solid var(--rule); margin-top: 12px; padding-top: 10px; }
+.wr-tog { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+.wr-tog input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+.wr-cnt { font-size: 12.5px; color: var(--faint); }
+.wr-why { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); text-align: right; }
+.wr-why[hidden] { display: none; }
+.wr-sty { margin-top: 8px; }
+.wr-sty .list-h { justify-content: flex-start; gap: 10px; margin-top: 22px; }
+.wr-sm { font-size: 12.5px; color: var(--faint); }
+.wr-p { margin: 2px 0 0; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+.wr-sa { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.wr-prof { position: relative; white-space: pre-wrap; font-size: 14.5px; line-height: 1.8; color: var(--ink-2); word-break: keep-all; overflow-wrap: anywhere; }
+.wr-sc .wr-rh + .wr-prof, .wr-sc .wr-msg + .wr-prof { margin-top: 10px; }
+.wr-prof.clip { max-height: 210px; overflow: hidden; }
+.wr-prof.clip::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 64px; background: linear-gradient(color-mix(in srgb, var(--card) 0%, transparent), var(--card)); }
+.wr-picked { margin-top: 10px; border-top: 1px solid var(--rule); }
+.wr-picked summary { padding: 10px 0; font-size: 13.5px; font-weight: 600; color: var(--accent); cursor: pointer; }
+.wr-picked p { margin: 0 0 12px; font-size: 13.5px; line-height: 1.7; color: var(--ink-2); }
+.wr-picked p span { display: block; font-size: 12px; font-weight: 650; color: var(--faint); margin-bottom: 2px; }
+.wr-hist { margin-top: 8px; }
+.wr-hist .sec-h { margin-top: 24px; }
+.wr-hl { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.wr-hl button { display: grid; gap: 3px; width: 100%; text-align: left; padding: 11px 18px; border-top: 1px solid var(--rule); }
+.wr-hl button:first-child { border-top: 0; }
+.wr-hl b { font-size: 14px; font-weight: 650; }
+.wr-hl b span { font-size: 12px; font-weight: 500; color: var(--faint); margin-left: 8px; }
+.wr-hl em { font-style: normal; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) { .wr-hl button:hover { background: color-mix(in srgb, var(--chip) 60%, transparent); } }
+@media (max-width: 600px) {
+  .wr-in { height: clamp(200px, 34vh, 360px); padding: 14px 14px 6px; }
+  .wr-foot { padding-left: 14px; }
+  .wr-acts { display: grid; grid-template-columns: 1fr 1fr; }
+  .wr-acts .btn { justify-content: center; padding: 0 10px; }
+  .wr-acts [data-act="polish"] { grid-column: 1 / -1; }
+  .wr-card { padding: 12px 14px 10px; }
+  .wr-out { font-size: 15px; }
+}
 
 /* ---------- toasts with an action (되돌리기) ---------- */
 .toast.has-act { pointer-events: auto; display: flex; align-items: center; gap: 0; padding: 6px 6px 6px 16px; white-space: nowrap; }
@@ -915,6 +1038,23 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .case-sheet .cs-out .btn, .case-sheet > .row-btns .btn { height: 38px; padding: 0 15px; font-size: 13.5px; }
 .case-sheet .cs-out .btn:first-child, .case-sheet > .row-btns a.btn { background: var(--navy); color: #F7F9FC; box-shadow: none; }
 .case-sheet .pp-id { margin: 10px 0 0; font-size: 12px; color: var(--faint); }
+/* 헌재 결정 (cases.js): its 판례집 book when it could not be read; the two forms to cite it by, each copied with a tap; the
+   decisions a holding comes from. A sheet with its own 인용 복사 bar keeps its links at the end of the text, not over that bar */
+.cs-unsure { margin-left: 4px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 700; color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); white-space: nowrap; }
+.cs-citeas .cs-cf { display: flex; align-items: baseline; gap: 12px; width: 100%; margin-top: 6px; padding: 10px 12px; border-radius: 10px; background: var(--chip); text-align: left; font-size: 14px; line-height: 1.55; color: var(--ink); }
+.cs-citeas .cs-cf span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cs-citeas .cs-cf em { flex: none; font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--accent); }
+@media (hover: hover) { .cs-citeas .cs-cf:hover em { text-decoration: underline; } }
+.cs-citeas .cs-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--danger); }
+.cs-rels { display: grid; margin-top: 2px; }
+.cs-rel { display: grid; gap: 1px; width: 100%; padding: 8px 0; text-align: left; border-top: 1px solid var(--rule); }
+.cs-rel:first-child { border-top: 0; }
+.cs-rel b { font-size: 14px; font-weight: 600; line-height: 1.5; color: var(--accent); }
+.cs-rel span { font-size: 13px; line-height: 1.5; color: var(--muted); }
+.cs-rel span:empty { display: none; }
+.cs-fold > .cs-rels { padding-bottom: 12px; }
+.cs-fold[data-same] > p { padding-bottom: 14px; }
+.case-sheet:has(> .row-btns) .cs-body .cs-out { position: static; margin: 22px 0 0; padding: 0; background: none; }
 @media (max-width: 600px) {
   .sheet-wrap:has(.case-sheet) { place-items: end stretch; padding: 0; }
   .sheet.case-sheet { width: 100%; max-height: 92vh; border-radius: 20px 20px 0 0; padding: 26px 20px calc(var(--safe-b) + 18px); animation-name: sheet-up; }

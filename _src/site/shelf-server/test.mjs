@@ -320,6 +320,252 @@ ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'f
   globalThis.fetch = realFetch;
 }
 
+{ // 글쓰기 도우미: Anthropic's Messages API stood in for here (never the real one). Its stream comes in pieces cut anywhere
+  // (across events and inside a Hangul letter's bytes); the key is the server's only; the model's thinking stays there
+  const realFetch = globalThis.fetch, asked = [], plan = [];
+  const KEY = 'sk-ant-test-key-0001';
+  const sse = (evs) => evs.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join('');
+  const stream = (s, cut = 37) => { const b = Buffer.from(s); return new ReadableStream({ start(c) { for (let i = 0; i < b.length; i += cut) c.enqueue(new Uint8Array(b.subarray(i, i + cut))); c.close(); } }); };
+  // a whole answer as Anthropic streams it: message_start, a thinking block (empty, as it comes when its display is omitted)
+  // with its signature, a ping, the text in pieces, then how it stopped
+  const answer = (model, text, stop = 'end_turn', extra = []) => sse([
+    ['message_start', { type: 'message_start', message: { id: 'msg_t', type: 'message', role: 'assistant', model, content: [], stop_reason: null, usage: { input_tokens: 1200, cache_creation_input_tokens: 0, cache_read_input_tokens: 2400, output_tokens: 1 } } }],
+    ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } }],
+    ['ping', { type: 'ping' }],
+    ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '' } }],
+    ['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'SIGNATURE-STAYS-HERE' } }],
+    ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+    ...(text ? [['content_block_start', { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }],
+      ...(text.match(/[\s\S]{1,9}/g) || []).map((t) => ['content_block_delta', { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: t } }]),
+      ['content_block_stop', { type: 'content_block_stop', index: 1 }]] : []),
+    ...extra,
+    ...(stop ? [['message_delta', { type: 'message_delta', delta: { stop_reason: stop, stop_sequence: null, ...(stop === 'refusal' ? { stop_details: { category: 'cyber' } } : {}) }, usage: { output_tokens: 321 } }], ['message_stop', { type: 'message_stop' }]] : []),
+  ]);
+  const ok200 = (model, text, stop, extra) => () => new Response(stream(answer(model, text, stop, extra)), { headers: { 'content-type': 'text/event-stream' } });
+  const fail = (status, type, message = '', headers = {}) => () => new Response(JSON.stringify({ type: 'error', error: { type, message } }), { status, headers: { 'content-type': 'application/json', ...headers } });
+  globalThis.fetch = async (input, init) => {
+    const u = String(typeof input === 'string' ? input : input.url);
+    if (!u.startsWith('https://api.anthropic.com/')) return realFetch(input, init);
+    asked.push({ url: u, headers: new Headers(init.headers), body: JSON.parse(init.body) });
+    const next = plan.shift();
+    return next ? next() : fail(500, 'api_error', 'no plan')();
+  };
+  const events = (text) => text.split('\n\n').filter((b) => /^event: /m.test(b)).map((b) => ({ ev: /^event: (.*)$/m.exec(b)[1], d: JSON.parse(/^data: (.*)$/m.exec(b)[1]) }));
+  const shelf = (es) => es.filter((e) => e.ev === 'shelf').map((e) => e.d);
+  const written = (es) => es.filter((e) => e.ev === 'delta').map((e) => e.d.delta.text).join('');
+  const write = async (body, t = T) => { const r = await call('/write', { method: 'POST', body: JSON.stringify(body) }, t); return { status: r.status, type: r.headers.get('content-type') || '', text: await r.text() }; };
+  const used = async () => (await j(await call('/write', {}, T))).body.used;
+  const SAMPLE = '이 조항은 선거의 공정을 해치는 행위를 막기 위한 것이다. 그러나 그 범위가 넓어 표현의 자유를 지나치게 제한할 우려가 있다(헌재 2004. 10. 21. 2004헌마554등 결정; 대법원 2006. 3. 16. 선고 2006두330 판결).12)';
+  const GOOD = '이 조항은 선거의 공정을 해치는 행위를 막으려는 것이다. 그러나 그 범위가 넓어 표현의 자유를 지나치게 제한할 우려가 있다(헌재 2004. 10. 21. 2004헌마554등 결정; 대법원 2006. 3. 16. 선고 2006두330 판결).12) [근거 필요: 제한의 정도를 보여 주는 자료]';
+
+  // no key on the server: no_key, and Anthropic is not asked
+  let x = await j(await call('/write', {}, T));
+  ok(x.status === 200 && x.body.key === false && x.body.cap === 150 && x.body.max === 12000 && x.body.used === 0 && x.body.style === null && x.body.models[0].id === 'claude-fable-5-2' && x.body.models[1].id === 'claude-opus-5-5', '글쓰기 info: no key, the models (Fable 5.2, then Opus 5.5), cap 150, 12,000 letters, nothing used');
+  let w = await write({ action: 'polish', text: SAMPLE });
+  ok(w.status === 503 && JSON.parse(w.text).error === 'no_key' && asked.length === 0, 'no key: 503 no_key, and Anthropic is never asked');
+  ok((await call('/write', { method: 'POST', body: JSON.stringify({ action: 'polish', text: SAMPLE }) })).status === 401, '글쓰기 needs a signed-in device');
+
+  env.ANTHROPIC_API_KEY = KEY;
+  // a good answer, streamed on
+  plan.push(ok200('claude-fable-5-2', GOOD));
+  w = await write({ action: 'polish', text: SAMPLE });
+  let es = events(w.text), sh = shelf(es);
+  ok(w.status === 200 && /text\/event-stream/.test(w.type), 'polish: 200, server-sent events');
+  ok(sh[0].type === 'start' && sh[0].model.id === 'claude-fable-5-2' && sh[0].used === 1 && sh[0].cap === 150, 'start: Fable first, today\'s count 1 of 150');
+  ok(written(es) === GOOD, 'the text arrives whole, piece by piece (cut across events and letters on the way)');
+  const done = sh[sh.length - 1];
+  ok(done.type === 'done' && done.model.id === 'claude-fable-5-2' && done.stop === 'end_turn' && done.usage.output_tokens === 321 && done.usage.cache_read_input_tokens === 2400, 'done: model, stop reason and usage (cache reads included)');
+  ok(!w.text.includes('SIGNATURE-STAYS-HERE') && !w.text.includes('thinking_delta') && !w.text.includes(KEY), 'the thinking and its signature stay on the server; the key is never in the answer');
+  ok(/^: ping$/m.test(w.text), 'Anthropic\'s ping passed on as a comment (keeps the connection awake)');
+  let q = asked[0];
+  ok(asked.length === 1 && q.url === 'https://api.anthropic.com/v1/messages' && q.headers.get('x-api-key') === KEY && q.headers.get('anthropic-version') === '2026-10-21' && /^0128-bookshelf\//.test(q.headers.get('user-agent')), 'asked of the Messages API with the key, the API version and the shelf\'s own user agent');
+  ok(q.body.model === 'claude-fable-5-2' && q.body.stream === true && q.body.output_config.effort === 'high' && q.body.max_tokens >= 32000, 'model claude-fable-5-2, streamed, effort high, room for thinking and answer');
+  ok(!('thinking' in q.body) && !('temperature' in q.body) && !('top_p' in q.body) && !('top_k' in q.body) && q.body.messages.length === 1 && q.body.messages[0].role === 'user', 'no thinking settings, no sampling parameters, no prefill (one user turn)');
+  ok(q.body.system.length === 1 && q.body.system[0].cache_control && q.body.system[0].cache_control.type === 'ephemeral' && /사건번호/.test(q.body.system[0].text), 'no style yet: the rules alone, marked for the cache');
+  ok(q.body.messages[0].content.startsWith('<글>\n' + SAMPLE + '\n</글>') && /글쓴이의 문체로 다듬어/.test(q.body.messages[0].content) && /아직 <글쓴이의 문체>가 없습니다/.test(q.body.messages[0].content), 'the text first, then the request (and that no style is learned yet)');
+  ok(await used() === 1, 'counted: 1 today');
+
+  // refusal mid-answer → the same request on Opus 5.5; the part already sent is to be thrown away (the fallback event says so)
+  asked.length = 0;
+  plan.push(ok200('claude-fable-5-2', '이 조항은 선거의', 'refusal'), ok200('claude-opus-5-5', GOOD));
+  w = await write({ action: 'concise', text: SAMPLE });
+  es = events(w.text); sh = shelf(es);
+  const fb = sh.find((d) => d.type === 'fallback');
+  ok(fb && fb.why === 'refusal' && fb.from.id === 'claude-fable-5-2' && fb.to.id === 'claude-opus-5-5', 'refusal: a fallback event, Fable → Opus 5.5');
+  const after = es.slice(es.findIndex((e) => e.ev === 'shelf' && e.d.type === 'fallback') + 1);
+  ok(written(after) === GOOD && sh[sh.length - 1].type === 'done' && sh[sh.length - 1].model.id === 'claude-opus-5-5', 'Opus 5.5 answers in full after it');
+  ok(asked.length === 2 && asked[1].body.model === 'claude-opus-5-5' && JSON.stringify({ ...asked[1].body, model: '' }) === JSON.stringify({ ...asked[0].body, model: '' }), 'the same request, only the model changed');
+  ok(asked[0].body.output_config.effort === 'high' && /간결하게/.test(asked[0].body.messages[0].content), 'concise: its own request');
+  ok(await used() === 2, 'one request counted once');
+
+  // refused before any text, and by both
+  asked.length = 0;
+  plan.push(ok200('claude-fable-5-2', '', 'refusal'), ok200('claude-opus-5-5', '', 'refusal'));
+  w = await write({ action: 'logic', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh.some((d) => d.type === 'fallback') && sh[sh.length - 1].type === 'error' && sh[sh.length - 1].code === 'refused' && asked.length === 2, 'both refuse: error refused');
+  ok(asked[0].body.output_config.effort === 'high' && /의견만/.test(asked[0].body.messages[0].content), 'logic: opinions only');
+
+  // rate-limited: one wait (as long as Anthropic says, at least 2 s), one more try, then a plain error with the wait; not counted
+  asked.length = 0;
+  const before = await used();
+  plan.push(fail(429, 'rate_limited', 'Number of request tokens has exceeded your per-minute rate limit', { 'retry-after': '1' }), fail(429, 'rate_limited', 'again', { 'retry-after': '40' }));
+  let t0 = Date.now();
+  w = await write({ action: 'proof', text: SAMPLE });
+  sh = shelf(events(w.text));
+  const wt = sh.find((d) => d.type === 'wait');
+  ok(wt && wt.why === 'rate' && wt.sec === 2 && Date.now() - t0 >= 1900, '429: told to wait 2 s, waited, asked once more');
+  ok(sh[sh.length - 1].type === 'error' && sh[sh.length - 1].code === 'rate_limited' && sh[sh.length - 1].sec === 40 && asked.length === 2, '429 again: error rate_limited with Anthropic\'s wait (40 s); not a third try, not the other model');
+  ok(await used() === before, 'a request that got no answer is given back to the day');
+  ok(asked[0].body.output_config.effort === 'medium' && /맞춤법/.test(asked[0].body.messages[0].content), 'proof: medium effort');
+
+  // overloaded once: the second try answers
+  asked.length = 0;
+  plan.push(fail(529, 'overloaded_error', 'Overloaded'), ok200('claude-fable-5-2', GOOD));
+  w = await write({ action: 'polish', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh.some((d) => d.type === 'wait' && d.why === 'busy') && sh[sh.length - 1].type === 'done' && sh[sh.length - 1].model.id === 'claude-fable-5-2' && asked.length === 2, '529 then 200: one wait, then Fable\'s answer');
+  // overloaded twice: Opus 5.5 instead (Fable cannot be had now)
+  asked.length = 0;
+  plan.push(fail(529, 'overloaded_error', 'Overloaded'), fail(529, 'overloaded_error', 'Overloaded'), ok200('claude-opus-5-5', GOOD));
+  w = await write({ action: 'polish', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh.some((d) => d.type === 'fallback' && d.why === 'unavailable') && sh[sh.length - 1].type === 'done' && sh[sh.length - 1].model.id === 'claude-opus-5-5' && asked.map((a) => a.body.model).join() === 'claude-fable-5-2,claude-fable-5-2,claude-opus-5-5', '529 twice: Opus 5.5 answers');
+  // a model the key may not use: straight to the next, no waiting
+  asked.length = 0;
+  plan.push(fail(404, 'not_found_error', 'model: claude-fable-5-2'), ok200('claude-opus-5-5', GOOD));
+  t0 = Date.now();
+  w = await write({ action: 'english', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh.some((d) => d.type === 'fallback' && d.why === 'unavailable') && sh[sh.length - 1].type === 'done' && asked.length === 2 && Date.now() - t0 < 1500, '404 (model not offered to the key): Opus 5.5 at once');
+  ok(/영어 초록/.test(asked[0].body.messages[0].content) && /2004Hun-Ma554/.test(asked[0].body.messages[0].content), 'english: an academic abstract, case numbers in the courts\' English form');
+  // overloaded in the middle of the stream after some text: the part is kept, a plain error
+  plan.push(ok200('claude-fable-5-2', '이 조항은', '', [['error', { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }]]));
+  w = await write({ action: 'polish', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh[sh.length - 1].type === 'error' && sh[sh.length - 1].code === 'overloaded' && sh[sh.length - 1].partial === true, 'overloaded mid-answer: error overloaded, the part so far marked partial');
+  // the key refused: no retry, no other model, a plain error that never repeats the key
+  asked.length = 0;
+  const n0 = await used();
+  plan.push(fail(401, 'authentication_error', 'invalid x-api-key ' + KEY));
+  w = await write({ action: 'polish', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh[sh.length - 1].code === 'bad_key' && asked.length === 1 && !w.text.includes(KEY) && await used() === n0, '401: bad_key at once; the key never in the answer; not counted');
+  plan.push(fail(400, 'invalid_request_error', 'something about ' + KEY + ' was wrong'));
+  w = await write({ action: 'polish', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh[sh.length - 1].code === 'bad_request' && /something about/.test(sh[sh.length - 1].message) && !w.text.includes(KEY), 'any word passed on from Anthropic has the key taken out');
+
+  // the limits, before anything goes out
+  asked.length = 0;
+  w = await write({ action: 'polish', text: '가'.repeat(12001) });
+  ok(w.status === 413 && JSON.parse(w.text).error === 'too_long' && JSON.parse(w.text).max === 12000 && JSON.parse(w.text).got === 12001 && asked.length === 0, 'over 12,000 letters: 413 too_long (max, got); Anthropic not asked');
+  plan.push(ok200('claude-fable-5-2', '가'));
+  w = await write({ action: 'proof', text: '가'.repeat(12000) });
+  ok(w.status === 200 && asked.length === 1, 'exactly 12,000 Hangul letters (36,000 bytes) go: letters are counted, not bytes');
+  ok((await write({ action: 'translate', text: SAMPLE })).status === 400 && (await write({ action: 'polish', text: '   ' })).status === 400, 'an unknown request or an empty text: 400');
+  const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  await bucket.put('write/use.json', JSON.stringify({ day, n: 150 }));
+  asked.length = 0;
+  w = await write({ action: 'polish', text: SAMPLE });
+  let e = JSON.parse(w.text);
+  ok(w.status === 429 && e.error === 'daily_cap' && e.cap === 150 && e.used === 150 && e.reset > Date.now() && e.reset - Date.now() <= 86400e3 && asked.length === 0, 'the day\'s 150 used: 429 daily_cap (with when it opens again); Anthropic not asked');
+  await bucket.put('write/use.json', JSON.stringify({ day: '2000-01-01', n: 150 }));
+  ok(await used() === 0, 'a new day starts from 0');
+
+  // 내 문체 익히기: paragraphs in, the style described, kept, and set before every later request
+  const PROFILE = '1. 문장: 문장은 대체로 60~90자 안팎이다. "이에 따라 정부는" 같은 연결로 시작한다.\n2. 종결 표현: "-ㄹ 필요가 있다", "-라고 할 것이다"가 잦다.\n'.repeat(4);
+  const paras = Array.from({ length: 6 }, (_, i) => ({ text: `${i + 1}번째 문단이다. ` + '이러한 문제를 개선하기 위해서는 본 법이 형벌체계상의 정당성과 균형을 잃었는지 여부를 검토해볼 필요가 있다. '.repeat(3), part: ['서론', '본론', '결론'][i % 3], paper: 1 + (i % 3) }));
+  ok((await write({ action: 'profile', paragraphs: paras.slice(0, 4) })).status === 400, 'fewer than 5 paragraphs: refused');
+  asked.length = 0;
+  plan.push(ok200('claude-fable-5-2', PROFILE));
+  w = await write({ action: 'profile', paragraphs: paras, sources: [{ title: '우리나라 중대재해처벌 관련 법제의 개선방안 연구', n: 2 }] });
+  sh = shelf(events(w.text));
+  const pd = sh[sh.length - 1];
+  ok(pd.type === 'done' && pd.style && pd.style.papers === 3 && pd.style.paragraphs === 6 && pd.style.at > 0, 'profile: done, and the style kept (3 papers, 6 paragraphs)');
+  q = asked[0].body;
+  ok(q.system.length === 1 && /문체를 분석하는/.test(q.system[0].text) && /<문단 번호="1" 논문="1" 부분="서론">/.test(q.messages[0].content) && /종결 표현/.test(q.messages[0].content) && !/중대재해처벌 관련 법제/.test(JSON.stringify(q)), 'the paragraphs with their paper\'s number and part, then the request; no titles go out');
+  x = await j(await call('/write/style', {}, T));
+  ok(x.status === 200 && x.body.text === PROFILE && x.body.sources[0].title === '우리나라 중대재해처벌 관련 법제의 개선방안 연구', 'the style can be read back whole (for the owner to read), with the papers it came from');
+  x = await j(await call('/write', {}, T));
+  ok(x.body.style && x.body.style.paragraphs === 6 && x.body.style.papers === 3, 'info: when and from what the style was learned');
+  asked.length = 0;
+  plan.push(ok200('claude-fable-5-2', GOOD));
+  await write({ action: 'polish', text: SAMPLE });
+  q = asked[0].body;
+  ok(q.system.length === 2 && !q.system[0].cache_control && q.system[1].cache_control && q.system[1].text.includes(PROFILE) && q.system[1].text.startsWith('<글쓴이의 문체>'), 'every later request: the rules, then the style — marked for the cache (prompt caching)');
+  ok(!/아직 <글쓴이의 문체>가 없습니다/.test(q.messages[0].content), 'and no longer says there is no style');
+  // a profile cut short is not kept
+  plan.push(ok200('claude-fable-5-2', '짧은 정리', 'max_tokens'));
+  w = await write({ action: 'profile', paragraphs: paras });
+  x = await j(await call('/write/style', {}, T));
+  ok(shelf(events(w.text)).pop().stop === 'max_tokens' && x.body.text === PROFILE, 'a style cut short (max_tokens) does not replace the one kept');
+
+  // the day's budget: each answer's cost (from its usage, at its model's price) is added; once spent, nothing more goes
+  await bucket.put('write/use.json', JSON.stringify({ day, n: 3, usd: 1 }));
+  plan.push(ok200('claude-fable-5-2', GOOD));
+  w = await write({ action: 'polish', text: SAMPLE });
+  let dn = shelf(events(w.text)).pop();
+  const fableCost = (1200 * 10 + 2400 * 0.25 + 321 * 50) / 1e6;   // input, cache reads, output at Fable's price
+  let usej = await (await bucket.get('write/use.json')).json();
+  ok(dn.type === 'done' && Math.abs(usej.usd - (1 + fableCost)) < 1e-4 && dn.spent === Math.round((1 + fableCost) * 100) / 100 && dn.budget === 40, `an answer's cost is added to the day (${usej.usd} USD), and the app is told`);
+  plan.push(ok200('claude-fable-5-2', '이 조항은', 'refusal'), ok200('claude-opus-5-5', GOOD));
+  await write({ action: 'polish', text: SAMPLE });
+  usej = await (await bucket.get('write/use.json')).json();
+  const opusCost = (1200 * 4 + 2400 * 0.2 + 321 * 20) / 1e6;
+  ok(Math.abs(usej.usd - (1 + 2 * fableCost + opusCost)) < 1e-4, 'a refused answer is billed too: both models\' costs are added');
+  x = await j(await call('/write', {}, T));
+  ok(x.body.budget === 40 && Math.abs(x.body.spent - usej.usd) < 1e-9, 'info: the day\'s budget and what is spent');
+  await bucket.put('write/use.json', JSON.stringify({ day, n: 10, usd: 40.01 }));
+  asked.length = 0;
+  w = await write({ action: 'polish', text: SAMPLE });
+  e = JSON.parse(w.text);
+  ok(w.status === 429 && e.error === 'daily_budget' && e.budget === 40 && e.spent === 40.01 && e.reset > Date.now() && asked.length === 0, 'the day\'s budget spent: 429 daily_budget (with when it opens again); Anthropic not asked');
+  await bucket.put('write/use.json', JSON.stringify({ day, n: 10, usd: 0 }));
+
+  // the latest answer kept for an app that lost the connection: the events as streamed, fetched by the app's id
+  plan.push(ok200('claude-fable-5-2', GOOD));
+  w = await write({ action: 'proof', text: SAMPLE, id: 'abc123xyz' });
+  x = await j(await call('/write/last?id=abc123xyz', {}, T));
+  ok(x.status === 200 && x.body.state === 'done' && x.body.act === 'proof' && written(events(x.body.sse)) === GOOD && shelf(events(x.body.sse)).pop().type === 'done' && !/ping/.test(x.body.sse), 'write/last: the answer kept whole, as it was streamed (done event included, pings left out)');
+  ok((await call('/write/last?id=other12345', {}, T)).status === 404 && (await call('/write/last?id=abc123xyz')).status === 401, 'another id: 404 (only the latest is kept); signed-in devices only');
+  ok(!JSON.stringify(x.body).includes(KEY) && !x.body.sse.includes('SIGNATURE-STAYS-HERE'), 'nothing kept that the app would not have seen');
+
+  // the app goes away mid-answer (reload, a locked phone): with an id the answer is read to the end and kept; stopped
+  // on purpose (멈추기) or with no id, Anthropic's stream is let go
+  const { default: worker } = await import('./worker.js');
+  const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
+  const slowly = (s, gap, st) => { const b = Buffer.from(s); let i = 0; return new ReadableStream({ async pull(c) { if (i >= b.length) { st.end = true; c.close(); return; } await sleepMs(gap); c.enqueue(new Uint8Array(b.subarray(i, i + 100))); i += 100; }, cancel() { st.cancelled = true; } }); };
+  const direct = async (body, st, text, readFor = 300) => {
+    plan.push(() => new Response(slowly(answer('claude-fable-5-2', text), 60, st), { headers: { 'content-type': 'text/event-stream' } }));
+    const pend = [];
+    const res = await worker.fetch(new Request(BASE + '/write', { method: 'POST', body: JSON.stringify(body), headers: { origin: ORIGIN, authorization: 'Bearer ' + T, 'content-type': 'application/json' } }), env, { waitUntil: (p) => pend.push(p) });
+    const rd = res.body.getReader(), t1 = Date.now();
+    while (Date.now() - t1 < readFor) { const c = await rd.read(); if (c.done) break; }
+    return { rd, pend };
+  };
+  const settleAll = async (pend) => { for (let k = 0; k < 20 && pend.length; k++) { const p = pend.splice(0); await Promise.allSettled(p); } };
+  let st = {}, d1 = await direct({ action: 'polish', text: SAMPLE, id: 'gone0001' }, st, GOOD);
+  await d1.rd.cancel();
+  await settleAll(d1.pend);
+  x = await j(await call('/write/last?id=gone0001', {}, T));
+  ok(st.end && !st.cancelled && x.body.state === 'done' && written(events(x.body.sse)) === GOOD && shelf(events(x.body.sse)).pop().type === 'done', 'the app gone mid-answer: the answer is read to the end and kept for it');
+  st = {}; d1 = await direct({ action: 'polish', text: SAMPLE, id: 'stop0001' }, st, GOOD.repeat(4));
+  ok((await call('/write/stop', { method: 'POST', body: JSON.stringify({ id: 'stop0001' }) }, T)).status === 200, '멈추기: the stop is told to the server');
+  await d1.rd.cancel();
+  await settleAll(d1.pend);
+  x = await j(await call('/write/last?id=stop0001', {}, T));
+  ok(st.cancelled && !st.end && x.body.state === 'stopped', 'stopped on purpose: Anthropic\'s stream is let go (not billed further), kept as stopped');
+  st = {}; d1 = await direct({ action: 'polish', text: SAMPLE }, st, GOOD.repeat(4));
+  await d1.rd.cancel();
+  await settleAll(d1.pend);
+  ok(st.cancelled && !st.end, 'no id (an older app) and gone: let go at once, as before');
+  ok((await call('/write/stop', { method: 'POST', body: JSON.stringify({ id: '../x' }) }, T)).status === 400, 'a stop needs a proper id');
+
+  delete env.ANTHROPIC_API_KEY;
+  globalThis.fetch = realFetch;
+}
+
 // devices: sign another device out, then sign out
 const devs = (await j(await call('/devices', {}, T))).body.devices;
 const other = devs.find((d) => !d.current);
