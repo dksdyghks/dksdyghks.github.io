@@ -4,7 +4,7 @@ shelf/kci/new.json — the law papers KCI took in over the last eight weeks, new
   (id ART…, title, authors, journal, publisher, year, month, volume, issue, 통권, pages, 원문 공개, the start of the abstract,
   the day KCI took it in, KCI's OAI number (the whole record, with the full abstract, on demand), times cited, DOI). The app shows the ones in its owner's fields on 논문 찾기's first screen.
 shelf/kci/law/YYYY-MM.json — every law paper gathered, kept by the month it came out (YYYY-00 when KCI gives no month),
-  for the last YEARS years and this one: [{ id, t, a, j, p, y, m, v, i, s, fp, lp, open, ab }], newest issue first;
+  of every year the days read bring (the older literature too): [{ id, t, a, j, p, y, m, v, i, s, fp, lp, open, ab }], newest issue first;
   shelf/kci/law/index.json — { months: { "YYYY-MM": count }, back, through }.
 shelf/kci/state.json — { "through": the last day gathered going forward, "back": the earliest day gathered going back }.
 
@@ -107,14 +107,15 @@ def day(d, started):
 
 
 def archive(dst, recs, through=None, back=None):
-    """the papers into their months (a paper read again replaces the one kept); papers older than YEARS years are not kept"""
+    """the papers into their months (a paper read again replaces the one kept). Every year is kept: KCI's days carry papers of
+    every year (a record changed lately comes again with that day), and a search must find the older literature too —
+    YEARS only bounds how far back the days are read"""
     law = os.path.join(dst, 'law')
     os.makedirs(law, exist_ok=True)
-    first_year = datetime.date.today().year - YEARS
     by_month = {}
     for r in recs:
         y = r.get('y', '')
-        if not (y.isdigit() and int(y) >= first_year):
+        if not (y.isdigit() and 1900 <= int(y) <= datetime.date.today().year + 1):
             continue
         m = r.get('m', '')
         key = '%s-%02d' % (y, int(m)) if m.isdigit() and 1 <= int(m) <= 12 else y + '-00'
@@ -130,13 +131,6 @@ def archive(dst, recs, through=None, back=None):
         with open(f, 'w', encoding='utf-8') as fh:
             json.dump(out, fh, ensure_ascii=False, separators=(',', ':'))
         idx['months'][key] = len(out)
-    for key in list(idx['months']):   # months now older than kept
-        if int(key[:4]) < first_year:
-            idx['months'].pop(key)
-            try:
-                os.remove(os.path.join(law, key + '.json'))
-            except OSError:
-                pass
     idx['months'] = dict(sorted(idx['months'].items(), reverse=True))
     if through:
         idx['through'] = through

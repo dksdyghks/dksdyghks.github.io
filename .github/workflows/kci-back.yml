@@ -55,7 +55,7 @@ jobs:
         run: |
           before='${{ steps.before.outputs.back }}'
           now=$(python3 -c "import json;print(json.load(open('shelf/kci/state.json')).get('back',''))" 2>/dev/null)
-          goal=$(date -u -d '3 years ago' +%Y-%m-%d)
+          goal="$(( $(date -u +%Y) - 3 ))-01-01"   # (as kci_oai.py: 1 January three years before)
           echo "back: $before -> $now (goal $goal)"
           if [ -z "$now" ] || [ "$now" = "$before" ]; then echo "no step back this time: the schedule takes it up"; exit 0; fi
           if [[ "$now" < "$goal" || "$now" = "$goal" ]]; then echo "three years in: done"; exit 0; fi

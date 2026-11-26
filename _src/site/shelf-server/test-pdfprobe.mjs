@@ -7,7 +7,7 @@ const PORT = Number(process.env.PORT) || 8812, BASE = `http://127.0.0.1:${PORT}/
 const PEPPER = 'test-pepper', PIN = '123456';
 const dir = '/tmp/claude-0/-home-user/32c96ca5-ace8-5bfb-8ce5-1b09a2bc0eb1/scratchpad/seojae-mock-probe-' + Date.now();
 const bucket = new MockR2(dir);
-const env = { BUCKET: bucket, ALLOWED_ORIGINS: ORIGIN, PEPPER, PIN_HASH: crypto.createHash('sha256').update(PEPPER + ':' + PIN).digest('hex') };
+const env = { BUCKET: bucket, ALLOWED_ORIGINS: ORIGIN, PEPPER, PIN_HASH: crypto.createHash('sha256').update(PEPPER + ':' + PIN).digest('hex'), CORE_KEY: 'test-core' };
 let failures = 0;
 const ok = (c, m) => { if (!c) { failures++; console.log('FAIL', m); } else console.log('ok  ', m); };
 
@@ -27,6 +27,14 @@ globalThis.fetch = async (input, init = {}) => {
 async function played(url, init) {
   const h = new Headers(init.headers || {});
   asked.push(url.hostname + (h.get('range') ? ' (range)' : ''));
+  if (url.hostname === 'api.core.ac.uk') {   // two papers by title search: only the one with the same title, year and author is taken
+    if (/doi:/.test(url.searchParams.get('q') || '')) return new Response(JSON.stringify({ results: [] }), { headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ results: [
+      { title: '다른 논문의 제목', yearPublished: 2024, authors: [{ name: '김철수' }], downloadUrl: 'https://wrong.example.org/other.pdf' },
+      { title: '선거관리위원회의 독립성 연구', yearPublished: 2024, authors: [{ name: '안요환' }], downloadUrl: 'https://repo.example.org/core.pdf' },
+    ] }), { headers: { 'content-type': 'application/json' } });
+  }
+  if (url.hostname === 'wrong.example.org') return new Response(PDF, { headers: { 'content-type': 'application/pdf', 'content-length': String(PDF.length) } });
   if (url.hostname === 'api.openalex.org') return new Response(JSON.stringify({ open_access: { is_oa: true }, best_oa_location: { pdf_url: 'https://repo.example.org/paper.pdf' }, locations: [] }), { headers: { 'content-type': 'application/json' } });
   if (url.hostname === 'repo.example.org') {
     if (where === 'html') return new Response('<html>login</html>', { headers: { 'content-type': 'text/html' } });
@@ -54,16 +62,25 @@ ok(r.headers.get('content-type') === 'application/pdf' && buf.length === PDF.len
 ok(r.headers.get('access-control-expose-headers').includes('x-pdf-source') && r.headers.get('x-pdf-source') === 'repo.example.org', 'its source named, and readable by the app');
 
 where = 'ignores-range'; asked.length = 0;
-d = await (await ask({ doi: '10.1234/x', probe: true })).json();
+d = await (await ask({ doi: '10.1234/y', probe: true })).json();
 ok(d.found === true, 'probe: a host that ignores the range still answers (its first bytes are read, then it is let go)');
 where = 'html';
-d = await (await ask({ doi: '10.1234/x', probe: true })).json();
+d = await (await ask({ doi: '10.1234/z', probe: true })).json();
 ok(d.found === false, 'probe: a page that is not a PDF (a login page) is not offered');
 where = 'tiny';
-d = await (await ask({ doi: '10.1234/x', probe: true })).json();
+d = await (await ask({ doi: '10.1234/w', probe: true })).json();
 ok(d.found === false, 'probe: a PDF too small to be the paper (a notice) is not offered');
-d = await (await ask({ title: 'no doi, no keys', probe: true })).json();
-ok(d.found === false, 'probe: nothing to look by (no DOI, no CORE key) answers found: false');
+// a probe asked again is answered from the edge, nobody asked
+where = 'pdf'; asked.length = 0;
+d = await (await ask({ doi: '10.1234/x', title: 't', probe: true })).json();
+ok(d.found === true && asked.length === 0, 'probe asked again: kept at the edge, nothing fetched (' + asked.join(',') + ')');
+// CORE by title: only the same paper
+asked.length = 0;
+d = await (await ask({ title: '선거관리위원회의 독립성 연구', year: 2024, authors: ['안요환'], probe: true })).json();
+ok(d.found === true && !asked.includes('wrong.example.org (range)') && asked.includes('repo.example.org (range)'), 'CORE by title: the same paper only (' + asked.join(',') + ')');
+asked.length = 0;
+d = await (await ask({ title: '아무도 쓰지 않은 제목', probe: true })).json();
+ok(d.found === false && !asked.some((h) => /example\.org/.test(h)), 'CORE by title: an unlike title takes nothing');
 
 server.close();
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');

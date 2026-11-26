@@ -5,7 +5,10 @@
 // spaced out, or in hanja after the affiliation), then 목차 / 요약. A database cover (DBpia, KCI …) is read by its labels.
 // Careful by design: when the title and the author are not both clear, no name is given and the file keeps its own.
 // Input: page objects as made by pdfkit.pageItems(): { W, H, items: [{ s, x, y, w, h }] } (y grows downward).
+// Where it was published is read by cite.js from every line of the first pages (running heads too), the reading here by
+// position standing in when cite.js finds nothing.
 import { PAIRS } from './hanja.js';
+import { printedCitation, issueText as citeIssue, dateText, glyphs, cleanName, plausibleName, notPubDates, stripLinks, nameKey } from './cite.js';
 
 // ---------------------------------------------------------------- hanja → hangul
 let HANJA = null;
@@ -160,7 +163,7 @@ function lines(pg) {
       if (p.s.trim()) ink = p.x + p.w;
     }
   }
-  for (const L of out) L.s = L.s.normalize('NFC').replace(/\s+/g, ' ').trim();
+  for (const L of out) L.s = glyphs(L.s.normalize('NFC')).replace(/\s+/g, ' ').trim();   // 『』 as HWP's fonts give them (\u0002 \u0003, 뺷 뺸), a font's private marks
   return out.filter((L) => L.s).sort((a, b) => a.y - b.y || a.x0 - b.x0);
 }
 function bodySize(ls) {   // the size most of the text is set in
@@ -302,9 +305,10 @@ function knownJournalAt(line) {   // a line that starts with a known journal's n
   return JOURNALS.filter(([j, soc]) => soc !== undefined && squash(j).length >= 3 && k.startsWith(squash(j))).sort((a, b) => b[0].length - a[0].length)[0] || null;
 }
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
-function dateIn(s) {
+function dateIn(s0) {
+  const s = stripLinks(s0);   // a DOI's digits are no date (…/nec.2025.1.23.003)
   let m = /(\d{4})\s*년\s*(\d{1,2})\s*월(?:\s*(\d{1,2})\s*일)?/.exec(s);
-  if (!m) m = /(?:^|[^\d])(\d{4})\s*\.\s*(\d{1,2})\s*\.(?:\s*(\d{1,2})\s*\.?)?(?!\d)/.exec(s);
+  if (!m) m = /(?:^|[^\d.])(\d{4})\s*\.\s*(\d{1,2})(?:\s*\.\s*(\d{1,2}))?\s*\.?(?!\d)/.exec(s);   // 2021. 4. 30. · (2014. 12) · 2024. 12 115: no period needed after the month
   if (m) return ok(+m[1], +m[2], m[3] ? +m[3] : 0);
   m = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)[a-z]*\.?\s*,?\s*(\d{4})\b/i.exec(s);
   if (m) return ok(+m[2], MONTHS[m[1].toLowerCase()], 0);
@@ -328,9 +332,9 @@ function issueIn(s) {
   if (m) return `제${m[2]}${m[1]} 제${m[3]}호`;
   m = /(?:^|[^통권\d])제\s*(\d+)\s*호/.exec(s);
   if (m) return `제${m[1]}호`;
-  m = /[』」]\s*\.?\s*(\d+)\s*\(\s*(\d+)\s*\)/.exec(s) || /Vol\.?\s*(\d+)\s*,?\s*No\.?\s*(\d+)/i.exec(s);
+  m = /[』」]\s*\.?\s*(\d+)\s*\(\s*(\d+)\s*\)/.exec(s) || /Vol\.?\s*(\d+)\s*[.,]?\s*No\.?\s*(\d+)/i.exec(s);   // Vol.19. No.2 too
   if (m) return `제${m[1]}권 제${m[2]}호`;
-  m = /Vol\.?\s*(\d+)(?!\s*[,.]?\s*No)/i.exec(s);
+  m = /Vol\.?\s*(\d+)(?!\d)(?!\s*[.,]?\s*No)/i.exec(s);   // Vol. 513 alone: the one running number (its digits not cut short: Vol.19. No.2 is no 제1호)
   if (m) return `제${m[1]}호`;
   return '';
 }
@@ -338,15 +342,25 @@ function journalIn(s) {
   // a name in brackets right before its volume (「법조」 제71권, 『공법연구』 제48집 제4호) is the journal
   let m = /[『「]([^』」]{2,30})[』」]\s*,?\s*(?:통권\s*)?제\s*\d+\s*[권집호]/.exec(s);
   if (m) return m[1].trim();
-  m = /^(?:사단법인\s+)?(.{2,30}?)\s*(?:\(|（)?\s*(?:통권\s*)?제\s*\d+\s*[권집호]/.exec(s);
-  if (m) { const j = m[1].replace(/\s*\(.*$/, '').replace(/[\s,·.]+$/, '').trim(); if (!/^(제\s*\d|vol|no\b|\d)/i.test(j) && /[가-힣A-Za-z]{2}/.test(j) && !/[「」『』]/.test(j)) return j; }
+  m = /^(?:사단법인\s+)?(.{2,30}?)\s*(?:\(|（)?\s*(?:통권\s*)?제\s*(\d+)\s*([권집호])/.exec(s);
+  if (m) {   // what stands before the issue, less what is no name: a rule's other side, page numbers, a year, a publisher in front (❙선거연구❙ 2026년, ∣160∣ 입법학연구)
+    const j = cleanName(m[1].replace(/[❙∣│┃|]/g, ' | ')).name.replace(/\s*\(.*$/, '').replace(/[\s,·.]+$/, '').trim();
+    const lawNo = m[3] === '호' && m[2].length >= 3 && /(?:법|법률|령|규칙|규정|조례|고시|훈령)$/.test(m[1].trim());   // 법률 제4496호
+    if (!/^(제\s*\d|vol|no\b|\d)/i.test(j) && /[가-힣A-Za-z]{2}/.test(j) && !/[「」『』]/.test(j) && !lawNo && nameLike(j)) return j;
+  }
   // a running head with the title first and the journal after it (…일고찰/조원용 7 중앙법학 제27집 제4호): the name before its volume
   m = /(?:^|[\s/|·])([가-힣][가-힣·]{1,14})\s*(?:통권\s*)?제\s*\d+\s*[권집]/.exec(s);
   if (m && !/^(?:법률|대통령령|조례|규칙|헌법|동법|같은법)$/.test(m[1])) return m[1];
   // a name in brackets anywhere else — but not a law's name inside a title (이른바 「개식용종식법」에 관한 …)
   m = /[『「]([^』」]{2,30})[』」]/.exec(s);
-  if (m && !/(?:법|법률|령|규칙|조약|협정)$/.test(m[1].replace(/\s+/g, ''))) return m[1].trim();
+  if (m && !/(?:법|법률|령|규칙|조약|협정)$/.test(m[1].replace(/\s+/g, '')) && nameLike(m[1].trim())) return m[1].trim();
   return '';
+}
+// words that are no journal's name: a sentence's (조사 between words, quotes), or a law's name (행정규제기본법 제 조, 군정법령,
+// 운영규정) — unless they are a journal's above (비교사법)
+function nameLike(j) {
+  if (knownJournal(j)) return true;
+  return plausibleName(j) && !j.split(/\s+/).some((w) => /^[가-힣]{2,}(?:법|법률|령|규칙|규정|조례|고시|훈령)$/.test(w));
 }
 function societyIn(s) {
   const m = /(?:사단법인|\(사\)|（사）)?\s*([가-힣][가-힣·\s]{1,24}?(?:학회|협회|연구회|연구소|연구원|센터|법원|재판소))(?=\s|$|\d|[,.])/.exec(s);
@@ -356,8 +370,9 @@ function infoFrom(ls, H, titleY, more = []) {   // the header (above the title) 
   const head = ls.filter((L) => L.y < (titleY != null ? titleY : H * 0.25) || L.y > H * 0.9).concat(more);
   const info = { journal: '', society: '', issue: '', date: '' };
   for (const L of head) {
+    // a page number at either end of a running head (not the number of Vol. 513 or of 제 권 호9 2)
     const s = hangulize(L.s).replace(/제\s*호\s*(\d+)/g, '제$1호').replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0))
-      .replace(/^\s*[-–]?\s*\d{1,4}\s*[-–|]?\s+(?=\D)/, '').replace(/\s+[-–|]?\s*\d{1,4}\s*[-–]?\s*$/, '');   // a page number at either end of a running head
+      .replace(/^\s*[-–]?\s*\d{1,4}\s*[-–|]?\s+(?=\D)/, '').replace(/(\S*)\s+[-–|]?\s*\d{1,4}\s*[-–]?\s*$/, (m, w) => (/(?:^|[^a-z])(?:vol|no)\.?$|^[제호권집]\d*$/i.test(w) ? m : w));
     if (!info.journal) {
       const kj = knownJournalAt(s);
       const j = kj ? kj[0] : journalIn(s);
@@ -365,7 +380,7 @@ function infoFrom(ls, H, titleY, more = []) {   // the header (above the title) 
     }
     if (!info.issue) info.issue = issueIn(s);
     if (!info.society) info.society = societyIn(s);
-    if (!info.date) info.date = dateIn(s) || '';
+    if (!info.date) info.date = dateIn(notPubDates(s)) || '';   // (when it was sent, reviewed or accepted is cut out of the line)
   }
   if (!info.date) for (const L of ls.slice(0, 40)) { const d = dateInDoi(L.s); if (d) { info.date = d; break; } }
   if (!info.date) for (const L of ls.slice(0, 40)) { const y = yearInDoi(L.s); if (y) { info.date = y; break; } }   // at least the year
@@ -422,11 +437,56 @@ function fromCover(pg) {
   if (info) { const k = knownJournal(info.journal); if (k) { info.journal = k[0]; if (k[1]) info.society = k[1]; } }
   return { title: title ? cleanTitle(title) : '', authors, info };
 }
-const COVER_WORDS = ['논문명', '저자', '발행기관', '발행처', '학술지', '수록', '권호', 'DBpia', 'dbpia', 'KCI', '이용일', '이용정보', '자료유형', '출처', 'URL', '누리미디어'];
-const isCover = (pg) => { const t = lines(pg).map((L) => L.s).join('\n'); return COVER_WORDS.filter((k) => t.includes(k)).length >= 3; };
+// a database's cover (DBpia, KCI …), read by its labels: three of these words make one
+const LABEL_WORDS = ['논문명', '저자', '발행기관', '발행처', '학술지', '수록', '권호', 'DBpia', 'dbpia', 'KCI', '이용일', '이용정보', '자료유형', '출처', 'URL', '누리미디어'];
+const isCover = (pg) => { const t = lines(pg).map((L) => L.s).join('\n'); return LABEL_WORDS.filter((k) => t.includes(k)).length >= 3; };
+// … and the notices put before a paper (KJCI's copyright notice, earticle's download sheet). A cover or a notice, a title
+// page alone (법제: its title and author, then a blank page) and a blank page are passed over when the citation is read; a
+// notice is not read for a title (its words are no labels). ("earticle" alone is on every page of its PDFs: its notice's words)
+const COVER_WORDS = [...LABEL_WORDS, '저작권 정책', 'KJCI', '셀프아카이빙', 'earticle에서 제공', '학술교육원', 'To cite this article'];
+function notPaper(pg) {
+  const ls = lines(pg);
+  if (!ls.length) return true;
+  const t = ls.map((L) => L.s).join('\n'), sq = t.replace(/\s+/g, '');
+  if (COVER_WORDS.filter((k) => t.includes(k) || sq.includes(k.replace(/\s+/g, ''))).length >= 3) return true;
+  return ls.length <= 6 && !/\d/.test(t);   // no number on it, so no citation either
+}
+
+// ---------------------------------------------------------------- where it was published, as the paper prints it
+// cite.js over every line of the paper's first pages (page 1's header and foot, the running heads after it, wherever they sit)
+// (the journals above are known too, KCI's list or not: a name ending in 법 — 경제규제와 법 — is else taken for a law's)
+const JOURNAL_KEYS = new Set(JOURNALS.map(([j]) => nameKey(j)));
+function printedOn(pages, known) {
+  try {
+    const use = pages.filter((pg) => pg && pg.items && !notPaper(pg)).slice(0, 5);
+    if (!use.length) return null;
+    const kn = { has: (k) => JOURNAL_KEYS.has(k) || (!!known && known.has(k)) };
+    const c = printedCitation(use.map((pg) => lines(pg).map((L) => L.s).join('\n')), { known: kn, hangulize });
+    return c.found ? c : null;
+  } catch (e) { return null; }
+}
+// what the position reading gave (info), with the printed citation over it: its journal, its issue, its date — but a year
+// alone gives way to that year with its month, read on the page's head
+function withPrinted(info, c) {
+  if (!c) return info;
+  const out = { ...info };
+  const k = knownJournal(c.journal), was = knownJournal(info.journal);
+  out.journal = k ? k[0] : c.journal;
+  const same = !!info.journal && nameKey(was ? was[0] : info.journal) === nameKey(out.journal);
+  out.issue = citeIssue(c) || (same ? info.issue : '');
+  const d = dateText(c.date), had = String(info.date || '');
+  out.date = !d ? had : d.length === 4 && had.startsWith(d + '-') ? had : d;
+  if (!same && was && was[1] && out.society === was[1]) out.society = '';   // (the society of the journal it took for this one)
+  if (k && k[1]) out.society = k[1];
+  else if (c.society) out.society = c.society;
+  if (out.society && out.journal.endsWith(out.society)) out.society = '';
+  return out;
+}
 
 // ---------------------------------------------------------------- what the first page says
-export function readFirstPages(p1, p2) {
+// p1, p2: pages 1 and 2; more: the pages after them (two to four: a cover, a notice or a blank page can come first);
+// known: KCI's journal names (cite.knownNames), or null
+export function readFirstPages(p1, p2, more = [], known = null) {
   let r = null;
   try {
     if (isCover(p1)) {
@@ -435,8 +495,10 @@ export function readFirstPages(p1, p2) {
       r = { title: c.title || (a && a.title) || '', authors: c.authors || (a && a.authors) || null, info: c.info || (a && a.info) || null, thesis: a && a.thesis };
     } else r = fromArticle(p1, p2);
   } catch (e) { r = null; }
-  if (!r) return null;
-  const info = r.info || {};
+  const c = printedOn([p1, p2, ...(more || [])], known);
+  if (!r && !c) return null;
+  r = r || {};
+  const info = withPrinted({ journal: '', society: '', issue: '', date: '', ...(r.info || {}) }, c);
   const out = { journal: info.journal || '', society: info.society || '', issue: info.issue || '', date: info.date || '', title: r.title || '', misread: r.misread || '', authors: r.authors || null, name: null };
   if (!r.thesis && out.title && out.authors && out.authors.length) {
     const name = (authorText(out.authors) + '_' + out.title).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();

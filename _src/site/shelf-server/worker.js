@@ -163,7 +163,7 @@ async function route(req, env, ctx) {
         if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(ctx, url);
         break;
       case 'paper':
-        if (m === 'POST' && p[2] === 'pdf' && p.length === 3) return await paperPdf(req, env);
+        if (m === 'POST' && p[2] === 'pdf' && p.length === 3) return await paperPdf(req, env, ctx);
         break;
       case 'nanet':
         if (m === 'GET' && p.length === 3) return await nanetApi(env, ctx, p[2], url);
@@ -592,29 +592,46 @@ const PDF_SKIP = /(?:^|\.)kci\.go\.kr$|dbpia\.co\.kr$|kyobobook|kstudy\.com$|ear
 async function openPdfUrls(body, env) {
   const doi = String(body.doi || '').replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').trim();
   const title = String(body.title || '').slice(0, 300);
+  const doiPath = doi.split('/').map(encodeURIComponent).join('/');   // (the slashes of a DOI stay slashes)
+  const squash = (t) => String(t || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const year = Number(body.year) || 0, first = String((Array.isArray(body.authors) && body.authors[0]) || '').trim();
   const out = [];
   const add = (u) => { if (u && /^https:\/\//i.test(u)) { try { if (!PDF_SKIP.test(new URL(u).hostname)) out.push(u); } catch (e) { /* skip */ } } };
   const grab = async (u, headers) => { try { const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/json', ...headers }, signal: AbortSignal.timeout(12000) }); return r.ok ? await r.json() : null; } catch (e) { return null; } };
   if (doi) {
-    const oa = await grab(`https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=open_access,best_oa_location,locations${env.OA_MAILTO ? '&mailto=' + encodeURIComponent(env.OA_MAILTO) : ''}`);
+    const oa = await grab(`https://api.openalex.org/works/doi:${doiPath}?select=open_access,best_oa_location,locations${env.OA_MAILTO ? '&mailto=' + encodeURIComponent(env.OA_MAILTO) : ''}`);
     if (oa) { add(oa.best_oa_location && oa.best_oa_location.pdf_url); for (const l of oa.locations || []) add(l.pdf_url); }
     if (env.UNPAYWALL_EMAIL) {
-      const up = await grab(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(env.UNPAYWALL_EMAIL)}`);
+      const up = await grab(`https://api.unpaywall.org/v2/${doiPath}?email=${encodeURIComponent(env.UNPAYWALL_EMAIL)}`);
       if (up) { add(up.best_oa_location && up.best_oa_location.url_for_pdf); for (const l of up.oa_locations || []) add(l.url_for_pdf); }
     }
   }
   if (env.CORE_KEY && (doi || title)) {
     const q = doi ? `doi:"${doi.replace(/"/g, '')}"` : `title:"${title.replace(/"/g, '')}"`;
     const cr = await grab(`https://api.core.ac.uk/v3/search/works?limit=3&q=${encodeURIComponent(q)}`, { authorization: 'Bearer ' + env.CORE_KEY });
-    for (const w of (cr && cr.results) || []) add(w.downloadUrl);
+    // a search by title answers papers alike: only the same one is taken (its title, its year within one, its first author)
+    for (const w of (cr && cr.results) || []) {
+      if (!doi) {
+        if (squash(w.title).slice(0, 120) !== squash(title).slice(0, 120)) continue;
+        if (year && w.yearPublished && Math.abs(Number(w.yearPublished) - year) > 1) continue;
+        if (first && Array.isArray(w.authors) && w.authors.length && !w.authors.some((a) => String((a && a.name) || '').includes(first.slice(0, 1)))) continue;
+      }
+      add(w.downloadUrl);
+    }
   }
   return [...new Set(out)].slice(0, 6);
 }
 // probe: true asks only whether there is one — the start of each candidate is read (a range; a server that ignores it is
 // cut off after the first bytes) — so the app offers its button only for a paper whose original is really there
-async function paperPdf(req, env) {
+async function paperPdf(req, env, ctx) {
   const body = (await readJSON(req, 8 * 1024)) || {};
   const probe = body.probe === true;
+  const pkey = new Request('https://kept.bookshelf.invalid/pdfprobe/' + (await sha256hex(JSON.stringify([String(body.doi || ''), String(body.title || '').slice(0, 300), String(body.art || '')]))));
+  if (probe) {
+    const hit = await caches.default.match(pkey).catch(() => null);
+    if (hit) return json(await hit.json());
+  }
+  const keep = (found) => { if (ctx) ctx.waitUntil(caches.default.put(pkey, new Response(JSON.stringify(found), { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${found.found ? 7 * 86400 : 86400}` } })).catch(() => {})); };
   const urls = await openPdfUrls(body, env);
   for (const u of urls) {
     try {
@@ -634,7 +651,7 @@ async function paperPdf(req, env) {
         while (rd && head.length < 8) { const { value, done } = await rd.read(); if (done) break; const both = new Uint8Array(head.length + value.length); both.set(head); both.set(value, head.length); head = both; }
         if (rd) rd.cancel().catch(() => {});
         if (total && (total < 40 * 1024 || total > 40 * 1024 * 1024)) continue;
-        if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) return json({ found: true, host: host.slice(0, 60) });   // %PDF
+        if (head[0] === 0x25 && head[1] === 0x50 && head[2] === 0x44 && head[3] === 0x46) { const f = { found: true, host: host.slice(0, 60) }; keep(f); return json(f); }   // %PDF
         continue;
       }
       const buf = await r.arrayBuffer();
@@ -644,6 +661,7 @@ async function paperPdf(req, env) {
       return new Response(buf, { status: 200, headers: { 'content-type': 'application/pdf', 'cache-control': 'no-store', 'x-pdf-source': host.slice(0, 60) } });
     } catch (e) { /* try the next */ }
   }
+  if (probe) keep({ found: false });
   return json({ found: false });
 }
 

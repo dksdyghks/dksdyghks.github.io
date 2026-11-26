@@ -23,7 +23,7 @@ v.json. Shard file: the same shape as shelf/precq/p, but each piece has two list
 """
 import collections, datetime, json, os, re, struct, sys, unicodedata
 
-SHARDS, BLOCK, NAME, LEAD = 256, 4096, 300, 320
+SHARDS, BLOCK, NAME, LEAD = 256, 512, 300, 320   # (blocks of 512: a page of 20 rows reads small files as the index grows)
 STOP_FRAC, STOP_FLOOR = 0.5, 64   # a piece in half the papers or more (and at least STOP_FLOOR of them) is left out of a search
 LETTERS = re.compile(r'[^0-9A-Za-zㄱ-ㆎ가-힣㐀-䶿一-鿿豈-﫿]+')
 

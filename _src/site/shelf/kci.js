@@ -5,6 +5,7 @@
 // apart, or an issue that is not in the table, leave the line as it was.
 import * as api from './api.js';
 import * as store from './store.js';
+import { knownNames } from './cite.js';
 
 const SVC = 'B552540/KCIOpenApi/doiInfo/';
 const DAY = 864e5;
@@ -15,6 +16,13 @@ let listP = null;
 export function journals() {
   if (!listP) listP = fetch(new URL('./kci-journals.json', import.meta.url)).then((r) => (r.ok ? r.json() : [])).catch(() => { listP = null; return []; });
   return listP;
+}
+// their names, as a paper's first pages are read against them (cite.js: a journal KCI lists is told from other words), or
+// null while the list cannot be had (offline: naming.js knows the commonest journals itself)
+let namesP = null;
+export function names() {
+  if (!namesP) namesP = journals().then((l) => { if (!l.length) { namesP = null; return null; } return knownNames(l); });
+  return namesP;
 }
 const key = (s) => String(s || '').normalize('NFKC').replace(/[\s·ㆍ・‧∙.,:;'"「」『』〈〉《》()[\]{}<>\-–—―~!?]/g, '').toLowerCase();
 // the journal of this name (its society telling apart two of one name); none when it is not there or cannot be told apart

@@ -102,9 +102,10 @@ async function list(svc, op, params, page, size = 20) {
   found.set(key, out);
   return out;
 }
-// decisions whose name has the words
-export async function byName(q, page = 1) {
-  const r = await list(SVC, 'getKorPrcdntList', { eventNm: q }, page);
+// decisions whose name has the words — of the 전원재판부 (panel ''), or of the 지정재판부, whose dismissals would otherwise come
+// first, newest first, before the decision that settled the question
+export async function byName(q, page = 1, panel = '전원재판부') {
+  const r = await list(SVC, 'getKorPrcdntList', { eventNm: q, ...(panel ? { jgdmtCort: panel } : {}) }, page);
   return { total: r.total, rows: r.rows.map((x) => ({ no: one(x.eventNo).replace(/\s+/g, ''), name: one(x.eventNm), date: ymd(x.rstaDate), result: one(x.rstaRsta), court: one(x.jgdmtCort) })) };
 }
 // the court's digest of holdings (판례요지집): entries whose text has the words, each placed under the article it concerns
@@ -116,10 +117,15 @@ export async function holding(seq) {
   const r = (await list(SVC, 'getOcprOutlineDetail', { seqNo: seq }, 1, 5)).rows[0];
   return r ? { seq, title: one(r.title), path: one(r.cntntpth), text: clean(r.content), cases: scanCases(String(r.eventNo || '')).map((c) => c.no) } : null;
 }
-// the court's own selection of leading decisions (주요판례), searched in their full text; each has its common name
+// the court's own selection of leading decisions (주요판례), searched in their full text and, on the first page, by the common
+// name they go by too (별칭: '관습헌법 사건'); each has its common name
 export async function byLeading(q, page = 1) {
-  const r = await list(SVC, 'getRealmMainPrcdntList', { code: '0', decisionNm: q }, page);
-  return { total: r.total, rows: r.rows.map((x) => ({ no: (scanCases(String(x.eventNo || ''))[0] || {}).no || '', nick: one(x.nick), name: one(x.title), date: ymd(x.adjudgeDt), area: one(x.classNm) })) };
+  const row = (x) => ({ no: (scanCases(String(x.eventNo || ''))[0] || {}).no || '', nick: one(x.nick), name: one(x.title), date: ymd(x.adjudgeDt), area: one(x.classNm) });
+  const [r, n] = await Promise.all([list(SVC, 'getRealmMainPrcdntList', { code: '0', decisionNm: q }, page),
+    page === 1 ? list(SVC, 'getRealmMainPrcdntList', { code: '0', eventNm: q }, 1).catch(() => ({ total: 0, rows: [] })) : { total: 0, rows: [] }]);
+  const rows = r.rows.map(row), have = new Set(rows.map((x) => x.no));
+  const more = n.rows.map(row).filter((x) => x.no && !have.has(x.no));
+  return { total: r.total + more.length, rows: [...more, ...rows] };
 }
 // decisions that reviewed a law (or one article of it): 형법 제269조 제1항
 export async function byLaw(law, art, para, page = 1) {
@@ -127,7 +133,17 @@ export async function byLaw(law, art, para, page = 1) {
   if (art) q.provision = String(art);
   if (para) q.clause = String(para);
   const r = await list(CASES, 'getLawCaseList', q, page);
-  return { total: r.total, rows: r.rows.map((x) => ({ no: one(x.eventNo).replace(/\s+/g, ''), name: one(x.eventNm), target: one(x.refreeePrvsn), date: ymd(x.endDate), result: one(x.endRsta), order: clean(x.lawArtiClent) })) };
+  // the service answers a row for every article a case reviewed: one row a case, its articles together
+  // ('국가보안법 제2조 제1항 · 제7조 제1항 · 제7조 제5항')
+  const lawOfT = (t) => (/^(.*?)\s*제\s*\d/.exec(t) || [, ''])[1];
+  const rows = [], at = new Map();
+  for (const x of r.rows.map((x) => ({ no: one(x.eventNo).replace(/\s+/g, ''), name: one(x.eventNm), target: one(x.refreeePrvsn), date: ymd(x.endDate), result: one(x.endRsta), order: clean(x.lawArtiClent) }))) {
+    const y = at.get(x.no);
+    if (!y) { at.set(x.no, x); rows.push(x); continue; }
+    const t = x.target && lawOfT(x.target) === lawOfT(y.target) ? x.target.slice(lawOfT(x.target).length).trim() : x.target;
+    if (t && !y.target.includes(t)) y.target += ' · ' + t;
+  }
+  return { total: r.total, rows };
 }
 function items(data) {
   const h = data && data.header;

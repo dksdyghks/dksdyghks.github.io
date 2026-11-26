@@ -853,10 +853,12 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 /* ‹ beside the search box: back to the screen before (an app on the home screen has no back button of its own) */
 .law-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .law-top > .law-find { flex: 1 1 260px; min-width: 0; }
-.law-top > .nav-back { flex: none; width: 44px; height: 44px; border-radius: 12px; color: var(--ink-2); background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); }
-.law-top > .nav-back[hidden] { display: none; }
-.law-top > .nav-back svg { width: 20px; height: 20px; }
-@media (hover: hover) { .law-top > .nav-back:hover { background: var(--chip); color: var(--ink); } }
+/* ‹ sits inside the search box, in the magnifier's place, when there is a screen to go back to: the box never moves */
+.law-find .nav-back { flex: none; width: 36px; height: 36px; margin: 0 -6px 0 -10px; border-radius: 10px; color: var(--ink-2); }
+.law-find .nav-back[hidden], .law-find .lf-ico[hidden] { display: none; }
+.law-find .lf-ico { display: inline-flex; }
+.law-find .nav-back svg { width: 20px; height: 20px; }
+@media (hover: hover) { .law-find .nav-back:hover { background: var(--chip); color: var(--ink); } }
 .law-top > .pp-opts, .law-top > .law-sugg { flex-basis: 100%; }
 /* 논문 찾기: the same words elsewhere (a quiet row under the answers) */
 .pp-else { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 28px; font-size: 13px; }
@@ -973,6 +975,9 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .paper-sheet .cs-get[disabled] { opacity: .7; }
 /* the original: the button to the shelf only when an open PDF was found; else a quiet line saying there is none */
 .paper-sheet .cs-probe { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.paper-sheet .cs-open { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 6px; }
+.paper-sheet .cs-open .cs-get { margin: 0; }
+.paper-sheet .cs-put { display: inline-flex; align-items: center; height: auto; padding: 10px 16px; border-radius: 11px; cursor: pointer; }
 .paper-sheet .cs-search { margin: 10px 2px 0; font-size: 13px; color: var(--muted); }
 .paper-sheet .cs-search a { color: var(--accent); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; }
 .paper-sheet .cs-search a:first-child { margin-left: 4px; }

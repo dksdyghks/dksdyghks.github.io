@@ -11,6 +11,10 @@ import * as store from './store.js';
 const BASE = new URL('./kciq/', import.meta.url);
 const LETTERS = /[^0-9A-Za-zㄱ-ㆎ가-힣㐀-䶿一-鿿豈-﫿]+/g;
 export const words = (q) => String(q || '').normalize('NFKC').replace(LETTERS, ' ').toLowerCase().split(' ').filter(Boolean);
+// a word's ending particle, as typed ('직업의 자유', '헌법재판소의 결정'), is not asked for: '업의' would leave out every title
+// that says '직업선택의'; a two-letter word (정의, 국가) is left as it is
+const PARTICLE = /(?:으로서|에서|에게|으로|부터|까지|로서|의|은|는|이|가|을|를|에|와|과|로|도|만)$/;
+const bare = (w) => { if (!/[가-힣]$/.test(w) || w.length < 3) return w; const b = w.replace(PARTICLE, ''); return b.length >= 2 ? b : w; };
 const piecesOf = (w) => { const out = []; for (let i = 0; i + 1 < w.length; i++) { const p = w.slice(i, i + 2); if (!/\d/.test(p) && !out.includes(p)) out.push(p); } return out; };
 const shardOf = (p, n) => { let h = 0; for (let i = 0; i < p.length; i++) h = (Math.imul(h, 31) + p.charCodeAt(i)) >>> 0; return h % n; };
 
@@ -117,7 +121,7 @@ async function matches(q) {
   if (!v) throw Object.assign(new Error('kciq'), { code: 'unavailable' });
   const key = words(q).join(' ');
   if (asked.has(key)) return { v, ...asked.get(key) };
-  const ws = words(q).map((w) => ({ w, ps: piecesOf(w).filter((p) => !v.stopSet.has(p)) }));
+  const ws = words(q).map((w) => ({ w, ps: piecesOf(bare(w)).filter((p) => !v.stopSet.has(p)) }));
   const used = ws.filter((x) => x.ps.length);
   if (!used.length) { const r = { ids: new Uint32Array(0), lvl: new Uint8Array(0), common: ws.length > 0, left: [] }; asked.set(key, r); return { v, ...r }; }
   const lists = await Promise.all(used.flatMap((x) => x.ps).map(async (p) => {
