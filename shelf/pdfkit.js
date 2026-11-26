@@ -90,25 +90,34 @@ export async function textIndex(doc, A, onProgress, signal) {
 }
 
 // Pages that are pictures with (almost) no text: a scan. A download notice laid over a scanned page still counts as almost none.
-// When most pages are like that, the paper is a scan; otherwise only those few pages that are mostly an image count (a scanned
-// appendix in a typed paper), which is checked page by page — a title page or a blank page with a journal's logo on it is no
-// picture (its own text would else give way to a scan reader's words).
+// A page counts only when an image covers most of it (PICTURE) as well: a page with little text and no picture — a slide, a
+// table, a short handout, a title or blank page with a journal's logo — is no scan (its own text would else give way to a scan
+// reader's words, and a computer would start reading a long PDF of short pages on its own). When most pages have little text,
+// a sample of them is looked at first: mostly pictures, it is a scan throughout; none, it is not a scan at all.
+const PICTURE = 0.5;
 export async function picturePages(doc, texts) {
   const empty = [], broken = [], hollow = [];
   for (let i = 0; i < doc.numPages; i++) {
     const t = (texts[i] || '').replace(/\s+/g, '');
     if (garbled(t)) broken.push(i); else if (t.length < 150) empty.push(i); else if (hollowText(t)) hollow.push(i);
   }
-  // (a paper whose text layer is mostly gone: its pages that kept only punctuation are gone too)
-  if (empty.length + broken.length >= doc.numPages * 0.5) return [...empty, ...broken, ...hollow].sort((a, b) => a - b);
   if (!empty.length) return broken;
   const pdfjs = await lib();
-  const out = [];
-  for (const i of empty) {
+  const pictured = async (i) => {
     let pg = null;
-    try { pg = await doc.getPage(i + 1); if (imageShare(await pg.getOperatorList(), pdfjs.OPS, pg.view) >= 0.3) out.push(i); }
-    catch (e) { /* an unreadable page */ } finally { if (pg) pg.cleanup(); }
+    try { pg = await doc.getPage(i + 1); return imageShare(await pg.getOperatorList(), pdfjs.OPS, pg.view) >= PICTURE; }
+    catch (e) { return false; /* an unreadable page */ } finally { if (pg) pg.cleanup(); }
+  };
+  if (empty.length + broken.length >= doc.numPages * 0.5) {
+    const n = Math.min(empty.length, 12), sample = Array.from({ length: n }, (_, k) => empty[Math.floor((k * empty.length) / n)]);
+    let pics = 0;
+    for (const i of sample) if (await pictured(i)) pics++;
+    // (a paper whose text layer is mostly gone: its pages that kept only punctuation are gone too)
+    if (pics >= sample.length * 0.75) return [...empty, ...broken, ...hollow].sort((a, b) => a - b);
+    if (!pics) return broken;
   }
+  const out = [];
+  for (const i of empty) if (await pictured(i)) out.push(i);
   return [...out, ...broken].sort((a, b) => a - b);
 }
 // How much of a page its images cover (0..1, summed over them): the unit square an image is painted into, under the transform

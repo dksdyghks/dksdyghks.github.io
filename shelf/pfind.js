@@ -8,10 +8,10 @@
 // score of our own, in groups that never mix: a journal's papers (a person's own first, when a person is asked), then
 // magazine pieces (잡지·기사), then an issue's front matter (발간사·권두언 …). A source that cannot be asked (its key not set
 // yet, or refused) is simply left out (api.js remembers it).
-import * as api from './api.js';
-import * as papers from './papers.js';
-import * as kciq from './kciq.js';
-import * as naming from './naming.js';
+import * as api from './api.js?v=999a221565';
+import * as papers from './papers.js?v=999a221565';
+import * as kciq from './kciq.js?v=999a221565';
+import * as naming from './naming.js?v=999a221565';
 
 export const PAGE = 20;                                   // papers shown at a time
 const SIZE = { idx: 20, nanet: 20, kci: 50, so: 20 };     // asked of each source at a time (KCI has no order by relevance of its

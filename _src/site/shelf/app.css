@@ -603,8 +603,14 @@ a.btn { text-decoration: none; }   /* (a link dressed as a button is a button) *
 /* a coming amendment, and a text not yet in force */
 .lc-ahead { margin: 2px 0 10px; padding: 9px 12px; border-radius: 10px; border-left: 3px solid var(--gilt); background: var(--chip); color: var(--ink-2); font-size: 13.5px; line-height: 1.6; }
 .lc-ahead a { color: var(--accent); font-weight: 600; }
-/* a citation long enough to wrap inside its link reads from the left, as the text around it does */
-.case-ln { text-align: start; }
+/* a citation long enough to wrap inside its link reads from the left, as the text around it does (in running text the link
+   is a span, which breaks across lines with the text: a <button> stood as a block of its own on a phone) */
+.case-ln { text-align: start; cursor: pointer; }
+span.case-ln { border-radius: 3px; }
+span.case-ln:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* an old constitution's article (1972년 헌법 제40조): no link, a small tag says what it is */
+.case-oldc .case-tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 700; line-height: 1.5; vertical-align: 1px;
+  color: var(--muted); box-shadow: inset 0 0 0 1px var(--rule); white-space: nowrap; -webkit-user-select: none; user-select: none; }
 /* an article opened from a citation of its old text (구 …법): the band says the text below is today's, with the way to its 연혁 */
 .lc-old { border-left-color: var(--danger); }
 .lc-old .lc-oldh { display: inline; margin-left: 8px; white-space: nowrap; }
@@ -1170,3 +1176,44 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .paper-sheet .cs-search a { color: var(--accent); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent); text-underline-offset: 3px; }
 .paper-sheet .cs-search a:first-child { margin-left: 4px; }
 .paper-sheet .cs-links h4, .paper-sheet .cs-src > h4 { margin-bottom: 8px; }
+
+/* ---------- 7차 c (디자이너) ---------- */
+/* an iPad held upright (700–899 px): 서재 · 논문 · 판례 · 법령 · 글쓰기 stay in the bar (≡ keeps the folders, 올리기, 설정, 휴지통) */
+.topnav { display: none; }
+@media (min-width: 700px) and (max-width: 899px) {
+  .bar { flex-wrap: nowrap; }
+  .topnav { display: flex; flex: none; gap: 2px; padding: 3px; border-radius: 12px; background: var(--chip); }
+  .topnav button { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 11px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .topnav button svg { width: 18px; height: 18px; }
+  .topnav button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0F1A2B1F, 0 0 0 1px var(--rule); }
+  .rail .views { display: none; }
+}
+@media (min-width: 700px) and (max-width: 899px) and (hover: hover) { .topnav button:not(.on):hover { color: var(--ink-2); } }
+/* a finger's target: at least 44 px for the bar, the sheets' buttons and the list's actions */
+@media (pointer: coarse) {
+  .bar .ib, .sheet-x, .sheet .ib, .row .more, .law-find .nav-back { width: 44px; height: 44px; }
+  .law-find .nav-back { margin: 0 -8px 0 -12px; }
+  .toolrow .btn, .sheet .btn, .row .btn.small, .tabs-btn, .find, .topnav button { height: 44px; }
+  .row .btn.small { padding: 0 13px; }
+  .toolrow .btn { min-width: 44px; justify-content: center; }
+  .orig-name .restore { display: inline-block; padding: 12px 4px; margin: -12px -4px; }
+  .sec-act { display: inline-flex; align-items: center; min-height: 44px; }
+  .crumbs button { min-height: 44px; line-height: 36px; }
+  .list-h { min-height: 44px; }
+  .views button, .tree button, .settings-btn, .trash-btn, .pick button, .menu .mi-b { min-height: 44px; }
+  .sh-seg button, .sh-seg.pp-sort button { height: 44px; }
+  .toast-act { height: 44px; }
+  .ck::after { inset: -12px; }
+}
+/* dark: a white page is softened a little, so it does not glare in a dark room (the marks keep their colour; black text stays
+   black on light grey) */
+@media screen and (prefers-color-scheme: dark) {
+  .pg::after { content: ""; position: absolute; inset: 0; background: #000; opacity: .14; pointer-events: none; }
+  .rd-loupe canvas { filter: brightness(.86); }
+  .thumb.has { background-color: #DBDBDB; background-blend-mode: multiply; }   /* the cover's picture alone (its ★, pick mark and reading bar keep their colour) */
+}
+/* a deep folder in a narrow bar (the iPad bar beside the menus, a phone): the folders above give way first, so the open
+   folder's own name stays in sight */
+.crumbs button { flex: 0 3 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
+.crumbs b { flex: 0 1 auto; min-width: min(9em, 100%); }
+.crumbs .sl { flex: none; }

@@ -22,7 +22,10 @@ import * as verify from './verify.js';
 import * as write from './write.js';
 
 const $ = (s, r = document) => r.querySelector(s);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// the characters that turn the direction of the text around (a file named '\u202Efdp.exe' shows as 'exe.pdf'): never shown
+const unbidi = (s) => String(s ?? '').replace(/[\u202A-\u202E\u2066-\u2069]/g, '');
+const esc = (s) => unbidi(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const safeHref = (u) => (/^https?:\/\//i.test(String(u || '')) ? esc(u) : '#');   // an address from outside: http(s) only, escaped
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const VERSION = (document.documentElement.dataset.v || 'dev');
 
@@ -68,10 +71,12 @@ const I = {
 };
 
 /* ================= start ================= */
+// the first screen is up (sign-in, the shelf, or a notice): index.html's watchdog stands down (it offers a fresh load after 12 s)
+const booted = () => { try { if (window.__shelfUp) window.__shelfUp(); } catch (e) { /* no watchdog */ } };
 async function boot() {
   document.documentElement.classList.toggle('touch', matchMedia('(pointer: coarse)').matches);
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(VERSION)).catch(() => {});
   api.setSignedOutHandler(() => showLogin('다른 곳에서 이 기기를 로그아웃했습니다. 비밀번호를 다시 넣어 주세요.'));
+  api.setReachHandler((ok) => { renderOffline(); if (ok && syncOn) flushOps(); });
   S.prefs = (await store.get('kv', 'prefs').catch(() => null)) || {};
   await api.loadToken();
   if (!api.base()) { showSetup(); return; }
@@ -90,6 +95,7 @@ function deviceName() {
 }
 
 function showSetup() {
+  booted();
   document.body.innerHTML = `<div class="gate"><div class="gate-card"><h1 class="brand-big">연구실 책장</h1><p class="gate-s">책장 서버를 준비하고 있습니다.<br>준비가 끝나면 이 화면에서 바로 쓸 수 있습니다.</p></div></div>`;
 }
 
@@ -97,6 +103,7 @@ function showSetup() {
 function showLogin(message) {
   syncOn = false; clearTimeout(pullT); pullT = null;   // nothing goes to the server until the PIN is in
   if (S.reader) { S.reader.destroy(); S.reader = null; }
+  booted();
   let pin = '', busy = false;
   document.body.innerHTML = `<div class="gate"><div class="gate-card" role="dialog" aria-label="연구실 책장 로그인">
     <h1 class="brand-big">연구실 책장</h1>
@@ -118,8 +125,10 @@ function showLogin(message) {
     } catch (e) {
       pin = ''; draw(); busy = false;
       card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
-      if (e.code === 'pin') msg.textContent = `비밀번호가 다릅니다${e.left != null ? ` (남은 기회 ${e.left}번)` : ''}`;
-      else if (e.code === 'locked') msg.textContent = `잠시 잠겼습니다. ${Math.max(1, Math.ceil(((e.until || Date.now()) - Date.now()) / 60000))}분 뒤에 다시 해 주세요.`;
+      const wait = () => { const m = Math.max(1, Math.ceil(((e.until || Date.now()) - Date.now()) / 60000)); return m >= 60 ? '1시간' : m + '분'; };
+      if (e.code === 'pin') msg.textContent = `비밀번호가 다릅니다${e.left != null ? ` · ${e.left}번 남음` : ''}`;
+      else if (e.code === 'locked' && e.slow) msg.textContent = '시도가 많습니다 · 1분 뒤 다시 넣어 주세요';
+      else if (e.code === 'locked') msg.textContent = `여러 번 틀렸습니다 · ${wait()} 뒤 다시 넣어 주세요`;
       else if (api.isOffline(e)) msg.textContent = navigator.onLine ? '책장 서버에 아직 연결할 수 없습니다. 잠시 뒤에 다시 해 주세요.' : '인터넷에 연결되어 있지 않습니다';
       else msg.textContent = '지금은 로그인할 수 없습니다. 잠시 뒤에 다시 해 주세요.';
     }
@@ -142,7 +151,9 @@ async function startLibrary() {
   renderShell();
   laws.lawIndex();   // the names of every filed law, so a citation in a paper links to its law from the first page read
   render();
+  booted();
   await refresh(true);
+  flushOps();   // changes kept while offline (or signed out: a device signed in again) go out now
   syncMarksAll();
   pushState();
   if (!wired) {   // once per page, even after signing in again
@@ -212,6 +223,7 @@ async function pull() {
       S.index = r.lib; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
       if (S.reader) {
         renderUsage(); const f = fileById(S.readerId); if (f) S.reader.setStars(f.stars || 0);
+        noteGone();
         if (f && f.ocr && !S.reader.ocr) { const rd = S.reader; Promise.all([ocrData(f), textOf(f).catch(() => null)]).then(([d, t]) => { if (d && S.reader === rd) rd.setOcr(d.pages, t); }); }
       } else renderBg();
       setTimeout(prefetch, 800); setTimeout(preparePending, 300); if (liveFiles().some(needsOcr)) ocrSoon();
@@ -222,6 +234,16 @@ async function pull() {
     if (id && r.marks && S.readerId === id) await takeMarks(id, r.marks.marks || [], r.marksTag);
     if (id && r.marksTag && S.readerId === id) { syncTags.marks = r.marksTag; syncTags.marksId = id; }
   } catch (e) { /* offline or busy: the next round */ } finally { pulling = false; }
+}
+// the paper being read went to the trash on another device (the library came from the server: pull, refresh, flushOps) —
+// said once, with 되살리기; reading goes on. This device's own changes (doOps) are taken in quietly.
+const isGone = (f) => !!f && (!!f.trashed || folderTrashed(f.folder));
+let readerGone = false;
+function noteGone(quiet) {
+  if (!S.reader) return;
+  const f = fileById(S.readerId), gone = isGone(f);
+  if (gone && !readerGone && !quiet) toast('다른 기기에서 이 논문을 휴지통으로 옮겼습니다', 10000, f.trashed ? { label: '되살리기', fn: () => doOps([{ op: 'restoreFile', id: f.id }], '되살렸습니다') } : undefined);
+  readerGone = gone;
 }
 // marks from another device, merged with this device's own (nothing is dropped: each mark keeps its newest version)
 async function takeMarks(id, remote, tag) {
@@ -282,7 +304,7 @@ async function loadTabs() { try { S.tabs = (await store.get('kv', 'tabs')) || []
 async function refresh(first) {
   try {
     const [idx, st] = await Promise.all([api.library(), api.getState()]);
-    S.index = idx; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index);
+    S.index = idx; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); noteGone();
     mergeState(st); await store.put('kv', 'state', S.state);
     if (S.reader) { renderUsage(); } else render();
     setTimeout(prefetch, 1500); setTimeout(preparePending, 600);
@@ -335,6 +357,9 @@ function renderShell() {
       <header class="bar">
         <button class="ib menu-btn" aria-label="메뉴">${I.menu}</button>
         <nav class="crumbs"></nav>
+        <nav class="topnav" aria-label="메뉴">
+          <button data-view="home">${I.home}<span>서재</span></button><button data-view="papers">${I.papers}<span>논문</span></button><button data-view="cases">${I.gavel}<span>판례</span></button><button data-view="law">${I.code}<span>법령</span></button><button data-view="write">${I.pen}<span>글쓰기</span></button>
+        </nav>
         <button class="tabs-btn" hidden></button>
       </header>
       <div class="toolrow"><div class="tools"></div><label class="find">${I.search}<input type="search" placeholder="제목과 본문에서 찾기" enterkeyhint="search" autocomplete="off"></label></div>
@@ -350,18 +375,25 @@ function renderShell() {
   $('.up-btn').onclick = () => uploadBox();
   $('.file-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); closeRail(); };
   $('.dir-in').onchange = (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) upload(fs); else toast('그 폴더에 PDF가 없습니다'); closeRail(); };
-  $('.views').onclick = (e) => { const b = e.target.closest('[data-view]'); if (!b) return; noteScroll(); clearTimeout(S.qT); clearTimeout(S.sugT); S.view = { kind: b.dataset.view, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); };
-  $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; noteScroll(); S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); };
+  // a menu (서재 · 논문 · 판례 · 법령 · 글쓰기, or 휴지통): each comes back scrolled where it was left
+  const goView = (kind) => { noteScroll(); clearTimeout(S.qT); clearTimeout(S.sugT); S.view = { kind, folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); scrollBackTo(secScroll.get(secKey()) || 0); };
+  $('.views').onclick = $('.topnav').onclick = (e) => { const b = e.target.closest('[data-view]'); if (b) goView(b.dataset.view); };
+  $('.tree').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (!b) return; noteScroll(); S.view = { kind: 'home', folder: b.dataset.folder }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); scrollBackTo(secScroll.get(secKey()) || 0); };
   $('.settings-btn').onclick = () => { closeRail(); settings(); };
   $('.tabs-btn').onclick = (e) => tabsPanel(e.currentTarget);
-  $('.trash-btn').onclick = () => { noteScroll(); S.view = { kind: 'trash', folder: null }; S.q = ''; $('.find input').value = ''; S.select = null; render(); closeRail(); nav(); };
+  $('.trash-btn').onclick = () => goView('trash');
   $('.menu-btn').onclick = () => app.classList.toggle('rail-open');
   $('.scrim').onclick = closeRail;
   const fin = $('.find input');
   fin.addEventListener('input', () => { clearTimeout(S.qT); S.qT = setTimeout(() => { S.q = fin.value.trim(); render(); }, 220); });
-  fin.addEventListener('keydown', (e) => { if (e.key === 'Escape') { fin.value = ''; S.q = ''; render(); } });
+  fin.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.isComposing) { fin.value = ''; S.q = ''; render(); } });
   $('.content').addEventListener('click', onContentClick);
-  $('.crumbs').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (b) { noteScroll(); S.view = { kind: 'home', folder: b.dataset.folder || null }; S.select = null; render(); nav(); } };
+  $('.content').addEventListener('keydown', (e) => {   // a paper's (or folder's) name, reached with Tab: Enter or Space opens it
+    const m = e.target.closest && e.target.closest('.row .meta[role="button"]');
+    if (!m || m !== e.target || (e.key !== 'Enter' && e.key !== ' ') || e.isComposing) return;
+    e.preventDefault(); m.click();
+  });
+  $('.crumbs').onclick = (e) => { const b = e.target.closest('[data-folder]'); if (b) { noteScroll(); S.view = { kind: 'home', folder: b.dataset.folder || null }; S.select = null; render(); nav(); scrollBackTo(secScroll.get(secKey()) || 0); } };
   $('.tools').onclick = onTools;
   // drop PDFs anywhere on the library to upload them into the folder being shown
   const main = $('.main');
@@ -375,7 +407,13 @@ function renderShell() {
 }
 function closeRail() { const a = $('.app'); if (a) a.classList.remove('rail-open'); }
 
-function renderOffline() { const o = $('.offline'); if (o) o.hidden = navigator.onLine; }
+// no internet, or the internet but no answer from the 책장 server (down, or its daily limit): each said as it is
+function renderOffline() {
+  const o = $('.offline'); if (!o) return;
+  const down = navigator.onLine && api.serverDown();
+  o.hidden = navigator.onLine && !down;
+  o.textContent = down ? '책장 서버에 연결할 수 없습니다 · 이 기기에 받아 둔 논문은 읽을 수 있습니다' : '인터넷에 연결되어 있지 않습니다 · 이 기기에 받아 둔 파일만 열 수 있습니다';
+}
 
 // a redraw nobody asked for (another device's change, a paper's line filled in by the libraries) waits while a finger or the
 // mouse is down on the list — the row under it would be replaced and the tap lost — and comes just after the tap is done
@@ -396,7 +434,10 @@ function paint(c, html) {
 function render() {
   if (!$('.app')) return;
   if (S.view.kind === 'recent') S.view = { kind: 'home', folder: null };
-  for (const b of document.querySelectorAll('.views [data-view]')) b.classList.toggle('on', !S.q && b.dataset.view === S.view.kind && !(S.view.kind === 'home' && S.view.folder));
+  for (const b of document.querySelectorAll('.views [data-view], .topnav [data-view]')) {
+    const on = !S.q && b.dataset.view === S.view.kind && !(S.view.kind === 'home' && S.view.folder);
+    b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');   // (said to a screen reader too)
+  }
   $('.trash-btn').classList.toggle('on', !S.q && S.view.kind === 'trash');
   renderTree(); renderUsage(); renderCrumbs(); renderTools(); renderTabsBtn();
   const c = $('.content');
@@ -537,6 +578,7 @@ function renderCrumbs() {
   const path = folderPath(S.view.folder);
   c.innerHTML = [`<button data-folder="">서재</button>`, ...path.map((f, i) => i === path.length - 1 ? `<b>${esc(f.name)}</b>` : `<button data-folder="${f.id}">${esc(f.name)}</button>`)].join('<span class="sl">›</span>');
   if (!path.length) c.innerHTML = '<b>서재</b>';
+  else c.scrollLeft = c.scrollWidth;   // (too long for the bar: the open folder is the part kept in sight)
 }
 
 function renderTools() {
@@ -570,7 +612,8 @@ function renderFolder(c, folder) {
   const files = sorted(liveFiles().filter((f) => (f.folder ?? null) === (folder ?? null)));
   let html = '';
   if (!folders.length && !files.length) {
-    html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p><p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
+    const binned = !folder && (S.index.files.some((f) => f.trashed) || S.index.folders.some((f) => f.trashed));   // (all of it put in the trash: said where it is)
+    html += `<div class="empty-big">${I.pdf}<p>${folder ? '이 폴더는 비어 있습니다' : binned ? '서재가 비어 있습니다' : '아직 올린 PDF가 없습니다'}</p>${binned ? '<p class="sub">버린 파일은 <button class="link" data-go-trash>휴지통</button>에서 7일 동안 되살릴 수 있습니다.</p>' : ''}<p class="sub">PDF를 여기로 끌어다 놓거나 <button class="link" data-t="upload">올리기</button>를 누르세요.</p></div>`;
     paint(c, html); return;
   }
   html += listHead(folder ? `${folders.length + files.length}개` : files.length ? '전체' : '폴더');
@@ -593,7 +636,7 @@ const ckBox = (on) => `<button type="button" class="ck" data-ck aria-label="선�
 function folderRow(f) {
   const n = liveFiles().filter((x) => x.folder === f.id).length + childFolders(f.id).length;
   const sel = S.select && S.select.folders.has(f.id);
-  return `<div class="row folder ${sel ? 'sel' : ''}" data-fid="${f.id}"><span class="ficon">${I.folder}${boxes() ? ckBox(sel) : ''}</span><span class="meta"><b>${esc(f.name)}</b><span class="sub">${n ? n + '개' : '비어 있음'}</span></span>${S.select ? '' : `<button class="ib more" data-fmenu="${f.id}" aria-label="폴더 메뉴">${I.more}</button>`}</div>`;
+  return `<div class="row folder ${sel ? 'sel' : ''}" data-fid="${f.id}"><span class="ficon">${I.folder}${boxes() ? ckBox(sel) : ''}</span><span class="meta"${S.view.kind === 'trash' ? '' : ' role="button" tabindex="0"'}><b>${esc(f.name)}</b><span class="sub">${n ? n + '개' : '비어 있음'}</span></span>${S.select ? '' : `<button class="ib more" data-fmenu="${f.id}" aria-label="폴더 메뉴">${I.more}</button>`}</div>`;
 }
 
 function fileRow(f, extra = '') {
@@ -602,7 +645,7 @@ function fileRow(f, extra = '') {
   const where = S.q && f.folder ? esc((folderById(f.folder) || {}).name || '') : '';
   return `<div class="row file ${sel ? 'sel' : ''} ${f.stars === -1 ? 'dim' : ''}" data-file="${f.id}">
     <span class="thumb" data-thumb="${f.thumb ? f.id : ''}">${coverMark(f.stars)}${readBar(f, s)}${boxes() ? ckBox(sel) : ''}</span>
-    <span class="meta"><b>${esc(stem(f.name))}</b><span class="sub">${[paperLine(f) || (f.pages ? f.pages + '쪽' : ''), where, f.pending ? '정리하는 중' : ''].filter(Boolean).join(' · ')}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
+    <span class="meta"${S.view.kind === 'trash' ? '' : ' role="button" tabindex="0"'}><b>${esc(stem(f.name))}</b><span class="sub">${[paperLine(f) || (f.pages ? f.pages + '쪽' : ''), where, f.pending ? '정리하는 중' : ''].filter(Boolean).join(' · ')}<span class="ocr-p">${isScan(f) ? (OCR.id === f.id ? ` · 글자 읽는 중 ${OCR.done}/${OCR.total}쪽` : needsOcr(f) ? ' · 스캔본' : '') : ''}</span></span>${extra}</span>
     <span class="here ${S.cached.has(f.id) ? 'on' : ''}" title="${S.cached.has(f.id) ? '이 기기에 받아 둠' : ''}">${S.cached.has(f.id) ? I.device : ''}</span>
     ${S.select ? '' : `<button class="ib more" data-menu="${f.id}" aria-label="파일 메뉴">${I.more}</button>`}</div>`;
 }
@@ -661,14 +704,14 @@ async function renderSearch(c) {
   else if (courtNo) courtCard($('.court-sec', c), courtNo, () => S.q === q);
   else if (artQ) articleCard($('.art-sec', c), artQ, () => S.q === q);
   const box = $('.text-hits', c), n = $('.text-n', c);
-  if (key.length < 2) { box.innerHTML = '<p class="none">두 글자 이상 넣으면 밑줄과 본문에서도 찾습니다</p>'; return; }
+  if (key.length < 2) { box.innerHTML = '<p class="none">두 글자 이상 넣으면 표시와 본문에서도 찾습니다</p>'; return; }
   // my own marks: what I already found worth marking
   const fillMarks = async () => {
     const hits = await markHits(key);
     const offs = await printedOffsets(hits.map((r) => r.f.id));
     if (S.q !== q) return;
     const total = hits.reduce((s, r) => s + r.snips.length, 0);
-    $('.mark-sec', c).innerHTML = total ? `<h2 class="sec-h">내 밑줄 <span class="sec-n">${total}개</span></h2><div class="list">${hits.map((r) => fileRow(r.f, `<span class="snips">${r.snips.slice(0, 6).map((s) => `<button class="snip mark-snip" data-open="${r.f.id}" data-page="${s.m.p}" data-mark="${esc(s.m.id)}"><em>${pageLabel(r.f.id, s.m.p, offs.get(r.f.id))}</em><i class="${s.m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${esc(s.m.color)}"></i>${s.pre ? '…' : ''}${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}${s.post ? '…' : ''}</button>`).join('')}${r.snips.length > 6 ? `<span class="snip-more">외 ${r.snips.length - 6}곳</span>` : ''}</span>`)).join('')}</div>` : '';
+    $('.mark-sec', c).innerHTML = total ? `<h2 class="sec-h">내 표시 <span class="sec-n">${total}개</span></h2><div class="list">${hits.map((r) => fileRow(r.f, `<span class="snips">${r.snips.slice(0, 6).map((s) => `<button class="snip mark-snip" data-open="${r.f.id}" data-page="${s.m.p}" data-mark="${esc(s.m.id)}"><em>${pageLabel(r.f.id, s.m.p, offs.get(r.f.id))}</em><i class="${s.m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${esc(s.m.color)}"></i>${s.pre ? '…' : ''}${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}${s.post ? '…' : ''}</button>`).join('')}${r.snips.length > 6 ? `<span class="snip-more">외 ${r.snips.length - 6}곳</span>` : ''}</span>`)).join('')}</div>` : '';
     lazyThumbs();
   };
   fillMarks();
@@ -1385,7 +1428,7 @@ async function kciNewSec(sec, live) {
 }
 // one KCI paper: who wrote it and from where, the abstract (its whole text fetched from KCI on open), the citation ready to
 // copy, and the ways to the full text — KCI's page (its PDF where 원문 공개), the journal's own list, 국회도서관
-const kciPg = (x) => (x.fp ? `${x.fp}${x.lp ? '–' + x.lp : ''}면` : '');
+const kciPg = (x) => (x.fp ? `${x.fp}${x.lp ? '–' + x.lp : ''}쪽` : '');   // (shown; the copied citation keeps 면: kciCite)
 function kciCite(x) {   // 저자, "제목", 『학술지』 제N권 제N호, 발행기관, 연도, 시작-끝면.
   const au = (x.a || []).join('·');
   const ji = [kciJn(x), kciIssue(x)].filter(Boolean).join(' ');
@@ -1423,7 +1466,7 @@ function kciSheet(x) {
     ${x.ab ? `<div class="cs-sec cs-abs"><h4>초록</h4><p class="cs-ab">${esc(x.ab)}</p></div>` : '<div class="cs-sec cs-abs" hidden><h4>초록</h4><p class="cs-ab"></p></div>'}
     <div class="cs-aff"${!tied && x.affs && x.affs.length ? '' : ' hidden'}>${esc((x.affs || []).join(' · '))}</div>
     ${(x.kw || []).length ? `<div class="cs-sec"><h4>주제어</h4><div class="law-ex pp-kw">${x.kw.slice(0, 18).map((k) => `<button type="button" data-kw="${esc(k)}">${esc(k)}</button>`).join('')}</div></div>` : ''}
-    <div class="cs-sec cs-src"><h4>원문</h4><div class="cs-get-at"><p class="cs-probe">서재에 바로 넣을 수 있는 공개 PDF를 찾는 중…</p></div><div class="cs-links">${paperSources(x).map((s) => `<a class="cs-link" href="${s.url}" target="_blank" rel="noopener">${esc(s.label)}${s.note ? ` <em>${esc(s.note)}</em>` : ''}</a>`).join('')}</div><p class="cs-search">찾아보기 ${paperSearches(x).map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</p></div>
+    <div class="cs-sec cs-src"><h4>원문</h4><div class="cs-get-at"><p class="cs-probe">서재에 바로 넣을 수 있는 공개 PDF를 찾는 중…</p></div><div class="cs-links">${paperSources(x).map((s) => `<a class="cs-link" href="${safeHref(s.url)}" target="_blank" rel="noopener">${esc(s.label)}${s.note ? ` <em>${esc(s.note)}</em>` : ''}</a>`).join('')}</div><p class="cs-search">찾아보기 ${paperSearches(x).map(([t, u]) => `<a href="${safeHref(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</p></div>
   </div><div class="row-btns"><button type="button" class="btn ghost cs-copy">인용 복사</button></div>`);
   box.classList.add('case-sheet', 'paper-sheet');
   $('.cs-copy', box).onclick = () => copyText(kciCite(x));
@@ -1513,7 +1556,7 @@ function paperSheet(row, back) {
     h.textContent = p.title;
     body.innerHTML = `${p.reading ? `<p class="pp-read">${esc(p.reading)}</p>` : ''}
       ${p.authors.length ? `<div class="pp-by">${p.authors.map((a) => `<button type="button" class="pp-au" data-author="${esc(a)}" data-aid="${esc((p.ids || {})[a] || '')}" title="${esc(a)} 연구자 정보">${esc(a)}</button>`).join('')}</div>` : ''}
-      <p class="pp-meta">${esc([where, p.when || p.year, so && so.pages ? so.pages + '면' : ''].filter(Boolean).join(' · '))}</p>
+      <p class="pp-meta">${esc([where, p.when || p.year, so && so.pages ? so.pages + '쪽' : ''].filter(Boolean).join(' · '))}</p>
       ${p.advisor ? `<p class="pp-meta">지도교수 ${esc(p.advisor)}</p>` : ''}
       ${mine ? `<p class="pp-here">내 서재에 있습니다 <button type="button" class="btn ghost small" data-open-file="${mine.id}">열기</button></p>` : ''}
       ${abs ? `<div class="cs-sec"><h4>초록</h4><p>${esc(abs)}</p></div>` : ''}
@@ -1735,7 +1778,7 @@ async function casesView(box, q, live) {
     // 헌법재판소 first (its leading decisions, the 전원재판부's by name, its digest of holdings), then the courts; the 지정재판부's
     // dismissals by name last
     secs = [['leading', '헌재 주요 결정', (pg) => cases.byLeading(q, pg)], ['name', '헌재 결정 <small>사건명 · 전원재판부</small>', (pg) => cases.byName(q, pg)], ['holding', '헌재 결정요지 <small>판례요지집</small>', (pg) => cases.byHolding(q, pg)],
-      ['court', '법원 판결 <small>대법원 · 하급심</small>', (pg) => precq.search(name, pg)], ['panel', '헌재 지정재판부 결정 <small>사건명 · 각하 등</small>', (pg) => cases.byName(q, pg, '지정재판부')]];
+      ['court', '법원 판결 <small>대법원 · 하급심</small>', (pg) => precq.search(name, pg).then(named ? exactOnly : (x) => x)], ['panel', '헌재 지정재판부 결정 <small>사건명 · 각하 등</small>', (pg) => cases.byName(q, pg, '지정재판부')]];
     if (lawLike && key !== '헌법') secs.unshift(['law', '이 법률을 심판한 헌재 결정', (pg) => cases.byLaw(named ? named.name : q.replace(/\s+/g, ''), 0, 0, pg)]);
     // and after the courts, 법제처's interpretations whose 안건명 holds the words or the law's name (each opens at 국가법령정보센터)
     if (key !== '헌법') secs.push(['expc', '법령해석례 <small>법제처 · 국가법령정보센터에서 열립니다</small>', (pg) => moleg.interps(name, pg)]);
@@ -1773,6 +1816,8 @@ async function lawsView(box, q, live) {
     lawWhole($('.whole-sec', box), key || (named ? named.name : q), live).then((law) => {
       if (!live()) return;
       if (!law) { if ($('.whole-sec', box).dataset.err === 'repealed') casesLink($('.x-cases', box), q, null, live); else lawNamesSec(box, q, live, true); return; }
+      const ren = named && named.was ? renamedNote(laws.oldLaw(q)) : '', h = ren && $('.whole-sec .lc-h', box);
+      if (h) h.insertAdjacentHTML('afterend', ren);
       billsSec($('.bill-sec', box), law, null, live);
       casesLink($('.x-cases', box), key ? q : law.full, null, live, law);
       if (key !== '헌법') ruleSecs(box, law.full.replace(/\s*(?:시행령|시행규칙)$/, ''), live);
@@ -1832,6 +1877,9 @@ async function lawNamesSec(box, q, live, close) {
   }).catch(() => {});
   ruleSecs(box, q, live);
 }
+// a law's own name asked of the courts' index: only the judgments that hold all of it (the similar ones, holding a few of
+// its words — '…처벌등에관한법률위반' for another 처벌 법률 — are not about this law)
+const exactOnly = (r) => (r && r.exact != null ? { ...r, rows: r.rows.filter((x) => !x.near), total: r.exact } : r);
 // under a law or an article (법령): what 판례 holds on it, counted, one tap away
 function casesLink(at, q, art, live, law) {
   if (!at) return;
@@ -1844,11 +1892,11 @@ function casesLink(at, q, art, live, law) {
     if (typeof art.art === 'number') asks.push(['법원 판결', fullP.then((full) => precq.citing(full, art.art, art.sub, 1))]);
   } else if (law) {
     if (laws.lawKey(law.full) !== '헌법') asks.push(['헌재 결정', cases.byLaw(law.full, 0, 0, 1)]);
-    asks.push(['법원 판결', precq.search(law.full, 1)]);
+    asks.push(['법원 판결', precq.search(law.full, 1).then(exactOnly)]);
   }
   Promise.allSettled(asks.map((a) => a[1])).then((rs) => {
     if (!live() || !at.isConnected) return;
-    const parts = rs.map((r, i) => (r.status === 'fulfilled' && r.value ? `${asks[i][0]} ${Number(r.value.total || 0).toLocaleString()}건` : '')).filter(Boolean);
+    const parts = rs.map((r, i) => (r.status === 'fulfilled' && r.value ? `${asks[i][0]} ${Number((r.value.exact ?? r.value.total) || 0).toLocaleString()}건` : '')).filter(Boolean);
     if (parts.length) n.textContent = parts.join(' · ');
   });
 }
@@ -1968,8 +2016,13 @@ async function fillSec(box, kind, ask, live, keep, page = 1) {
     const more = list.querySelector('.more'); if (more) more.remove();
     if (!r.total && page === 1 && kind === 'court' && r.common) { list.innerHTML = '<p class="none">너무 흔한 낱말이라 법원 판결은 이 말만으로 찾지 않았습니다 · 다른 말을 함께 넣어 보세요</p>'; return 0; }
     if (!r.total && page === 1) { if (keep) list.innerHTML = '<p class="none">없습니다</p>'; else sec.hidden = true; return 0; }
-    list.insertAdjacentHTML('beforeend', r.rows.map(lawRow[kind]).join(''));
-    n.textContent = `${r.total.toLocaleString()}건`;
+    // (법원 판결: those holding every word first; then, when they are few, the similar ones — those holding the most of the
+    // words — under one line saying so, once, also after 더 보기. The count says how many hold every word)
+    const rows = r.rows.map(lawRow[kind]), near = kind === 'court' ? r.rows.findIndex((x) => x.near) : -1;
+    if (near >= 0 && !list.querySelector('.pq-near')) rows.splice(near, 0, `<p class="none pq-near">${r.exact ? '여기부터 비슷한 판결 · 찾는 낱말이 많이 든 순서' : '모든 낱말이 든 판결은 없어 비슷한 판결을 보입니다'}</p>`);
+    list.insertAdjacentHTML('beforeend', rows.join(''));
+    const nearN = kind === 'court' && r.exact != null ? r.total - r.exact : 0;
+    n.textContent = nearN > 0 ? `${r.exact ? `${r.exact.toLocaleString()}건 · ` : ''}비슷한 판결 ${nearN.toLocaleString()}건` : `${r.total.toLocaleString()}건`;
     // (the index of every two-letter piece leaves out only one-letter words and words with digits; an index built before it
     // left out the commonest words too, and says so)
     if (kind === 'court') { courtSnips(list, lawQ(), live); if (page === 1 && r.left && r.left.length) list.insertAdjacentHTML('afterbegin', `<p class="none pq-left">‘${esc(r.left.join(' '))}’은(는) ${r.left.every((w) => w.length < 2 || /\d/.test(w)) ? '한 글자이거나 숫자가 든 말이라 따로 찾지 않았습니다' : '너무 흔해 빼고 찾았습니다'}</p>`); }
@@ -1989,7 +2042,18 @@ async function fillSec(box, kind, ask, live, keep, page = 1) {
     return 0;
   }
 }
-const lawErr = (e) => (e && e.code === 'offline' ? '인터넷에 연결되면 볼 수 있습니다' : e && e.code === 'nolaw' ? '그 이름의 법령을 찾지 못했습니다. 정식 이름이나 약칭으로 찾아 보세요' : e && e.code === 'repealed' ? `폐지된 법률입니다${e.date ? ` (${laws.dateText(String(e.date).replace(/-/g, ''))} 폐지)` : ''}` : '지금은 불러오지 못했습니다. 잠시 뒤 다시 찾아 보세요');
+const lawErr = (e) => (e && e.code === 'offline' ? '인터넷에 연결되면 볼 수 있습니다' : e && e.code === 'nolaw' ? '그 이름의 법령을 찾지 못했습니다. 정식 이름이나 약칭으로 찾아 보세요' : e && e.code === 'repealed' ? `폐지된 법률입니다${goneText(e)}` : '지금은 불러오지 못했습니다. 잠시 뒤 다시 찾아 보세요');
+// a repealed law: ' (1994. 3. 16. 폐지 · 뒤를 이은 법률: 공직선거법)' — what laws.lawText knows of it
+const goneText = (e) => { const t = [e && e.date ? `${laws.dateText(String(e.date).replace(/-/g, ''))} 폐지` : '', e && e.now ? `뒤를 이은 법률: ${esc(e.now)}` : ''].filter(Boolean).join(' · '); return t ? ` (${t})` : ''; };
+// a law asked by the name it had before (laws.oldLaw): '공직선거및선거부정방지법은 2005. 8. 4. 공직선거법으로 이름이 바뀌었습니다'
+// (art: under one article, whose number a 전부개정 may have changed)
+const finalC = (w) => { const c = String(w || '').charCodeAt(String(w || '').length - 1) - 0xac00; return c >= 0 && c < 11172 ? c % 28 : 0; };   // (받침: 0 none, 8 ㄹ)
+function renamedNote(o, art) {
+  if (!o || o.gone || !o.now) return '';
+  const fin = finalC(o.now);
+  const how = o.whole ? `${o.date} 전부개정되어 ${o.now}${fin ? '이' : '가'} 되었습니다${art ? ' · 조문 번호가 다를 수 있습니다' : ''}` : `${o.date} ${o.now}${fin && fin !== 8 ? '으로' : '로'} 이름이 바뀌었습니다`;
+  return `<p class="lc-ahead lc-old lc-renamed">${esc(o.name)}${finalC(o.name) ? '은' : '는'} ${esc(how)}</p>`;
+}
 // a chapter's name, its own notes (<신설 2005.8.4>, <개정 …>) kept quiet beside it
 const chTitle = (t) => { const m = /^(.*?)\s*(<[^<>]*>\s*)+$/.exec(t); return m ? `${esc(m[1])} <small>${esc(t.slice(m[1].length).trim())}</small>` : esc(t); };
 // a coming amendment (or a text not yet in force) as the article and the law show it
@@ -2026,13 +2090,13 @@ async function articleCard(box, a, live, old = null) {
   if (!x && law.next) { x = laws.findArt(law.next, a.art, a.sub); coming = !!x; }   // an article the coming amendment adds
   // (a 구법 article today's law no longer has: the citation is right, the text is gone — said so, with the versions compared)
   if (!x && old) { box.innerHTML = `<div class="law-card"><p class="lc-ahead lc-old">${esc(cases.oldBand(old.old, old.by, true))}</p><p class="none">${esc(law.full)}의 마지막 조문은 ${laws.artLabel(law.arts[law.arts.length - 1])}</p><div class="lc-acts"><a class="btn ghost small" href="${laws.lawGoKr.oldNew(law.full)}" target="_blank" rel="noopener">국가법령정보센터 신구법 비교</a></div></div>`; return law; }
-  if (!x) { box.innerHTML = `<div class="law-card"><p class="none">${esc(law.full)}에서 그 조문을 찾지 못했습니다 · 마지막 조문은 ${laws.artLabel(law.arts[law.arts.length - 1])}</p></div>`; return law; }
+  if (!x) { box.innerHTML = `<div class="law-card">${renamedNote(laws.oldLaw(a.law), true)}<p class="none">${esc(law.full)}에서 그 조문을 찾지 못했습니다 · 마지막 조문은 ${laws.artLabel(law.arts[law.arts.length - 1])}</p></div>`; return law; }
   const list = coming ? law.next.arts : law.arts, i = list.indexOf(x), prev = list[i - 1], next = list[i + 1];
   const ps = laws.paras(x), pick = a.para && ps[a.para - 1] ? a.para : 0;
   const go = (y, text) => `<button type="button" class="btn ghost small" data-lq="${esc(name + ' ' + laws.artLabel(y))}">${text}</button>`;
   box.innerHTML = `<div class="law-card">
     <div class="lc-h"><b>${esc(name)} ${laws.artLabel(x)}${x.title ? `<span class="lc-tt">(${esc(x.title)})</span>` : ''}</b><span>${esc([x.chapter, law.src ? law.title : ''].filter(Boolean).join(' · '))}</span></div>
-    ${old ? `<p class="lc-ahead lc-old">${esc(cases.oldBand(old.old, old.by))}<button type="button" class="law-eg lc-oldh" hidden>연혁에서 그때 조문 보기</button></p>` : ''}
+    ${old ? `<p class="lc-ahead lc-old">${esc(cases.oldBand(old.old, old.by))}<button type="button" class="law-eg lc-oldh" hidden>연혁에서 그때 조문 보기</button></p>` : renamedNote(laws.oldLaw(a.law), true)}
     ${law.ahead ? aheadNote(law) : coming ? `<p class="lc-ahead">${esc(laws.dateText(law.next.rev))}부터 시행되는 개정으로 새로 생기는 조문입니다.</p>` : ''}
     <div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${cases.linkCases(t)}</p>`).join('')}</div>
     ${coming || law.ahead ? '' : pendingNote(law, x)}
@@ -2286,7 +2350,7 @@ async function courtCard(box, q, live) {
 function lawLinkCard(a, why, e) {
   const label = `${a.law} ${laws.artLabel(a)}${a.para ? ` 제${a.para}항` : ''}`;
   const msg = why === 'nolaw' ? '현행 법령 가운데 이 이름의 법령이 없습니다. 폐지되었거나 이름이 바뀐 법률일 수 있습니다 — 정식 이름이나 약칭으로 찾아 보세요.'
-    : why === 'repealed' ? `폐지된 법률입니다${e && e.date ? ` (${laws.dateText(String(e.date).replace(/-/g, ''))} 폐지)` : ''}. 이 조문을 다룬 판례는 아래 ‘이 조문의 판례’에서 볼 수 있습니다.`
+    : why === 'repealed' ? `폐지된 법률입니다${goneText(e)}. 이 조문을 다룬 판례는 아래 ‘이 조문의 판례’에서 볼 수 있습니다.`
     : '지금은 이 조문을 불러오지 못했습니다.';
   return `<div class="law-card"><div class="lc-h"><b>${esc(label)}</b></div>
     <p class="law-note">${msg}</p>
@@ -2467,12 +2531,13 @@ function onContentClick(e) {
   const jn = t.closest('.pp-jn'); if (jn) { openJournal(jn.dataset.jn, jn.dataset.jp); return; }
   const kc = t.closest('[data-kci]'); if (kc) { const x = kciRows.get(kc.dataset.kci); if (x) kciSheet(x); return; }
   if (t.closest('[data-selall]')) { pickAll(); return; }
+  if (t.closest('[data-go-trash]')) { $('.trash-btn').click(); return; }
   const ck = t.closest('[data-ck]');
   if (ck) { const row = ck.closest('.row'); if (row) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); } return; }
   const up = t.closest('[data-t="upload"]'); if (up) { uploadBox(); return; }
   const r = t.closest('[data-restore]'); if (r) { doOps([{ op: 'restoreFile', id: r.dataset.restore }], '되살렸습니다'); return; }
   const rf = t.closest('[data-restore-folder]'); if (rf) { doOps([{ op: 'restoreFolder', id: rf.dataset.restoreFolder }], '되살렸습니다'); return; }
-  const p = t.closest('[data-purge]'); if (p) { confirmBox('영구 삭제', '이 파일과 밑줄을 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFile', id: p.dataset.purge }], '지웠습니다')); return; }
+  const p = t.closest('[data-purge]'); if (p) { confirmBox('영구 삭제', '이 파일과 표시를 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFile', id: p.dataset.purge }], '지웠습니다')); return; }
   const pf = t.closest('[data-purge-folder]'); if (pf) { confirmBox('영구 삭제', '이 폴더와 안의 파일을 완전히 지웁니다. 되돌릴 수 없습니다.', '영구 삭제', true).then((ok) => ok && doOps([{ op: 'purgeFolder', id: pf.dataset.purgeFolder }], '지웠습니다')); return; }
   const mm = t.closest('[data-menu]'); if (mm) { const b = mm.getBoundingClientRect(); fileMenu(mm.dataset.menu, b.right, b.bottom); return; }
   const fm = t.closest('[data-fmenu]'); if (fm) { const b = fm.getBoundingClientRect(); folderMenu(fm.dataset.fmenu, b.right, b.bottom); return; }
@@ -2480,7 +2545,7 @@ function onContentClick(e) {
   const row = t.closest('.row');
   if (!row) return;
   if (S.select) { pick(row.dataset.file ? { file: row.dataset.file } : { folder: row.dataset.fid }); return; }
-  if (row.dataset.fid) { noteScroll(); S.view = { kind: 'home', folder: row.dataset.fid }; S.q = ''; $('.find input').value = ''; render(); nav(); return; }
+  if (row.dataset.fid) { noteScroll(); S.view = { kind: 'home', folder: row.dataset.fid }; S.q = ''; $('.find input').value = ''; render(); nav(); scrollBackTo(secScroll.get(secKey()) || 0); return; }
   if (row.dataset.file && S.view.kind !== 'trash') openFile(row.dataset.file);
 }
 function toggleSet(set, v) { if (set.has(v)) set.delete(v); else set.add(v); }
@@ -2512,8 +2577,8 @@ async function onTools(e) {
   else if (t === 'endsel') { S.select = null; render(); }
   else if (t === 'selall') pickAll();
   else if (t === 'trash' && S.select) {
-    const ops = [...S.select.files].map((id) => ({ op: 'trashFile', id })).concat([...S.select.folders].map((id) => ({ op: 'trashFolder', id })));
-    S.select = null; doOps(ops, '휴지통으로 옮겼습니다');
+    const files = [...S.select.files], folders = [...S.select.folders];
+    toTrash(files, folders, () => { S.select = null; });   // (picking ends once they go; Esc or 취소 on the question keeps it)
   } else if (t === 'move' && S.select) {
     const avoid = new Set(S.select.folders);
     const to = await pickFolder('옮길 곳', avoid);
@@ -2527,7 +2592,7 @@ async function onTools(e) {
 
 async function fileMenu(id, x, y) {
   const f = fileById(id); if (!f) return;
-  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['share', '공유하기'], ['-'], ...(needsOcr(f) && isScan(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 밑줄 되살리기'], ['clear', '밑줄 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']], null, { title: stem(f.name), sub: paperLineText(f) || (f.pages ? f.pages + '쪽' : '') });
+  const k = await menu({ left: x, right: x, top: y, bottom: y }, [['marks', f.stars || 0], ['rename', '이름 바꾸기'], ['move', '옮기기'], ['share', '공유하기'], ['-'], ...(needsOcr(f) && isScan(f) ? [['ocr', OCR.id === f.id ? '글자 읽는 중…' : '글자 읽기 (스캔본)']] : []), ['back', '예전 표시 되살리기'], ['clear', '표시 모두 지우기', 'danger'], ['trash', '휴지통으로', 'danger']], null, { title: stem(f.name), sub: paperLineText(f) || (f.pages ? f.pages + '쪽' : '') });
   if (k && k.startsWith('g:')) { const g = Number(k.slice(2)); rate(id, g === (f.stars || 0) ? 0 : g); return; }
   if (k === 'rename') { const n = await promptBox('이름 바꾸기', '파일 이름', stem(f.name), '바꾸기', f.orig && f.orig !== f.name ? stem(f.orig) : null); if (n) doOps([{ op: 'updateFile', id, set: { name: n.endsWith('.pdf') ? n : n + '.pdf' } }]); }
   else if (k === 'move') { const to = await pickFolder('옮길 곳'); if (to !== undefined) doOps([{ op: 'updateFile', id, set: { folder: to } }], '옮겼습니다'); }
@@ -2535,14 +2600,33 @@ async function fileMenu(id, x, y) {
   else if (k === 'clear') clearAllMarks(f);
   else if (k === 'back') marksBack(f);
   else if (k === 'ocr') { if (OCR.id === f.id) return; if (ocrRun) { toast('다른 스캔본을 읽는 중입니다. 끝나면 이어서 읽습니다'); return; } toast('글자를 읽기 시작했습니다. 쪽마다 몇 초씩 걸립니다', 4000); ocrQueue(f.id); }
-  else if (k === 'trash') doOps([{ op: 'trashFile', id }], '휴지통으로 옮겼습니다');
+  else if (k === 'trash') toTrash([id], []);
+}
+// to the trash: many at once, or a folder with something in it, asked first (Esc or 취소 keeps them); then 되돌리기 on the
+// toast for a few seconds puts them back where they were
+async function toTrash(files, folders, going = () => {}) {
+  const n = files.length + folders.length; if (!n) return false;
+  const inner = folders.length ? liveFiles().filter((f) => f.folder && folderPath(f.folder).some((x) => folders.includes(x.id))).length : 0;
+  const full = folders.some((id) => childFolders(id).length) || inner > 0;
+  if (n >= 5 || full) {
+    const what = [files.length ? `파일 ${files.length}개` : '', folders.length ? `폴더 ${folders.length}개${inner ? `(안의 파일 ${inner}개 포함)` : ''}` : ''].filter(Boolean).join('와 ');
+    if (!await confirmBox('휴지통으로 옮기기', `${what}를 휴지통으로 옮깁니다. 7일 안에는 휴지통에서 되살릴 수 있습니다.`, '휴지통으로', true)) return false;
+  }
+  going();
+  const r = await doOps(files.map((id) => ({ op: 'trashFile', id })).concat(folders.map((id) => ({ op: 'trashFolder', id }))));
+  if (!r) return false;
+  if ((r.results || []).some((x) => !x.ok)) return true;   // (doOps said what went wrong)
+  const back = folders.map((id) => ({ op: 'restoreFolder', id })).concat(files.map((id) => ({ op: 'restoreFile', id })));   // (folders first: a file goes back into its folder)
+  toast(n > 1 ? `${n}개를 휴지통으로 옮겼습니다` : '휴지통으로 옮겼습니다', 8000, { label: '되돌리기', fn: () => doOps(back, '되돌렸습니다') });
+  return true;
 }
 
 /* ---------- ★ △ ✕ on the cover (works offline too: kept here and sent when the internet is back) ---------- */
 async function rate(id, n) {
   const f = fileById(id); if (!f) return;
-  const op = { op: 'updateFile', id, set: { stars: n } };
-  f.stars = n; f.rated = n ? Date.now() : null;           // shown at once
+  const at = Date.now();   // when it was given: the server keeps the newer of this and another device's (a ✕ given later elsewhere wins)
+  const op = { op: 'updateFile', id, set: { stars: n }, at };
+  f.stars = n; f.rated = n ? at : null; f.starsAt = at;   // shown at once
   if (S.reader && S.readerId === id) S.reader.setStars(n);
   render();
   const q = ((await store.get('kv', 'pendingOps')) || []).filter((x) => !(x.op === 'updateFile' && x.id === id && 'stars' in x.set));
@@ -2550,34 +2634,49 @@ async function rate(id, n) {
   flushOps();
 }
 let flushing = null;
-async function flushOps() {   // changes made without internet, in order; the server copy wins for everything else
+async function flushOps() {   // changes made without internet, in order, each with its time: the server keeps whichever is newer
   if (flushing || !navigator.onLine) return flushing;
   flushing = (async () => {
+    let left = [];
     try {
       const q = (await store.get('kv', 'pendingOps')) || [];
       if (!q.length) return;
-      const r = await api.ops(q);
-      const now = (await store.get('kv', 'pendingOps')) || [];
-      await store.put('kv', 'pendingOps', now.slice(q.length));
-      S.index = r.index; applyPending(now.slice(q.length)); await store.put('kv', 'index', S.index); syncTags.lib = '';
+      // (each with when it is sent, by this device's clock as its at is: the server takes the mark's age from the two, so a
+      // device clock running slow or fast does not matter)
+      const sent = Date.now();
+      const r = await api.ops(q.map((o) => (o.at ? { ...o, sent } : o)));
+      // (what the server adds to this device's times: it wrote these at index.updated and took each mark as given at
+      // index.updated − (sent − at), i.e. at + this. applyPending sets a mark still queued beside the server's so, and a
+      // mark given just after another one on its way is not taken for the older)
+      if (r.index && Number.isFinite(r.index.updated)) clockSkew = r.index.updated - sent;
+      // what was sent goes from the queue, and only that: a mark given meanwhile took its file's earlier one's place in the
+      // queue (rate), so the queue is not just longer — counting off q.length lost that newer mark
+      const gone = q.map((o) => JSON.stringify(o));
+      left = ((await store.get('kv', 'pendingOps')) || []).filter((o) => { const i = gone.indexOf(JSON.stringify(o)); if (i < 0) return true; gone.splice(i, 1); return false; });
+      await store.put('kv', 'pendingOps', left);
+      S.index = r.index; applyPending(left); await store.put('kv', 'index', S.index); syncTags.lib = ''; noteGone();
       if (S.reader) renderUsage(); else renderBg();
-    } catch (e) { /* kept; sent later */ } finally { flushing = null; }
+    } catch (e) { left = []; /* kept; sent later */ } finally { flushing = null; }
+    if (left.length) flushOps();   // (given while these were on their way: sent now, not at the next return to the app)
   })();
   return flushing;
 }
-function applyPending(q) { for (const o of q || []) if (o.op === 'updateFile') { const f = fileById(o.id); if (f && 'stars' in o.set) f.stars = o.set.stars; } }
+let clockSkew = 0;
+function applyPending(q) {   // (a mark another device gave after this one was queued stays: the server keeps it too)
+  for (const o of q || []) if (o.op === 'updateFile') { const f = fileById(o.id); if (f && 'stars' in o.set && !(o.at && (f.starsAt || f.rated || 0) > o.at + clockSkew)) f.stars = o.set.stars; }
+}
 
 /* ---------- clear every mark in a file (the PDF itself is untouched); undo from the toast ---------- */
 async function clearAllMarks(f) {
   const all = await loadMarks(f.id);
   const live = all.filter((m) => !m.del);
-  if (!live.length) { toast('지울 밑줄이 없습니다'); return; }
-  if (!await confirmBox('밑줄 모두 지우기', `「${stem(f.name)}」의 형광펜과 밑줄 ${live.length}개를 모두 지웁니다. PDF 원본은 그대로입니다.`, '모두 지우기', true)) return;
+  if (!live.length) { toast('지울 표시가 없습니다'); return; }
+  if (!await confirmBox('표시 모두 지우기', `「${stem(f.name)}」의 표시(밑줄·형광펜) ${live.length}개를 모두 지웁니다. PDF 원본은 그대로입니다.`, '모두 지우기', true)) return;
   const t = Date.now();
   const next = all.map((m) => (m.del ? m : { id: m.id, del: true, t }));
   await saveMarks(f.id, next);
   if (S.reader && S.readerId === f.id) S.reader.setRemoteMarks(next);
-  toast(`밑줄 ${live.length}개를 지웠습니다`, 9000, { label: '되돌리기', fn: async () => {
+  toast(`표시 ${live.length}개를 지웠습니다`, 9000, { label: '되돌리기', fn: async () => {
     const rec = await store.get('marks', f.id);
     const back = mergeMarks(rec ? rec.marks : next, live.map((m) => ({ ...m, t: Date.now() })));
     await saveMarks(f.id, back);
@@ -2590,14 +2689,14 @@ async function folderMenu(id, x, y) {
   const k = await menu({ left: x, right: x, top: y, bottom: y }, [['rename', '이름 바꾸기'], ['move', '옮기기'], ['-'], ['trash', '휴지통으로', 'danger']], null, { title: f.name, sub: '폴더' });
   if (k === 'rename') { const n = await promptBox('폴더 이름 바꾸기', '폴더 이름', f.name, '바꾸기'); if (n) doOps([{ op: 'renameFolder', id, name: n }]); }
   else if (k === 'move') { const to = await pickFolder('옮길 곳', new Set([id])); if (to !== undefined && to !== id) doOps([{ op: 'moveFolder', id, parent: to }], '옮겼습니다'); }
-  else if (k === 'trash') doOps([{ op: 'trashFolder', id }], '휴지통으로 옮겼습니다');
+  else if (k === 'trash') toTrash([], [id]);
 }
 
 async function doOps(ops, done) {
   if (!navigator.onLine) { toast('인터넷에 연결되면 할 수 있습니다'); return false; }
   try {
     const r = await api.ops(ops);
-    S.index = r.index; await store.put('kv', 'index', r.index);
+    S.index = r.index; await store.put('kv', 'index', r.index); noteGone(true);
     const bad = (r.results || []).find((x) => !x.ok);
     render();
     if (bad) toast(bad.error === 'cycle' ? '폴더를 그 안의 폴더로 옮길 수는 없습니다' : bad.error === 'no_folder' ? '그 폴더가 더 이상 없습니다' : '일부를 처리하지 못했습니다');
@@ -2753,7 +2852,7 @@ async function openFile(id, at = {}) {
   if (S.reader) closeReader(true, at.noRemember);
   const tab = addTab(id);
   if (at.tab && tab.page != null) at = { ...at, page: tab.page, y: tab.y, zoom: tab.zoom, resume: true };
-  if (at.replace) history.replaceState({ r: id }, '', '#r=' + id); else history.pushState({ r: id }, '', '#r=' + id);
+  if (at.replace || (history.state && history.state.sheet)) history.replaceState({ r: id }, '', '#r=' + id); else history.pushState({ r: id }, '', '#r=' + id);   // (from a sheet: in its place)
   const host = el('div', 'reader-host');
   document.body.appendChild(host);
   host.innerHTML = `<div class="loading"><div class="spin"></div><p>여는 중…</p><div class="lbar"><i></i></div></div>`;
@@ -2769,10 +2868,14 @@ async function openFile(id, at = {}) {
       doc.getDownloadInfo().then(async () => { try { const data = await doc.getData(); await store.put('files', id, new Blob([data], { type: 'application/pdf' })); S.cached.add(id); } catch (e) { /* not kept */ } });
     }
     if (S.readerId !== id) { doc.destroy(); return; }
-    const [marks, index] = await Promise.all([loadMarks(id), store.get('texts', id).catch(() => null)]);
+    // a read scan's words, like its marks: a slow server is not waited on past 3 s (they are laid on the pages when they come)
+    const ocrAsk = f.ocr ? ocrData(f).catch(() => null) : null;
+    let ocrT = null;
+    const [marks, index, ocrNow] = await Promise.all([loadMarks(id, 3000), store.get('texts', id).catch(() => null),
+      ocrAsk && Promise.race([ocrAsk, new Promise((res) => { ocrT = setTimeout(() => res(SLOW), 3000); })]).finally(() => clearTimeout(ocrT))]);
+    const ocr = ocrNow === SLOW ? null : ocrNow;
     const s = S.state.files[id];
     host.innerHTML = '';
-    const ocr = f.ocr ? await ocrData(f) : null;
     S.reader = new Reader(host, {
       doc, title: stem(f.name), analyze: A, marks, index, ocr: ocr && ocr.pages,
       at: at.page != null ? { page: at.page, y: at.y || 0, query: at.query, mark: at.mark } : (s && !s.done ? { page: s.page, y: s.y } : {}),
@@ -2797,7 +2900,8 @@ async function openFile(id, at = {}) {
       reviewed: (law, art, para) => cases.byLaw(law, art, para),
       toast,
     });
-    S.reader.docRef = doc;
+    S.reader.docRef = doc; noteGone(true);
+    if (ocrNow === SLOW) { const rd = S.reader; ocrAsk.then((d) => { if (d && S.reader === rd) rd.setOcr(d.pages); }); }
     await S.reader.start();
     fgUntil = Date.now() + 1500;   // drawn: the background goes on a moment later
     keepAwake();
@@ -2806,7 +2910,8 @@ async function openFile(id, at = {}) {
     fgUntil = 0;
     host.remove(); S.readerId = null;
     if (location.hash.startsWith('#r=')) history.replaceState(null, '', location.pathname);
-    toast(e.code === 'offline' ? '이 파일은 아직 이 기기에 없습니다. 인터넷에 연결되면 열 수 있습니다.' : e.name === 'PasswordException' ? '암호가 걸린 PDF입니다' : '파일을 열지 못했습니다');
+    toast(e.code === 'offline' ? '이 파일은 아직 이 기기에 없습니다. 인터넷에 연결되면 열 수 있습니다.' : e.name === 'PasswordException' ? '암호가 걸린 PDF입니다'
+      : api.serverDown() && !S.cached.has(id) ? '책장 서버에 연결할 수 없어 열지 못했습니다. 이 기기에 받아 둔 논문은 열 수 있습니다.' : '파일을 열지 못했습니다');
   }
 }
 let wake = null, wakeT = null;
@@ -2830,31 +2935,43 @@ function closeReader(silent, noRemember) {
   if (!silent) render();
 }
 function onPop(e) {
+  if (sheetBack) { sheetBack = false; paintBack(); return; }   // (a sheet closed by its ✕, Esc or a button took its own place in the history away)
   if (S.readerId && !/#r=/.test(location.hash)) { closeReader(); return; }
   const st = e && e.state;
   if (S.readerId || !st || !st.nav) return;
-  closeSheet(); document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
+  const open = document.querySelector('.sheet-wrap .sheet-x');
+  if (open) open.click(); else closeSheet();   // (as its ✕ does: whoever waits on it hears 'no')
+  document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
   const n = st.nav;
-  S.view = { kind: n.kind || 'home', folder: n.folder || null }; S.q = ''; S.select = null;
+  if (sameNav(n, navNow())) { closeRail(); paintBack(); return; }   // back from a sheet: the screen under it stays as it was
+  const c0 = $('.content'); if (c0 && !S.q) secScroll.set(secKey(), c0.scrollTop);   // (the menu left by going back: where it was, for its next visit)
+  S.view ={ kind: n.kind || 'home', folder: n.folder || null }; S.q = ''; S.select = null;
   S.lq = n.lq || ''; S.cq = n.cq || ''; S.pq = n.pq || ''; if (n.pk !== undefined) S.pk = n.pk; if (n.ps !== undefined) S.ps = n.ps; S.pjv = n.pjv || ''; S.pj = n.pj || ''; S.ks = n.ks || '';
   S.lold = n.lo || null;
   const fi = $('.find input'); if (fi) fi.value = '';
   render(); closeRail();
-  const c = $('.content');
-  if (c) {
-    c.scrollTop = 0;
-    if (st.scroll) {   // the answers come a moment later: once the screen is long enough again, back to where it was (for up to 3 s)
-      const t0 = Date.now();
-      const tick = () => {
-        if (!history.state || history.state.key !== st.key) return;
-        const max = c.scrollHeight - c.clientHeight;
-        if (max >= st.scroll - 2 || Date.now() - t0 > 3000) { c.scrollTop = Math.min(st.scroll, max); return; }
-        setTimeout(tick, 90);
-      };
-      setTimeout(tick, 60);
-    }
-  }
+  scrollBackTo(st.scroll || 0);
 }
+// back to y on the screen now shown: the answers come a moment later, so once the screen is long enough again (for up to 3 s);
+// given up when another screen comes first
+let scrollSeq = 0;
+function scrollBackTo(y) {
+  const c = $('.content'); if (!c) return;
+  const my = ++scrollSeq, key = history.state && history.state.key;
+  c.scrollTop = 0;
+  if (!(y > 0)) return;
+  const t0 = Date.now();
+  const tick = () => {
+    if (my !== scrollSeq || !c.isConnected || (history.state && history.state.key) !== key) return;
+    const max = c.scrollHeight - c.clientHeight;
+    if (max >= y - 2 || Date.now() - t0 > 3000) { c.scrollTop = Math.min(y, max); return; }
+    setTimeout(tick, 90);
+  };
+  setTimeout(tick, 60);
+}
+// how far each menu's screen was scrolled when it was left (서재 and each folder on its own), for coming back to it
+const secScroll = new Map();
+const secKey = () => S.view.kind + ':' + (S.view.kind === 'home' ? S.view.folder || '' : '');
 // the screen one is on, as history keeps it
 const navNow = () => ({ kind: S.view.kind, folder: S.view.folder || null, lq: S.view.kind === 'law' ? S.lq || '' : '', cq: S.view.kind === 'cases' ? S.cq || '' : '', pq: S.view.kind === 'papers' ? S.pq || '' : '', pk: S.pk, ps: S.ps, pjv: S.pjv || '', pj: S.pj || '', ks: S.ks || '',
   lo: S.view.kind === 'law' && S.lold && S.lold.q === S.lq ? S.lold : null });   // (an article opened from a citation of its old text)
@@ -2869,6 +2986,7 @@ function nav(how = 'push') {
   const url = location.pathname + location.search + (navHash(n) === '#' ? '' : navHash(n));
   const key = Math.random().toString(36).slice(2);
   if (!cur) history.replaceState({ nav: n, depth: 0, typed: how === 'typing', key }, '', url);
+  else if (st.sheet) { if (!sameNav(cur, n)) history.replaceState({ nav: n, depth: st.depth || 0, typed: how === 'typing', key }, '', url); }   // from a sheet: its place is taken
   else if (st.typed) {
     // the tip is a half-typed, passing entry. A deliberate move into a sub-screen (a journal's own list) keeps it, so going
     // back returns to the search; more typing, or finishing the same search box (Enter, a facet, a sort), takes its place.
@@ -2880,7 +2998,8 @@ function nav(how = 'push') {
 // before a screen is changed: how far it is scrolled, kept with it (so going back returns there)
 function noteScroll() {
   const st = history.state, c = $('.content');
-  if (st && st.nav && !st.typed && c) history.replaceState({ ...st, scroll: c.scrollTop }, '');
+  if (c && !S.q && !S.readerId) secScroll.set(secKey(), c.scrollTop);
+  if (st && st.nav && !st.typed && !st.sheet && c) history.replaceState({ ...st, scroll: c.scrollTop }, '');
 }
 // ‹ beside the search box, when there is a screen to go back to (an app on the home screen has no back button of its own)
 function paintBack() {
@@ -2900,13 +3019,13 @@ async function makePdf(f, withMarks) {
       try { const { buildAnnotatedPdf } = await import('./annot.js'); out = await buildAnnotatedPdf(out, list); }
       catch (e) {
         // a locked file cannot take annotations: draw its pages with the marks into a new PDF instead
-        try { out = await pdfkit.flattenWithMarks(out, list); note = '잠긴 PDF라 쪽을 그림으로 바꿔 밑줄과 함께 만들었습니다'; }
-        catch (e2) { note = '밑줄을 넣지 못해 원본으로 드립니다'; }
+        try { out = await pdfkit.flattenWithMarks(out, list); note = '잠긴 PDF라 쪽을 그림으로 바꿔 표시와 함께 만들었습니다'; }
+        catch (e2) { note = '표시를 넣지 못해 원본으로 드립니다'; }
       }
     }
   }
   const base = stem(f.name.endsWith('.pdf') ? f.name : f.name + '.pdf');
-  return { file: new File([out], base + (withMarks && !note.startsWith('밑줄을 넣지') ? ' (밑줄)' : '') + '.pdf', { type: 'application/pdf' }), note };
+  return { file: new File([out], base + (withMarks && !note.startsWith('표시를 넣지') ? ' (표시)' : '') + '.pdf', { type: 'application/pdf' }), note };
 }
 function saveFile(file) {
   const url = URL.createObjectURL(file), a = el('a');
@@ -2921,7 +3040,7 @@ async function shareSheet(f) {
   const made = {};   // the PDFs made so far: { marks: Promise, orig: Promise }
   const prep = (v) => (made[v] ||= makePdf(f, v === 'marks'));
   const box = sheet(`<h2>공유하기</h2><p class="sh-t">${esc(stem(f.name))}</p>
-    ${marks ? `<div class="pp-sort sh-seg" role="group" aria-label="보낼 파일"><button type="button" data-v="marks">밑줄 넣은 PDF</button><button type="button" data-v="orig">원본</button></div>` : ''}
+    ${marks ? `<div class="pp-sort sh-seg" role="group" aria-label="보낼 파일"><button type="button" data-v="marks">표시 넣은 PDF</button><button type="button" data-v="orig">원본</button></div>` : ''}
     <div class="sh-acts">
       ${send ? `<button type="button" class="sh-a" data-a="send"><i class="mi">${MI.send}</i><span><b>보내기</b><small>메일 · 메시지</small></span></button>` : ''}
       <button type="button" class="sh-a" data-a="save"><i class="mi">${MI.orig}</i><span><b>저장하기</b><small>PDF 파일로</small></span></button>
@@ -2967,11 +3086,20 @@ function mergeMarks(a, b) {
   for (const x of b) { const o = m.get(x.id); if (!o || x.t >= o.t) m.set(x.id, x); }
   return [...m.values()];
 }
-async function loadMarks(id) {
+// wait: at most this long for the server's marks (opening a paper: a slow server must not hold up a paper kept here). When the
+// server answers later, its marks are merged in as another device's would be (takeMarks), into the reader if it is open by then
+const SLOW = Symbol('slow');
+async function loadMarks(id, wait = 0) {
   const local = (await store.get('marks', id)) || { marks: [], pending: false };
   if (!navigator.onLine) return local.marks;
   try {
-    const remote = await api.getMarks(id);
+    const ask = api.getMarks(id);
+    let timer = null;
+    const remote = wait ? await Promise.race([ask, new Promise((res) => { timer = setTimeout(() => res(SLOW), wait); })]).finally(() => clearTimeout(timer)) : await ask;
+    if (remote === SLOW) {
+      ask.then(async (r) => { await takeMarks(id, (r && r.marks) || [], r && r.tag); const rec = await store.get('marks', id); if (rec && rec.pending) pushMarks(id); }).catch(() => {});
+      return local.marks;
+    }
     const merged = mergeMarks(remote.marks || [], local.marks);
     await store.put('marks', id, { marks: merged, pending: local.pending, tag: remote.tag || '' });
     marksCache = null;
@@ -3045,17 +3173,24 @@ function ocrSoon(ms = 3000) {
   if (isPhone()) return;
   clearTimeout(ocrSoon.t); ocrSoon.t = setTimeout(() => ocrQueue(), ms);
 }
+// a device reads a scan on its own only up to this many pages (a longer one waits for 글자 읽기 in its menu), and never a PDF
+// that turns out to have its text after all (taken for a scan by an older check: it is then marked as no scan)
+const OCR_AUTO_MAX = 60;
+const ocrSkip = new Set();
 function ocrQueue(only) {
   if (ocrRun) return ocrRun;
   ocrRun = (async () => {
     let mod = null;
     try {
       for (;;) {
-        const f = only ? fileById(only) : liveFiles().find(needsOcr);
+        const f = only ? fileById(only) : liveFiles().find((x) => needsOcr(x) && x.scan <= OCR_AUTO_MAX && !ocrSkip.has(x.id));
         if (!needsOcr(f) || !syncOn || !navigator.onLine) break;
         mod = mod || await import('./ocr.js');
-        try { await ocrFile(f, mod); }
+        let r;
+        try { r = await ocrFile(f, mod, !only); }
         catch (e) { if (only) toast(api.isOffline(e) ? '인터넷에 연결되면 할 수 있습니다' : '글자를 읽지 못했습니다'); break; }
+        if (r === 'none' && only) toast('글자가 이미 들어 있는 PDF입니다. 따로 읽을 쪽이 없습니다');
+        if (r) ocrSkip.add(f.id);
         if (only) break;
       }
     } finally {
@@ -3069,11 +3204,18 @@ function ocrQueue(only) {
 function ocrPageItems(n, lines, W, H) {   // read words in the shape the page analysis expects (for page numbers, headings, the name)
   return { n, W, H, items: (lines || []).map((l) => ({ s: l[4].map((w) => w[2]).join(' '), x: l[0] * W, y: l[3] * H, w: (l[2] - l[0]) * W, h: (l[3] - l[1]) * H * 0.85, f: 'ocr', eol: true })) };
 }
-async function ocrFile(f, mod) {
+async function ocrFile(f, mod, auto) {
   const doc = await pdfkit.openBytes(await (await getBytes(f)).arrayBuffer());
   try {
     const t = (await textOf(f).catch(() => null)) || await pdfkit.textIndex(doc, A);
     const todo = await pdfkit.picturePages(doc, t.pages);
+    if (!todo.length) {   // no page is a picture: not a scan after all
+      const r = await api.ops([{ op: 'updateFile', id: f.id, set: { scan: 0 } }]);
+      S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+      if (S.reader) renderUsage(); else renderBg();
+      return 'none';
+    }
+    if (auto && todo.length > OCR_AUTO_MAX) return 'long';
     // each page read is kept here at once (one small record per page), so an interruption costs at most one page
     const key = (i) => 'ocr:' + f.id + ':' + i;
     const saved = { pages: {}, lang: ((await store.get('kv', 'ocr:' + f.id)) || {}).lang || 'kor' };
@@ -3478,14 +3620,14 @@ async function allMarks() {   // paper id -> its marks that have words, from thi
   }
   return (marksCache = m);
 }
-function pageLabel(id, p, found) {   // printed page number when known (○면), else the PDF page (○쪽)
+function pageLabel(id, p, found) {   // printed page number when known, else the PDF page (both ○쪽)
   const o = (S.state.files[id] || {}).o;
   const off = Number.isInteger(o) ? o : found;
   return Number.isInteger(off) ? printedPage(p, off) : (p + 1) + '쪽';
 }
 // PDF page p (0-based) by its printed number, o its offset; a page before the one printed 1 (a notice or a cover put before
 // the paper: the offset is below zero) has no number of its own — 표지, as the reader names it
-function printedPage(p, o) { const v = p + 1 + o; return v >= 1 ? v + '면' : '표지'; }
+function printedPage(p, o) { const v = p + 1 + o; return v >= 1 ? v + '쪽' : '표지'; }
 async function printedOffsets(ids) {   // id -> how far the printed page numbers run ahead of the PDF's, as the page texts found it
   const out = new Map();
   for (const id of ids) {
@@ -3511,16 +3653,16 @@ async function markHits(key) {
   return out.sort((x, y) => y.snips.length - x.snips.length || x.f.name.localeCompare(y.f.name, 'ko'));
 }
 
-/* ---------- 예전 밑줄 되살리기: the server keeps how a paper's marks were before each day's first change (60 days) ---------- */
+/* ---------- 예전 표시 되살리기: the server keeps how a paper's marks were before each day's first change (60 days) ---------- */
 const when = (t) => new Date(t).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 async function marksBack(f) {
   if (!navigator.onLine) { toast('인터넷에 연결되면 할 수 있습니다'); return; }
   let list;
   try { await pushMarks(f.id); list = await api.marksHistory(f.id); }
   catch (e) { toast(api.isOffline(e) ? '인터넷에 연결되면 할 수 있습니다' : '불러오지 못했습니다'); return; }
-  if (!list.length) { toast('되살릴 예전 밑줄이 없습니다. 밑줄을 바꾸면, 그날 처음 바꾸기 전 상태가 60일 동안 남습니다.', 6000); return; }
-  const box = sheet(`<h2>예전 밑줄 되살리기</h2><p class="sheet-p small">「${esc(stem(f.name))}」의 밑줄을 고른 때의 상태로 되돌립니다. 지금 밑줄도 남겨 두므로 다시 되돌릴 수 있습니다.</p>
-    <ul class="hist">${list.map((h) => `<li><button class="hist-b" data-ts="${h.ts}"><b>${esc(when(h.updated || h.ts))}</b><span>밑줄 ${h.n}개</span></button></li>`).join('')}</ul>`);
+  if (!list.length) { toast('되살릴 예전 표시가 없습니다. 표시를 바꾸면, 그날 처음 바꾸기 전 상태가 60일 동안 남습니다.', 6000); return; }
+  const box = sheet(`<h2>예전 표시 되살리기</h2><p class="sheet-p small">「${esc(stem(f.name))}」의 표시를 고른 때의 상태로 되돌립니다. 지금 표시도 남겨 두므로 다시 되돌릴 수 있습니다.</p>
+    <ul class="hist">${list.map((h) => `<li><button class="hist-b" data-ts="${h.ts}"><b>${esc(when(h.updated || h.ts))}</b><span>표시 ${h.n}개</span></button></li>`).join('')}</ul>`);
   $('.hist', box).onclick = (e) => { const b = e.target.closest('[data-ts]'); if (!b) return; closeSheet(); restoreMarksTo(f, Number(b.dataset.ts), true); };
 }
 async function restoreMarksTo(f, ts, offerUndo) {
@@ -3535,7 +3677,7 @@ async function restoreMarksTo(f, ts, offerUndo) {
       const back = l.find((h) => Math.abs(h.ts - r.updated) < 120e3);
       if (back) restoreMarksTo(f, back.ts, false); else toast('되돌리지 못했습니다');
     } } : undefined;
-    toast(`밑줄 ${n}개로 되살렸습니다`, 9000, undo);
+    toast(`표시 ${n}개로 되살렸습니다`, 9000, undo);
   } catch (e) { toast(api.isOffline(e) ? '인터넷에 연결되면 할 수 있습니다' : '되살리지 못했습니다'); }
 }
 
@@ -3545,19 +3687,19 @@ async function exportAllMarks() {
   await fetchAllMarks(true);
   const all = await allMarks();
   const files = liveFiles().filter((f) => all.has(f.id)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-  if (!files.length) { toast('아직 밑줄이 없습니다'); return; }
+  if (!files.length) { toast('아직 표시가 없습니다'); return; }
   const day = new Date().toLocaleDateString('sv-SE');
   const n = files.reduce((s, f) => s + all.get(f.id).length, 0);
   const offs = await printedOffsets(files.map((f) => f.id));
   const full = {};
   for (const [id, r] of await store.entries('marks').catch(() => [])) if (r && r.marks && r.marks.length) full[id] = r.marks;
   const data = JSON.stringify({ app: '연구실 책장', at: Date.now(), index: S.index, state: S.state, marks: full }).replace(/</g, '\\u003c');
-  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>연구실 책장 밑줄 ${day}</title>
+  const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>연구실 책장 표시 ${day}</title>
 <style>body{margin:0 auto;max-width:760px;padding:28px 18px 60px;font:16px/1.7 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;color:#1b2433;background:#fff}h1{font-size:22px;margin:0}p.s{color:#5a6578;margin:4px 0 26px}h2{font-size:17px;margin:30px 0 8px;padding-top:14px;border-top:1px solid #e3e7ee}p.j{margin:-6px 0 8px;color:#5a6578;font-size:14px}ol{list-style:none;margin:0;padding:0}li{display:flex;gap:12px;padding:7px 0}.pg{flex:none;width:52px;color:#7b8597;font-size:13px;padding-top:3px}.t{background:linear-gradient(transparent 55%,color-mix(in srgb,var(--c) 55%,transparent) 55%)}.t[data-k=ul]{background:none;text-decoration:underline;text-decoration-color:var(--c);text-decoration-thickness:2px;text-underline-offset:4px}@media print{h2{break-after:avoid}li{break-inside:avoid}}</style></head><body>
-<h1>연구실 책장 밑줄</h1><p class="s">${day} · 논문 ${files.length}편 · 밑줄 ${n}개</p>
+<h1>연구실 책장 표시</h1><p class="s">${day} · 논문 ${files.length}편 · 표시 ${n}개</p>
 ${files.map((f) => `<h2>${esc(stem(f.name))}</h2>${paperLine(f) ? `<p class="j">${paperLine(f)}</p>` : ''}<ol>${all.get(f.id).map((m) => `<li><span class="pg">${pageLabel(f.id, m.p, offs.get(f.id))}</span><span class="t" data-k="${m.kind}" style="--c:${esc(m.color)}">${esc(m.text)}</span></li>`).join('')}</ol>`).join('\n')}
 <script type="application/json" id="shelf-backup">${data}</script></body></html>`;
-  const file = new File([html], `연구실 책장 밑줄 ${day}.html`, { type: 'text/html' });
+  const file = new File([html], `연구실 책장 표시 ${day}.html`, { type: 'text/html' });
   hideToast();
   if (matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file], title: file.name }); } catch (e) { /* closed */ }
@@ -3638,7 +3780,7 @@ async function settings() {
       <button class="btn ghost clear-local">이 기기에 받아 둔 파일 비우기</button></section>
     <section><h3>올리기</h3><label class="opt"><input type="checkbox" class="an" ${S.prefs.autoName === false ? '' : 'checked'}><span>이름을 ‘저자_제목’으로 정리 <small>(부제 생략, 확실할 때만)</small></span></label></section>
     <section><h3>공유로 넣기 <small>아이패드·아이폰</small></h3><p class="sheet-p small">Safari나 파일 앱의 공유 버튼에서 바로 책장에 넣습니다. 키를 한 번 만들어 단축어에 넣어 두면 됩니다.</p><button class="btn share-key">공유 키 만들기</button></section>
-    <section><h3>백업</h3><p class="sheet-p small">밑줄과 폴더 정리는 날마다, 처음 바뀌기 전 상태가 서버에 60일 동안 남습니다. 밑줄을 잘못 지웠다면 그 논문의 ⋯ 메뉴에서 <b>예전 밑줄 되살리기</b>를 고르세요.</p><button class="btn export-marks">모든 밑줄을 파일로 받기</button></section>
+    <section><h3>백업</h3><p class="sheet-p small">표시와 폴더 정리는 날마다, 처음 바뀌기 전 상태가 서버에 60일 동안 남습니다. 표시를 잘못 지웠다면 그 논문의 ⋯ 메뉴에서 <b>예전 표시 되살리기</b>를 고르세요.</p><button class="btn export-marks">모든 표시를 파일로 받기</button></section>
     <section><h3>로그인된 기기</h3><ul class="devs"><li class="none">불러오는 중…</li></ul></section>
     <section class="foot"><button class="btn danger ghost signout">이 기기에서 로그아웃</button><p class="ver">연구실 책장 ${esc(VERSION)}</p></section>`);
   $('.share-key', box).onclick = () => shareKeySheet();
@@ -3646,11 +3788,11 @@ async function settings() {
   $('.an', box).onchange = (e) => { S.prefs.autoName = e.target.checked; store.put('kv', 'prefs', S.prefs); };
   $('.keep', box).onchange = (e) => { if (e.target.name !== 'keep') return; S.prefs.keep = e.target.value; store.put('kv', 'prefs', S.prefs); prefetch(); };
   $('.clear-local', box).onclick = async () => {
-    if (!(await confirmBox('받아 둔 파일 비우기', '이 기기에 받아 둔 사본만 지웁니다. 책장 서버의 파일과 밑줄은 그대로입니다.', '비우기'))) return;
+    if (!(await confirmBox('받아 둔 파일 비우기', '이 기기에 받아 둔 사본만 지웁니다. 책장 서버의 파일과 표시는 그대로입니다.', '비우기'))) return;
     await store.clear('files'); S.cached = new Set(); render(); closeSheet(); toast('비웠습니다');
   };
   $('.signout', box).onclick = async () => {
-    if (!(await confirmBox('로그아웃', '이 기기에서 로그아웃합니다. 받아 둔 파일과 밑줄 사본도 이 기기에서 지웁니다.', '로그아웃', true))) return;
+    if (!(await confirmBox('로그아웃', '이 기기에서 로그아웃합니다. 받아 둔 파일과 표시 사본도 이 기기에서 지웁니다.', '로그아웃', true))) return;
     await syncMarksAll(); await pushState();
     await api.logout();
     for (const s of ['files', 'thumbs', 'texts', 'marks', 'kv']) await store.clear(s).catch(() => {});
@@ -3682,15 +3824,58 @@ function toast(msg, ms = 2600, action) {
 }
 function hideToast() { const t = $('.toast'); if (t) { t.classList.remove('in'); t.hidden = true; } }
 
+// A sheet takes the focus (Tab stays in it), Escape closes it as ✕ does, and the focus goes back to what opened it. A sheet
+// that replaces another gives the focus back to what opened the first.
+// Over the library a sheet has its own place in the history, so the back button (or a swipe back) closes the sheet alone and
+// the screen under it — its search, its answers, how far it was scrolled — stays; a sheet that replaces another shares it.
+let sheetFrom = null, sheetBack = false;
 function sheet(html) {
-  closeSheet();
-  const w = el('div', 'sheet-wrap', `<div class="sheet" role="dialog" aria-modal="true"><button class="ib sheet-x" aria-label="닫기">${I.close}</button>${html}</div>`);
+  const from = document.querySelector('.sheet-wrap') ? sheetFrom : document.activeElement;
+  closeSheet(true);
+  sheetFrom = from;
+  const st = history.state;
+  if (!S.readerId && st && st.nav && !st.sheet) { noteScroll(); history.pushState({ ...history.state, sheet: true, typed: false, depth: (st.depth || 0) + 1, key: Math.random().toString(36).slice(2) }, '', location.href); paintBack(); }
+  const w = el('div', 'sheet-wrap', `<div class="sheet" role="dialog" aria-modal="true" tabindex="-1"><button class="ib sheet-x" aria-label="닫기">${I.close}</button>${html}</div>`);
   document.body.appendChild(w);
+  const box = $('.sheet', w), h = $('h2, h3', box);
+  if (h) { h.id = h.id || 'sh-' + rid(6); box.setAttribute('aria-labelledby', h.id); }
   requestAnimationFrame(() => w.classList.add('in'));
+  box.focus({ preventScroll: true });
   w.addEventListener('click', (e) => { if (e.target === w || e.target.closest('.sheet-x')) closeSheet(); });
-  return $('.sheet', w);
+  return box;
 }
-function closeSheet() { document.querySelectorAll('.sheet-wrap').forEach((w) => w.remove()); }
+function closeSheet(keepFocus) {
+  const had = document.querySelectorAll('.sheet-wrap');
+  had.forEach((w) => w.remove());
+  if (keepFocus || !had.length) return;
+  // its place in the history goes too — unless the same moment opens another sheet, or goes on to another screen (nav: that
+  // screen takes the place)
+  setTimeout(() => { if (!document.querySelector('.sheet-wrap') && !S.readerId && history.state && history.state.sheet) { sheetBack = true; history.back(); } }, 0);
+  const f = sheetFrom; sheetFrom = null;
+  if (f && f.isConnected && f.focus) f.focus({ preventScroll: true });
+}
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+window.addEventListener('keydown', (e) => {
+  const ws = document.querySelectorAll('.sheet-wrap'); const w = ws[ws.length - 1];
+  if (!w || document.querySelector('.menu-wrap')) return;   // (a menu over the sheet handles its own keys)
+  const box = $('.sheet', w);
+  if (e.key === 'Escape' && (e.isComposing || e.keyCode === 229)) return;   // (a word still being put together — 한글 입력 — takes its Esc itself; Tab is still kept in the sheet)
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const x = $('.sheet-x', box); if (x) x.click(); else closeSheet(); return; }
+  if (e.key !== 'Tab') return;
+  const fs = [...box.querySelectorAll(FOCUSABLE)].filter((x) => x.offsetParent !== null || x === document.activeElement);
+  if (!fs.length) { e.preventDefault(); box.focus(); return; }
+  const first = fs[0], last = fs[fs.length - 1], at = document.activeElement;
+  if (!box.contains(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (e.shiftKey && (at === first || at === box)) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+}, true);
+
+// Esc also ends picking (as 선택 끝 does) when nothing is open over the list
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.isComposing || !S.select || S.readerId || e.defaultPrevented || document.querySelector('.sheet-wrap, .menu-wrap')) return;
+  if (e.target && e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]')) return;
+  S.select = null; render();
+});
 
 function promptBox(title, label, value, ok, orig) {
   return new Promise((resolve) => {
@@ -3701,7 +3886,7 @@ function promptBox(title, label, value, ok, orig) {
     const done = (v) => { closeSheet(); resolve(v); };
     $('.ok', box).onclick = () => { const v = inp.value.trim(); if (v) done(v); else inp.focus(); };
     $('.cancel', box).onclick = () => done(null);
-    inp.onkeydown = (e) => { if (e.key === 'Enter') $('.ok', box).click(); if (e.key === 'Escape') done(null); };
+    inp.onkeydown = (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === 'Enter') $('.ok', box).click(); if (e.key === 'Escape') done(null); };
     box.closest('.sheet-wrap').addEventListener('click', (e) => { if (e.target.classList.contains('sheet-wrap') || e.target.closest('.sheet-x')) resolve(null); });
   });
 }
@@ -3753,7 +3938,7 @@ function pickFolder(title, avoid = new Set()) {
 }
 function marksRow(v) {
   const b = (g, on, label) => `<button data-k="g:${g}" class="${on ? 'on' : ''}" aria-label="${label}">${gradeSVG(g > 0 ? 1 : g)}</button>`;
-  return `<div class="menu-marks" role="group" aria-label="표시">${b(1, v >= 1, '별 1개')}${b(2, v >= 2, '별 2개')}${b(3, v >= 3, '별 3개')}<span class="sep"></span>${b(-2, v === -2, '세모')}${b(-1, v === -1, '엑스')}${v ? '<button data-k="g:0" class="grade-none">표시 없음</button>' : ''}</div><hr>`;   // 표시 없음 takes the mark off
+  return `<div class="menu-marks" role="group" aria-label="평가">${b(1, v >= 1, '별 1개')}${b(2, v >= 2, '별 2개')}${b(3, v >= 3, '별 3개')}<span class="sep"></span>${b(-2, v === -2, '세모')}${b(-1, v === -1, '엑스')}${v ? '<button data-k="g:0" class="grade-none">평가 지우기</button>' : ''}</div><hr>`;   // 평가 지우기 takes the mark off
 }
 const MI = {
   rename: '<svg viewBox="0 0 24 24"><path d="M4 20h4.5L19 9.5 14.5 5 4 15.5z"/><path d="M12.5 7l4.5 4.5"/></svg>',
@@ -3770,6 +3955,7 @@ const MI = {
 function menu(rect, items, current, head) {
   return new Promise((resolve) => {
     document.querySelectorAll('.menu-wrap').forEach((m) => m.remove());
+    const from = document.activeElement;
     const sheetLike = innerWidth < 600 && matchMedia('(pointer: coarse)').matches;
     const row = ([k, label, cls]) => (k === '-' ? '<hr>' : k === 'marks' ? marksRow(label)
       : `<button type="button" data-k="${k}" class="mi-b ${cls || ''} ${k === current ? 'on' : ''}" role="menuitem">${MI[k] ? `<i class="mi">${MI[k]}</i>` : ''}<span>${esc(label)}</span>${k === current ? `<i class="mi-on">${I.check}</i>` : ''}</button>`);
@@ -3789,6 +3975,8 @@ function menu(rect, items, current, head) {
       document.removeEventListener('keydown', onKey, true);
       w.classList.remove('in'); w.classList.add('out');
       setTimeout(() => w.remove(), 140);
+      const at = document.activeElement;
+      if (from && from !== document.body && from.isConnected && (!at || at === document.body || w.contains(at))) from.focus({ preventScroll: true });
       resolve(v);
     };
     const btns = () => [...m.querySelectorAll('.mi-b:not([disabled])')];
@@ -3811,9 +3999,9 @@ function menu(rect, items, current, head) {
 function size(b) { if (!b) return '0MB'; if (b < 1024 * 1024) return Math.max(1, Math.round(b / 1024)) + 'KB'; if (b < 1024 ** 3) return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + 'MB'; return (b / 1024 ** 3).toFixed(1) + 'GB'; }
 function date(t) { if (!t) return ''; const d = new Date(t), n = new Date(); return d.getFullYear() === n.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`; }
 function keepLeft(t) { const d = Math.ceil((t + 7 * 86400e3 - Date.now()) / 86400e3); return d > 1 ? `${d}일 뒤 완전히 지워짐` : '곧 완전히 지워짐'; }   // the server keeps the trash for 7 days
-function pageOf(s, pages) { const o = Number.isInteger(s.o) ? s.o : null; return o == null ? `${s.page + 1} / ${pages}쪽` : `${s.page + 1 + o >= 1 ? s.page + 1 + o : '표지'} / ${pages + o}면`; }   // same numbers as the reader (표지: before the page printed 1)
+function pageOf(s, pages) { const o = Number.isInteger(s.o) ? s.o : null; return o == null ? `${s.page + 1} / ${pages}쪽` : `${s.page + 1 + o >= 1 ? s.page + 1 + o : '표지'} / ${pages + o}쪽`; }   // same numbers as the reader (표지: before the page printed 1)
 function ago(t) { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s < 90) return '방금'; if (s < 3600) return Math.round(s / 60) + '분 전'; if (s < 86400) return Math.round(s / 3600) + '시간 전'; if (s < 86400 * 7) return Math.round(s / 86400) + '일 전'; return date(t); }
-function stem(n) { return String(n || '').replace(/\.pdf$/i, ''); }
+function stem(n) { return unbidi(n || '').replace(/\.pdf$/i, ''); }
 function rid(n) { const a = 'abcdefghijklmnopqrstuvwxyz0123456789'; const b = crypto.getRandomValues(new Uint8Array(n)); return [...b].map((x) => a[x % 36]).join(''); }
 
-boot().catch((e) => { console.error(e); document.body.innerHTML = '<div class="gate"><div class="gate-card"><h1 class="brand-big">연구실 책장</h1><p class="gate-s">문제가 생겼습니다. 다시 열어 주세요.</p></div></div>'; });
+boot().catch((e) => { console.error(e); booted(); document.body.innerHTML = '<div class="gate"><div class="gate-card"><h1 class="brand-big">연구실 책장</h1><p class="gate-s">문제가 생겼습니다. 다시 열어 주세요.</p></div></div>'; });

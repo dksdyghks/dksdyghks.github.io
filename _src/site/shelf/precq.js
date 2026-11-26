@@ -3,7 +3,8 @@
 // 판결요지 once the spaces and punctuation are taken out, the judgments that have them (in three lists: in the name, else in
 // the 판시사항, else only in the 판결요지). A search asks first for the words as one phrase (every piece of them written
 // together: '소의 이익' as 소의·의이·이익), then for every word anywhere (each word's own pieces), less the phrase's: so the
-// judgments that say what was asked come first, then those that have every word somewhere. Within each, those whose name
+// judgments that say what was asked come first, then those that have every word somewhere (and when these are few, those
+// holding the most of the words, as like it: a question written as a sentence). Within each, those whose name
 // holds it, then those whose 판시사항 does, then the rest; each in the index's own order (대법원 first, then 고등법원, then
 // the rest; within each the leading judgments — 전원합의체, and those cited most — then newest first). Its parts are fetched
 // as they are needed and kept on this device (until the index is made again), so a search asked again, or offline, is
@@ -139,16 +140,62 @@ function ordered(...groups) {
   return out;
 }
 // the words as one phrase first, then every word anywhere. A word of one letter (or of digits) has no piece of its own: it
-// counts within the phrase, and is left aside (left) in the rest
+// counts within the phrase, and is left aside (left) in the rest. The words' own pieces are asked first: when no judgment
+// holds them all, none holds the phrase either, and its pieces across the words are not fetched. A long question's pieces
+// are asked PIECES at a time (one shard each), the next ones only while some judgment still holds all asked so far: a
+// passage pasted from a judgment is still found as it is, and one no judgment holds stops at the first PIECES. When fewer
+// than NEAR_BELOW hold every word (of two different words or more that some judgment holds: of one word alone, the judgments
+// holding some of its pieces are not like it — '사후적고찰' is not '적고'), those that hold the most of them follow (near)
+const PIECES = 48, ACROSS = 4, NEAR_BELOW = 20;
 async function byPhrase(v, ws) {
   const own = ws.map(piecesOf), left = ws.filter((w, i) => !own[i].length);
   const phrase = piecesOf(ws.join(''));
-  if (!phrase.length) return { ...NONE, common: false, left, phrase: 0 };
-  const held = new Map(await Promise.all(phrase.map(async (p) => [p, await heldOf(v, p)])));   // (each word's pieces are among the phrase's)
-  const one = intersect(phrase.map((p) => held.get(p)));
+  if (!phrase.length) return { ...NONE, common: false, left, phrase: 0, exact: 0 };
+  const held = new Map();
+  const ask = (ps) => Promise.all(ps.filter((p) => !held.has(p)).map(async (p) => { held.set(p, await heldOf(v, p)); }));
   const want = [...new Set(own.flat())];
-  const rest = ws.length > 1 && want.length ? minus(intersect(want.map((p) => held.get(p))), one) : NONE;
-  return { ...ordered(one, rest), common: false, left, phrase: one.ids.length };
+  // (a short question's few pieces across the words are asked with its own ones, so it waits for one round, not two)
+  const across = phrase.filter((p) => !want.includes(p)), early = across.length <= ACROSS ? ask(across) : null;
+  if (early) early.catch(() => {});
+  let one = NONE, rest = NONE, all = null;
+  for (let k = 0; k < want.length && (!all || all.ids.length); k += PIECES) {
+    const ps = want.slice(k, k + PIECES);
+    await ask(ps);
+    all = intersect([...(all ? [all] : []), ...ps.map((p) => held.get(p))]);
+  }
+  if (!all || all.ids.length) { await early; await ask(phrase); one = intersect(phrase.map((p) => held.get(p))); }   // (each word's pieces are among the phrase's)
+  if (all && ws.length > 1) rest = minus(all, one);
+  const exact = ordered(one, rest), n = exact.ids.length;
+  const known = new Set(ws.filter((w, i) => own[i].some((p) => held.has(p) && held.get(p).ids.length)));
+  const near = n < NEAR_BELOW && known.size > 1 ? nearest(v, want.filter((p) => held.has(p)), held, exact) : NONE;
+  if (!near.ids.length) return { ...exact, common: false, left, phrase: one.ids.length, exact: n };
+  const ids = new Uint32Array(n + near.ids.length), lvl = new Uint8Array(ids.length);
+  ids.set(exact.ids); ids.set(near.ids, n); lvl.set(exact.lvl); lvl.set(near.lvl, n);
+  return { ids, lvl, common: false, left, phrase: one.ids.length, exact: n };
+}
+// the judgments like the question (near): those holding the most of the words' pieces, each piece counting by how rare it
+// is (idf) and where it is held (the name above the 판시사항 above the 판결요지, WEIGHT) — so the judgments holding most of
+// the words asked, and the rarer ones, come first; of equal ones the index's order. Only those holding at least NEAR_SHARE
+// of what the words weigh (the rarity of all their pieces) are taken, at most NEAR_MAX; not those already found (not)
+const WEIGHT = [1.6, 1.25, 1.0], NEAR_SHARE = 0.25, NEAR_MAX = 200;
+function nearest(v, ps, held, not) {
+  const N = v.n, score = new Float32Array(N), mass = new Float32Array(N), at = new Uint8Array(N).fill(3);
+  let whole = 0;
+  for (const p of ps) {
+    const h = held.get(p), df = h.ids.length;
+    if (!df) continue;   // (a piece no judgment has weighs nothing: a mistyped word does not keep the rest out)
+    const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+    whole += idf;
+    for (let k = 0; k < df; k++) { const x = h.ids[k], l = h.lvl[k]; score[x] += idf * WEIGHT[l]; mass[x] += idf; if (l < at[x]) at[x] = l; }
+  }
+  if (!whole) return NONE;
+  const found = new Uint8Array(N);
+  for (const x of not.ids) found[x] = 1;
+  const min = whole * NEAR_SHARE - 1e-6, take = [];
+  for (let x = 0; x < N; x++) if (mass[x] >= min && !found[x]) take.push(x);
+  take.sort((a, b) => score[b] - score[a] || a - b);
+  const top = take.slice(0, NEAR_MAX);
+  return { ids: Uint32Array.from(top), lvl: Uint8Array.from(top, (x) => at[x]) };
 }
 // an index made before fmt 2: each word's pieces within it, the commonest (v.stop) not in the index and so left aside
 async function byWords(v, ws) {
@@ -184,17 +231,21 @@ async function rowOf(v, id) {
     nos: written || no, enbanc: eb === '1', cited: Number(cited) || 0,
   };
 }
-// a page of the judgments found: { total, rows: [{ no, court, date, name, cat, at, nos, enbanc, cited }], common, left, phrase }
+// a page of the judgments found: { total, exact, rows: [{ no, court, date, name, cat, at, nos, enbanc, cited, near }], common,
+// left, phrase }
 // (no: the number that opens it — of joined numbers the first; nos: the numbers as the judgment writes them (2025다220617,
 // 220618); at: where the words are — 'name', 'points' (판시사항) or 'summary' (판결요지); enbanc: 전원합의체; cited: how many
 // judgments in the mirror name it in their 참조판례; phrase: how many of the first hold the words as one phrase — the rest
-// have every word somewhere; left: the words too short to be asked on their own, so only the phrase holds them; common:
+// have every word somewhere; exact: how many of all (total) hold every word — the rest (near: true on each) are the judgments
+// like it (비슷한 판결), those holding the most of the words first, there only when fewer than NEAR_BELOW hold them all;
+// left: the words too short to be asked on their own, so only the phrase holds them; common:
 // (an index made before fmt 2) every piece asked was too common to be in it)
 export async function search(q, page = 1, size = 20) {
   const m = await matches(q);
   const from = (page - 1) * size, ids = m.ids.slice(from, from + size);
-  const rows = (await Promise.all([...ids].map(async (id, k) => { const r = await rowOf(m.v, id); return r && { ...r, at: ['name', 'points', 'summary'][m.lvl[from + k]] }; }))).filter(Boolean);
-  return { total: m.ids.length, rows, common: m.common, left: m.left || [], phrase: m.phrase || 0 };
+  const exact = m.exact ?? m.ids.length;
+  const rows = (await Promise.all([...ids].map(async (id, k) => { const r = await rowOf(m.v, id); return r && { ...r, at: ['name', 'points', 'summary'][m.lvl[from + k]], ...(from + k >= exact ? { near: true } : {}) }; }))).filter(Boolean);
+  return { total: m.ids.length, exact, rows, common: m.common, left: m.left || [], phrase: m.phrase || 0 };
 }
 // the judgments that name an article in their 참조조문 (공직선거법 제250조: '공직선거법', 250, 0), in the index's order (대법원
 // first, the leading judgments, then newest first): { total, rows }

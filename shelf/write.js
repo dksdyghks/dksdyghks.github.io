@@ -7,10 +7,10 @@
 // note, a table or a reference) and has Claude describe the style once; the server keeps the description, shows it here
 // to be read, and sets it before every request.
 // Kept on this device only: the draft, as typed, and the last 20 answers.
-import * as api from './api.js';
-import * as store from './store.js';
-import { ME } from './research.js';
-import { cleanCopy } from './analyze.js';
+import * as api from './api.js?v=999a221565';
+import * as store from './store.js?v=999a221565';
+import { ME } from './research.js?v=999a221565';
+import { cleanCopy } from './analyze.js?v=999a221565';
 
 const ACTS = {
   polish: { label: '내 문체로 다듬기', rewrite: true },

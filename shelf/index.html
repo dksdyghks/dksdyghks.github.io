@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko" data-v="130777eb1f">
+<html lang="ko" data-v="999a221565">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -15,9 +15,47 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="stylesheet" href="/fonts/pretendard/pretendardvariable-dynamic-subset.css">
-<link rel="stylesheet" href="app.css?v=130777eb1f">
-<script src="config.js?v=130777eb1f"></script>
-<script type="module" src="app.js?v=130777eb1f"></script>
+<link rel="stylesheet" href="app.css?v=999a221565">
+<script src="config.js?v=999a221565"></script>
+<script>
+/* Outside the app's modules, so a module that fails to load stops neither: the service worker is registered here (it brings
+   the next version), and when the app has not started within 12 s (or a module failed) the first screen offers to load it
+   afresh, without this device's saved copies of the app. Papers, marks and the sign-in are kept. */
+(function () {
+  var v = document.documentElement.getAttribute('data-v') || 'dev', up = false, shown = false;
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js?v=' + encodeURIComponent(v)).catch(function () {});
+  window.__shelfUp = function () { up = true; };
+  function fresh() {
+    // the page is fetched afresh first (past the service worker's copy: sw.js lets this one through), and only once it has
+    // come are the saved copies of the app and its worker dropped: with no connection they stay, so the app still opens offline
+    var root = new URL('./', location.href).href, done = function () { location.reload(); };
+    fetch(location.href.split('#')[0], { cache: 'reload' }).then(function (r) {
+      if (!r.ok) return;
+      var steps = [];
+      if (window.caches) steps.push(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k.indexOf('shelf-app-') === 0; }).map(function (k) { return caches.delete(k); })); }));
+      if (navigator.serviceWorker) steps.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.filter(function (r) { return r.scope.indexOf(root) === 0; }).map(function (r) { return r.unregister(); })); }));
+      return Promise.all(steps.map(function (p) { return p.catch(function () {}); }));
+    }).then(done, done);
+    setTimeout(done, 10000);
+  }
+  function stuck() {
+    if (up || shown) return;
+    var card = document.querySelector('.gate-card'), p = document.querySelector('.gate-s');
+    if (!card || !p) return;
+    shown = true;
+    p.textContent = '책장을 여는 데 시간이 오래 걸립니다. 새 버전을 다시 받아 열어 보세요.';
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn primary gate-retry'; b.textContent = '다시 불러오기';
+    b.onclick = function () { b.disabled = true; p.textContent = '다시 불러오는 중…'; fresh(); };
+    card.appendChild(b); b.focus();
+  }
+  setTimeout(stuck, 12000);
+  window.addEventListener('error', function (e) {   // a module that did not load or link: no need to wait the full 12 s
+    if (!up && (e instanceof ErrorEvent || (e.target && e.target.tagName === 'SCRIPT'))) setTimeout(stuck, 1500);
+  }, true);
+})();
+</script>
+<script type="module" src="app.js?v=999a221565"></script>
 </head>
 <body><div class="gate"><div class="gate-card"><h1 class="brand-big">연구실 책장</h1><p class="gate-s">여는 중…</p></div></div></body>
 </html>

@@ -1,5 +1,5 @@
 // Talking to the 연구실 책장 server. Every call carries this device's token; a 401 means the device was signed out.
-import * as store from './store.js';
+import * as store from './store.js?v=999a221565';
 
 const CONFIG_API = (globalThis.SHELF_CONFIG && globalThis.SHELF_CONFIG.api) || '';
 export function base() {
@@ -35,6 +35,12 @@ export class ApiError extends Error {
   }
 }
 export const isOffline = (e) => e && e.code === 'offline';
+// whether the server answered the last time it was asked: a call that got no answer while the device is online means the
+// server (not the internet) is down — the app says which (onReach is told each time this changes)
+let reach = true, onReach = () => {};
+export const serverDown = () => !reach && (typeof navigator === 'undefined' || navigator.onLine !== false);
+export function setReachHandler(fn) { onReach = fn; }
+function reached(ok) { if (ok === reach) return; reach = ok; try { onReach(ok); } catch (e) { /* the app's own */ } }
 
 async function call(path, { method = 'GET', body, headers = {}, raw = false, signal } = {}) {
   if (!base()) throw new ApiError('no_server', 0);
@@ -49,8 +55,10 @@ async function call(path, { method = 'GET', body, headers = {}, raw = false, sig
     });
   } catch (e) {
     if (e && e.name === 'AbortError') throw e;
+    if (navigator.onLine !== false) reached(false);
     throw new ApiError('offline', 0);
   }
+  reached(true);
   if (r.status === 401 && path !== '/login') { await signedOut(sent); throw new ApiError('auth', 401); }
   // raw: the answer itself; raw 'text': its text, and a refusal keeps the server's word for it (no_key, kci_refused …);
   // raw 'stream': the answer itself, to be read as it comes, a refusal kept in the server's words too (글쓰기)

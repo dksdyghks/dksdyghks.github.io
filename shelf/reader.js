@@ -4,10 +4,10 @@
 //   The mouse drags over the text to choose it. Either way, two handles then set its ends exactly, and a small bar offers
 //   형광펜 and 밑줄 colours and 복사. An Apple Pencil marks at once, in the way the last mark was made.
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
-import { lib, pageItems } from './pdfkit.js';
-import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
-import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js';
-import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js';
+import { lib, pageItems } from './pdfkit.js?v=999a221565';
+import { HAS_HAN, searchForm, hangulize, soft } from './naming.js?v=999a221565';
+import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js?v=999a221565';
+import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js?v=999a221565';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
 // soft tints: butter, mint, sky, pink, lilac, apricot.
@@ -114,7 +114,7 @@ export class Reader {
         <div class="rd-title"><b></b></div>
         <div class="rd-acts">
           <button class="ib" data-a="search" aria-label="찾기">${ICON.search}</button>
-          <button class="ib" data-a="panel" aria-label="목차와 밑줄">${ICON.list}</button>
+          <button class="ib" data-a="panel" aria-label="목차와 표시">${ICON.list}</button>
           <button class="ib" data-a="share" aria-label="내려받기와 인쇄">${ICON.share}</button>
         </div>
       </header>
@@ -129,14 +129,14 @@ export class Reader {
       <div class="rd-body">
         <div class="rd-scroll" tabindex="0"><div class="rd-pages"></div></div>
         <aside class="rd-panel" hidden>
-          <div class="seg"><button data-tab="toc" class="on">목차</button><button data-tab="marks">밑줄</button></div>
+          <div class="seg"><button data-tab="toc" class="on">목차</button><button data-tab="marks">표시</button></div>
           <div class="rd-panel-in"></div>
         </aside>
       </div>
       <div class="rd-tools" role="toolbar" aria-label="도구">
         <button data-walk aria-label="표시한 곳만 넘겨 보기">${ICON.walk}<span>넘겨 보기</span></button>
         <button data-undo aria-label="되돌리기" title="되돌리기 (⌘Z)" hidden>${ICON.undo}<span>되돌리기</span></button>
-        <button data-erase aria-label="밑줄 지우기" title="밑줄 지우기">${ICON.erase}<span>지우기</span></button>
+        <button data-erase aria-label="표시 지우기" title="표시 지우기">${ICON.erase}<span>지우기</span></button>
         <button data-top aria-label="맨 위로" title="맨 위로">${ICON.top}<span>맨 위로</span></button>
         <div class="rd-erase" hidden></div>
       </div>
@@ -208,7 +208,7 @@ export class Reader {
     this.endEl = el('div', 'rd-end');
     const gb = (n, label, g) => `<button type="button" data-star="${n}" aria-label="${label}" aria-pressed="false">${gradeSVG(g)}</button>`;
     this.endEl.innerHTML = `<div class="end-cover" aria-hidden="true"><i class="es s3"></i><i class="es s2"></i><span class="ec-pg"><img alt="" decoding="async" hidden></span><span class="end-mark"></span></div>
-      <div class="rd-grade" role="group" aria-label="표시">${gb(1, '별 1개', 1)}${gb(2, '별 2개', 1)}${gb(3, '별 3개', 1)}<span class="sep"></span>${gb(-2, '세모', -2)}${gb(-1, '엑스', -1)}</div>`;
+      <div class="rd-grade" role="group" aria-label="평가">${gb(1, '별 1개', 1)}${gb(2, '별 2개', 1)}${gb(3, '별 3개', 1)}<span class="sep"></span>${gb(-2, '세모', -2)}${gb(-1, '엑스', -1)}</div>`;
     this.endEl.onclick = (e) => { const b = e.target.closest('[data-star]'); if (!b) return; const n = Number(b.dataset.star); const v = n === this.stars ? 0 : n; this.setStars(v, true); this.o.onRate && this.o.onRate(v); };   // the same choice again clears it
     // a mouse over a mark shows, faintly, what a click would draw (the stars before it too)
     const row = this.endEl.querySelector('.rd-grade');
@@ -782,19 +782,19 @@ export class Reader {
     const box = this.$('.rd-erase');
     if (!box.hidden) { box.hidden = true; return; }
     const page = this.current().page, all = this.marks().length, here = this.marks().filter((m) => m.p === page).length;
-    box.innerHTML = `<button type="button" data-er="page" ${here ? '' : 'disabled'}>이 면의 밑줄 지우기<em>${here}</em></button><button type="button" data-er="all" ${all ? '' : 'disabled'}>이 문서의 밑줄 모두 지우기<em>${all}</em></button>`;
+    box.innerHTML = `<button type="button" data-er="page" ${here ? '' : 'disabled'}>이 쪽의 표시 지우기<em>${here}</em></button><button type="button" data-er="all" ${all ? '' : 'disabled'}>이 문서의 표시 모두 지우기<em>${all}</em></button>`;
     box.hidden = false;
   }
   async erase(scope) {   // 'page': the page in view, 'all': the whole paper (the PDF itself stays as it is)
     const page = this.current().page;
     const list = this.marks().filter((m) => scope === 'all' || m.p === page);
-    if (!list.length) { this.o.toast && this.o.toast(scope === 'all' ? '지울 밑줄이 없습니다' : '이 면에는 밑줄이 없습니다'); return; }
-    if (scope === 'all' && this.o.confirm && !(await this.o.confirm('밑줄 모두 지우기', `이 문서의 형광펜과 밑줄 ${list.length}개를 모두 지웁니다. PDF 원본은 그대로이고, 바로 되돌릴 수 있습니다.`, '모두 지우기'))) return;
+    if (!list.length) { this.o.toast && this.o.toast(scope === 'all' ? '지울 표시가 없습니다' : '이 쪽에는 표시가 없습니다'); return; }
+    if (scope === 'all' && this.o.confirm && !(await this.o.confirm('표시 모두 지우기', `이 문서의 표시(밑줄·형광펜) ${list.length}개를 모두 지웁니다. PDF 원본은 그대로이고, 바로 되돌릴 수 있습니다.`, '모두 지우기'))) return;
     const now = Date.now();
     this.remember(list.map((m) => [m.id, { ...m }]));
     for (const m of list) { const i = this.allMarks.findIndex((x) => x.id === m.id); if (i >= 0) this.allMarks[i] = { id: m.id, del: true, t: now }; }
     this.changed();
-    this.o.toast && this.o.toast(`${scope === 'all' ? '' : '이 면의 '}밑줄 ${list.length}개를 지웠습니다`, 7000, { label: '되돌리기', fn: () => this.undo() });
+    this.o.toast && this.o.toast(`${scope === 'all' ? '' : '이 쪽의 '}표시 ${list.length}개를 지웠습니다`, 7000, { label: '되돌리기', fn: () => this.undo() });
   }
   addMarks(list) {
     if (!list.length) return;
@@ -1560,7 +1560,7 @@ export class Reader {
   refPop(c, x, y) {
     this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
     // (an article the paper cites as it read before — 구 …법, "(… 개정되기 전의 것)" — keeps that: the box says the text is today's)
-    this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para, old: c.old || '' } } : { kind: c.kind, no: c.no });
+    this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para, old: c.old || '', oldcon: c.oldcon || '' } } : { kind: c.kind, no: c.no });
   }
   noteShow(v) {
     this.noteView = v;
@@ -1570,7 +1570,8 @@ export class Reader {
     const head = n.querySelector('.note-h b'), body = n.querySelector('.note-t');
     if (v.kind === 'case') { head.textContent = '헌재 ' + v.no; v.copy = '헌재 ' + v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.caseFill(v, head, body); }
     else if (v.kind === 'court') { head.textContent = v.no; v.copy = v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.courtFill(v, head, body); }
-    else { const t = `${v.ref.law} ${artLabel(v.ref)}${v.ref.para ? ` 제${v.ref.para}항` : ''}`; head.textContent = t; v.copy = t; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.artFill(v, head, body); }
+    // (an old constitution's article is headed as the paper names it: 1972년 헌법 제40조)
+    else { const t = `${v.ref.oldcon ? v.ref.oldcon.replace(/\(.*$/, '') : v.ref.law} ${artLabel(v.ref)}${v.ref.para ? ` 제${v.ref.para}항` : ''}`; head.textContent = t; v.copy = t; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.artFill(v, head, body); }
     n.onclick = (e) => {
       const go = (to) => { this.noteTrail.push(v); this.noteShow(to); };
       const ln = e.target.closest('[data-case]');
@@ -1603,7 +1604,7 @@ export class Reader {
     catch (e) {
       if (this.noteView !== v) return;
       // (and the ways to read it elsewhere, as when it is not found)
-      body.innerHTML = missingView(v.no, {}, {}, { failed: e && e.code === 'offline' ? '인터넷에 연결되면 결정 내용을 볼 수 있습니다.' : '지금은 결정을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.' });
+      body.innerHTML = missingView(v.no, {}, {}, { failed: unreached(e, '결정 내용을') || '지금은 결정을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.' });
       this.notePlace(); return;
     }
     // not in the court's data: what is known of it (a first number of joined cases is said so) and the ways to read it elsewhere
@@ -1618,7 +1619,7 @@ export class Reader {
     let d;
     try { d = await (this.o.courtCase ? this.o.courtCase(v.no) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
-      const why = e && e.code === 'offline' ? '인터넷에 연결되면 판결을 볼 수 있습니다.' : '지금은 판결을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
+      const why = unreached(e, '판결을') || '지금은 판결을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
       msg(`<p class="cs-wait">${why}</p><p>${out}</p>`); return;
     }
     if (!d) { msg(`<p class="cs-wait">법제처가 공개한 판결 가운데 이 사건이 없습니다. 공개되지 않은 판결이거나 번호가 다를 수 있습니다.</p><p>${out}</p>`); return; }
@@ -1634,6 +1635,13 @@ export class Reader {
     const outTo = (law, a) => (law ? `<a class="btn ghost small" href="${a ? lawGoKr.article(law.full, a.art, a.sub) : lawGoKr.law(law.full)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a>`
       : `<a class="btn ghost small" href="${lawGoKr.search(r.law === '헌법' ? '대한민국헌법' : r.law)}" target="_blank" rel="noopener">국가법령정보센터에서 검색</a>`);
     const out = outTo(null);
+    // (an old constitution's article — 1972년 헌법 제40조, 유신헌법, 구 헌법(… 전부개정되기 전의 것) — is not today's 헌법's: what
+    // it is, and that its text is not here; no article of today's is opened for it)
+    if (r.oldcon) {
+      body.innerHTML = `<p class="lc-ahead lc-old">옛 헌법 조문입니다 · ${esc(r.oldcon)}</p><p class="cs-wait">현행 헌법과 조문 번호·내용이 달라 현행 조문을 보여 드리지 않습니다. 그때 조문은 국가법령정보센터의 헌법 연혁에서 볼 수 있습니다.</p>`
+        + `<p><a class="btn ghost small" href="${lawGoKr.search('대한민국헌법')}" target="_blank" rel="noopener">국가법령정보센터에서 검색</a></p>`;
+      this.notePlace(); return;
+    }
     const reviewed = r.law === '헌법' ? '' : `<details class="cs-fold" data-reviewed><summary>이 조문을 심판한 헌재 결정</summary><p></p></details>`;
     const wire = () => {
       const f = body.querySelector('[data-reviewed]');
@@ -1650,10 +1658,10 @@ export class Reader {
     try { got = await (this.o.article ? this.o.article(r) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
       if (this.noteView !== v) return;
-      const why = e && e.code === 'offline' ? '인터넷에 연결되면 조문을 볼 수 있습니다.'
-        : e && e.code === 'nolaw' ? '현행 법령 가운데 이 이름의 법령이 없습니다. 폐지되었거나 이름이 바뀐 법률, 또는 외국 법률일 수 있습니다.'
-        : e && e.code === 'repealed' ? `폐지된 법률입니다${e.date ? ` (${esc(dateText(String(e.date).replace(/-/g, '')))} 폐지)` : ''}.`
-        : '지금은 조문을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.';
+      const why = unreached(e, '조문을')
+        || (e && e.code === 'nolaw' ? '현행 법령 가운데 이 이름의 법령이 없습니다. 폐지되었거나 이름이 바뀐 법률, 또는 외국 법률일 수 있습니다.'
+        : e && e.code === 'repealed' ? `폐지된 ${e.was ? '옛 ' : ''}법률입니다${e.date ? ` (${esc(dateText(String(e.date).replace(/-/g, '')))} 폐지${e.now ? ` · 뒤를 이은 법률: ${esc(e.now)}` : ''})` : ''}.`
+        : '지금은 조문을 불러오지 못했습니다. 잠시 뒤 다시 눌러 보세요.');
       body.innerHTML = `<p class="cs-wait">${why}</p><p>${out}</p>${reviewed}`; wire(); this.notePlace(); return;
     }
     if (this.noteView !== v) return;
@@ -1738,8 +1746,8 @@ export class Reader {
   /* ---------------- page indicator and jumps ---------------- */
   // (a page before the one printed 1 — a notice or a cover put before the paper — has no number of its own: 표지)
   label(n) { const o = this.labelOff(), v = n + 1 + (o == null ? 0 : o); return v >= 1 ? String(v) : '표지'; }
-  unit() { return this.labels && this.labels.confident ? '면' : '쪽'; }
-  pageName(n) { const l = this.label(n); return l === '표지' ? l : l + this.unit(); }   // a page by itself, as a mark or a hit names it (표지, not 표지면)
+  unit() { return '쪽'; }   // printed or not, a page is 쪽, as in the shelf
+  pageName(n) { const l = this.label(n); return l === '표지' ? l : l + this.unit(); }   // a page by itself, as a mark or a hit names it (표지, not 표지쪽)
   updateInd() {
     if (!this.pages.length) return;
     const c = this.current().page;
@@ -1765,7 +1773,7 @@ export class Reader {
       const n = parseInt(num.value, 10);
       if (Number.isFinite(n)) {
         let idx = n - 1 - off;
-        if (off && (idx < 0 || idx > this.N - 1) && n >= 1 && n <= this.N) idx = n - 1;   // typed the PDF's own page number (e.g. 6 for "201–220면")
+        if (off && (idx < 0 || idx > this.N - 1) && n >= 1 && n <= this.N) idx = n - 1;   // typed the PDF's own page number (e.g. 6 for "201–220쪽")
         go(idx);
       }
       close();
@@ -1824,10 +1832,10 @@ export class Reader {
         : '<p class="empty">이 문서에는 목차가 없습니다.</p>';
     } else {
       const ms = this.marks().sort((a, b) => a.p - b.p || a.rects[0][1] - b.rects[0][1]);
-      this.$('.rd-panel .seg [data-tab="marks"]').textContent = ms.length ? `밑줄 ${ms.length}` : '밑줄';
+      this.$('.rd-panel .seg [data-tab="marks"]').textContent = ms.length ? `표시 ${ms.length}` : '표시';
       box.innerHTML = ms.length ? '<ul class="mlist">' + ms.map((m) => `<li><button data-mark="${m.id}"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${m.color}"></i><span>${esc(m.text)}</span><em>${this.pageName(m.p)}</em></button></li>`).join('') + '</ul>'
-        : '<p class="empty">아직 밑줄이 없습니다.<br>형광펜이나 밑줄을 켜고 글자 위를 드래그하세요.</p>';
-      if (ms.length) box.insertAdjacentHTML('beforeend', '<div class="mfoot"><button type="button" class="btn ghost" data-copyall>모두 복사</button><span class="sp"></span><button type="button" class="btn ghost danger" data-clear>밑줄 모두 지우기</button></div>');
+        : '<p class="empty">아직 표시가 없습니다.<br>형광펜이나 밑줄을 켜고 글자 위를 드래그하세요.</p>';
+      if (ms.length) box.insertAdjacentHTML('beforeend', '<div class="mfoot"><button type="button" class="btn ghost" data-copyall>모두 복사</button><span class="sp"></span><button type="button" class="btn ghost danger" data-clear>표시 모두 지우기</button></div>');
     }
   }
   panelClick(e) {
@@ -1873,19 +1881,21 @@ export class Reader {
     const texts = await this.pageTexts();
     if (q !== this.findQ) return;
     const plain = hangulize(q.replace(/\s+/g, '')).toLowerCase(), sk = soft(plain);   // hanja read in Hangul (see naming.searchForm)
-    const hits = [];
+    const hits = []; let more = false;   // past FIND_MAX the count says so ('999곳 넘음') instead of stopping quietly
     texts.forEach((t, page) => {
       const { flat, map, han } = squeeze(t), key = han ? sk : plain;
       let i = flat.indexOf(key);
-      while (i >= 0 && hits.length < 999) {
+      while (i >= 0 && hits.length < FIND_MAX) {
         const a = map[i], b = map[i + key.length - 1] + 1;
         hits.push({ page, snip: t.slice(Math.max(0, a - 28), a), word: t.slice(a, b), after: t.slice(b, b + 40) });
         i = flat.indexOf(key, i + key.length);
       }
+      if (i >= 0) more = true;
     });
-    this.hits = hits;
-    n.textContent = hits.length ? `${hits.length}곳` : '없음';
+    this.hits = hits; this.hitsMore = more;
+    n.textContent = more ? `${FIND_MAX}곳 넘음` : hits.length ? `${hits.length}곳` : '없음';
     list.innerHTML = hits.slice(0, 200).map((h, i) => `<button data-hit="${i}"><em>${this.pageName(h.page)}</em><span>…${esc(h.snip)}<mark>${esc(h.word)}</mark>${esc(h.after)}…</span></button>`).join('');
+    if (hits.length > 200) list.insertAdjacentHTML('beforeend', `<p class="rd-find-more" style="padding:10px 14px;font-size:13px;color:var(--faint)">${more ? `${FIND_MAX}곳이 넘어` : `${hits.length}곳 가운데`} 앞 200곳만 보입니다</p>`);
     list.hidden = !hits.length;
     for (const p of this.pages) if (p.tl) this.paintHits(p);
     if (hits.length) {
@@ -1896,7 +1906,7 @@ export class Reader {
   gotoHit(i, keepList) {
     const h = this.hits[i]; if (!h) return;
     this.hitI = i;
-    this.$('.rd-find-n').textContent = `${i + 1} / ${this.hits.length}`;
+    this.$('.rd-find-n').textContent = `${i + 1} / ${this.hits.length}${this.hitsMore ? '+' : ''}`;
     if (!keepList || innerWidth < 900) this.$('.rd-find-list').hidden = true;
     this.scrollToPage(h.page, 0, false);
     setTimeout(() => {
@@ -1950,6 +1960,14 @@ export class Reader {
 }
 
 let ocrMeasure = null;
+// no answer: the internet is off, or it is on and the shelf's server is down ('server' from cases.js and laws.js; an 'offline'
+// while the device is online is the server too) — said as app.js says it
+function unreached(e, what) {
+  const c = e && e.code;
+  if (c !== 'offline' && c !== 'server') return '';
+  return c === 'offline' && navigator.onLine === false ? `인터넷에 연결되면 ${what} 볼 수 있습니다.` : '책장 서버에 연결할 수 없습니다. 잠시 뒤 다시 눌러 보세요.';
+}
+const FIND_MAX = 999;   // 찾기 keeps at most this many hits
 // every box of B lies within a box of A on the same line (A covers B)
 function covers(A, B) {
   const e = 0.004;

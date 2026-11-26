@@ -2,7 +2,8 @@
 //
 // Sign-in: the owner's 6-digit PIN, kept here only as a peppered SHA-256 hash (env.PIN_HASH, env.PEPPER are secrets).
 //   A correct PIN gives the device a long random token; the token is what every later request carries.
-//   Failed PINs are counted in R2 (auth/fails.json): 8 failures within an hour lock sign-in for an hour.
+//   Tries are limited per address and slowed down for everyone (see login): 8 wrong PINs from one address within an hour lock
+//   that address for the hour; past 30 wrong PINs within an hour from anywhere, sign-in takes one try a minute.
 //
 // R2 layout:
 //   lib/index.json                 the library: folders and files (names, places, sizes, dates, trash)
@@ -16,7 +17,9 @@
 //   state.json                     where each file was last being read (newest wins)
 //   prefs.json                     a few choices kept across devices: the KCI papers set aside (관심 없음), newest wins
 //   auth/devices/<sha256(token)>   one small record per signed-in device
-//   auth/fails.json                failed sign-in counter
+//   auth/try/<addr>/<ms>-<r>       one sign-in try from one address (a hash of it), kept an hour unless the PIN was right
+//   auth/tryall/<ms>-<r>           the same try, among everyone's
+//   auth/known/<addr>              an address the right PIN came from (not slowed when many addresses try; see login)
 //   write/style.json               the owner's writing style as Claude described it from the owner's own papers (글쓰기)
 //   write/use.json                 글쓰기 requests counted for the day (the owner's day, in Korea), for the daily cap, and
 //                                  what they cost (estimated from the usage Anthropic reports), for the day's budget
@@ -96,7 +99,7 @@ async function route(req, env, ctx) {
   const m = req.method;
 
   try {
-    if (p[1] === 'login' && m === 'POST') return await login(req, env);
+    if (p[1] === 'login' && m === 'POST') return await login(req, env, ctx);
     if (p[1] === 'ping') return json({ ok: true, at: Date.now() });
     const dev = await authenticate(req, env, ctx);
     if (!dev) return err('auth', 401);
@@ -846,27 +849,72 @@ function token() {
   const b = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function cleanName(s, max = 40) {
-  return String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+function cleanName(s, max = 40) {   // (and no characters that turn the text around: '\u202efdp.exe' would show as 'exe.pdf')
+  return String(s || '').replace(/[\u202a-\u202e\u2066-\u2069]/g, '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-async function login(req, env) {
+// Sign-in tries. No one counter everyone shares: parallel requests all read it before any wrote it (60 at once got 51 checks),
+// and a stranger could fill it to keep the owner out. Each try is first written as its own small object, and only then are the
+// tries counted, by listing them (R2's lists are strongly consistent). Of any tries, the one written last sees all the others,
+// so however many arrive at once, no more than TRY_IP of one address are ever checked in an hour. A try refused before its
+// PIN was looked at is taken back, so waiting out the time is enough; a right PIN clears its address.
+//   per address (Cloudflare's CF-Connecting-IP, kept only as a hash): 8 wrong PINs within an hour lock that address for the hour
+//   everyone: past TRY_ALL wrong PINs within an hour, one try a minute — a try that meets another in the same minute waits —
+//   so tries from many addresses are slowed down. An address the right PIN came from before (auth/known/<hash>) is not
+//   slowed (only its own 8 an hour hold): else a stranger's one wrong PIN at the start of each minute kept the owner out
+const TRY_IP = 8, TRY_ALL = 30, TRY_HOUR = 3600e3, TRY_SLOT = 60e3;
+async function triesOf(env, prefix) {
+  const out = [];
+  let cursor;
+  do {
+    const l = await env.BUCKET.list({ prefix, cursor, limit: 1000 });
+    for (const o of l.objects) if (o) out.push({ key: o.key, at: Number(o.key.slice(prefix.length).split('-')[0]) || 0 });
+    cursor = l.truncated ? l.cursor : undefined;
+  } while (cursor && out.length < 20000);
+  return out.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
+async function login(req, env, ctx) {
   if (!env.PIN_HASH || !env.PEPPER) return err('not_configured', 503);
-  const now = Date.now();
-  const failsObj = await env.BUCKET.get('auth/fails.json');
-  let fails = failsObj ? await failsObj.json() : { count: 0, first: now, until: 0 };
-  if (fails.until > now) return err('locked', 429, { until: fails.until });
   const body = await readJSON(req, 4096);
+  const now = Date.now();
+  const addr = (await sha256hex(env.PEPPER + ':addr:' + (req.headers.get('cf-connecting-ip') || 'local'))).slice(0, 20);
+  const mine = 'auth/try/' + addr + '/', every = 'auth/tryall/';
+  const name = String(now).padStart(15, '0') + '-' + token().slice(0, 10);
+  const later = (w) => { if (ctx && ctx.waitUntil) ctx.waitUntil(w.catch(() => {})); else return w.catch(() => {}); };
+  const lockedUntil = (list) => list[Math.max(0, list.length - TRY_IP)].at + TRY_HOUR;   // when fewer than TRY_IP are left in the hour
+  // this address
+  await env.BUCKET.put(mine + name, '1');
+  const here = await triesOf(env, mine);
+  const old = here.filter((t) => t.at <= now - TRY_HOUR).map((t) => t.key);
+  const recent = here.filter((t) => t.at > now - TRY_HOUR);
+  if (old.length) await later(deleteMany(env, old));
+  if (recent.length > TRY_IP) {
+    await env.BUCKET.delete(mine + name);
+    const others = recent.filter((t) => t.key !== mine + name);
+    return err('locked', 429, { left: 0, until: lockedUntil(others) });
+  }
+  // everyone
+  await env.BUCKET.put(every + name, '1');
+  const all = await triesOf(env, every);
+  const oldAll = all.filter((t) => t.at <= now - TRY_HOUR).map((t) => t.key);
+  if (oldAll.length) await later(deleteMany(env, oldAll.slice(0, 900)));
+  const recentAll = all.filter((t) => t.at > now - TRY_HOUR);
+  if (recentAll.length > TRY_ALL && !(await env.BUCKET.head('auth/known/' + addr))) {
+    const slot = Math.floor(now / TRY_SLOT);
+    if (recentAll.filter((t) => Math.floor(t.at / TRY_SLOT) === slot).length > 1) {
+      await deleteMany(env, [mine + name, every + name]);
+      return err('locked', 429, { until: (slot + 1) * TRY_SLOT, slow: true });
+    }
+  }
   const pin = String(body.pin || '');
   const ok = /^\d{6}$/.test(pin) && sameHex(await sha256hex(env.PEPPER + ':' + pin), env.PIN_HASH);
   if (!ok) {
-    if (now - fails.first > 3600e3) fails = { count: 0, first: now, until: 0 };
-    fails.count++;
-    if (fails.count >= 8) { fails.until = now + 3600e3; fails.count = 0; fails.first = now; }
-    await env.BUCKET.put('auth/fails.json', JSON.stringify(fails));
-    return err(fails.until > now ? 'locked' : 'pin', fails.until > now ? 429 : 401, { left: fails.until > now ? 0 : 8 - fails.count, until: fails.until || undefined });
+    const left = TRY_IP - recent.length;
+    return left > 0 ? err('pin', 401, { left }) : err('locked', 429, { left: 0, until: lockedUntil(recent) });
   }
-  if (failsObj) await env.BUCKET.delete('auth/fails.json');
+  await deleteMany(env, [...here.map((t) => t.key), every + name, 'auth/fails.json']);   // (auth/fails.json: the counter of before)
+  await env.BUCKET.put('auth/known/' + addr, String(now));
   const t = token();
   const key = 'auth/devices/' + (await sha256hex(t));
   const rec = { name: cleanName(body.device) || '기기', created: now, seen: now };
@@ -999,7 +1047,19 @@ function apply(idx, ops, dev, now) {
         if ('ocr' in s) f.ocr = Math.max(0, Number(s.ocr) || 0);   // when its scanned pages were read (0: not yet)
         for (const k of ['thumb', 'text']) if (k in s) f[k] = !!s[k];
         if ('pending' in s && !s.pending) delete f.pending;
-        if ('stars' in s) { const v = Math.round(Number(s.stars)); f.stars = (v >= 1 && v <= 3) || v === -1 || v === -2 ? v : 0; f.rated = f.stars ? now : null; }   // after reading: 1–3 stars, -2 = △ (unclear; skim once more), -1 = ✕ (no need to come back); 0 clears
+        // after reading: 1–3 stars, -2 = △ (unclear; skim once more), -1 = ✕ (no need to come back); 0 clears. op.at is when it was
+        // given (a mark kept on a device while offline arrives late): the newer one stays, so an older ★ sent late never
+        // replaces a ✕ given since on another device. An op without op.at (an older app) counts as given now.
+        // op.sent (newer apps) is when the device sent it, by the same device clock as op.at: the mark is then as old as
+        // sent − at by this server's clock, so a device running slow or fast neither loses a fresh ★ nor wins with an old one.
+        // Without op.sent (an older app) op.at is taken as it is, never later than now.
+        let stale = false;
+        if ('stars' in s) {
+          const given = Number.isFinite(op.at) && op.at > 0, sent = given && Number.isFinite(op.sent) && op.sent > 0;
+          const at = !given ? now : sent ? now - Math.max(0, op.sent - op.at) : Math.min(op.at, now);
+          if ((f.starsAt || f.rated || 0) > at) stale = r.stale = true;
+          else { const v = Math.round(Number(s.stars)); f.stars = (v >= 1 && v <= 3) || v === -1 || v === -2 ? v : 0; f.rated = f.stars ? at : null; f.starsAt = at; }
+        }
         if ('paper' in s) {   // where it was published (학술지 · 학회 · 권호 · 발간일), kept here so every device shows it at once
           const p = s.paper && typeof s.paper === 'object' ? s.paper : null;
           const str = (v, n) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -1007,7 +1067,7 @@ function apply(idx, ops, dev, now) {
           const v = p ? { journal: str(p.journal, 120), society: str(p.society, 120), issue: str(p.issue, 60), date: /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/.test(date) ? date : '' } : null;
           if (v && (v.journal || v.date)) f.paper = v; else delete f.paper;
         }
-        if (Object.keys(s).some((k) => k !== 'paper')) f.modified = now;   // a line filled in is not a change of the paper
+        if (Object.keys(s).some((k) => k !== 'paper' && !(k === 'stars' && stale))) f.modified = now;   // a line filled in is not a change of the paper
         r.file = f;
         break;
       }

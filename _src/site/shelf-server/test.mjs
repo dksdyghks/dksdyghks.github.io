@@ -29,7 +29,51 @@ x = await j(await call('/login', { method: 'POST', body: JSON.stringify({ pin: '
 ok(x.status === 429 && x.body.until > Date.now(), '8th wrong PIN locks for an hour');
 x = await j(await call('/login', { method: 'POST', body: JSON.stringify({ pin: PIN }) }));
 ok(x.status === 429, 'even the right PIN waits while locked');
-await bucket.delete('auth/fails.json');
+const clearTries = async () => { const l = await bucket.list({ prefix: 'auth/try' }); await bucket.delete(l.objects.filter(Boolean).map((o) => o.key)); };
+const login = (pin, ip, device) => call('/login', { method: 'POST', body: JSON.stringify({ pin, device }), headers: ip ? { 'cf-connecting-ip': ip } : {} }).then(j);
+x = await login(PIN, '10.0.0.9'); ok(x.status === 200, 'the lock is for that address only: the right PIN from another address gets in');
+// 60 wrong PINs at once from one address: at most 8 are checked (the try is written before it is counted), the rest refused
+{
+  await clearTries();
+  const hash = env.PIN_HASH; let reads = 0;
+  Object.defineProperty(env, 'PIN_HASH', { configurable: true, get() { reads++; return hash; } });
+  const rs = await Promise.all(Array.from({ length: 60 }, (_, i) => login(String(100000 + i), '10.0.0.1')));
+  const checks = reads - 60;   // read once on the way in, and once more for a PIN that is compared
+  Object.defineProperty(env, 'PIN_HASH', { configurable: true, writable: true, value: hash });
+  ok(checks <= 8 && checks >= 1, `60 parallel wrong PINs: ${checks} checked (at most 8)`);
+  ok(rs.filter((r) => r.status === 401).length <= 7 && rs.every((r) => r.status === 401 || r.status === 429), `the rest refused (${rs.filter((r) => r.status === 429).length} × 429)`);
+  x = await login(PIN, '10.0.0.1'); ok(x.status === 429 && x.body.until > Date.now(), 'that address stays locked, even for the right PIN');
+  x = await login(PIN, '10.0.0.2'); ok(x.status === 200, 'the owner elsewhere is not locked out');
+  x = await login('000000', '10.0.0.1'); const u1 = x.body.until;
+  x = await login('000000', '10.0.0.1'); ok(x.status === 429 && x.body.until === u1, 'waiting out the hour is enough: refused tries do not push the lock on');
+  const realNow = Date.now; Date.now = () => realNow() + 3600e3 + 5000;
+  x = await login(PIN, '10.0.0.1'); ok(x.status === 200, 'an hour later the address gets in again');
+  Date.now = realNow;
+}
+// many addresses (past 30 wrong PINs in an hour): one try a minute, so nobody is locked out for good
+{
+  await clearTries();
+  const realNow = Date.now; let off = 0; Date.now = () => realNow() + off;
+  for (let a = 0; a < 5; a++) for (let i = 0; i < 7; i++) await login('11111' + i, '10.1.0.' + a);
+  off = 61e3;   // the next minute
+  const rs = await Promise.all(Array.from({ length: 20 }, (_, i) => login('22222' + (i % 10), '10.2.0.' + i)));
+  ok(rs.filter((r) => r.status === 401).length <= 1 && rs.filter((r) => r.status === 429 && r.body.slow).length >= 19, `20 tries from 20 addresses in one minute: ${rs.filter((r) => r.status === 401).length} checked`);
+  x = await login(PIN, '10.3.0.1'); ok(x.status === 429 && x.body.slow && x.body.until - Date.now() <= 60e3, 'the owner waits a minute at most (slow, not locked)');
+  off = 122e3;
+  x = await login(PIN, '10.3.0.1'); ok(x.status === 200, 'the minute after, the right PIN gets in');
+  // a stranger's one wrong PIN at the start of each minute would keep a slowed owner out: an address the right PIN came from
+  // before is not slowed (its own 8 an hour still hold)
+  // (the minutes are the server's whole clock minutes: each round starts just after one begins, so the stranger's try, the
+  // owner's and the new address's below all fall in the same minute whatever second the test started at)
+  let ownerIn = 0; const al = 60e3 - (realNow() % 60e3);
+  for (let m = 3; m <= 7; m++) { off = al + m * 60e3 + 500; await login('333333', '10.4.0.1'); off += 20e3; if ((await login(PIN, '10.3.0.1')).status === 200) ownerIn++; }
+  ok(ownerIn === 5, `a known address is not kept out by a stranger's try each minute (${ownerIn} of 5 in)`);
+  x = await login(PIN, '10.3.0.9'); ok(x.status === 429 && x.body.slow, 'a new address is still slowed meanwhile');
+  Date.now = realNow;
+  await clearTries();
+  const kn = await bucket.list({ prefix: 'auth/known/' }); await bucket.delete(kn.objects.filter(Boolean).map((o) => o.key));
+  const devs = await bucket.list({ prefix: 'auth/devices/' }); await bucket.delete(devs.objects.filter(Boolean).map((o) => o.key));   // (the devices these tests signed in)
+}
 x = await j(await call('/login', { method: 'POST', body: JSON.stringify({ pin: PIN, device: '아이패드' }) }));
 ok(x.status === 200 && x.body.token && x.body.device.name === '아이패드', 'right PIN -> token');
 const T = x.body.token;
@@ -61,6 +105,51 @@ x = await ops([{ op: 'updateFile', id, set: { stars: -1 } }]);
 ok(x.body.index.files[0].stars === -1, '✕ (no need to come back) kept as -1');
 x = await ops([{ op: 'updateFile', id, set: { stars: -2 } }]);
 ok(x.body.index.files[0].stars === -2, '△ (skim once more) kept as -2');
+// a mark kept offline arrives late with the time it was given: the newer mark stays
+x = await ops([{ op: 'updateFile', id, set: { stars: -1 }, at: Date.now() }]);
+x = await ops([{ op: 'updateFile', id, set: { stars: 3 }, at: Date.now() - 60e3 }]);
+ok(x.body.index.files[0].stars === -1 && x.body.results[0].stale, 'an older ★ sent late does not replace a newer ✕');
+x = await ops([{ op: 'updateFile', id, set: { stars: 0 } }]);
+x = await ops([{ op: 'updateFile', id, set: { stars: 2 }, at: Date.now() - 60e3 }]);
+ok(x.body.index.files[0].stars === 0, 'nor a newer "no mark"');
+x = await ops([{ op: 'updateFile', id, set: { stars: 1 }, at: Date.now() + 3600e3 }]);
+ok(x.body.index.files[0].stars === 1 && x.body.index.files[0].starsAt <= Date.now(), 'a time ahead of the server counts as now');
+x = await ops([{ op: 'updateFile', id, set: { stars: -2 } }]);
+ok(x.body.index.files[0].stars === -2 && !x.body.results[0].stale, 'an op without a time (an older app) counts as given now');
+// device clocks: with op.sent (when the device sent it, by its own clock) the mark's age is sent − at, by the server's clock
+{
+  const SLOW = -10 * 60e3, FAST = 10 * 60e3;   // a device 10 minutes behind, another 10 minutes ahead
+  x = await ops([{ op: 'updateFile', id, set: { stars: -1 } }]);   // ✕ given now (server's clock)
+  let d = Date.now() + SLOW;   // the slow device gives ★★★ a second after: by its clock 10 minutes ago
+  x = await ops([{ op: 'updateFile', id, set: { stars: 3 }, at: d + 1000, sent: d + 1000 }]);
+  ok(x.body.index.files[0].stars === 3 && !x.body.results[0].stale, 'a slow device clock: a fresh ★ with its send time is not refused as stale');
+  ok(Math.abs(x.body.index.files[0].starsAt - Date.now()) < 5000, 'its time is set by the server clock');
+  // (the app reads the server's clock from index.updated, the time the ops were written: starsAt is exactly updated − (sent − at))
+  ok(x.body.index.files[0].starsAt === x.body.index.updated, 'sent = at: the mark is as of when the server wrote it (index.updated)');
+  await new Promise((r) => setTimeout(r, 150));   // (a mark 50 ms old, given after the one above)
+  x = await ops([{ op: 'updateFile', id, set: { stars: 3 }, at: d + 2000, sent: d + 2050 }]);
+  ok(x.body.index.files[0].stars === 3 && !x.body.results[0].stale && x.body.index.files[0].starsAt === x.body.index.updated - 50, 'starsAt = index.updated − (sent − at)');
+  x = await ops([{ op: 'updateFile', id, set: { stars: -1 }, at: d + 1000 }]);
+  ok(x.body.index.files[0].stars === 3 && x.body.results[0].stale, 'the same without its send time (an older app): taken by the device clock, refused');
+  // the fast device gave ✕ 5 minutes ago while offline, and sends it now: it is older than the ★ above, so it stays ★
+  d = Date.now() + FAST;
+  x = await ops([{ op: 'updateFile', id, set: { stars: -1 }, at: d - 5 * 60e3, sent: d }]);
+  ok(x.body.index.files[0].stars === 3 && x.body.results[0].stale, 'a fast device clock: a ✕ kept offline 5 minutes is older than a ★ given since');
+  ok(x.body.index.files[0].starsAt <= Date.now(), 'the time kept is never ahead of the server');
+  // two queued ops sent together: their order by age stays (the newer of the two wins)
+  d = Date.now() + FAST;
+  x = await ops([{ op: 'updateFile', id, set: { stars: 1 }, at: d, sent: d }, { op: 'updateFile', id, set: { stars: -2 }, at: d - 2000, sent: d }]);
+  ok(x.body.index.files[0].stars === 1 && !x.body.results[0].stale && x.body.results[1].stale, 'of two sent together, the one given later stays');
+  // a send time before its own time (the device clock was set back in between) counts as now, not as later than now
+  x = await ops([{ op: 'updateFile', id, set: { stars: -1 }, at: Date.now(), sent: Date.now() - 60e3 }]);
+  ok(x.body.index.files[0].stars === -1 && x.body.index.files[0].starsAt <= Date.now(), 'a send time before the given time counts as now');
+  x = await ops([{ op: 'updateFile', id, set: { stars: 2 }, at: 'x', sent: Date.now() }]);
+  ok(x.body.index.files[0].stars === 2 && !x.body.results[0].stale, 'a send time with no given time: counts as now');
+  x = await ops([{ op: 'updateFile', id, set: { stars: -2 } }]);
+}
+x = await ops([{ op: 'addFolder', folder: { id: 'f_bidibidi00', name: '\u202efdp.exe\u202c 폴더', parent: null } }]);
+ok(x.body.index.folders.find((f) => f.id === 'f_bidibidi00').name === 'fdp.exe 폴더', 'characters that turn the text around are taken out of names');
+x = await ops([{ op: 'purgeFolder', id: 'f_bidibidi00' }]);
 x = await ops([{ op: 'updateFile', id, set: { name: '  기본권   제한의 한계.pdf ', folder: 'f_aaaaaaaaaa' } }]);
 ok(x.body.index.files[0].name === '기본권 제한의 한계.pdf' && x.body.index.files[0].folder === 'f_aaaaaaaaaa', 'rename + move (name tidied)');
 // concurrent writers: no update is lost

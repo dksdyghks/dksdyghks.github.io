@@ -1,8 +1,8 @@
 // 헌재 결정 바로 보기: case numbers as papers cite them (헌재 2004. 10. 21. 2004헌마554등), and the decision itself from
 // 헌법재판소 판례정보 (공공데이터포털), asked through the 책장 server once and kept on this device (a decision does not change).
-import * as api from './api.js';
-import * as store from './store.js';
-import { scanArticles, articleScope, scanCourtCases, artLabel, lawGoKr, corners } from './laws.js';
+import * as api from './api.js?v=999a221565';
+import * as store from './store.js?v=999a221565';
+import { scanArticles, articleScope, scanCourtCases, artLabel, lawGoKr, corners, oldLaw } from './laws.js?v=999a221565';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -51,7 +51,7 @@ const asking = new Map();
 // the decision, or null when the court's data has no such case; onRow(first) gets the list's line (name, date, result)
 // while the full text is still on its way. hint: what the row it was opened from says of it ({ name, date, area, nick, seq }:
 // a line of 주요 결정 or of a list) — a second way to it when its number finds nothing, and what is shown of it when nothing
-// does (missingView). Throws { code: 'offline' | 'unavailable' }.
+// does (missingView). Throws { code: 'offline' | 'server' | 'unavailable' }.
 export function decision(no, onRow, hint) {
   if (!asking.has(no)) asking.set(no, ask(no, onRow, hint).finally(() => asking.delete(no)));
   return asking.get(no);
@@ -116,9 +116,12 @@ async function detailed(no, row, onRow, filed, group) {
   return d;
 }
 const fail = (code) => Object.assign(new Error(code), { code });
+// no answer from the shelf's server: 'offline' when the device has no internet, 'server' when it has one and the server is
+// down — told apart as app.js tells them (navigator.onLine), so neither is said to be the other
+const noAnswer = () => (navigator.onLine === false ? 'offline' : 'server');
 async function get(op, params, svc = SVC) {
   try { return await api.publicData(svc + op, params); }
-  catch (e) { throw fail(api.isOffline(e) ? 'offline' : 'unavailable'); }
+  catch (e) { throw fail(api.isOffline(e) ? noAnswer() : 'unavailable'); }
 }
 // the list's line for a number: the line that is that number, else one that carries it with others ('2012헌마190 등',
 // '2004헌마554·566(병합)'). (Twenty lines: a number may also answer the numbers that begin with it, 2012헌마19 → 2012헌마190 …)
@@ -175,9 +178,25 @@ export async function byName(q, page = 1, panel = '전원재판부') {
 const joinedNo = (s) => /등|병합|\d\s*[,·ㆍ]\s*\d/.test(String(s || ''));
 // the court's digest of holdings (판례요지집): entries whose text has the words, each placed under the article it concerns.
 // A line names its heading (seq) and its own title; the words asked go with it (two holdings may share a title: holding)
+// The service lists them by heading, last first — 조례편, then 법령편 from <하> back to <가>, 헌법편 last: for '헌법 제37조 제2항'
+// (391) the first pages were all 기타 법령편 and its holdings on 제37조 itself came at the very end. Read whole (pages of 100,
+// up to 500) and shown in the digest's own order instead: 헌법편 first, by the constitution's order, then 법령편 (가나다), then
+// 조례편. (The list carries no decision number or day — only each heading's holdings do — so it cannot be ordered by those.)
+const HOLD_ALL = 500, HOLD_PAGE = 20;
+const digestPart = (path) => (/^헌법편/.test(path) ? 0 : /^기타 법령편\s*>\s*법령편/.test(path) ? 1 : /^기타 법령편\s*>\s*조례편/.test(path) ? 2 : 3);
 export async function byHolding(q, page = 1) {
-  const r = await list(SVC, 'getOcprOutlineList', { content: q }, page);
-  return { total: r.total, rows: r.rows.map((x) => ({ seq: one(x.seqNo), title: one(x.title), path: one(x.cntntpth), q })) };
+  const row = (x) => ({ seq: one(x.seqNo), title: one(x.title), path: one(x.cntntpth), q });
+  const first = await list(SVC, 'getOcprOutlineList', { content: q }, 1, 100);
+  if (first.total > HOLD_ALL || (first.total > first.rows.length && first.rows.length < 100)) {   // (too many, or pages smaller than asked: as the service orders them)
+    // (the page asked, from the first answer when it holds it: no second ask for what is here)
+    if (first.rows.length >= page * HOLD_PAGE) return { total: first.total, rows: first.rows.slice((page - 1) * HOLD_PAGE, page * HOLD_PAGE).map(row) };
+    const r = await list(SVC, 'getOcprOutlineList', { content: q }, page);
+    return { total: r.total, rows: r.rows.map(row) };
+  }
+  const rest = await Promise.all(Array.from({ length: Math.ceil(first.total / 100) - 1 }, (_, i) => list(SVC, 'getOcprOutlineList', { content: q }, i + 2, 100)));
+  const all = [first, ...rest].flatMap((r) => r.rows).map(row).map((x, i) => ({ x, i, k: [digestPart(x.path), Number(x.seq) || 0] }));
+  all.sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i);
+  return { total: Math.max(first.total, all.length), rows: all.slice((page - 1) * HOLD_PAGE, page * HOLD_PAGE).map((a) => a.x) };
 }
 /* One holding of the digest. Its seqNo names a heading — 【관습헌법】, 헌법 제130조 제2항, a law of 기타 법령편 — and asked by it
    the service answers every holding under that heading, in its own order: the holding tapped is the one with its title (five
@@ -293,6 +312,21 @@ function clean(s) {
 }
 // a name on one line. '？' (or '?') right between two Hangul letters is a '·' lost on the way to the court's data
 // ('탈법방법에 의한 문서？인쇄물의 배부？게시 금지'): a question mark there never asks anything
+// a decision's or judgment's own headings — 【주문】, 【주 문】, 【이 유】, 【참 조 조 문】 — read alike, the spaces in them aside.
+// dropHead: a part that begins with its own heading ('【주 문】⏎1. 국가공무원법 …' as 2018헌마551's 주문 came) without it;
+// partOf: the text under one heading of a judgment's full text, up to the next heading ('' when it has none)
+const HEAD_AT = /^\s*【[ \t]*([^【】\n]{1,30}?)[ \t]*】[ \t]*\n?/;
+const headName = (h) => String(h || '').replace(/[\s·ㆍ]/g, '');
+export const dropHead = (t, ...names) => { const s = String(t || ''); const m = HEAD_AT.exec(s); return m && names.includes(headName(m[1])) ? s.slice(m[0].length).replace(/^\s+/, '') : s; };
+export function partOf(text, name) {
+  const s = String(text || ''), re = /【[ \t]*([^【】\n]{1,30}?)[ \t]*】/g;
+  let m, from = -1;
+  while ((m = re.exec(s))) {
+    if (from >= 0) return s.slice(from, m.index).trim();
+    if (headName(m[1]) === name) from = m.index + m[0].length;
+  }
+  return from >= 0 ? s.slice(from).trim() : '';
+}
 const one = (s) => clean(s).replace(/\s+/g, ' ').replace(/([가-힣])[？?](?=[가-힣])/g, '$1·').trim();
 const ymd = (s) => { const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(s || '').trim()); return m ? `${m[1]}. ${Number(m[2])}. ${Number(m[3])}.` : ''; };
 const nameOf = (s) => one(s).replace(/(\d조(?:의\d+)?|\d항|\d호)\s+(의|에)(?=\s)/g, '$1$2');   // 제241조 의 → 제241조의
@@ -306,7 +340,8 @@ function shape(no, row, det, code) {
     result: one(row.rstaRsta || g('rstaRsta')), court: one(row.jgdmtCort || g('jgdmtCort')),
     joined: /병합|\d\s*·\s*\d|\d등/.test(info), src: SRC[code] || '', info: one(info),   // (its heading: some carry [판례집 11-1, 653~666])
     vol: one(g('volumeInfo')), ser: one(g('seriesInfo')), pages: one(g('pages')),
-    order: g('textOfDecision'), points: g('pansiMatt'), summary: g('decisionGst'), laws: g('refrnPrvsn'), cites: g('refrnPrcdnt'), reason,
+    order: dropHead(g('textOfDecision'), '주문'), points: dropHead(g('pansiMatt'), '판시사항'), summary: dropHead(g('decisionGst'), '결정요지', '판결요지'),
+    laws: dropHead(g('refrnPrvsn'), '참조조문'), cites: dropHead(g('refrnPrcdnt'), '참조판례'), reason,
   };
 }
 
@@ -650,16 +685,24 @@ export function linkCases(text, by = '', vers = null) {
   let out = '', last = 0;
   for (const r of refs) {
     if (r.i < last) continue;   // overlapping finds: the first wins
+    // (an old constitution's article — 1972년 헌법 제40조, 유신헌법 제53조 — is no link: today's 헌법 is not it. Said so beside it)
+    if (r.oldcon) { out += esc(text.slice(last, r.i)) + `<span class="case-oldc" title="${esc(r.oldcon)} · 현행 헌법 조문이 아닙니다">${esc(text.slice(r.i, r.i + r.len))}<small class="case-tag">옛 헌법</small></span>`; last = r.i + r.len; continue; }
     // (a note between the law's name and 제N조 — "(2011. 3. 31. … 개정되기 전의 것, 이하 ‘구 민간투자법’이라 한다)" — is read as
     // the text around it, the name and the article each a link: one button that long would stand as a block of its own)
     const s = text.slice(r.i, r.i + r.len), o = r.attr.startsWith('data-art') ? s.indexOf('(') : -1, c = s.lastIndexOf(')');
-    const btn = (x) => `<button type="button" class="case-ln" ${r.attr}>${esc(x)}</button>`;
+    const btn = (x) => `<span class="case-ln" role="button" tabindex="0" ${r.attr}>${esc(x)}</span>`;
     const split = o > 0 && c > o && /제\s*\d/.test(s.slice(c)), lead = split ? /^\s*/.exec(s.slice(c + 1))[0] : '';
     out += esc(text.slice(last, r.i)) + (split ? btn(s.slice(0, o)) + esc(s.slice(o, c + 1) + lead) + btn(s.slice(c + 1 + lead.length)) : btn(s));
     last = r.i + r.len;
   }
   return out + esc(text.slice(last));
 }
+// (a link in running text is a span, not a <button>: a button is one box that cannot break across lines, so on a phone a long
+// citation stood as a block of its own in the middle of the 주문. As a button, it is reached by Tab and opened by Enter or Space)
+if (typeof document !== 'undefined') document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if ((e.key === 'Enter' || e.key === ' ') && t && t.matches && t.matches('span.case-ln[role="button"]')) { e.preventDefault(); if (!e.repeat) t.click(); }   // (a key held down opens it once)
+});
 // what the version notes of a decision's or judgment's short parts say of each law ([law, '2011. 3. 31. 개정 전'] …): the
 // 판시사항's "구 민간투자법 제4조" is the text the 판결요지 or the 참조조문 dates "(2011. 3. 31. … 개정되기 전의 것)"
 const versOf = (d) => articleScope([d.points, d.summary, d.laws, d.order].filter(Boolean).join('\n')).vers || [];
@@ -669,14 +712,18 @@ export function judgmentView(d) {
   const sec = (h, body) => (body ? `<section class="cs-sec"><h4>${h}</h4><p>${body}</p></section>` : '');
   const fold = (h, part, n) => (d[part] ? `<details class="cs-fold" data-part="${part}"><summary>${h}${n ? `<span>${n}</span>` : ''}</summary><p></p></details>` : '');
   // (전원합의체 said where the kind is, and marked: the whole court's judgment is cited as one — laws.courtCite)
+  // (a judgment with neither 판시사항 nor 판결요지 — most of the lower courts' — shows its 주문, read from the full text under
+  // 【주문】 or 【주 문】; the full text then stays folded)
+  const order = !d.points && !d.summary ? partOf(d.reason, '주문') : '';
   return `<div class="cs-name">${esc(d.name || d.no)}</div>`
     + `<div class="cs-meta">${d.enbanc ? '<b class="cs-res cs-eb">전원합의체</b> · ' : ''}${[d.courtName, d.date && d.date + (d.kind === '결정' ? '자' : ' 선고'), d.kind].filter(Boolean).map(esc).join(' · ')}</div>`
-    + sec('판시사항', linkCases(d.points, 'judgment', vs))
-    + sec(d.kind === '결정' ? '결정요지' : '판결요지', linkCases(unwrap(d.summary), 'judgment', vs))
+    + sec('판시사항', linkCases(dropHead(d.points, '판시사항'), 'judgment', vs))
+    + sec(d.kind === '결정' ? '결정요지' : '판결요지', linkCases(unwrap(dropHead(d.summary, '판결요지', '결정요지')), 'judgment', vs))
+    + sec('주문', linkCases(order, 'judgment', vs))
     + (!d.points && !d.summary && !d.reason ? '<p class="cs-wait">공개된 판결문에 아직 내용이 실리지 않았습니다.</p>' : '')
     + fold('참조판례', 'cites', lines(d.cites))
     + fold('참조조문', 'laws')
-    + fold('전문', 'reason').replace('<details', !d.points && !d.summary ? '<details open' : '<details')   // the whole text, when that is all there is
+    + fold('전문', 'reason').replace('<details', !d.points && !d.summary && !order ? '<details open' : '<details')   // the whole text, when that is all there is
     + (d.url ? `<p class="cs-out"><a class="btn ghost small" href="${esc(d.url)}" target="_blank" rel="noopener">국가법령정보센터에서 보기</a></p>` : '');
 }
 const lines = (s) => String(s || '').split('\n').filter((l) => l.trim()).length;
@@ -691,9 +738,9 @@ export function caseView(d) {
     + (d.filed ? `<p class="cs-wait">판례정보에는 함께 결정된 ${esc(d.filed)} 사건번호로 실려 있습니다.</p>` : '')
     + `<div class="cs-name">${esc(d.name || d.no)}</div>`
     + `<div class="cs-meta">${d.result ? `<b class="cs-res">${esc(d.result)}</b>` : ''}${meta.length ? (d.result ? ' · ' : '') + meta.join(' · ') : ''}</div>`
-    + sec('주문', linkCases(d.order, 'decision', vs))
-    + sec('판시사항', linkCases(d.points, 'decision', vs))
-    + sec('결정요지', linkCases(unwrap(d.summary), 'decision', vs))
+    + sec('주문', linkCases(dropHead(d.order, '주문'), 'decision', vs))   // (a decision kept here before its heading was dropped: dropped here too)
+    + sec('판시사항', linkCases(dropHead(d.points, '판시사항'), 'decision', vs))
+    + sec('결정요지', linkCases(unwrap(dropHead(d.summary, '결정요지')), 'decision', vs))
     + (short ? sec('이유', linkCases(unwrap(d.reason), 'decision', vs)) : '')
     + (d.pending ? '<p class="cs-wait">결정문을 불러오는 중…</p>' : !d.order && !d.summary && !d.reason ? '<p class="cs-wait">판례정보에 아직 결정문이 실리지 않았습니다.</p>' : '')
     + fold('참조판례', 'cites', lines(d.cites))
@@ -735,6 +782,14 @@ export function wireCase(box, d, opts) {
 export function oldBand(old, by, gone = false) {
   const who = by === 'judgment' ? '판결이 적용한' : by === 'decision' ? '결정이 다룬' : '본문이 인용한';
   const o = String(old || '').trim(), now = gone ? '현행 법령에는 그 번호의 조문이 없습니다(삭제되었거나 번호가 바뀌었습니다)' : '아래는 현행 조문';
+  // (a law cited by its old name — "공직선거및선거부정방지법: 2005. 8. 4. 이름 변경 전", laws.scan — is said renamed)
+  const nm = /^([^:]+?):\s*(.*)$/.exec(o), ol = nm && oldLaw(nm[1]);
+  if (ol && ol.now) {
+    const rest = nm[2].replace(new RegExp(`^${ol.date.replace(/\./g, '\\.')}\\s*(?:이름 변경|전부개정) 전$`), '');
+    const fin = (ol.now.charCodeAt(ol.now.length - 1) - 0xac00) % 28;   // (받침: 이/가, 으로/로)
+    const how = ol.whole ? `${ol.date} 전부개정되어 ${ol.now}${fin ? '이' : '가'} 되었습니다(조문 번호가 다를 수 있습니다)` : `${ol.date} ${ol.now}${fin && fin !== 8 ? '으로' : '로'} 이름이 바뀌었습니다`;
+    return `${who} 것은 구 ${ol.name}${rest && rest !== '구' ? `(${rest})` : ''} 조문입니다 · ${how} · ${now}`;
+  }
   if (/개정된 것$|제정된 것$/.test(o)) return `${who} 것은 ${o.replace(/\s*것$/, '')} 조문입니다 · ${now}`;
   return `${who} 것은 ${o && o !== '구' ? `(${o}) ` : ''}구법 조문입니다 · ${now}`;
 }

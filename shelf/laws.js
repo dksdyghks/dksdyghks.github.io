@@ -1,8 +1,8 @@
 // 조문과 판결: 헌법 and 헌법재판소법 in full (from 헌법재판소 법령정보, 공공데이터포털); every other law, decree and rule, and
 // the judgments of 대법원 and the other courts (법제처's texts, from the public mirrors legalize-kr and precedent-kr), each kept
 // on this device; how a search or a paper names an article or a court's case; and the 국가법령정보센터 pages beside them.
-import * as api from './api.js';
-import * as store from './store.js';
+import * as api from './api.js?v=999a221565';
+import * as store from './store.js?v=999a221565';
 
 const SVC = '9750000/LawInfoService/';
 // the two laws whose text the court publishes; 헌법 does not change, 헌법재판소법 is asked again after a month
@@ -50,9 +50,16 @@ export const lawGoKr = {
 
 /* ---------------- the texts ---------------- */
 const fail = (code) => Object.assign(new Error(code), { code });
+// no answer from the shelf's server: 'offline' when the device has no internet, 'server' when it has one and the server is
+// down (as app.js tells them apart) — a law kept in the mirror is then still read from there
+const noAnswer = () => (navigator.onLine === false ? 'offline' : 'server');
 const mem = {};
 const asking = {};
 export function lawText(name) {
+  // (an old name: a repealed law is said so at once, with what took its place; a renamed one is today's law)
+  const o = oldLaw(name);
+  if (o && o.gone) return Promise.reject(Object.assign(fail('repealed'), { date: o.gone, now: o.now, was: o.name }));
+  if (o) return lawText(o.now);
   const key = lawKey(name) || String(name || '').replace(/\s+/g, '');
   if (mem[key]) return Promise.resolve(mem[key]);
   if (!asking[key]) asking[key] = (LAWS[key] ? load(key).catch((e) => (e && e.code === 'offline' ? Promise.reject(e) : loadAny('mirror:' + key, LAWS[key].full))) : loadAny(key, String(name).replace(/\s+/g, ' ').trim())).then((t) => (mem[key] = t)).finally(() => { delete asking[key]; });
@@ -76,7 +83,7 @@ async function load(key) {
     return parse(key, rec);
   } catch (e) {
     if (ok) return parse(key, kept);   // the copy kept here, while the court's server does not answer
-    throw e && e.code ? e : fail(api.isOffline(e) ? 'offline' : 'unavailable');
+    throw api.isOffline(e) ? fail(noAnswer()) : e && e.code ? e : fail('unavailable');
   }
 }
 function items(data) {
@@ -183,6 +190,32 @@ const CORE_NAMES = ['헌법', '헌법재판소법', '공직선거법', '정당�
   '군사법원법', '부패방지 및 국민권익위원회의 설치와 운영에 관한 법률', '공무원의 노동조합 설립 및 운영 등에 관한 법률'];
 addLawNames([...Object.values(ALIAS), ...Object.keys(ABBR), ...Object.values(ABBR), ...CORE_NAMES]);
 const resolveName = (tight) => ALIAS[tight] || ABBR[tight] || LAW_NAMES.get(tight) || null;
+// laws a paper or a judgment still cites by a name they no longer have: renamed (the same law: its articles open today's,
+// marked 구법 and said renamed — whole: a 전부개정 gave it the new name, so its numbers may differ) or repealed (gone: no
+// article of today's opens for it; now names the law that took its place). Each new name checked against lawidx.json; the
+// dates are those of the change's 공포 (lawhist/index.json: the new name's first version) or of the repeal's taking effect.
+const OLD_LAWS = {
+  공직선거및선거부정방지법: { now: '공직선거법', date: '2005. 8. 4.' },
+  정치자금에관한법률: { now: '정치자금법', date: '2005. 8. 4.', whole: true },
+  국가안전기획부법: { now: '국가정보원법', date: '1999. 1. 21.' },
+  전염병예방법: { now: '감염병의 예방 및 관리에 관한 법률', date: '2009. 12. 29.', whole: true },
+  정보통신망이용촉진등에관한법률: { now: '정보통신망 이용촉진 및 정보보호 등에 관한 법률', date: '2001. 1. 16.', whole: true },
+  민원사무처리에관한법률: { now: '민원 처리에 관한 법률', date: '2015. 8. 11.', whole: true },
+  국회의원선거법: { gone: '1994-03-16', now: '공직선거법' },   // (the four election laws: 공직선거및선거부정방지법 부칙)
+  대통령선거법: { gone: '1994-03-16', now: '공직선거법' },
+  지방의회의원선거법: { gone: '1994-03-16', now: '공직선거법' },
+  지방자치단체의장선거법: { gone: '1994-03-16', now: '공직선거법' },
+  토지수용법: { gone: '2003-01-01', now: '공익사업을 위한 토지 등의 취득 및 보상에 관한 법률' },
+  도시계획법: { gone: '2003-01-01', now: '국토의 계획 및 이용에 관한 법률' },
+  공공기관의개인정보보호에관한법률: { gone: '2011-09-30', now: '개인정보 보호법' },
+  사회보호법: { gone: '2005-08-04', now: '' },
+};
+addLawNames(Object.keys(OLD_LAWS));
+// what is known of a law cited by an old name: { name, now, date, whole } (renamed) or { name, gone, now } (repealed); null else
+export function oldLaw(name) {
+  const k = NAME_NORM(name), o = OLD_LAWS[k];
+  return o ? { name: k, ...o } : null;
+}
 
 let lawIdx = null;
 export function lawIndex() {   // folder → [name, files] (files: '' for a law alone, else '법률,시행령,시행규칙' and the like)
@@ -213,6 +246,8 @@ export async function lawNames(typed, limit = 8, prefer = []) {
 }
 // a law's own name for what was typed (its name, or one lawyers use: 민간투자법), from the index alone — nothing is asked
 export async function lawOf(q) {
+  const o = oldLaw(q);   // (a renamed law's old name: today's law, the old name said with it; a repealed one: none)
+  if (o) { if (o.gone) return null; const n = await lawOf(o.now); return n ? { ...n, was: o.name, wasDate: o.date, whole: !!o.whole } : null; }
   const t = dirOf(q);
   if (t.length < 2) return null;
   const idx = await lawIndex();
@@ -708,7 +743,7 @@ async function drf(kind, params) {
   if (!navigator.onLine) throw fail('offline');
   let d;
   try { d = await (kind === 'item' ? api.lawItem(params) : api.lawSearch(params)); }
-  catch (e) { throw fail(api.isOffline(e) ? 'offline' : e && e.code === 'no_key' ? 'unregistered' : 'unavailable'); }
+  catch (e) { throw fail(api.isOffline(e) ? noAnswer() : e && e.code === 'no_key' ? 'unregistered' : 'unavailable'); }
   if (!d || typeof d !== 'object') throw fail('unavailable');
   if (d.result && !d.법령 && !d.LawSearch && !d.PrecSearch && !d.PrecService) { refusedAt = Date.now(); throw fail('unregistered'); }
   answeredAt = Date.now();
@@ -1132,7 +1167,7 @@ function lawBefore(text, end) {
     let q = b - 1; while (q > 0 && /[가-힣]/.test(text[q - 1])) q--;
     if (/^(?:미국|독일|프랑스|일본|영국|연방|수정)/.test(text.slice(q, b - 1) + tight)) return null;
   }
-  if (tight && /(?:법률|법|령|규칙)$/.test(tight) && !NOT_A_LAW.test(tight) && (tight.length > 2 || SHORT.has(tight))) return { law: lawKey(tight) || tight, start: b };
+  if (tight && /(?:법률|법|령|규칙)$/.test(tight) && !NOT_A_LAW.test(tight) && (tight.length > 2 || SHORT.has(tight))) return { law: lawKey(tight) || tight, start: b, bare: true };
   return null;
 }
 const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
@@ -1172,6 +1207,75 @@ function verNote(t) {
   if ((d = at(/제정된\s*것/))) return `${d} 제정된 것`;
   return '';
 }
+// "동법 제13조", "같은 법 제5조": the law named last before it — cited (prev) or only named since ("1981년에 국회의원선거법이
+// 개정되었다. 동법 제13조", "독일기본법 제38조 … 동법 제93조"). A name counts when it is a law this app knows (or an old name of
+// one), a long name of a law it does not (six letters or more: 지방의회의원선거법), or a foreign one ("독일 기본법", "일본국헌법",
+// 수정헌법); a word that only ends in 법 (방법, 입법, 행정법, 기본법 alone) does not. The last such name between `from` and `to`
+// (the 동법 itself): { law, start, foreign } — null when none is there. 헌법 named in passing does not count, nor 헌법상 (an adjective)
+const NAME_TAIL = /^(?:은|는|이|가|을|를|의|에|과|와|도|로|만|에서|으로|이나|이라|이며|이고|이다|에는|에서는|에서의|에도|에의|으로서|으로써|과는|와는|및)(?![가-힣])/;
+const NOUN_BEOP = /(?:방법|입법|사법|불법|위법|적법|합법|편법|탈법|기법|수법|용법|논법|요법|화법|문법|판례법|관습법|자연법|실정법|국제법|행정법|비교법|외국법|헌법)$/;   // (위헌심사방법, 기본권제한방법: words, not names)
+const FOREIGN_WORD = new RegExp(`^(?:${CTRY})|^(?:수정|연방)`);
+function namedSince(text, from, to) {
+  for (let e = to; e > from + 1; e--) {
+    const c = text[e - 1];
+    if (c !== '법' && c !== '」' && !(c === '률' && text[e - 2] === '법')) continue;
+    if (e < to && /[가-힣]/.test(text[e]) && !NAME_TAIL.test(text.slice(e, e + 5))) continue;   // (법학, 법원, 법률안: not a name's end)
+    let ws = e - (c === '」' ? 1 : 0); while (ws > from && /[가-힣·ㆍ]/.test(text[ws - 1])) ws--;
+    const word = text.slice(ws, e).replace(/[」·ㆍ]/g, '');
+    if (FOREIGN_WORD.test(word) || (c !== '」' && GOVERNS.test(unwrap(text.slice(Math.max(0, ws - 30), ws))))) {
+      if (/(?:법|법률)$/.test(word) && word.length >= 3 && !/^(?:동|같은)/.test(word)) return { law: word, start: ws, foreign: true };
+      continue;
+    }
+    const r = lawBefore(text, e);
+    if (!r || r.start < from) continue;
+    if (r.bare && (NAME_NORM(r.law).length < 6 || NOUN_BEOP.test(NAME_NORM(r.law))) && !oldLaw(r.law)) continue;
+    if (r.law === '헌법' && !GLUED_FOREIGN.test(text.slice(Math.max(0, r.start - 7), r.start))) continue;   // (헌법 named in passing — "헌법은 영장주의를 …" — is not what a 동법 means: it is cited by its articles)
+    return foreignLaw(text, r.start, r.law) === 'f' ? { law: r.law, start: r.start, foreign: true } : { law: r.law, start: r.start };
+  }
+  return null;
+}
+// a citation of one of the old constitutions — "1972년 헌법", 건국헌법·제헌헌법·유신헌법, "제5공화국 헌법", "구 헌법(1987. 10. 29.
+// 전부개정되기 전의 것)" — is not today's 헌법 (each 전부개정 numbered it anew), so it opens no article of today's: what it is,
+// said in words ({ label, start }), or null for a citation of today's. The versions by their 공포 (lawhist/index.json: 10, 1948-1987).
+const CON_VERS = ['1948. 7. 17.', '1952. 7. 7.', '1954. 11. 29.', '1960. 6. 15.', '1960. 11. 29.', '1962. 12. 26.', '1969. 10. 21.', '1972. 12. 27.', '1980. 10. 27.', '1987. 10. 29.'];
+const CON_NICK = { 0: '건국헌법', 7: '유신헌법' };
+const dnum = (d) => { const m = /((?:19|20)\d{2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{1,2})/.exec(d || ''); return m ? Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]) : 0; };
+const conLabel = (lead, k) => `${lead}(${CON_VERS[k]} ${k ? '개정' : '제정'}${CON_NICK[k] && !/(?:건국|제헌|유신)헌법$/.test(lead) ? `, ${CON_NICK[k]}` : ''})`;
+const CON_REPUBLIC = { 1: 0, 2: 3, 3: 5, 4: 7, 5: 8 };   // (제1공화국 헌법: 1948-1960, said by its first)
+function oldCon(text, nm, was) {
+  const law = NAME_NORM(nm.law), pre = text.slice(Math.max(0, nm.start - 24), nm.start);
+  let m;
+  if ((m = /^(건국|제헌|유신)헌법$/.exec(law))) { const k = m[1] === '유신' ? 7 : 0; return { label: conLabel(law, k), start: nm.start }; }
+  if (law === '년헌법' || law === '헌법' || law === '대한민국헌법') {
+    const yr = (law === '년헌법' ? /((?:1[6-9]|20)\d{2})\s*$/ : /((?:1[6-9]|20)\d{2})\s*년\s*(?:의\s*)?(?:개정\s*)?$/).exec(pre);
+    if (yr) {
+      const y = Number(yr[1]);
+      if (y >= 1987) return null;   // (1987년 헌법: today's)
+      if (y < 1948) return { foreign: true, start: nm.start - pre.length + yr.index };   // (1787년 헌법, 1919년 헌법: no text of the Republic's — not linked)
+      let k = CON_VERS.findIndex((d) => Math.floor(dnum(d) / 10000) === y);
+      if (k < 0) { k = 0; CON_VERS.forEach((d, i) => { if (Math.floor(dnum(d) / 10000) < y) k = i; }); }
+      return { label: conLabel(`${y}년 헌법`, k), start: nm.start - pre.length + yr.index };
+    }
+    if (law === '년헌법') return null;
+    if ((m = /제\s*([1-6])\s*공화국\s*(?:의\s*)?$/.exec(pre))) {
+      const n = Number(m[1]);
+      return n === 6 ? null : { label: n === 1 ? '제1공화국 헌법(1948~1960)' : conLabel(`제${n}공화국 헌법`, CON_REPUBLIC[n]), start: nm.start - pre.length + m.index };
+    }
+    if ((m = /(건국|제헌|유신)\s*$/.exec(pre))) { const k = m[1] === '유신' ? 7 : 0; return { label: conLabel(`${m[1]}헌법`, k), start: nm.start - pre.length + m.index }; }
+    if (!was) return null;
+  } else if ((m = /^(?:구|舊)헌법$/.exec(law))) { if (!was) was = '구'; }
+  else if ((m = /^공화국헌법$/.exec(law)) && (m = /제\s*([1-5])\s*$/.exec(pre))) {
+    const n = Number(m[1]);
+    return { label: n === 1 ? '제1공화국 헌법(1948~1960)' : conLabel(`제${n}공화국 헌법`, CON_REPUBLIC[n]), start: nm.start - pre.length + m.index };
+  } else return null;
+  // (구 헌법, or a version note: the version in force then — before the day "… 개정되기 전의 것" names, or on the day "… 개정된 것" does)
+  const d = dnum(was);
+  if (!d) return { label: '구 헌법', start: nm.start };
+  const before = / 전$/.test(was);
+  let k = -1; CON_VERS.forEach((v, i) => { if (before ? dnum(v) < d : dnum(v) <= d) k = i; });
+  if (k === CON_VERS.length - 1) return null;   // (today's)
+  return k < 0 ? { label: '구 헌법', start: nm.start } : { label: conLabel('구 헌법', k), start: nm.start };
+}
 function scan(textIn, scope, wantScope, all = false) {
   const out = [];
   if (!textIn) return wantScope ? (scope && scope.path ? scope : { path: [], named: [] }) : out;
@@ -1182,10 +1286,25 @@ function scan(textIn, scope, wantScope, all = false) {
   const sec = sections(textIn, scope);
   ART_TAIL.lastIndex = 0;
   // (the law cited last, for "같은 법 시행령 제76조", "동법 제5조"; carried over from the page before when read page by page)
-  let m, prev = scope && scope.prev && scope.prev.law ? { law: scope.prev.law, foreign: !!scope.prev.foreign, start: -1 } : null;
+  let m, prev = scope && scope.prev && scope.prev.law ? { law: scope.prev.law, foreign: !!scope.prev.foreign, start: -1, ...(scope.prev.oldcon ? { oldcon: scope.prev.oldcon } : {}) } : null;
+  let prevEnd = 0;   // (where the last citation ended: a law named after it is what a 동법 means)
   while ((m = ART_TAIL.exec(textIn))) {
-    const tailEnd = m.index + m[0].length, nm = lawBefore(textIn, m.index) || lawSaidAgain(textIn, m.index, prev);
-    if (!nm) continue;
+    const tailEnd = m.index + m[0].length;
+    let nm = lawBefore(textIn, m.index), again = null;
+    if (!nm) {   // "동법 제13조": the law named last — cited before, or only named since
+      const sm = SAME_LAW.exec(textIn.slice(Math.max(0, m.index - 16), m.index));
+      if (!sm) continue;
+      const at = m.index - sm[0].length + (sm[0].length - sm[0].trimStart().length);
+      again = namedSince(textIn, prevEnd, at) || prev;
+      if (again && again.foreign) {   // (another country's law said again: not linked, nor the list after it)
+        if (all) out.push({ law: again.law, art: Number(m[1]), sub: m[2] ? Number(m[2]) : 0, para: m[3] ? Number(m[3]) : circ(m[4]), i: at, len: tailEnd - at, foreign: true });
+        prev = { law: again.law, foreign: true, start: at }; prevEnd = tailEnd; continue;
+      }
+      nm = again && again.oldcon ? { law: '헌법', start: at } : lawSaidAgain(textIn, m.index, again);
+      // (a 동법 of a law not known here, or of none: not linked — and the next 동법 looks back only to here, so a text of many
+      // is read once, not again from its start for each)
+      if (!nm) { if (again) prev = { law: again.law, foreign: false, start: at }; prevEnd = tailEnd; continue; }
+    }
     prev = nm;
     let art = Number(m[1]), sub = m[2] ? Number(m[2]) : 0;
     // (구 as a word of its own — "구 민간투자법", "(구 형법" — not the end of another: "선행연구 공직선거법")
@@ -1195,37 +1314,56 @@ function scan(textIn, scope, wantScope, all = false) {
     // change ("…개정되기 전의 것", "개정 전", "폐지") is old; "…개정된 것" names its version, which the reader is told as
     // such; a bare date, 시행, 제정 or a law's number ("(2022. 1. 27. 시행)", "(법률 제17979호)") marks the text in force —
     // no band, or the scholar is told a law in force is a repealed one)
-    const was = gu ? verNote(note) || vers.get(lawId(nm.law)) || '구' : OLD_NOTE.test(note) ? verNote(note) || '구' : verNote(note);
-    const old = !!was;
+    let was = gu ? verNote(note) || vers.get(lawId(nm.law)) || '구' : OLD_NOTE.test(note) ? verNote(note) || '구' : verNote(note);
     if (/ 전$/.test(was)) vers.set(lawId(nm.law), was);   // (only a text before some change is "구 …" again later)
-    const mark = was ? { old: was } : null;
     const said = foreignLaw(textIn, nm.start, nm.law) || sec.said(nm.law, nm.start, tailEnd, art, sub);
+    // an old constitution (1972년 헌법, 유신헌법, 구 헌법(1987. 10. 29. 전부개정되기 전의 것)): today's is not it — said in words
+    // (oldcon), never opened as today's article; and a law cited by an old name: today's (renamed: marked 구법, the old name
+    // said) or the repealed law itself (its 'repealed' answer says so: lawText)
+    const oc = said ? null : again && again.oldcon ? { label: again.oldcon, start: nm.start } : oldCon(textIn, nm, was);
+    if (oc && oc.foreign) {   // (no constitution of the Republic: not linked, nor the list after it — and the section's 헌법 stays Korean)
+      if (all) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: oc.start, len: tailEnd - oc.start, foreign: true });
+      prev = { ...nm, foreign: true }; prevEnd = tailEnd; continue;
+    }
+    const ol = oc ? null : oldLaw(nm.law);
+    let law = nm.law, i0 = nm.start, xtra = null;
+    // (for 찾기 — scanArticlesAll — it is marked as another country's law is: "1972년 헌법 제40조" is no place that cites today's 제40조)
+    if (oc) { law = '구 헌법'; i0 = Math.min(i0, oc.start); xtra = { oldcon: oc.label, ...(all ? { foreign: true } : {}) }; prev = { ...nm, oldcon: oc.label }; }
+    else if (ol && !ol.gone) { law = resolveName(NAME_NORM(ol.now)) || ol.now; was = `${ol.name}: ${was && was !== '구' ? was : `${ol.date} ${ol.whole ? '전부개정' : '이름 변경'} 전`}`; }
+    const old = !!was || !!oc;
+    const mark = oc ? xtra : was ? { old: was } : null;
     // no such article in the Korean law: not linked, nor is the same article cited again in this section — but the list after
     // it goes on ("형법 제535조, 제55조 제1항": a slip of the pen, then a real one)
     const none = !old && beyond(nm.law, art, sub);
     if (said === 'fa' || (!said && none)) sec.note(nm.law, nm.start, 'f', art, sub);
     else if (said) sec.note(nm.law, nm.start, said);
-    if (said === 'f' || said === 'fa') { if (all) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start, foreign: true }); prev = { ...nm, foreign: true }; continue; }
+    if (said === 'f' || said === 'fa') { if (all) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start, foreign: true }); prev = { ...nm, foreign: true }; prevEnd = tailEnd; continue; }
     const keep = (a, s) => old || !beyond(nm.law, a, s);
-    if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start, ...mark });
+    if (keep(art, sub)) out.push({ law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: i0, len: tailEnd - i0, ...mark });
     let at = tailEnd;   // the same law's list: a new article, or another 항 of this article (of the same version)
     for (;;) {
       PARA_MORE.lastIndex = at; const p = PARA_MORE.exec(textIn);
       ART_MORE.lastIndex = at; const a = ART_MORE.exec(textIn);
-      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k, ...mark }); at = PARA_MORE.lastIndex; }
-      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k, ...mark }); at = ART_MORE.lastIndex; }
+      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); if (keep(art, sub)) out.push({ law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k, ...mark }); at = PARA_MORE.lastIndex; }
+      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); if (keep(art, sub)) out.push({ law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k, ...mark }); at = ART_MORE.lastIndex; }
       else break;
     }
-    ART_TAIL.lastIndex = at;
+    ART_TAIL.lastIndex = at; prevEnd = at;
   }
   JEONMUN.lastIndex = 0; let j;   // 헌법 전문 (and the articles after it in "헌법 전문, 제1조 …" belong to 헌법)
   while ((j = JEONMUN.exec(textIn))) {
     if (foreignLaw(textIn, j.index, '헌법') === 'f' || /^fa?$/.test(sec.said('헌법', j.index, j.index + j[0].length, '전문', 0))) continue;
+    if (oldCon(textIn, { law: '헌법', start: j.index }, /^\s*구\s*$|[^가-힣]구\s*$/.test(textIn.slice(Math.max(0, j.index - 3), j.index)) ? '구' : '') || /(?:건국|제헌|유신|공화국|[^가-힣]구)\s*$/.test(textIn.slice(Math.max(0, j.index - 8), j.index))) continue;   // (1972년 헌법 전문: not today's)
     out.push({ law: '헌법', art: '전문', sub: 0, para: 0, i: j.index, len: j[0].length });
     let at = j.index + j[0].length, a;
     for (;;) { ART_MORE.lastIndex = at; a = ART_MORE.exec(textIn); if (!a) break; const k = a[0].search(/제/); out.push({ law: '헌법', art: Number(a[1]), sub: a[2] ? Number(a[2]) : 0, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
   }
-  return wantScope ? { ...sec.end(), prev: prev ? { law: prev.law, foreign: !!prev.foreign } : null, vers: [...vers] } : out;
+  if (wantScope) {   // (what is named after the last citation is what a 동법 at the top of the next page means)
+    const last = namedSince(textIn, prevEnd, textIn.length);
+    if (last) prev = last;
+    return { ...sec.end(), prev: prev ? { law: prev.law, foreign: !!prev.foreign, ...(prev.oldcon ? { oldcon: prev.oldcon } : {}) } : null, vers: [...vers] };
+  }
+  return out;
 }
 // a court's case cited in a paper: 대법원 2004. 4. 22. 선고 2000두7735 판결, 대판 2010다12345, 85다카1151, 2016수64 (단기 4287민상…)
 // longer kinds first so 다카 is tried before 다 (alternation is ordered)
