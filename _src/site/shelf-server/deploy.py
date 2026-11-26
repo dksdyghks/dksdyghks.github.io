@@ -43,6 +43,7 @@ def main(first):
         'bindings': [
             {'type': 'r2_bucket', 'name': 'BUCKET', 'bucket_name': BUCKET},
             {'type': 'plain_text', 'name': 'ALLOWED_ORIGINS', 'text': ORIGINS},
+            {'type': 'ai', 'name': 'AI'},   # Workers AI (the search by meaning)
         ],
     }
     if first:

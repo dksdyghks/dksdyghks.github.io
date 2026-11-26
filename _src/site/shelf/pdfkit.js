@@ -51,9 +51,10 @@ export async function pageItems(doc, n, page) {
   return { page: { n, W: vp.width, H: vp.height, items }, textContent: tc, pdfPage: pg };
 }
 
-// First page as a small JPEG for the library list
-export async function thumbnail(doc, width = 240) {
-  const pg = await doc.getPage(1);
+// First page as a small JPEG for the library list; n: another page (0-based) — the paper's own first page when a database's
+// notice or cover comes before it (naming.readFirstPages gives it as page), so such papers do not all look alike
+export async function thumbnail(doc, width = 240, n = 0) {
+  const pg = await doc.getPage(Number.isInteger(n) && n > 0 && n < doc.numPages ? n + 1 : 1);
   const vp1 = pg.getViewport({ scale: 1 });
   const scale = width / vp1.width;
   const vp = pg.getViewport({ scale });
@@ -89,26 +90,57 @@ export async function textIndex(doc, A, onProgress, signal) {
 }
 
 // Pages that are pictures with (almost) no text: a scan. A download notice laid over a scanned page still counts as almost none.
-// When most pages are like that, the paper is a scan; otherwise only those few pages that draw an image count (a scanned
-// appendix in a typed paper), which is checked page by page.
+// When most pages are like that, the paper is a scan; otherwise only those few pages that are mostly an image count (a scanned
+// appendix in a typed paper), which is checked page by page — a title page or a blank page with a journal's logo on it is no
+// picture (its own text would else give way to a scan reader's words).
 export async function picturePages(doc, texts) {
-  const empty = [], broken = [];
+  const empty = [], broken = [], hollow = [];
   for (let i = 0; i < doc.numPages; i++) {
     const t = (texts[i] || '').replace(/\s+/g, '');
-    if (garbled(t)) broken.push(i); else if (t.length < 150) empty.push(i);
+    if (garbled(t)) broken.push(i); else if (t.length < 150) empty.push(i); else if (hollowText(t)) hollow.push(i);
   }
-  if (empty.length + broken.length >= doc.numPages * 0.5) return [...empty, ...broken].sort((a, b) => a - b);
+  // (a paper whose text layer is mostly gone: its pages that kept only punctuation are gone too)
+  if (empty.length + broken.length >= doc.numPages * 0.5) return [...empty, ...broken, ...hollow].sort((a, b) => a - b);
   if (!empty.length) return broken;
   const pdfjs = await lib();
-  const O = pdfjs.OPS;
-  const IMG = new Set([O.paintImageXObject, O.paintInlineImageXObject, O.paintImageXObjectRepeat, O.paintImageMaskXObject, O.paintImageMaskXObjectGroup, O.paintImageMaskXObjectRepeat, O.paintInlineImageXObjectGroup].filter((x) => x != null));
   const out = [];
   for (const i of empty) {
     let pg = null;
-    try { pg = await doc.getPage(i + 1); const ops = await pg.getOperatorList(); if (ops.fnArray.some((f) => IMG.has(f))) out.push(i); }
+    try { pg = await doc.getPage(i + 1); if (imageShare(await pg.getOperatorList(), pdfjs.OPS, pg.view) >= 0.3) out.push(i); }
     catch (e) { /* an unreadable page */ } finally { if (pg) pg.cleanup(); }
   }
   return [...out, ...broken].sort((a, b) => a - b);
+}
+// How much of a page its images cover (0..1, summed over them): the unit square an image is painted into, under the transform
+// in force (save/restore, cm, a form's matrix; only the area counts, so only each matrix's determinant). An image painted in
+// a way not followed here (repeated, in a group) counts as covering the page, as any image did before.
+export function imageShare(ops, O, view) {
+  const area = view && view.length >= 4 ? Math.abs((view[2] - view[0]) * (view[3] - view[1])) || 1 : 1;
+  const det = (m) => (m && m.length >= 4 ? m[0] * m[3] - m[1] * m[2] : 1);
+  const one = new Set([O.paintImageXObject, O.paintInlineImageXObject, O.paintImageMaskXObject].filter((x) => x != null));
+  const many = new Set([O.paintImageXObjectRepeat, O.paintImageMaskXObjectGroup, O.paintImageMaskXObjectRepeat, O.paintInlineImageXObjectGroup].filter((x) => x != null));
+  const stack = [];
+  let s = 1, cover = 0;
+  for (let i = 0; i < ops.fnArray.length && cover < 1; i++) {
+    const f = ops.fnArray[i], a = ops.argsArray[i];
+    if (f === O.save || f === O.beginGroup) stack.push(s);
+    else if (f === O.restore || f === O.endGroup) s = stack.length ? stack.pop() : 1;
+    else if (f === O.transform) s *= det(a);
+    else if (f === O.paintFormXObjectBegin) { stack.push(s); s *= det(a && a[0]); }
+    else if (f === O.paintFormXObjectEnd) s = stack.length ? stack.pop() : 1;
+    else if (one.has(f)) cover += Math.abs(s) / area;
+    else if (many.has(f)) cover = 1;
+  }
+  return Math.min(1, cover);
+}
+// a text layer that kept only the punctuation and digits of a font that maps nothing else (,611.611,2,3,336)43.,31.,31..21,,,39)‘’):
+// quotes and brackets with nothing between them and runs of commas and stops, 3 or more in 100 characters. A page of a paper
+// can have as many (a questionnaire's ( ), a table's 1994. 1. 1., a 목차's leaders, e.g., Id.,), so it counts only in a paper
+// whose text layer is mostly gone already (picturePages)
+function hollowText(t) {
+  if (t.length < 40) return false;
+  const hollow = (t.match(/‘’|“”|\(\)|「」|『』|<>/g) || []).length + (t.match(/[,.](?=[,.])(?!\.\.)/g) || []).length;
+  return hollow * 100 / t.length >= 3;
 }
 // text that is mostly not letters a Korean or English paper uses: a font whose characters map to nothing sensible
 function garbled(t) {

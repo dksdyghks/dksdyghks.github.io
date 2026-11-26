@@ -478,8 +478,8 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 .pp-opts button.on { color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .pp-opts .sep { width: 1px; height: 18px; background: var(--rule); margin: 0 4px; }
 .lrow .pp-read, .paper-sheet .pp-read { font-size: 12.5px; color: var(--faint); }
-.pp-mine { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 2px; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.pp-open { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 2px; color: var(--muted); box-shadow: inset 0 0 0 1px var(--rule); font-style: normal; }
+.pp-mine { display: inline-block; white-space: nowrap; margin-left: 6px; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 2px; color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pp-open { display: inline-block; white-space: nowrap; margin-left: 6px; padding: 1px 7px; border-radius: 9px; font-size: 11px; font-weight: 700; vertical-align: 2px; color: var(--muted); box-shadow: inset 0 0 0 1px var(--rule); font-style: normal; }
 .kci-new { margin-top: 4px; }
 .kci-new .sec-n { font-weight: 600; letter-spacing: 0; }
 .kci-foot { margin: 8px 4px 16px; font-size: 12.5px; }
@@ -933,7 +933,7 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .pp-sort button { height: 28px; padding: 0 11px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .pp-sort button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0F1A2B1F; }
 @media (hover: hover) { .pp-sort button:not(.on):hover { color: var(--ink-2); } }
-.pp-facet { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; margin: 0 0 8px; padding: 1px 2px 3px; -webkit-overflow-scrolling: touch; }
+.pp-facet { display: flex; gap: 7px; overflow-x: auto; scrollbar-width: none; margin: -6px 0 3px; padding: 7px 2px 8px; -webkit-overflow-scrolling: touch; }
 .pp-facet::-webkit-scrollbar { display: none; }
 .pp-fc { flex: none; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--ink-2); background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); white-space: nowrap; }
 .pp-fc em { font-style: normal; color: var(--faint); font-weight: 700; margin-left: 2px; }
@@ -941,9 +941,57 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .pp-fc.on em { color: #FFFFFFcc; }
 @media (hover: hover) { .pp-fc:not(.on):hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, var(--rule)); } }
 .pp-ab { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 3px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
-.lrow em.pp-cited { color: var(--faint); background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0 5px; border-radius: 5px; font-size: 11.5px; font-weight: 700; }
+.lrow em.pp-cited { display: inline-block; white-space: nowrap; color: var(--faint); background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0 5px; border-radius: 5px; font-size: 11.5px; font-weight: 700; }
 .pp-jn { font-style: normal; color: var(--accent); font-weight: 600; cursor: pointer; border-radius: 3px; }
 @media (hover: hover) { .pp-jn:hover { text-decoration: underline; } }
+/* a journal's name in a row (with a mouse only): written as the other names are, underlined lightly as a link — not bold, which
+   read as a standing the journal has */
+.lrow .pp-jn { color: inherit; font-weight: inherit; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 30%, transparent); text-underline-offset: 2px; }
+@media (hover: hover) { .lrow .pp-jn:hover { color: var(--accent); text-decoration-color: currentColor; } }
+/* 논문 찾기: one list from every source. The lines above the list are one line each (they may change their words as slower
+   sources answer, never their height), and an answer being replaced fades rather than jumps */
+.pp-res { transition: opacity .18s ease; }
+.pp-res.pp-stale { opacity: .55; }
+.pp-res .pp-kh { margin-bottom: 2px; flex-wrap: nowrap; }
+.pp-res .pp-kh .sec-h { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-res .pp-sort { flex: none; }
+.pp-scope { display: flex; align-items: baseline; gap: 8px; height: 18px; margin: 0 4px 8px; font-size: 12.5px; line-height: 18px; color: var(--faint); white-space: nowrap; }
+.pp-scope .pp-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pp-scope:has(.pp-lateb) .pp-src { color: var(--ink-2); }
+.pp-lateb { position: relative; flex: none; padding: 0; font: inherit; font-weight: 700; color: var(--accent); }
+.pp-lateb::after { content: ''; position: absolute; inset: -10px -12px; }
+.pp-res .pp-opts { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: -6px 0 3px; padding: 7px 2px 8px; }
+.pp-res .pp-opts::-webkit-scrollbar { display: none; }
+.pp-res .pp-opts button { flex: none; height: 28px; padding: 0 12px; border-radius: 14px; font-size: 12.5px; box-shadow: inset 0 0 0 1px var(--rule); background: var(--card); }
+.pp-res .pp-opts button.on { color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.pp-note { margin: 0 4px 8px; font-size: 12.5px; line-height: 1.55; color: var(--muted); }
+.pp-foot .pp-note { margin-top: 8px; }
+.pp-wholine { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 4px 8px; font-size: 13px; color: var(--muted); }
+.pp-wholine b { color: var(--ink-2); font-weight: 600; }
+.pp-wholine .pp-who { margin-left: 4px; }
+.pp-foot .pp-wholine { margin-top: 8px; }
+.lrow em.pp-kcib, .lrow em.pp-mag { display: inline-block; white-space: nowrap; color: var(--faint); box-shadow: inset 0 0 0 1px var(--rule); padding: 0 5px; border-radius: 5px; font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: 1px; font-style: normal; }
+/* the groups of one list (잡지 · 기사, 발간사 · 권두언, another author's …): a line above each, as the months of the KCI list */
+.kci-list .pp-div { padding: 12px 14px 6px; font-size: 12px; font-weight: 700; color: var(--faint); letter-spacing: .02em; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); background: color-mix(in srgb, var(--chip) 55%, transparent); }
+.kci-list > .pp-div:first-child { border-top: 0; border-radius: inherit; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.kci-list .pp-div + .kci-item { border-top: 0; }
+/* a card above the list: the person asked (연구자 정보) or the journal asked (호별로 보기) — a whole button, plainly one */
+.pp-wholine .pp-card.pp-who { margin-left: 0; }
+.pp-card { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 12px; background: var(--card); box-shadow: inset 0 0 0 1px var(--rule), var(--shadow); text-align: left; font-size: 13.5px; color: var(--ink-2); }
+.pp-card b { flex: none; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.pp-card .pp-cardm { flex: 1; min-width: 0; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-card .pp-cardgo { flex: none; margin-left: auto; color: var(--accent); font-weight: 700; white-space: nowrap; }
+@media (hover: hover) { .pp-card:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--rule)), var(--shadow); } }
+.pp-card:active { background: var(--chip); }
+/* 논문 찾기's lines and list as wide as its box (on a laptop the list ran 100 px past it) */
+.pp-body { max-width: 860px; }
+.pp-cap { margin: -10px 4px 14px; font-size: 13px; color: var(--muted); }
+/* the small buttons above the list (28–30 px) answer a finger 42 px tall: the rows they sit in keep room for it */
+.pp-res .pp-sort button, .pp-res .pp-opts button, .pp-fc { position: relative; }
+.pp-res .pp-sort button::after, .pp-res .pp-opts button::after, .pp-fc::after { content: ''; position: absolute; inset: -7px -2px; }
+.pp-facet.pp-fade { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.case-sheet .pp-au .pp-aff { margin-left: 3px; font-size: 12px; font-weight: 500; color: var(--faint); }
+@media (prefers-reduced-motion: reduce) { .pp-res { transition: none; } }
 .pp-jn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pp-more { margin: 14px 0 4px; }
 .pp-morebtn { display: block; width: 100%; padding: 13px; border-radius: 12px; background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); color: var(--ink-2); font-weight: 600; font-size: 13.5px; }

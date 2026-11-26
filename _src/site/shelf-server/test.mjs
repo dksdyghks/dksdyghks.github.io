@@ -270,6 +270,56 @@ ok(!(await bucket.head('files/' + id + '.pdf')) && !(await bucket.head('marks/' 
 }
 ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'file gone from the library');
 
+{ // KCI's own Open API (논문 검색), stood in for here: the key is only ours, never the caller's; KCI writes it back into its
+  // answer (inputData), which never reaches the device; a refusal (200 with resultMsg) is told as kci_refused and never kept
+  const realFetch = globalThis.fetch, asked = [];
+  const rec = (id, t) => `<record><journalInfo><journal-name>공법연구</journal-name><publisher-name>한국공법학회</publisher-name><pub-year>2021</pub-year><pub-mon>03</pub-mon><volume>49</volume><issue>3</issue></journalInfo><articleInfo article-id="${id}"><title-group><article-title lang="original"><![CDATA[${t}]]></article-title></title-group><author-group><author>홍길동(한국대학교)</author></author-group><abstract-group><abstract lang="original"><![CDATA[초록 & 본문]]></abstract></abstract-group><fpage>1</fpage><lpage>30</lpage><orte-open-yn>N</orte-open-yn><citation-count kci="3" wos="0">3</citation-count><url><![CDATA[https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=${id}]]></url></articleInfo></record>`;
+  globalThis.fetch = async (input, init) => {
+    const u = String(typeof input === 'string' ? input : input.url);
+    if (!u.startsWith('https://open.kci.go.kr/po/openapi/openApiSearch.kci')) return realFetch(input, init);
+    const q = new URL(u).searchParams; asked.push(q);
+    const echo = `<inputData><key>${q.get('key')}</key><apiCode>${q.get('apiCode')}</apiCode><title><![CDATA[${q.get('title') || ''}]]></title><page>${q.get('page') || ''}</page><displayCount>${q.get('displayCount') || ''}</displayCount></inputData>`;
+    const body = q.get('key') !== 'kci-test-key0001'
+      ? `<?xml version="1.0" encoding="UTF-8"?><MetaData>${echo}<outputData><result><resultMsg>등록되지 않은 key 입니다.</resultMsg></result></outputData></MetaData>`
+      : `<?xml version="1.0" encoding="UTF-8"?><MetaData>${echo}<outputData><result><total>2</total></result>${rec('ART002000001', '관습헌법의 법리')}${rec('ART002000002', '관습헌법과 수도')}</outputData></MetaData>`;
+    return new Response(body, { headers: { 'content-type': 'text/xml;charset=UTF-8' } });
+  };
+  const kq = (qs, t = T) => call('/kci/search?' + qs, {}, t);
+  let r = await kq('title=' + encodeURIComponent('관습헌법'));
+  ok(r.status === 503 && (await r.json()).error === 'no_key' && asked.length === 0, 'KCI search with no key set: no_key, and KCI is not asked');
+  ok((await kq('title=x', null)).status === 401, 'KCI search needs a signed-in device');
+  env.KCI_KEY = ' "kci-test-key0001" ';   // as pasted, with the quotes and spaces a paste brings along
+  r = await kq('title=' + encodeURIComponent('관습헌법') + '&displayCount=20');
+  let text = await r.text();
+  ok(r.status === 200 && /xml/.test(r.headers.get('content-type') || '') && (text.match(/<record>/g) || []).length === 2 && text.includes('관습헌법의 법리'), 'KCI search: the records come through as KCI wrote them');
+  ok(!text.includes('kci-test-key0001') && !/<inputData/.test(text), 'the key KCI writes back (inputData) never reaches the device');
+  ok(asked[0].get('key') === 'kci-test-key0001' && asked[0].get('apiCode') === 'articleSearch' && asked[0].get('title') === '관습헌법' && asked[0].get('displayCount') === '20', 'asked with the owner\'s key (quotes and spaces off) for articleSearch');
+  r = await kq('title=' + encodeURIComponent('관습헌법') + '&displayCount=20');
+  ok(r.status === 200 && asked.length === 1, 'a good answer is kept: the same question again is not asked of KCI');
+  asked.length = 0;
+  r = await kq('title=' + encodeURIComponent('헌법') + '&key=evil&apiCode=citation&abstract=x&regDateFrom=20200101&sortNm=bogus&sortDir=up&displayCount=500&page=-3&dateFrom=202001&dateTo=2020&journal=' + encodeURIComponent('공법연구') + '&callback=x');
+  const w = asked[0];
+  ok(r.status === 200 && w && w.get('key') === 'kci-test-key0001' && w.get('apiCode') === 'articleSearch' && w.get('journal') === '공법연구' && w.get('dateFrom') === '202001', 'KCI search: the parameters KCI takes are passed on');
+  ok(w && !w.has('abstract') && !w.has('regDateFrom') && !w.has('callback') && !w.has('sortNm') && !w.has('sortDir') && !w.has('dateTo') && w.get('displayCount') === '100' && w.get('page') === '1', 'and nothing else: the caller\'s key and question kind, unknown or bad parameters are dropped; displayCount at most 100');
+  ok((await kq('journal=' + encodeURIComponent('공법연구'))).status === 400 && asked.length === 1, 'no title, keyword or author: refused here, KCI is not asked');
+  r = await kq('author=' + encodeURIComponent('홍길동') + '&sortNm=pubiYr&sortDir=desc');
+  ok(r.status === 200 && asked.length === 2 && asked[1].get('author') === '홍길동' && !asked[1].has('title') && asked[1].get('sortNm') === 'pubiYr', 'a person\'s papers: asked of KCI by the author alone (the app stops asking that way if KCI will not take it)');
+  asked.length = 0;
+  r = await kq('id=ART002000001');
+  ok(r.status === 200 && asked[0] && asked[0].get('apiCode') === 'articleDetail' && asked[0].get('id') === 'ART002000001' && !asked[0].has('title'), 'one paper whole: articleDetail by its id');
+  ok((await kq('id=' + encodeURIComponent('../x'))).status === 400 && asked.length === 1, 'a bad id is refused');
+  env.KCI_KEY = 'wrong-kci-key-7';   // (e.g. the data.go.kr key pasted in its place)
+  asked.length = 0;
+  for (let i = 0; i < 2; i++) {
+    r = await kq('title=' + encodeURIComponent('관습헌법') + '&displayCount=20');
+    text = await r.text();
+    ok(r.status === 502 && JSON.parse(text).error === 'kci_refused' && JSON.parse(text).msg === '등록되지 않은 key 입니다.' && !text.includes('wrong-kci-key-7'), `KCI's refusal is told as kci_refused, with its words and without the key (${i ? 'again' : 'first'})`);
+  }
+  ok(asked.length === 2, 'a refusal is never kept: asked again, KCI is asked again');
+  delete env.KCI_KEY;
+  globalThis.fetch = realFetch;
+}
+
 // devices: sign another device out, then sign out
 const devs = (await j(await call('/devices', {}, T))).body.devices;
 const other = devs.find((d) => !d.current);

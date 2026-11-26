@@ -365,7 +365,9 @@ export function pageLabels(pages) {
     if (best == null || bc < 3 || bc < withCand * 0.7) return none;
     // the runner-up must be far behind (a margin full of numbers gives many offsets the same support)
     for (const [off, c] of counts) if (off !== best && c > bc * 0.5) return none;
-    if (best + 1 < 1) return none;
+    // numbers that start after the PDF's first page: a notice or a cover put before the paper (KJCI, earticle) moves them
+    // on by a page or so (the pages before the one printed 1 are labelled apart: 표지)
+    if (best < -3) return none;
     const b = bands.get(best);
     return { offset: best, confident: true, scheme: b.header >= b.footer ? 'header' : 'footer' };
   } catch (e) {
@@ -384,7 +386,7 @@ function headingKind(t) {
   if (/^제\s*\d+\s*절(\s|$)/.test(t)) return 'section';
   if (/^\d{1,2}\.\s*[^\d\s.]/.test(t)) return 'arabic';
   if (/^[A-H]\.\s+[A-Z가-힣]/.test(t)) return 'latin';
-  if (/^[가-하]\.\s*\S/.test(t)) return 'hangul';
+  if (/^[가-하]\.\s*[^\s”’"')\]」』]/.test(t)) return 'hangul';   // (다.” … is the end of a quotation, not a heading)
   if (/^\(\d{1,2}\)\s*\S/.test(t)) return 'paren';
   return null;
 }
@@ -395,13 +397,23 @@ const MARK = /(?:^|\s)(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]{1,4}\s*[.．]|(?:I|II|
 const headKey = (t) => String(t || '').replace(/^[\sⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX\d.．()가-하]{1,6}?[.．)]\s*/, '').replace(/[\s「」｢｣『』‘’“”'"·:：\-–—]/g, '').slice(0, 24);
 export function tidyOutline(list) {
   const xs = (list || []).filter((x) => x && x.title);
-  const two = (t) => { const ms = [...String(t).matchAll(MARK)]; return ms.length >= 2 && ms[1].index > 2; };
+  // (a decision named by its date is one heading: the 10. of 1993. 12. 10. 선고 is no second number)
+  const undated = (t) => String(t).replace(/(?:19|20)\d{2}\s*\.\s*\d{1,2}\s*\.(?:\s*\d{1,2}\s*\.)?/g, (m) => m.replace(/\S/g, '#'));
+  const two = (t) => { const ms = [...undated(t).matchAll(MARK)]; return ms.length >= 2 && ms[1].index > 2; };
   let out = xs.filter((x) => !two(x.title));
   // a heading of the box on the first pages met again on a later page (the text itself): the later one stays (a heading
   // that comes back in another chapter — 1. 개관, 소결 — is not the box's, and stays where it is)
-  // (only a run of them: the box lists several headings together, a heading of the text stands alone)
-  const twin = out.map((x, i) => { const k = headKey(x.title); return !!k && x.page <= 1 && out.slice(i + 1).some((y) => headKey(y.title) === k && (y.page > x.page || (y.page === x.page && (y.y || 0) > (x.y || 0)))); });
-  out = out.filter((x, i) => !(twin[i] && (twin[i - 1] || twin[i + 1])));
+  // (only a run of them, or most of a page's entries: the box lists several headings together, a heading of the text stands
+  // alone — and the text's own 1. 의의 and 2. 내용 under Ⅱ., met again under Ⅲ., are two of its page's entries, not most;
+  // the first pages are the paper's own, after a cover or a notice put before it)
+  // (a journal's margin logo glued to an entry of the box — 시사점 Legislation — leaves it the same heading)
+  const first = Math.min(...out.map((x) => x.page ?? 0));
+  const sameKey = (a, b) => a === b || (b.length >= 6 && a.startsWith(b) && /^[A-Za-z]+$/.test(a.slice(b.length)));
+  const twin = out.map((x, i) => { const k = headKey(x.title); return !!k && x.page <= first + 1 && out.slice(i + 1).some((y) => sameKey(k, headKey(y.title)) && (y.page > x.page || (y.page === x.page && (y.y || 0) > (x.y || 0)))); });
+  const perPage = {}, onPage = {};
+  out.forEach((x, i) => { onPage[x.page] = (onPage[x.page] || 0) + 1; if (twin[i]) perPage[x.page] = (perPage[x.page] || 0) + 1; });
+  const boxPage = (p) => perPage[p] >= 2 && perPage[p] * 2 > onPage[p];
+  out = out.filter((x, i) => !(twin[i] && (twin[i - 1] || twin[i + 1] || boxPage(x.page))));
   return out.length >= 2 ? out : xs;
 }
 
@@ -411,6 +423,12 @@ export function outline(pages, stats) {
     if (!ps.length) return [];
     const st = stats && stats.bodySize ? stats : docStats(ps);
     const body = st.bodySize, gap = st.lineGap || body * 1.6;
+    // how many of the paper's characters are set in each size (to a tenth of a point): a size much of the text is in is the
+    // text's (a paper whose notes outweigh it: the notes' size is the commonest, its text a size above), not its headings'
+    const sizes = new Map();
+    let chars = 0;
+    for (const p of ps) for (const it of usable(p.items)) { const k = Math.round(it.h * 10); sizes.set(k, (sizes.get(k) || 0) + it.s.length); chars += it.s.length; }
+    const shareAt = (h) => { let c = 0; for (const [k, n] of sizes) if (Math.abs(k / 10 - h) <= h * 0.03) c += n; return chars ? c / chars : 1; };
     const cands = [];
     for (const p of ps) {
       const lay = layout(p, st);
@@ -426,11 +444,19 @@ export function outline(pages, stats) {
           if (!kind) continue;
           const t = L.text;
           const ko = HANGUL.test(t);
-          if (t.length > (ko ? 40 : 90)) continue;
           if (/다\.$|[,;]$/.test(t)) continue;
           if (L.h < body * 0.95) continue;
           const bigger = L.h >= body * 1.04;
           const bold = st.bodyFont && L.font && L.font !== st.bodyFont && Math.abs(L.h - body) < body * 0.1;
+          // a long numbered line (one naming a decision, a law or a foreign act: 1. 대법원 2019. 3. 28. 선고 2016두43176 판결의
+          // 사실관계 및 경과) counts only when the whole of it is set larger — not a heading run into the next column's text,
+          // not a body line that starts '다. ' after a line break — in a size few of the paper's characters are in (not its
+          // text's, a size above its notes'), and in a font's size: a scan reader's line (ocrPageItems: f 'ocr', one item a
+          // line) is as tall as its letters make its box, so its height tells no heading from the text
+          const len = (xs) => xs.reduce((n, it) => n + it.s.length, 0);
+          const allBig = bigger && len(L.items.filter((it) => it.h >= body * 1.04)) >= 0.9 * len(L.items)
+            && !L.items.some((it) => it.f === 'ocr') && shareAt(L.h) < 0.12;
+          if (t.length > (ko ? (allBig ? 70 : 40) : 90)) continue;
           const prev = lines[i - 1];
           const spaced = !prev || (L.top - prev.bot) >= gap * 0.75;
           const short = (L.x1 - L.x0) < colW * 0.75;
@@ -442,18 +468,24 @@ export function outline(pages, stats) {
       }
     }
     if (cands.length < 2) return [];
-    // levels: roman/chapter/special = 1; the other families by the order they first appear
+    // levels: roman/chapter/special = 1; the other families by the order they first appear (in a book or a thesis, under
+    // 제N장 and 제N절, Ⅰ. Ⅱ. are a lower family — when its chapters are its frame: two of them at least, the first before any
+    // Ⅰ.; one law's chapter quoted in a paper's text, 제2장 선거관리위원회, is no frame of the paper)
+    const chap = cands.filter((c) => c.kind === 'chapter'), roman = cands.findIndex((c) => c.kind === 'roman');
+    const framed = chap.length >= 2 && (roman < 0 || cands.indexOf(chap[0]) < roman);
+    const top = framed ? ['chapter', 'special'] : ['roman', 'chapter', 'special'];
     const order = [];
-    for (const c of cands) if (!['roman', 'chapter', 'special'].includes(c.kind) && !order.includes(c.kind)) order.push(c.kind);
+    for (const c of cands) if (!top.includes(c.kind) && !order.includes(c.kind)) order.push(c.kind);
     const fixed = { section: 2 };
     let out = cands.map((c) => {
       let level = 1;
-      if (!['roman', 'chapter', 'special'].includes(c.kind)) level = Math.min(3, (fixed[c.kind] || 0) || 2 + order.indexOf(c.kind));
+      if (!top.includes(c.kind)) level = Math.min(3, (fixed[c.kind] || 0) || 2 + order.indexOf(c.kind));
       return { title: c.title, level, page: c.page, y: Math.round(c.y * 10) / 10 };
     });
     out = tidyOutline(out);
-    if (out.length > 60) out = out.filter((o) => o.level <= 2);
-    if (out.length > 60) return [];
+    // a long one (a book, a thesis) keeps its upper levels; it is never left with none for being long
+    if (out.length > 120) out = out.filter((o) => o.level <= 2);
+    if (out.length > 400) out = out.filter((o) => o.level <= 1);
     return out;
   } catch (e) {
     return [];

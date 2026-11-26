@@ -25,6 +25,7 @@
 //   /api/bills/one?no=&id=  one bill's 제안이유 및 주요내용 and the meetings that took it up (회의록)
 //   /api/data/<기관>/<서비스>[/<기능>] 공공데이터포털 (헌법재판소·국회입법조사처·법제처): env.DATA_GO_KR_KEY (법제처 1170000: env.MOLEG_KEY)
 //   /api/kci/oai            KCI OAI-PMH (no key)
+//   /api/kci/search         KCI Open API 논문 검색 (articleSearch by words; articleDetail by id): env.KCI_KEY
 //   /api/nl/<op>            국립중앙도서관 (소장자료·KOLIS-NET·ISBN 서지): env.NL_KEY
 //   /api/nanet/<op>          국회도서관 국가학술정보 클라우드 (통합검색·상세보기·연구자·주제어·연관 연구자/학술지/발행기관/주제어·추이): env.NANET_KEY
 //   /api/scienceon/search|view  KISTI ScienceON 논문 (권호·쪽·초록·DOI·원문): env.SCIENCEON_CLIENT_ID, SCIENCEON_KEY, SCIENCEON_MAC
@@ -93,6 +94,9 @@ async function route(req, env, ctx) {
     if (p[1] === 'ping') return json({ ok: true, at: Date.now() });
     const dev = await authenticate(req, env, ctx);
     if (!dev) return err('auth', 401);
+    // the outside sources' check, once from Korea after one ran elsewhere: KISTI ScienceON and some public sites answer Korean
+    // addresses only, so a check made abroad says little; it runs beside the owner's own request and never delays it
+    if (dev.kind !== 'inbox' && req.cf && req.cf.country === 'KR') ctx.waitUntil(diagFromKorea(req, env).catch(() => {}));
     if (dev.kind === 'inbox') {   // a share key (iPad/iPhone share menu): it can put a PDF in, nothing more
       if (p[1] === 'inbox' && m === 'POST' && p.length === 2) return await inbox(req, env, ctx, dev, url);
       return err('share_key_only', 403);
@@ -161,6 +165,7 @@ async function route(req, env, ctx) {
         break;
       case 'kci':
         if (m === 'GET' && p[2] === 'oai' && p.length === 3) return await kciOai(ctx, url);
+        if (m === 'GET' && p[2] === 'search' && p.length === 3) return await kciSearch(env, ctx, url);
         break;
       case 'paper':
         if (m === 'POST' && p[2] === 'pdf' && p.length === 3) return await paperPdf(req, env, ctx);
@@ -170,6 +175,9 @@ async function route(req, env, ctx) {
         break;
       case 'scienceon':
         if (m === 'GET' && p.length === 3) return await scienceonApi(env, p[2], url);
+        break;
+      case 'embed':
+        if (m === 'POST' && p.length === 2) return await embed(req, env);
         break;
       case 'diag':
         if (m === 'GET' && p.length === 2) return await diag(req, env);
@@ -445,7 +453,9 @@ const dataKey = (env, segs) => (segs[0] === '1170000' && env.MOLEG_KEY) || env.D
 const dataKeys = (env, segs) => [...new Set([dataKey(env, segs), env.DATA_GO_KR_KEY, env.MOLEG_KEY].filter(Boolean))];
 const notRegistered = (t) => /SERVICE_KEY_IS_NOT_REGISTERED|<returnReasonCode>\s*(?:30|31)\s*</.test(t.slice(0, 1500));
 // the portal's own refusals (an unregistered key, the day's limit, a retired service) and a service's error code are not kept
-const realData = (t) => !/OpenAPI_ServiceResponse|<errMsg>|<returnReasonCode>|SERVICE_KEY_IS|LIMITED_NUMBER|"resultCode"\s*:\s*"(?!0+")|<resultCode>(?!0+<)|<html|<!DOCTYPE/i.test(t.slice(0, 1500));
+// (an empty answer is not kept either: the portal gives an empty 200 when KCI's article list is asked past the first two hundred
+// or so of a journal, and that was being kept for an hour)
+const realData = (t) => !!t.trim() && !/OpenAPI_ServiceResponse|<errMsg>|<returnReasonCode>|SERVICE_KEY_IS|LIMITED_NUMBER|"resultCode"\s*:\s*"(?!0+")|<resultCode>(?!0+<)|<html|<!DOCTYPE/i.test(t.slice(0, 1500));
 async function dataApi(env, ctx, segs, url) {
   const keys = dataKeys(env, segs);
   if (!keys.length) return err('no_key', 503);
@@ -676,7 +686,72 @@ async function kciOai(ctx, url) {
   return passOn(await kept(ctx, u, 86400, () => fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(30000) }), realKci), '');
 }
 
+// KCI's own Open API (open.kci.go.kr, 논문 검색): every paper KCI holds, of every year — articleSearch by the words of a title
+// (title is the search; keyword, author, journal and the rest narrow it, as KCI ANDs them), or one paper whole (articleDetail,
+// by its id). Asked with the owner's key (KCI_KEY); only the parameters KCI takes are passed on, and the key and the kind of
+// question are ours. KCI answers a refusal (a key it does not know, no title) with 200 and outputData/result/resultMsg and no
+// records: that is never kept, and the app is told kci_refused (it then stops asking for a while). KCI writes the key back
+// into every answer (inputData): the whole inputData is taken out, and the key wherever else it may stand.
+const KCI_API = 'https://open.kci.go.kr/po/openapi/openApiSearch.kci';
+const KCI_TEXT = ['title', 'keyword', 'author', 'journal', 'institution', 'affiliation', 'doi'];
+const kciRefusal = (t) => (/<record\b/i.test(t) ? '' : xmlText((/<resultMsg>([\s\S]*?)<\/resultMsg>/i.exec(t) || [])[1] || ''));
+const realKciApi = (t) => /<MetaData\b/i.test(t) && /<outputData\b/i.test(t) && !kciRefusal(t) && (/<record\b/i.test(t) || /<total>\s*\d+\s*<\/total>/i.test(t));
+async function kciSearch(env, ctx, url) {
+  const key = kciKeyOf(env);
+  if (!key) return err('no_key', 503);
+  const sp = url.searchParams, q = new URLSearchParams();
+  const id = (sp.get('id') || '').trim();
+  if (id) {
+    if (!/^ART\d{6,12}$/.test(id)) return err('no_id', 400);
+    q.set('apiCode', 'articleDetail'); q.set('key', key); q.set('id', id);
+  } else {
+    q.set('apiCode', 'articleSearch'); q.set('key', key);
+    for (const k of KCI_TEXT) { const v = (sp.get(k) || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim(); if (v && v.length <= 200) q.set(k, v); }
+    // (KCI's guide wants a title; a keyword alone it also takes. An author alone is passed on for a person's own papers: if
+    // KCI will not take it, its refusal is not kept and the app stops asking that way — never KCI's other questions)
+    if (!q.get('title') && !q.get('keyword') && !q.get('author')) return err('no_term', 400);
+    for (const k of ['dateFrom', 'dateTo']) if (/^\d{6}$/.test(sp.get(k) || '')) q.set(k, sp.get(k));   // YYYYMM, the month it came out
+    const num = (k, lo, hi, d) => { const n = Math.floor(Number(sp.get(k))); return String(sp.get(k) && Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d); };
+    q.set('page', num('page', 1, 1000, 1)); q.set('displayCount', num('displayCount', 1, 100, 10));   // (KCI gives at most 100 a page)
+    if (['title', 'author', 'pubiYr'].includes(sp.get('sortNm'))) q.set('sortNm', sp.get('sortNm'));
+    if (['asc', 'desc'].includes(sp.get('sortDir'))) q.set('sortDir', sp.get('sortDir'));
+  }
+  const u = `${KCI_API}?${q}`;
+  const res = await kept(ctx, u, 12 * 3600, () => fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(20000) }), realKciApi);
+  const drop = [key, String(env.KCI_KEY || '')];
+  if (res.ok) {
+    const msg = kciRefusal(res.text);
+    if (msg) { let m2 = msg; for (const k of drop) if (k) m2 = m2.split(k).join(''); return err('kci_refused', 502, { msg: m2.slice(0, 200) }); }
+    if (!/<MetaData\b/i.test(res.text)) return err('kci_unexpected', 502);   // (a block or maintenance page, not KCI's answer)
+  }
+  return passOn({ ...res, text: res.text.replace(/<inputData\b[\s\S]*?<\/inputData>/gi, '') }, drop);
+}
+
 // which outside sources answer, asked from where we run now (near the device that asked); the answer is kept for reading later
+async function diagFromKorea(req, env) {
+  const last = await env.BUCKET.get('diag/last.json').then((o) => (o ? o.json() : null)).catch(() => null);
+  if (last && last.country === 'KR' && Date.now() - last.at < 6 * 3600e3) return;   // a recent check from Korea stands
+  const mark = await env.BUCKET.get('diag/kr-run.json').then((o) => (o ? o.json() : null)).catch(() => null);
+  if (mark && Date.now() - mark.at < 30 * 60e3) return;   // one run at a time (the owner's requests come many at once)
+  await env.BUCKET.put('diag/kr-run.json', JSON.stringify({ at: Date.now() }), { httpMetadata: { contentType: 'application/json' } });
+  await diag(req, env);
+}
+// sentence vectors from Workers AI (multilingual models run by Cloudflare itself: the texts go nowhere else), for the search by
+// meaning being tried out — signed-in devices only, at most 100 texts of 2,000 letters a call
+const EMBED_MODELS = new Set(['@cf/baai/bge-m3', '@cf/google/embeddinggemma-300m', '@cf/qwen/qwen3-embedding-0.6b']);
+async function embed(req, env) {
+  if (!env.AI) return err('no_ai', 503);
+  const b = await req.json().catch(() => null);
+  const texts = Array.isArray(b && b.texts) ? b.texts.slice(0, 100).map((t) => String(t || '').slice(0, 2000)) : [];
+  if (!texts.length) return err('no_text', 400);
+  const model = EMBED_MODELS.has(b.model) ? b.model : '@cf/baai/bge-m3';
+  try {
+    const r = await env.AI.run(model, { text: texts });
+    return json({ model, shape: r.shape, data: r.data });
+  } catch (e) { return json({ error: 'ai', message: String((e && e.message) || e).slice(0, 300) }, 502); }
+}
+// KCI's key as the owner pasted it, without the spaces or quotes a paste can bring along
+const kciKeyOf = (env) => String(env.KCI_KEY || '').trim().replace(/^["'“‘]+|["'”’]+$/g, '').trim();
 async function diag(req, env) {
   const tries = [
     ['kci', 'https://open.kci.go.kr/oai/request?verb=Identify'],
@@ -685,20 +760,31 @@ async function diag(req, env) {
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
     ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
   ];
-  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.MOLEG_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC].filter(Boolean);
+  const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.MOLEG_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC, env.KCI_KEY, kciKeyOf(env)].filter(Boolean);
   // the shape of each data.go.kr key (never its value): a 64-letter hex key is the portal's newer '일반 인증키'
   const shape = (k) => (k ? { len: k.length, hex: /^[0-9a-f]+$/i.test(k) } : null);
-  const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, keys: { DATA_GO_KR_KEY: shape(env.DATA_GO_KR_KEY), MOLEG_KEY: shape(env.MOLEG_KEY) }, results: {} };
+  // KCI's key as pasted (never its value): its length, and whether spaces, quotes or other letters came with it
+  const kshape = (k) => (k ? { len: k.length, trimmed: k.trim().length, digits: /^\d+$/.test(k.trim()), alnum: /^[0-9A-Za-z]+$/.test(k.trim()), quoted: /^["'“‘]|["'”’]$/.test(k.trim()), inner: /\s/.test(k.trim()), hex: /^[0-9a-f]+$/i.test(k.trim()), sameAsDataKey: [env.DATA_GO_KR_KEY, env.MOLEG_KEY].some((d) => d && d.trim() === k.trim()) } : null);
+  const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, keys: { DATA_GO_KR_KEY: shape(env.DATA_GO_KR_KEY), MOLEG_KEY: shape(env.MOLEG_KEY), KCI_KEY: kshape(env.KCI_KEY) }, results: {} };
   tries.push(['nanet', env.NANET_KEY && (() => nanetAsk(env, 'searchTotal', { searchTerm: '관습헌법', printRowCnt: '1' }))]);
+  // KCI's own Open API (논문 검색): whether the owner's key is taken, and the shape of its answer (the key taken out)
+  const kciKey = kciKeyOf(env);
+  tries.push(['kcisearch', kciKey && `https://open.kci.go.kr/po/openapi/openApiSearch.kci?${new URLSearchParams({ apiCode: 'articleSearch', key: kciKey, title: '관습헌법', displayCount: '2' })}`, { 'user-agent': UA }]);
   tries.push(['moleg', dataKey(env, ['1170000']) && `https://apis.data.go.kr/1170000/law/lawSearchList.do?${new URLSearchParams({ serviceKey: dataKey(env, ['1170000']), target: 'law', query: '공직선거법', numOfRows: '1', pageNo: '1' })}`]);
+  // ScienceON's token answer itself (what the gateway says when it gives no token), and the shape of what was pasted (never the
+  // values: lengths, and the MAC address's pattern with each letter or digit shown as one sign)
+  const mask = (v) => String(v || '').replace(/[0-9A-Za-z]/g, (c) => (/[0-9A-F]/.test(c) ? 'H' : /[a-f]/.test(c) ? 'h' : 'x'));
+  out.keys.SCIENCEON = soReady(env) ? { idLen: env.SCIENCEON_CLIENT_ID.length, idTrim: env.SCIENCEON_CLIENT_ID.trim().length, keyLen: env.SCIENCEON_KEY.length, keyTrim: env.SCIENCEON_KEY.trim().length, mac: mask(env.SCIENCEON_MAC) } : null;
+  tries.push(['scienceontoken', soReady(env) && (async () => { const [safe] = await soAccounts(env); return fetch(`${SO}/tokenrequest.do?${new URLSearchParams({ accounts: safe, client_id: env.SCIENCEON_CLIENT_ID })}`, { signal: AbortSignal.timeout(15000) }); })]);
   tries.push(['scienceon', soReady(env) && (async () => { const t = await soToken(env); return fetch(`${SO}/openapicall.do?${new URLSearchParams({ client_id: env.SCIENCEON_CLIENT_ID, token: t, version: '1.0', action: 'search', target: 'ARTI', searchQuery: JSON.stringify({ BI: '관습헌법' }), rowCount: '1' })}`, { signal: AbortSignal.timeout(15000) }); })]);
   await Promise.all(tries.map(async ([k, u, headers]) => {
     if (!u) { out.results[k] = { status: 'no key' }; return; }
     try {
       const r = typeof u === 'function' ? await u() : await fetch(u, { headers: headers || {}, signal: AbortSignal.timeout(12000) });
-      let t = (await r.text()).slice(0, 400);
+      let t = (await r.text()).slice(0, k === 'kcisearch' ? 8000 : 400);   // (KCI's: one whole record, to read its shape)
       for (const key of keys) t = t.split(key).join('');
       t = t.replace(/\b[0-9A-Fa-f]{64}\b/g, '…');   // a token the answer repeats
+      t = t.replace(/("(?:access|refresh)_token"\s*:\s*")[^"]*/g, '$1…');   // ScienceON's tokens, when it gives them
       out.results[k] = { status: r.status, head: t };
     } catch (e) { out.results[k] = { error: String((e && e.message) || e).slice(0, 200) }; }
   }));

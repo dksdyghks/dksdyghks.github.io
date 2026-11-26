@@ -17,6 +17,7 @@ import * as kci from './kci.js';
 import * as foreign from './foreign.js';
 import * as precq from './precq.js';
 import * as kciq from './kciq.js';
+import * as pfind from './pfind.js';
 import * as verify from './verify.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -671,7 +672,7 @@ async function renderSearch(c) {
     lazyThumbs();
   });
 }
-const snipsHtml = (r, q) => `<span class="snips">${r.snips.map((s) => `<button class="snip" data-open="${r.f.id}" data-page="${s.page}" data-q="${esc(q)}"><em>${r.o == null ? (s.page + 1) + '쪽' : (s.page + 1 + r.o) + '면'}</em>…${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}…</button>`).join('')}</span>`;
+const snipsHtml = (r, q) => `<span class="snips">${r.snips.map((s) => `<button class="snip" data-open="${r.f.id}" data-page="${s.page}" data-q="${esc(q)}"><em>${r.o == null ? (s.page + 1) + '쪽' : printedPage(s.page, r.o)}</em>…${esc(s.a)}<mark>${esc(s.w)}</mark>${esc(s.b)}…</button>`).join('')}</span>`;
 // every paper's page texts searched for the words (spaces and case ignored); the papers by how often, a few places each.
 // A word that ends in a number does not match a longer number (헌법 제1조 is not 제10조, 2004헌마55 is not 2004헌마554).
 async function pageHits(keys, live, onUpdate) {
@@ -761,89 +762,358 @@ function paperFrame(c) {
   c.innerHTML = `<div class="law-top pp-top"><label class="law-find"><button type="button" class="ib nav-back" aria-label="뒤로" title="뒤로" hidden>${I.back}</button><span class="lf-ico">${I.search}</span><input type="search" placeholder="제목 · 주제어 · 저자 · 학술지" enterkeyhint="search" autocomplete="off" aria-label="논문 찾기"></label></div><div class="law-body pp-body"></div>`;
   const inp = $('.law-find input', c);
   inp.value = S.pq || '';
-  const ask = (how = 'push') => { clearTimeout(S.pqT); noteScroll(); S.pq = inp.value.trim(); S.pjv = ''; S.pj = ''; renderPapers(c); nav(how); };
-  inp.addEventListener('input', () => { clearTimeout(S.pqT); S.pqT = setTimeout(() => ask('typing'), 500); });
+  const ask = (how = 'push') => {
+    clearTimeout(S.pqT);
+    // (typing that leaves the question as it is on screen — a space after it, a letter typed and taken back — asks nothing
+    // and leaves the list as it is: it is not drawn again in another order)
+    if (how === 'typing' && inp.value.trim() === (S.pq || '').trim() && !S.pjv) return;
+    noteScroll(); S.pq = inp.value.trim(); S.pjv = ''; S.pj = ''; ppHow = how; renderPapers(c); ppHow = ''; nav(how);
+  };
+  inp.addEventListener('input', () => { ppTyped = Date.now(); clearTimeout(S.pqT); S.pqT = setTimeout(() => ask('typing'), 500); });
   inp.addEventListener('keydown', (e) => { if (e.key === 'Escape') { inp.value = ''; ask('typing'); } if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ask(); inp.blur(); } });
   if (matchMedia('(hover: hover) and (pointer: fine)').matches && !S.pq) setTimeout(() => inp.focus(), 0);
   $('.nav-back', c).onclick = () => history.back();
   paintBack();
 }
+let ppSeq = 0;   // each drawing of 논문 찾기 (an older one still waiting for its answer gives way to the newer)
 async function renderPapers(cIn) {
-  const q = (S.pq || '').trim(), key = paperKey();
+  const q = (S.pq || '').trim(), key = paperKey(), seq = ++ppSeq;
   paperFrame(cIn);
   const inp = $('.law-find input', cIn);
   if (inp && inp.value.trim() !== q && document.activeElement !== inp) inp.value = q;
   const c = $('.pp-body', cIn);
   c.dataset.ppkey = key;
-  const live = () => S.view.kind === 'papers' && !S.q && paperKey() === key;
+  const live = () => S.view.kind === 'papers' && !S.q && paperKey() === key && seq === ppSeq;
   if (S.pjv) { journalView(c, live); return; }
   if (!q) {
     if (!live()) return;
-    c.innerHTML = `<div class="pp-home"><h2 class="sec-h">내 논문</h2><div class="law-ex"><button type="button" data-pq="${esc(research.ME)}"><span>${esc(research.ME)}</span><small>내가 쓴 글 · 연구자 정보</small></button></div>
+    // (what the box searches, said once under it: every year, not only the recent KCI papers listed below)
+    c.innerHTML = `<div class="pp-home"><p class="pp-cap">모든 연도의 학술논문 · 학위논문 · 단행본에서 찾습니다</p><h2 class="sec-h">내 논문</h2><div class="law-ex"><button type="button" data-pq="${esc(research.ME)}"><span>${esc(research.ME)}</span><small>내가 쓴 글 · 연구자 정보</small></button></div>
       <section class="kci-new" hidden></section></div>`;
     store.del('kv', 'paperRecent').catch(() => {});
     kciNewSec($('.kci-new', c), live);
     return;
   }
-  // the words are looked for in KCI's law papers first (on this device, at once); the libraries come under 더 찾기
-  if (await kciq.ready()) kciqResults(cIn, c, q, live);
-  else legacyResults(c, q, live);
+  // the words are looked for everywhere at once: 국회도서관, KCI, ScienceON and this device's KCI index, as one list
+  paperResults(cIn, c, q, live);
 }
-// KCI 법학 논문 found by the words: a sort (관련도·최신·피인용), a journal to narrow to, then the shelf's own hits and 더 찾기
-async function kciqResults(cIn, c, q, live) {
-  // the screen is built once per question (not per sort or journal), so '내 책장에서', 다른 곳, 더 찾기 are not stacked up
-  // again on a sort or a facet; a new question (or returning from a journal's list) builds it afresh
-  if (c.dataset.kq !== q || !c.querySelector('.pp-kci')) {
+/* 논문 찾기's answer: every source the server reaches asked together (pfind.js) and made one list of papers — each paper once,
+   with what any source knows of it — under one short line naming the sources that answered (all years, not only the KCI
+   papers gathered here). The list is drawn once the quick sources have answered or PP_WAIT has passed, and no row moves after
+   that unless asked: a paper a slower source adds to one already drawn is drawn again in its place (KCI's 권호, 피인용 …); papers
+   it brings that this page would show are announced on the line above the list ('KCI에서 관련 높은 논문 2편이 더 왔습니다 ·
+   보기'), and drawn, in order, only when that is tapped; the rest wait for 더 보기. Drawing each answer as it came would put
+   the best papers first, but would move the rows one is reading or about to tap — and what is below the list with them;
+   waiting for the slowest would leave the screen empty when one source is slow. The row of journals is made once too. */
+const PP_WAIT = 1500;    // how long the first drawing waits for the slower sources
+const PP_STAND = 1200;   // while typing, how long the words must stand after the last letter before the servers are asked
+let ppHow = '';          // how the question was asked: 'push' (Enter), 'typing', or '' (going back, a sort, a journal …)
+let ppTyped = 0;         // when the last letter was typed in the box
+const PP_SORTS = [['rel', '관련도'], ['new', '최신'], ['cited', '피인용']];
+const ppSortsHtml = (sort, cites) => PP_SORTS.filter(([k]) => k !== 'cited' || cites || sort === 'cited').map(([k, t]) => `<button type="button" data-ks="${k}" class="${k === sort ? 'on' : ''}">${t}</button>`).join('');
+const ppKindsHtml = (kind) => papers.KINDS.map(([k, t]) => `<button type="button" data-pk="${k}" class="${k === kind ? 'on' : ''}">${t}</button>`).join('');
+const ppHidden = (r) => !!(r.kci && kciHidden(r.kci));   // 관심 없음 (KCI papers set aside), on every device
+// an order, a kind or a journal chosen above the list: shown at once, the answer follows — the same while the first answer
+// is still awaited (the frame drawn then has these buttons too)
+function ppPick(t, cIn) {
+  const res = t.closest('.pp-res');
+  const pick = (sel, b) => { if (res) for (const x of res.querySelectorAll(sel)) x.classList.toggle('on', x === b); };
+  const sort = ['new', 'cited'].includes(S.ks) ? S.ks : 'rel', kind = S.pk ?? 'ARTICLE';
+  const go = () => { noteScroll(); renderPapers(cIn); nav('typing'); };
+  const ks = t.closest('[data-ks]'); if (ks) { if (ks.dataset.ks !== sort) { pick('[data-ks]', ks); S.ks = ks.dataset.ks; go(); } return true; }
+  const pk = t.closest('[data-pk]'); if (pk) { if (pk.dataset.pk !== kind) { pick('[data-pk]', pk); S.pk = pk.dataset.pk; S.pj = ''; go(); } return true; }
+  const jp = t.closest('[data-jpick]'); if (jp) { if (pfind.jkey(jp.dataset.jpick) !== pfind.jkey(S.pj || '')) { pick('[data-jpick]', jp); S.pj = jp.dataset.jpick; go(); } return true; }
+  return false;
+}
+async function paperResults(cIn, c, q, live) {
+  const how = ppHow, kind = S.pk ?? 'ARTICLE', sort = ['new', 'cited'].includes(S.ks) ? S.ks : 'rel';
+  const was = c.querySelector(':scope > .pp-res');
+  if (was && (c.dataset.kq === q || how === 'typing')) was.classList.add('pp-stale');   // what is there stays, faded, until the answer is drawn
+  else {
+    c.dataset.kq = '';
+    c.innerHTML = `<section class="pp-res pp-kci"><div class="pp-kh"><h2 class="sec-h">논문 <span class="sec-n"></span></h2><div class="pp-sort" role="group" aria-label="순서">${ppSortsHtml(sort, false)}</div></div>
+      <p class="pp-scope"><span class="pp-src">찾는 중…</span></p><div class="pp-opts" role="group" aria-label="자료 종류">${ppKindsHtml(kind)}</div><div class="list law-list kci-list pp-klist"><p class="none">찾는 중…</p></div></section>`;
+    $(':scope > .pp-res', c).onclick = (e) => { ppPick(e.target, cIn); };
+  }
+  kci.journals().then(pfind.setJournals, () => {});   // (KCI's journals: a journal it lists is never taken for a magazine)
+  // still typing: the servers are asked only once the words have stood PP_STAND since the last letter (Enter asks at once),
+  // and only if the box still says them
+  if (how === 'typing' && navigator.onLine) {
+    for (;;) { const wait = ppTyped + PP_STAND - Date.now(); if (wait <= 0) break; await new Promise((ok) => setTimeout(ok, wait)); if (!live()) return; }
+    const inp = $('.law-find input', cIn); if (inp && inp.value.trim() !== q) return;
+  }
+  const [jl] = await Promise.all([kciq.journals().catch(() => []), kciHiddenReady().catch(() => {})]);
+  if (!live()) return;
+  const f = pfind.feed(q, kind), v = pfind.view(f, sort, S.pj || '', jl);
+  if (how === 'push' || how === 'typing') { v.reset(); if (!v.j) f.facet = null; }   // asked anew: drawn anew (going back shows it as it was left)
+  v.start();
+  fgUntil = Math.max(fgUntil, Date.now() + 4000);   // (the shelf's own lookups in the background wait while this is answered)
+  await v.settle(PP_WAIT);
+  if (live()) ppPaint(cIn, c, q, f, v, jl, live);
+}
+// the index's journals by name, for a tap on a paper's journal (its own list, by issue): only when the name tells which one
+function ppJournalOf(jl) {
+  const m = new Map();
+  for (const j of jl || []) { const k = pfind.jkey(j[0]); if (k) m.set(k, [...(m.get(k) || []), j]); }
+  return (r) => {
+    const l = m.get(pfind.jkey(r.journal));
+    if (!l) return null;
+    if (l.length === 1) return l[0];
+    const p = papers.norm(r.publisher), hit = p ? l.filter((j) => papers.norm(j[1]) === p) : [];
+    return hit.length === 1 ? hit[0] : null;
+  };
+}
+// (a mouse can point at a journal's name in a row; on a touch screen the name is plain text, and the paper's sheet has the
+// button to the journal's list — a tap meant for the paper never lands on a name 15 px tall)
+const finePointer = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
+function ppRow(r, shelf, jOf, kind) {
+  const mine = shelf.get(papers.norm(papers.mainTitle(r.t)));
+  const who = r.a.length > 3 ? r.a.slice(0, 3).join('·') + ' 외' : r.a.join('·');
+  const x = { v: r.v, i: r.i, y: r.y, m: r.m }, iss = kciIssue(x), when = kciWhen(x);
+  const art = !r.kind || r.kind === 'ARTICLE', jj = art && r.journal && finePointer() ? jOf(r) : null;
+  const jn = !art || !r.journal ? '' : jj ? `<i class="pp-jn" role="link" tabindex="0" data-jn="${esc(jj[0])}" data-jp="${esc(jj[1] || '')}">${esc(r.journal)}</i>` : esc(r.journal);
+  const where = art ? [jn + (iss ? (jn ? ' ' : '') + esc(iss) : '')] : [kind === '' ? esc(r.kindName || '') : '', esc(r.publisher || '')];
+  const meta = [who ? esc(who) : '', ...where, when ? esc(when) : ''].filter(Boolean).join(' · ');
+  // (KCI 등재 · 등재후보 only where an answer said so of the journal: a bare 'KCI' would read as that standing, and it only
+  // meant that KCI's record had come back)
+  const grade = art ? pfind.gradeOf(r) : '', mag = art && pfind.venue(r) === 1;
+  const badges = `${grade ? ` <em class="pp-kcib">${esc(grade)}</em>` : ''}${mag ? ' <em class="pp-mag">잡지</em>' : ''}${mine ? ' <em class="pp-mine">내 책장</em>' : ''}${r.open ? ' <em class="pp-open">원문 공개</em>' : ''}${r.c ? ` <em class="pp-cited">피인용 ${r.c}</em>` : ''}`;
+  const ab = r.ab ? `<span class="pp-ab">${esc(r.ab.length > 118 ? r.ab.slice(0, 117) + '…' : r.ab)}</span>` : '';
+  return `<div class="kci-item no-x" data-row="${r.n}"><button type="button" class="lrow pp-row" data-pr="${r.n}"><b>${esc(r.t)}${badges}</b>${r.reading ? `<span class="pp-read">${esc(r.reading)}</span>` : ''}<span>${meta}</span>${ab}</button></div>`;
+}
+// the sources whose papers are on screen, as one line, with how far back they reach: '국회도서관 · KCI · ScienceON · 모든 연도',
+// and this device's index of the recent KCI law papers (when KCI itself is not asked) as 'KCI 최근 법학 논문'.
+// A source is named once one of its papers is on screen (with nothing on screen, every source that answered)
+function ppScope(v, onScreen) {
+  const ok = (b) => { const s = v.state(b); return !!s && s.state === 'ok'; };
+  const shown = (b) => ok(b) && (!onScreen.size || onScreen.has(b));
+  const all = ['nanet', 'kci', 'so'].filter(shown).map((b) => pfind.NAMES[b]);
+  const recent = onScreen.size ? onScreen.has('idx') && !onScreen.has('kci') : ok('idx') && !ok('kci');
+  const wait = v.srcs.some((s) => s.state === 'busy');
+  // ('국회도서관 · KCI · 모든 연도' reads as where the papers come from, then how far back; the recent index after them)
+  const parts = [all.length ? all.join(' · ') + ' · 모든 연도' : '', recent ? 'KCI 최근 법학 논문' : ''].filter(Boolean);
+  if (!parts.length) return wait ? '찾는 중…' : '';
+  return parts.join(' · ') + (wait ? ' · 더 찾는 중' : '');
+}
+// why a source is not in the answer, when it should be said: no internet, or 국회도서관's day used up or out of reach (a key
+// not set, or a source refusing it, is never spoken of: the source is just not named above)
+function ppTrouble(v) {
+  const na = v.state('nanet'), e = na && na.state === 'err' ? na.err : null;
+  if (!navigator.onLine || (e && api.isOffline(e))) {
+    const ok = (b) => { const s = v.state(b); return !!s && s.state === 'ok'; };
+    return { offline: true, text: ['nanet', 'kci', 'so'].some(ok) ? '인터넷에 연결되지 않았습니다 · 앞서 찾아 둔 것만 보여 드립니다' : ok('idx') ? '인터넷에 연결되지 않아 이 기기에 받아 둔 KCI 최근 법학 논문에서만 찾았습니다' : '인터넷에 연결되면 찾을 수 있습니다' };
+  }
+  if (e && e.code === 'busy') return { text: '오늘은 국회도서관의 이용량이 다 차서 국회도서관 없이 찾았습니다 · 자정이 지나면 다시 함께 찾습니다' };
+  if (e && !pfind.refused(e)) return { text: '지금은 국회도서관에 닿지 않아 국회도서관 없이 찾았습니다 · 잠시 뒤 다시 찾아 보세요' };
+  return null;
+}
+// the question is a person (a paper here was written by someone of exactly that name, pfind's view.who): a card to the
+// researcher's page, with where they are and how many papers KCI holds by them once KCI has said
+function ppWho(v) {
+  const who = v.who;
+  if (!who) return '';
+  const na = v.f.pool.recs.map((r) => r.parts.nanet && r.parts.nanet.raw).find((x) => x && x.ids && x.ids[who]);
+  return `<div class="pp-wholine"><button type="button" class="pp-who pp-card" data-who="${esc(who)}" data-aid="${esc((na && na.ids[who]) || '')}"><b>${esc(who)}</b><span class="pp-cardm">${esc(ppWhoMeta(v))}</span><span class="pp-cardgo">연구자 정보 ›</span></button></div>`;
+}
+function ppWhoMeta(v) {
+  const n = new Map();
+  for (const r of v.f.pool.recs) { const a = r.affOf && r.affOf[v.who]; if (a) n.set(a, (n.get(a) || 0) + 1); }
+  const aff = [...n.entries()].sort((a, b) => b[1] - a[1])[0];
+  const au = v.srcs.find((s) => /^kci:au:/.test(s.id) && s.page > 0);
+  return [aff ? aff[0] : '', au && au.total ? `KCI 논문 ${au.total.toLocaleString()}편` : ''].filter(Boolean).join(' · ');
+}
+// the question is a journal's very name (one this device's index knows, and only one of that name): a card to its own list,
+// issue by issue, above its papers
+function ppJournalCard(q, jl, v) {
+  const k = papers.norm(q);
+  if (v.j || v.who || k.length < 2) return '';
+  const hit = (jl || []).filter((j) => pfind.jkey(j[0]) === k);
+  if (hit.length !== 1) return '';
+  const [name, pub] = hit[0];
+  return `<div class="pp-wholine"><button type="button" class="pp-card pp-jcard" data-jn="${esc(name)}" data-jp="${esc(pub || '')}"><b>${esc(name)}</b><span class="pp-cardm">${esc(pub || '')}</span><span class="pp-cardgo">호별로 보기 ›</span></button></div>`;
+}
+// a paper opens the richest sheet there is: KCI's when its KCI id is known, else 국회도서관's, else ScienceON's record as one
+// (with what the others know of it: 국회도서관's keywords and its record's page, each author's affiliation as KCI gave it)
+const ppKci = (r) => ({ id: r.kci || '', o: r.o || '', t: r.t, a: r.a || [], journal: r.journal || '', publisher: r.publisher || '', y: r.y || '', m: r.m || '', v: r.v || '', i: r.i || '', fp: r.fp || '', lp: r.lp || '',
+  open: !!(r.open && r.kci), c: r.c || 0, doi: r.doi || '', ab: r.ab || '', affs: r.affs || [], affOf: r.affOf || null, kw: r.kw || [],
+  nanet: (r.parts.nanet && r.parts.nanet.raw && r.parts.nanet.raw.page) || '',
+  links: r.so ? [r.so.full && ['ScienceON 원문', r.so.full], r.so.page && ['ScienceON', r.so.page]].filter(Boolean) : [] });
+function openPaper(r) {
+  const na = r.parts.nanet && r.parts.nanet.raw;
+  if (!r.kci && na) { ppRows.set(na.id + ':' + na.kind, na); paperSheet(na); return; }
+  kciSheet(ppKci(r));
+}
+function ppPaint(cIn, c, q, f, v, jl, live) {
+  if (c.dataset.kq !== q) {   // 내 책장에서 and 다른 곳에서: once per question (a sort, a kind or a journal leaves them as they are)
     c.dataset.kq = q;
-    c.innerHTML = `<section class="pp-kci"><div class="pp-kh"><h2 class="sec-h">KCI 법학 논문 <span class="sec-n"></span><span class="pp-span"></span></h2>
-      <div class="pp-sort" role="group" aria-label="순서">${[['rel', '관련도'], ['new', '최신'], ['cited', '피인용']].map(([k, t]) => `<button type="button" data-ks="${k}">${t}</button>`).join('')}</div></div>
-      <div class="pp-facet" hidden></div><div class="list law-list kci-list pp-klist"><p class="none">찾는 중…</p></div></section>
-      <section class="pp-mine-sec"></section>${elsewhereRow(q)}<div class="pp-more"><button type="button" class="more pp-morebtn">국회도서관·다른 곳에서 더 찾기</button><div class="pp-more-body"></div></div>`;
-    $('.pp-sort', c).onclick = (e) => { const b = e.target.closest('[data-ks]'); if (!b || b.dataset.ks === (S.ks || 'rel')) return; S.ks = b.dataset.ks; noteScroll(); renderPapers(cIn); nav('typing'); };
-    $('.pp-morebtn', c).onclick = (e) => { e.currentTarget.remove(); legacyResults($('.pp-more-body', c), q, live, true); };
+    c.innerHTML = `<section class="pp-res pp-kci"></section><section class="pp-mine-sec"></section>${elsewhereRow(q)}`;
     const sec = $('.pp-mine-sec', c);
     if (sec && q.replace(/\s+/g, '').length >= 2) mineSec(sec, [q.replace(/\s+/g, '')], q, live, null, '편 본문에');
-    kciState().then((st) => { const t = kciSpan(st), at = $('.pp-span', c); if (at && t) at.textContent = t; });
   }
-  for (const b of c.querySelectorAll('.pp-sort [data-ks]')) b.classList.toggle('on', b.dataset.ks === (S.ks || 'rel'));
-  const sort = S.ks || 'rel';
-  let page = 1, busy = false, total = 0;
-  const list = $('.pp-klist', c), n = $('.pp-kci .sec-n', c);
-  await kciHiddenReady().catch(() => {});
-  const draw = async (append) => {
-    const r = await kciq.search(q, { sort, journal: S.pj || -1, page, size: 20, facets: !append }).catch(() => null);
-    if (!live() || !list.isConnected) return;
-    if (!r) { if (!append) list.innerHTML = '<p class="none">색인을 불러오지 못했습니다 · 국회도서관·다른 곳에서 더 찾아 보세요</p>'; return; }
-    total = r.total;
-    n.textContent = total ? `${total.toLocaleString()}편` : '';
-    if (!append) { list.innerHTML = ''; facetBar($('.pp-facet', c), r.jFacet, r.journals, cIn); }
-    const old = list.querySelector('.more'); if (old) old.remove();
+  const res = $(':scope > .pp-res', c), token = {};
+  if (res._unhear) res._unhear();
+  res._token = token;
+  res.classList.remove('pp-stale');
+  const kind = v.f.kind, sort = v.sort, art = kind === 'ARTICLE' || kind === '';
+  if (!f.facet && !v.j) f.facet = pfind.journalsOf(f, ppHidden);
+  const facet = !art ? [] : f.facet && f.facet.length ? f.facet.slice(0, 8) : v.j ? [{ name: v.jname, n: 0 }] : [];
+  const rows = v.shown.filter((r) => !ppHidden(r));
+  if (rows.length < pfind.PAGE) rows.push(...v.next(pfind.PAGE - rows.length, ppHidden));
+  const jOf = ppJournalOf(jl), trouble = ppTrouble(v);
+  const waiting = () => v.srcs.some((s) => s.state === 'busy');
+  const drawn = new Map();   // the papers on screen, each with what it knew when drawn (one that learns more is drawn again)
+  const onScreen = () => { const s = new Set(); for (const r of drawn.keys()) for (const b of r.srcs) s.add(b); return s; };
+  const atPaint = new Set(v.srcs.filter((s) => s.state === 'ok').map((s) => s.id)), lateFrom = new Set();
+  let lastG = null, late = null, busy = false;
+  // rows in the view's order, a line above each group after the first (잡지 · 기사 3편 …)
+  const rowsHtml = (list) => {
     const shelf = shelfTitles();
-    if (!r.rows.length && page === 1) list.innerHTML = `<p class="none">${r.common ? '너무 흔한 낱말입니다 · 더 또렷한 말로 찾아 보세요' : '찾지 못했습니다 · 아래 국회도서관·다른 곳에서 더 찾아 보세요'}</p>`;
-    else list.insertAdjacentHTML('beforeend', r.rows.filter((x) => !kciHidden(x.id)).map((x) => kciRow(x, shelf, { snip: true, jtap: true })).join(''));
-    const shown = list.querySelectorAll('.lrow').length;
-    if (shown < total && r.rows.length) {
-      list.insertAdjacentHTML('beforeend', `<button type="button" class="more">더 보기 · ${shown.toLocaleString()} / ${total.toLocaleString()}</button>`);
-      list.lastElementChild.onclick = async (e) => { if (busy) return; busy = true; e.currentTarget.textContent = '불러오는 중…'; page++; await draw(true); busy = false; };
+    return list.map((r) => {
+      const g = v.g(r), prev = lastG === null ? '' : v.label(lastG);
+      let lab = v.label(g);
+      if (!lab && prev) lab = v.who ? `${v.who}의 글` : '논문';   // (back to the first group after a later one, as a late answer may bring)
+      drawn.set(r, r.ver); lastG = g;
+      return (lab && lab !== prev ? `<div class="pp-div">${esc(ppGroupLine(v, g, lab))}</div>` : '') + ppRow(r, shelf, jOf, kind);
+    }).join('');
+  };
+  const countText = () => { const k = v.count(ppHidden); return k.n ? `${k.n.toLocaleString()}편${k.more ? ' 이상' : ''}` : waiting() ? '' : '0편'; };
+  const empty = () => (trouble ? trouble.text : v.srcs.some((s) => s.common) && !v.srcs.some((s) => s.total) ? '너무 흔한 낱말입니다 · 더 또렷한 말로 찾아 보세요' : '찾지 못했습니다 · 낱말을 줄이거나 다른 말로 찾아 보세요');
+  const shownN = () => v.shown.filter((r) => !ppHidden(r)).length;
+  const moreText = () => `더 보기 · ${shownN().toLocaleString()} / ${Math.max(v.count(ppHidden).n, shownN()).toLocaleString()}`;
+  const moreHtml = () => (v.hasMore(ppHidden) ? `<button type="button" class="more">${esc(moreText())}</button>` : '');
+  const listHtml = rows.length ? rowsHtml(rows) : `<p class="none">${esc(waiting() ? '찾는 중…' : empty())}</p>`;
+  const none = !rows.length && !waiting();   // (nothing found: no orders to choose among)
+  res.innerHTML = `<div class="pp-kh"><h2 class="sec-h">논문 <span class="sec-n">${countText()}</span></h2><div class="pp-sort" role="group" aria-label="순서"${none ? ' hidden' : ''}>${ppSortsHtml(sort, v.hasCites())}</div></div>
+    <p class="pp-scope"><span class="pp-src">${esc(ppScope(v, onScreen()))}</span></p>
+    <div class="pp-opts" role="group" aria-label="자료 종류">${ppKindsHtml(kind)}</div>
+    ${facet.length ? `<div class="pp-facet"><button type="button" class="pp-fc ${v.j ? '' : 'on'}" data-jpick="">전체</button>${facet.map((j) => `<button type="button" class="pp-fc ${pfind.jkey(j.name) === v.j ? 'on' : ''}" data-jpick="${esc(j.name)}">${esc(j.name)}${j.n ? ` <em>${j.n}</em>` : ''}</button>`).join('')}</div>` : ''}
+    ${trouble && rows.length ? `<p class="pp-note">${esc(trouble.text)}</p>` : ''}${ppWho(v)}${ppJournalCard(q, jl, v)}
+    <div class="list law-list kci-list pp-klist">${listHtml}${moreHtml()}</div>
+    <div class="pp-foot"></div>`;
+  const list = $('.pp-klist', res);
+  // the row of journals scrolls sideways: it fades at the right edge while there are more to the right
+  const fc = $('.pp-facet', res);
+  if (fc) { const fz = () => fc.classList.toggle('pp-fade', fc.scrollLeft + fc.clientWidth < fc.scrollWidth - 2); fc.addEventListener('scroll', fz, { passive: true }); requestAnimationFrame(fz); }
+  // the line above the list: the sources whose papers are on screen — or, when papers came late that this page would show,
+  // how many and from where, with 보기 (one line either way: what is below it does not move)
+  const scope = () => {
+    const sc = $('.pp-scope', res); if (!sc) return;
+    sc.innerHTML = late ? `<span class="pp-src">${esc(late)}</span><button type="button" class="pp-lateb">보기</button>` : `<span class="pp-src">${esc(ppScope(v, onScreen()))}</span>`;
+  };
+  const refresh = () => {   // what may change in place without moving a row: the count, the orders, the line above, the journals' numbers, 더 보기
+    const n = $('.pp-kh .sec-n', res); if (n) n.textContent = countText();
+    const sg = $('.pp-sort', res);
+    if (sg) {
+      sg.hidden = !list.querySelector('.lrow') && !waiting();
+      if (v.hasCites() && !sg.querySelector('[data-ks="cited"]')) sg.insertAdjacentHTML('beforeend', '<button type="button" data-ks="cited">피인용</button>');   // (citation counts came late)
+    }
+    scope();
+    if (facet.length) {
+      const m = pfind.journalCounts(f, ppHidden);
+      for (const b of res.querySelectorAll('.pp-fc[data-jpick]')) { const e = b.querySelector('em'), x = m.get(pfind.jkey(b.dataset.jpick)); if (e && x && x.n > Number(e.textContent)) e.textContent = x.n; }
+    }
+    const wm = $('.pp-who .pp-cardm', res); if (wm) wm.textContent = ppWhoMeta(v);
+    if (busy) return;
+    // (a 더 보기 that comes only now is put below the rows while that place is out of sight: else it would push down what is
+    // under the list as one reads it — the line above says what came, and 보기 draws it with its 더 보기)
+    const old = list.querySelector(':scope > .more'), has = v.hasMore(ppHidden);
+    if (old && has) old.textContent = moreText(); else if (old) old.remove(); else if (has && (!list.querySelector('.lrow') || !endSeen())) list.insertAdjacentHTML('beforeend', moreHtml());
+  };
+  const endSeen = () => list.getBoundingClientRect().bottom <= innerHeight;
+  const append = (add) => {
+    if (!add.length) return;
+    const nn = list.querySelector(':scope > .none'); if (nn) nn.remove();
+    const at = list.querySelector(':scope > .more');
+    const html = rowsHtml(add);
+    if (at) at.insertAdjacentHTML('beforebegin', html); else list.insertAdjacentHTML('beforeend', html);
+  };
+  // a paper on screen that a later answer told more of (KCI's 권호, month, 피인용, its title as KCI writes it): drawn again in
+  // its place
+  const repaint = () => {
+    const shelf = shelfTitles();
+    for (const [r, ver] of drawn) {
+      if (r.ver === ver) continue;
+      drawn.set(r, r.ver);
+      const el = list.querySelector(`:scope > .kci-item[data-row="${r.n}"]`);
+      if (el) el.outerHTML = ppRow(r, shelf, jOf, kind);
     }
   };
-  await draw(false);
-  // the KCI index holds only what has been gathered so far: 국회도서관 is asked too, for every question, once its words have
-  // stood a moment (asked with Enter: at once; still typing: two seconds)
-  if (!S.pj && live()) {
-    const typing = document.activeElement && document.activeElement.matches('.law-find input');
-    setTimeout(() => { const mb = $('.pp-morebtn', c); if (mb && mb.isConnected && live()) mb.click(); }, typing ? 2000 : 600);
-  }
+  // papers that came after the drawing and that a drawing made now would put on this page (above its last row, or filling
+  // a short page): told on the line above, drawn in order only when 보기 is tapped
+  const lateNote = () => {
+    late = null;
+    const have = [...drawn.keys()].filter((r) => !ppHidden(r)), last = have[have.length - 1];
+    if (busy || !last) return;
+    const next = v.peek(pfind.PAGE, ppHidden);
+    const above = next.filter((r) => v.cmp(r, last) < 0), fill = have.length < pfind.PAGE ? next.slice(0, pfind.PAGE - have.length) : [];
+    const add = new Set([...above, ...fill]);
+    if (!add.size) {   // (papers for after this page, and no 더 보기 under it that could be put there unseen)
+      const rest = v.left(ppHidden).length;
+      if (rest && !list.querySelector(':scope > .more') && endSeen()) late = `논문 ${rest.toLocaleString()}편이 더 왔습니다`;
+      return;
+    }
+    const from = ['kci', 'so', 'nanet', 'idx'].filter((b) => lateFrom.has(b) && [...add].some((r) => r.srcs.has(b))).map((b) => (b === 'idx' ? 'KCI 최근 법학 논문' : pfind.NAMES[b]));
+    const what = above.length ? { rel: '관련 높은 ', new: '더 최근 ', cited: '더 많이 인용된 ' }[sort] : '';
+    late = `${from.length ? from.join(' · ') + '에서 ' : ''}${what}논문 ${add.size}편이 더 왔습니다`;
+  };
+  const hear = (s) => {
+    if (res._token !== token || !res.isConnected || !live()) { f.hear.delete(hear); return; }
+    if (!v.ids.includes(s.id)) return;
+    if (s.state === 'ok' && !atPaint.has(s.id)) lateFrom.add(s.base);
+    if (busy) return;   // (더 보기 is under way: what came is drawn with it)
+    repaint();
+    if (!list.querySelector('.lrow')) {   // nothing on screen yet: the first papers are simply drawn
+      const add = v.next(pfind.PAGE, ppHidden);
+      if (add.length) append(add);
+      else { const nn = list.querySelector(':scope > .none'); if (nn && !waiting()) { const t = ppTrouble(v); nn.textContent = t ? t.text : empty(); } }
+    } else {
+      // a short page (the quick sources had few, the library answered later): what came is added under the rows there, so
+      // the page fills — nothing above moves; papers that rank above the rows shown are still told on the line above
+      const have = [...drawn.keys()].filter((r) => !ppHidden(r)).length;
+      if (have < pfind.PAGE) { const add = v.next(pfind.PAGE - have, ppHidden); if (add.length) append(add); }
+      lateNote();
+    }
+    // a note on what could not be asked, the person's card: below the list, and only while that is out of sight
+    const foot = $('.pp-foot', res), t = ppTrouble(v), unseen = foot && foot.getBoundingClientRect().top > innerHeight;
+    if (unseen && t && list.querySelector('.lrow') && !res.querySelector('.pp-note') && !foot.textContent) foot.innerHTML = `<p class="pp-note">${esc(t.text)}</p>`;
+    if (unseen && !res.querySelector('.pp-who')) { const w = ppWho(v); if (w) foot.insertAdjacentHTML('beforeend', w); }
+    refresh();
+  };
+  f.hear.add(hear);
+  res._unhear = () => f.hear.delete(hear);
+  res.onclick = async (e) => {
+    const t = e.target;
+    if (ppPick(t, cIn)) return;
+    if (t.closest('.pp-lateb')) { late = null; v.reset(); ppPaint(cIn, c, q, f, v, jl, live); return; }   // (the late papers in their places: drawn anew)
+    const jc = t.closest('.pp-jcard'); if (jc) { openJournal(jc.dataset.jn, jc.dataset.jp); return; }
+    if (t.closest('.pp-jn')) return;   // (a journal's name: its own list, opened by the content's click)
+    const mb = t.closest('.pp-klist > .more');
+    if (mb) {
+      if (busy) return;
+      busy = true; mb.textContent = '불러오는 중…';
+      const add = await v.more(pfind.PAGE, ppHidden);
+      busy = false;
+      if (res._token !== token || !live()) return;
+      repaint(); append(add); lateNote(); refresh();
+      if (!add.length && v.failed) {   // (a page that could not be had: said, and asked again on the next tap)
+        const msg = navigator.onLine ? '불러오지 못했습니다 · 다시 누르기' : '인터넷에 연결되면 더 볼 수 있습니다 · 다시 누르기';
+        const b = list.querySelector(':scope > .more');
+        if (b) b.textContent = msg; else list.insertAdjacentHTML('beforeend', `<button type="button" class="more">${esc(msg)}</button>`);
+      }
+      return;
+    }
+    const pr = t.closest('[data-pr]');
+    if (pr && Date.now() - pressedAt >= 800) { const r = f.pool.recs[Number(pr.dataset.pr)]; if (r) openPaper(r); }
+  };
 }
-// the journals in the answer, most papers first: a chip to narrow to one (전체 clears it)
-function facetBar(bar, facet, journals, cIn) {
-  if (!bar) return;
-  if (!facet || facet.length < 2) { bar.hidden = true; bar.innerHTML = ''; return; }
-  const top = facet.slice(0, 8), cur = S.pj || '';
-  bar.hidden = false;
-  bar.innerHTML = `<button type="button" class="pp-fc ${cur ? '' : 'on'}" data-jpick="">전체</button>` +
-    top.map(([ji, cnt]) => { const j = journals[ji] || ['', '']; const tag = j[0] + '\u0001' + (j[1] || ''); return `<button type="button" class="pp-fc ${cur === tag ? 'on' : ''}" data-jpick="${esc(tag)}">${esc(j[0])} <em>${cnt}</em></button>`; }).join('');
-  bar.onclick = (e) => { const b = e.target.closest('[data-jpick]'); if (!b) return; S.pj = b.dataset.jpick; noteScroll(); renderPapers(cIn); nav('typing'); };
+// the line above a group: '잡지 · 기사 3편', '피인용 정보 없음 (국회도서관 · ScienceON)' …
+function ppGroupLine(v, g, lab) {
+  if (g >> 2) return `${lab} ${v.groupCount(g, ppHidden).toLocaleString()}편`;
+  if (v.sort === 'cited' && (g & 1)) {
+    const from = ['nanet', 'so'].filter((b) => v.srcs.some((s) => s.base === b && s.state === 'ok')).map((b) => pfind.NAMES[b]);
+    return lab + (from.length ? ` (${from.join(' · ')})` : '');
+  }
+  return lab;
 }
 // a journal's papers, newest issue first (reached by tapping a journal's name)
 async function journalView(c, live) {
@@ -874,33 +1144,14 @@ function openJournal(name, pub) {   // to a journal's own list of papers, by iss
   const cIn = ($('.pp-body') && $('.pp-body').parentElement) || $('.content');
   if (cIn) { renderPapers(cIn); nav(); }
 }
-// the libraries (국회도서관 국가학술정보) and the researcher search — the old path, now under 더 찾기 (or the whole screen when
-// the KCI index is not there yet)
-async function legacyResults(c, q, live, inset) {
-  const kind = S.pk ?? 'ARTICLE', sort = S.ps === 'new' ? 'new' : '';
-  c.innerHTML = `<div class="pp-opts" role="group" aria-label="자료와 순서">${papers.KINDS.map(([k, t]) => `<button type="button" data-pk="${k}" class="${k === kind ? 'on' : ''}">${t}</button>`).join('')}<span class="sep"></span><button type="button" data-ps="" class="${sort ? '' : 'on'}">정확도순</button><button type="button" data-ps="new" class="${sort ? 'on' : ''}">최신순</button></div><div class="pp-res">${ppSec('author', '저자 ' + esc(q))}${ppSec('all', '국회도서관 국가학술정보')}</div>${inset ? '' : elsewhereRow(q)}`;
-  const opts = $('.pp-opts', c);
-  if (opts) opts.onclick = (e) => { const b = e.target.closest('[data-pk], [data-ps]'); if (!b) return; if (b.dataset.pk !== undefined) S.pk = b.dataset.pk; else S.ps = b.dataset.ps; legacyResults(c, q, live, inset); };
-  const box = $('.pp-res', c);
-  $('[data-sec="author"]', box).hidden = true;
-  if (!inset && q.replace(/\s+/g, '').length >= 2) mineSec(box, [q.replace(/\s+/g, '')], q, live, null, '편 본문에');
-  const first = await fillPapers(box, 'all', (pg) => papers.search(q, { kind, page: pg, sort }), live, true);
-  if (live() && first && papers.authorAsked(q, first.rows)) {
-    const who = q.replace(/\s+/g, ''), aid = (first.rows.find((x) => x.ids[who]) || { ids: {} }).ids[who] || '';
-    $('[data-sec="author"]', box).hidden = false;
-    $('[data-sec="author"] .sec-h', box).insertAdjacentHTML('beforeend', `<button type="button" class="btn ghost small pp-who" data-who="${esc(who)}" data-aid="${esc(aid)}">연구자 정보</button>`);
-    fillPapers(box, 'author', (pg) => papers.search(q.replace(/\s+/g, ''), { kind, page: pg, sort: 'new', by: 'author' }), live, false);
-  }
-}
 /* ---------- KCI 법학 논문 ----------
    Every law paper in KCI by the month it came out (kci/law/ beside the app: gathered from KCI's OAI-PMH every week going
-   forward, and every hour going back until three years are covered), newest month first, a journal's papers together; the
-   heading says from which day KCI's records are in (until the three years are). One opens with the start of its abstract
+   forward, and every hour going back until three years are covered), newest month first, a journal's papers together,
+   headed '새로 나온 KCI 법학 논문' (how far back the gathering has come is not the reader's concern). One opens with the start of its abstract
    and its KCI page; one set aside (관심 없음) is left out from then on, on every device. Months are read only as the list
    reaches them. (kci/new.json, the last eight weeks, stands in while the months are not there.) */
 const kciUrl = (path) => new URL('./kci/' + path, location.href);
-let kciIdxP = null, kciNewP = null, kciStateP = null;
-const kciState = () => (kciStateP ||= fetch(kciUrl('state.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : {})).catch(() => { kciStateP = null; return {}; }));
+let kciIdxP = null, kciNewP = null;
 const kciIndex = () => (kciIdxP ||= fetch(kciUrl('law/index.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { kciIdxP = null; return null; }));
 const kciNew = () => (kciNewP ||= fetch(kciUrl('new.json'), { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d : [])).catch(() => { kciNewP = null; return []; }));
 const kciMonthP = new Map();
@@ -908,15 +1159,8 @@ const kciMonthP = new Map();
 const kciOrder = (a, b) => (a.j || '').localeCompare(b.j || '', 'ko') || (Number(b.v) || 0) - (Number(a.v) || 0) || (Number(b.i) || 0) - (Number(a.i) || 0) || (Number(a.fp) || 0) - (Number(b.fp) || 0);
 const kciMonth = (key) => { if (!kciMonthP.has(key)) kciMonthP.set(key, fetch(kciUrl(`law/${key}.json`)).then((r) => (r.ok ? r.json() : [])).then((d) => (Array.isArray(d) ? d.slice().sort(kciOrder) : [])).catch(() => { kciMonthP.delete(key); return []; })); return kciMonthP.get(key); };
 const monthName = (key) => (key.endsWith('-00') ? `${key.slice(0, 4)}년` : `${key.slice(0, 4)}년 ${Number(key.slice(5))}월`);
-// from which day KCI's records are in: 'n월 n일 이후 등록분' while the years before are still being gathered
-function kciSpan(st) {
-  const from = (st && (st.back || st.first)) || '';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return '';
-  const goalYear = new Date().getFullYear() - 3;   // (kci_oai.py gathers back to 1 January three years before)
-  if (from <= `${goalYear}-01-01`) return `${goalYear}년부터`;
-  const [y, m, d] = from.split('-').map(Number);
-  return `${y === new Date().getFullYear() ? '' : y + '년 '}${m}월 ${d}일 이후 등록분 · 3년 치 모으는 중`;
-}
+// (how far back the gathering has come is the pipeline's business, not the reader's: the list is headed by what it is, the
+// new KCI law papers, and the search box above says it searches every year)
 /* the KCI papers set aside (관심 없음): kept on this device at once and with the server, so every device leaves them out —
    { ART…: { at, on } }, set aside or brought back, the newest word wins */
 const KH = { map: {}, q: {}, t: 0, ready: null, at: 0 };
@@ -979,7 +1223,7 @@ function kciRow(x, shelf, opts = {}) {
 }
 async function kciNewSec(sec, live) {
   if (!sec) return;
-  const [idx, st] = await Promise.all([kciIndex(), kciState(), kciHiddenReady().catch(() => {})]);
+  const [idx] = await Promise.all([kciIndex(), kciHiddenReady().catch(() => {})]);
   const months = idx && idx.months ? Object.keys(idx.months).filter((k) => idx.months[k] > 0).sort().reverse() : [];
   if (!months.length && !(await kciNew()).length) return;
   if (!live() || !sec.isConnected) return;
@@ -1003,9 +1247,8 @@ async function kciNewSec(sec, live) {
       html += kciRow(g.x, shelf, { x: true });
     }
     const more = rows.length > list.length || mi < months.length;
-    const span = months.length ? kciSpan(st) : '';
     sec.hidden = false;
-    sec.innerHTML = `<div class="list-h"><h2 class="sec-h">KCI 법학 논문${span ? ` <span class="sec-n">${esc(span)}</span>` : ''}</h2></div>
+    sec.innerHTML = `<div class="list-h"><h2 class="sec-h">새로 나온 KCI 법학 논문</h2></div>
       <div class="list law-list kci-list">${html || '<p class="none">새로 모은 논문이 없습니다</p>'}${more ? '<button type="button" class="more kci-more">더 보기</button>' : ''}</div>`;
     const mb = $('.kci-more', sec);
     if (mb) mb.onclick = async () => { if (busy) return; busy = true; mb.textContent = '불러오는 중…'; want += 20; await fill(); busy = false; if (live() && sec.isConnected) draw(); };
@@ -1057,7 +1300,9 @@ function paperSources(x) {
   // (a publisher's list of all its issues is not a way to the paper: only pages that lead to this one are offered)
   if (/서울대|서울대학교/.test(j) && /법학/.test(j)) out.push({ label: 'S-Space', note: '서울대 공개 · 제목으로', url: `https://s-space.snu.ac.kr/simple-search?query=${q}` });
   if (x.doi) out.push({ label: 'DOI 페이지', note: '구독일 수 있음', url: `https://doi.org/${String(x.doi).split('/').map(encodeURIComponent).join('/')}` });
-  out.push({ label: 'KCI 논문 정보', url: kciUrl });
+  if (/^ART\d+$/.test(x.id || '')) out.push({ label: 'KCI 논문 정보', url: kciUrl });
+  if (/^https:\/\/[^\s"'<>]+$/.test(x.nanet || '')) out.push({ label: '국회전자도서관', url: x.nanet });   // (국회도서관 knows it too: its record)
+  for (const [label, url] of x.links || []) if (/^https:\/\//.test(url)) out.push({ label, url });   // (a paper known from ScienceON: its own pages)
   return out;
 }
 // the catalogues that may hold it, searched by its title (each says it is a search)
@@ -1067,11 +1312,14 @@ const paperSearches = (x) => {
 };
 function kciSheet(x) {
   const j = kciJn(x), pub = kciPub(x);
+  // (each author with where they are, as KCI gave it; only when KCI gave none so tied does the list of affiliations stand apart)
+  const affOf = x.affOf || {}, tied = (x.a || []).some((a) => affOf[a]);
   const box = sheet(`<div class="cs-head"><h2>${esc(x.t)}</h2></div><div class="cs-body">
-    ${(x.a || []).length ? `<div class="pp-by">${x.a.map((a) => `<button type="button" class="pp-au" data-pq="${esc(a)}" title="${esc(a)}의 글 찾기">${esc(a)}</button>`).join('')}</div>` : ''}
+    ${(x.a || []).length ? `<div class="pp-by">${x.a.map((a) => `<button type="button" class="pp-au" data-pq="${esc(a)}" title="${esc(a)}의 글 찾기">${esc(a)}${affOf[a] ? ` <small class="pp-aff">${esc(affOf[a])}</small>` : ''}</button>`).join('')}</div>` : ''}
     <p class="pp-meta">${j ? `<button type="button" class="pp-jn cs-jn" data-jn="${esc(j)}" data-jp="${esc(pub)}">${esc(j)}</button>` : ''}${esc([kciIssue(x), pub, kciWhen(x), kciPg(x), x.c ? `피인용 ${x.c}` : ''].filter(Boolean).join(' · '))}</p>
     ${x.ab ? `<div class="cs-sec cs-abs"><h4>초록</h4><p class="cs-ab">${esc(x.ab)}</p></div>` : '<div class="cs-sec cs-abs" hidden><h4>초록</h4><p class="cs-ab"></p></div>'}
-    <div class="cs-aff" hidden></div>
+    <div class="cs-aff"${!tied && x.affs && x.affs.length ? '' : ' hidden'}>${esc((x.affs || []).join(' · '))}</div>
+    ${(x.kw || []).length ? `<div class="cs-sec"><h4>주제어</h4><div class="law-ex pp-kw">${x.kw.slice(0, 18).map((k) => `<button type="button" data-kw="${esc(k)}">${esc(k)}</button>`).join('')}</div></div>` : ''}
     <div class="cs-sec cs-src"><h4>원문</h4><div class="cs-get-at"><p class="cs-probe">책장에 바로 넣을 수 있는 공개 PDF를 찾는 중…</p></div><div class="cs-links">${paperSources(x).map((s) => `<a class="cs-link" href="${s.url}" target="_blank" rel="noopener">${esc(s.label)}${s.note ? ` <em>${esc(s.note)}</em>` : ''}</a>`).join('')}</div><p class="cs-search">찾아보기 ${paperSearches(x).map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</p></div>
   </div><div class="row-btns"><button type="button" class="btn ghost cs-copy">인용 복사</button></div>`);
   box.classList.add('case-sheet', 'paper-sheet');
@@ -1084,7 +1332,7 @@ function kciSheet(x) {
     upload([new File([blob], nm.slice(0, 120) + '.pdf', { type: 'application/pdf' })]);
     closeSheet(); toast('공개된 원문을 책장에 넣고 있습니다');
   };
-  if (x.open) {
+  if (x.open && /^ART\d+$/.test(x.id || '')) {
     const kciPage = `https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId=${encodeURIComponent(x.id)}`;
     getAt.innerHTML = `<div class="cs-open"><a class="btn cs-get" href="${kciPage}" target="_blank" rel="noopener">KCI에서 무료 원문 받기</a><label class="btn ghost cs-put">받은 PDF 책장에 넣기<input type="file" accept="application/pdf,.pdf" hidden></label></div><p class="cs-probe">KCI가 원문을 공개한 논문입니다 · 내려받은 뒤 ‘받은 PDF 책장에 넣기’로 이 논문 이름으로 넣습니다</p>`;
     $('.cs-put input', getAt).onchange = (e) => { const f = e.target.files && e.target.files[0]; if (f) put(f); };
@@ -1105,13 +1353,14 @@ function kciSheet(x) {
   }, () => { if (box.isConnected) getAt.innerHTML = ''; });
   box.addEventListener('click', (e) => {
     const au = e.target.closest('.pp-au[data-pq]'); if (au) { closeSheet(); paperGo(au.dataset.pq); return; }
+    const k = e.target.closest('[data-kw]'); if (k) { closeSheet(); paperGo(k.dataset.kw); return; }
     const jn = e.target.closest('.cs-jn'); if (jn) { closeSheet(); openJournal(jn.dataset.jn, jn.dataset.jp); }
   });
   // the whole record from KCI: the full abstract and the authors' affiliations replace the stored start
   if (x.o) kci.record(x.o).then((r) => {
     if (!r || !box.isConnected) return;
     if (r.ab && r.ab.length > (x.ab || '').length) { const a = $('.cs-abs', box), p = $('.cs-ab', box); a.hidden = false; p.textContent = r.ab; x.ab = r.ab; }
-    if (r.affs && r.affs.length) { const af = $('.cs-aff', box); af.hidden = false; af.textContent = r.affs.join(' · '); }
+    if (r.affs && r.affs.length && !tied) { const af = $('.cs-aff', box); af.hidden = false; af.textContent = r.affs.join(' · '); }
     if (r.cites != null) x.c = r.cites;
     if (r.doi) x.doi = r.doi;
   }).catch(() => {});
@@ -1130,35 +1379,6 @@ function elsewhereRow(q) {
   const go = [['구글 학술검색', `https://scholar.google.com/scholar?hl=ko&q=${u}`], ['RISS', `https://www.riss.kr/search/Search.do?isDetailSearch=N&searchGubun=true&viewYn=OP&query=${u}`],
     ['KCI', `https://www.kci.go.kr/kciportal/po/search/poTotalSearList.kci?sereArticleSearchBean.keyword=${u}`], ['DBpia', `https://www.dbpia.co.kr/search/topSearch?searchOption=all&query=${u}`]];
   return `<div class="pp-else"><span>다른 곳에서</span>${go.map(([t, href]) => `<a href="${href}" target="_blank" rel="noopener">${t}</a>`).join('')}</div>`;
-}
-function ppSec(kind, title) { return `<section class="law-sec pp-sec" data-sec="${kind}"><h2 class="sec-h">${title} <span class="sec-n"></span></h2><div class="list law-list"><p class="none">찾는 중…</p></div></section>`; }
-// one section of papers, a page at a time; resolves to the first page's answer (or null)
-async function fillPapers(box, kind, ask, live, keep, page = 1) {
-  const sec = $(`[data-sec="${kind}"]`, box); if (!sec) return null;
-  const list = $('.law-list', sec), n = $('.sec-n', sec);
-  try {
-    const r = await ask(page);
-    if (!live()) return null;
-    if (page === 1) list.innerHTML = '';
-    const more = list.querySelector('.more'); if (more) more.remove();
-    if (!r.total && page === 1) { if (keep) list.innerHTML = '<p class="none">찾지 못했습니다 · 낱말을 줄이거나 다른 말로 찾아 보세요</p>'; else sec.hidden = true; return r; }
-    const shelf = shelfTitles();
-    list.insertAdjacentHTML('beforeend', r.rows.map((x) => { ppRows.set(x.id + ':' + x.kind, x); return paperRow(x, shelf); }).join(''));
-    n.textContent = `${r.total.toLocaleString()}건`;
-    const shown = list.querySelectorAll('.lrow').length;
-    if (shown < r.total && r.rows.length) {
-      list.insertAdjacentHTML('beforeend', `<button type="button" class="more">더 보기 · ${shown.toLocaleString()} / ${r.total.toLocaleString()}</button>`);
-      list.lastElementChild.onclick = (e) => { e.currentTarget.textContent = '불러오는 중…'; fillPapers(box, kind, ask, live, keep, page + 1); };
-    }
-    return r;
-  } catch (e) {
-    if (!live()) return null;
-    const msg = e && e.code === 'offline' ? '인터넷에 연결되면 찾을 수 있습니다' : e && e.code === 'no_key' ? '국회도서관 연결이 아직 준비되지 않았습니다' : e && e.code === 'busy' ? '국회도서관의 하루 이용량이 다 찼습니다 · 자정이 지나면 다시 찾을 수 있습니다' : '지금은 국회도서관에 닿지 않습니다 · 잠시 뒤 다시 찾아 보세요';
-    const more = list.querySelector('.more');
-    if (page > 1 && more) more.textContent = '불러오지 못했습니다 · 다시 누르기';   // the rows already shown stay
-    else list.innerHTML = `<p class="none">${msg}</p>`;
-    return null;
-  }
 }
 function shelfTitles() {   // the papers on this shelf by title (without the subtitle), to mark what is here already
   const m = new Map();
@@ -1521,7 +1741,8 @@ function rememberLaw(q, mode) {   // kept once the question has stood a moment (
   }, 1500);
 }
 const lawRow = {
-  court: (r) => `<button type="button" class="lrow pq-row" data-court-open="${esc(r.court + ' ' + String(r.no).replace(/_.*$/, ''))}"><b>${esc(r.name || r.no)}</b><span>${esc([r.court, r.date ? r.date + (/^\d{2,4}(?:마|그|스|브|카|모|로|초|라|느|무|루|아|즈)/.test(r.no) ? '자' : ' 선고') : '', r.no].filter(Boolean).join(' '))}${r.cat ? ` · ${esc(r.cat)}` : ''}</span><span class="pq-snip" data-snip="${esc(r.court + ' ' + String(r.no).replace(/_.*$/, ''))}" data-at="${r.at || ''}"></span></button>`,
+  // (the court's name without its spaces: '서울 고등법원', '대구지법 안동지원 영주시법원' are read as one court name)
+  court: (r) => `<button type="button" class="lrow pq-row" data-court-open="${esc(r.court.replace(/\s+/g, '') + ' ' + String(r.no).replace(/_.*$/, ''))}"><b>${esc(r.name || r.no)}</b><span>${esc([r.court, r.date ? r.date + (/^\d{2,4}(?:마|그|스|브|카|모|로|초|라|느|무|루|아|즈)/.test(r.no) ? '자' : ' 선고') : '', r.nos || r.no, r.enbanc ? '전원합의체' : ''].filter(Boolean).join(' '))}${r.cat ? ` · ${esc(r.cat)}` : ''}</span><span class="pq-snip" data-snip="${esc(r.court.replace(/\s+/g, '') + ' ' + String(r.no).replace(/_.*$/, ''))}" data-at="${r.at || ''}"></span></button>`,
   name: (r) => caseRow(r.no, r.name, [r.no, r.date, r.court], r.result),
   panel: (r) => caseRow(r.no, r.name, [r.no, r.date, r.court], r.result),
   law: (r) => caseRow(r.no, r.name, [r.no, r.date, r.target], r.result, r.order),
@@ -1552,16 +1773,19 @@ async function courtSnips(list, q, live) {
   };
   await Promise.all([one(), one(), one()]);
 }
+// a word is found across the spaces and marks a judgment puts in it ('소의이익' in '소의 이익', '재량권일탈' in '재량권 일탈·남용'),
+// as the index of judgments by their words reads them
+const GAP = '[^0-9A-Za-z\\u3131-\\u318E\\uAC00-\\uD7A3\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF]{0,3}';
+const loose = (w, flags) => new RegExp([...w].map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join(GAP), flags);
 function snipAt(text, ws) {
   const flat = String(text).replace(/\s+/g, ' ').replace(/^[\[［]\d+[\]］]\s*/, '').trim();
-  const low = flat.toLowerCase();
   let at = -1;
-  for (const w of ws) { const k = low.indexOf(w); if (k >= 0 && (at < 0 || k < at)) at = k; }
+  for (const w of ws) { const m = loose(w, 'i').exec(flat); if (m && (at < 0 || m.index < at)) at = m.index; }
   let start = at > 60 ? flat.lastIndexOf(' ', at - 40) + 1 : 0;
   if (start < 0) start = 0;
   const piece = (start ? '… ' : '') + flat.slice(start, start + 150) + (flat.length > start + 150 ? ' …' : '');
   let html = esc(piece);
-  for (const w of ws) html = html.replace(new RegExp(esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (m) => `<mark>${m}</mark>`);
+  for (const w of ws) html = html.replace(loose(esc(w), 'gi'), (m) => `<mark>${m}</mark>`);
   return html;
 }
 function caseRow(no, name, meta, result, order) {
@@ -1582,7 +1806,9 @@ async function fillSec(box, kind, ask, live, keep, page = 1) {
     if (!r.total && page === 1) { if (keep) list.innerHTML = '<p class="none">없습니다</p>'; else sec.hidden = true; return 0; }
     list.insertAdjacentHTML('beforeend', r.rows.map(lawRow[kind]).join(''));
     n.textContent = `${r.total.toLocaleString()}건`;
-    if (kind === 'court') { courtSnips(list, lawQ(), live); if (page === 1 && r.left && r.left.length) list.insertAdjacentHTML('afterbegin', `<p class="none pq-left">너무 흔한 ‘${esc(r.left.join(' '))}’은(는) 빼고 찾았습니다</p>`); }
+    // (the index of every two-letter piece leaves out only one-letter words and words with digits; an index built before it
+    // left out the commonest words too, and says so)
+    if (kind === 'court') { courtSnips(list, lawQ(), live); if (page === 1 && r.left && r.left.length) list.insertAdjacentHTML('afterbegin', `<p class="none pq-left">‘${esc(r.left.join(' '))}’은(는) ${r.left.every((w) => w.length < 2 || /\d/.test(w)) ? '한 글자이거나 숫자가 든 말이라 따로 찾지 않았습니다' : '너무 흔해 빼고 찾았습니다'}</p>`); }
     const shown = list.querySelectorAll('.lrow').length;
     if (shown < r.total && r.rows.length) {
       list.insertAdjacentHTML('beforeend', `<button type="button" class="more">더 보기 · ${shown} / ${r.total}</button>`);
@@ -2976,8 +3202,11 @@ async function allMarks() {   // paper id -> its marks that have words, from thi
 function pageLabel(id, p, found) {   // printed page number when known (○면), else the PDF page (○쪽)
   const o = (S.state.files[id] || {}).o;
   const off = Number.isInteger(o) ? o : found;
-  return Number.isInteger(off) ? (p + 1 + off) + '면' : (p + 1) + '쪽';
+  return Number.isInteger(off) ? printedPage(p, off) : (p + 1) + '쪽';
 }
+// PDF page p (0-based) by its printed number, o its offset; a page before the one printed 1 (a notice or a cover put before
+// the paper: the offset is below zero) has no number of its own — 표지, as the reader names it
+function printedPage(p, o) { const v = p + 1 + o; return v >= 1 ? v + '면' : '표지'; }
 async function printedOffsets(ids) {   // id -> how far the printed page numbers run ahead of the PDF's, as the page texts found it
   const out = new Map();
   for (const id of ids) {
@@ -3303,7 +3532,7 @@ function menu(rect, items, current, head) {
 function size(b) { if (!b) return '0MB'; if (b < 1024 * 1024) return Math.max(1, Math.round(b / 1024)) + 'KB'; if (b < 1024 ** 3) return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + 'MB'; return (b / 1024 ** 3).toFixed(1) + 'GB'; }
 function date(t) { if (!t) return ''; const d = new Date(t), n = new Date(); return d.getFullYear() === n.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`; }
 function keepLeft(t) { const d = Math.ceil((t + 7 * 86400e3 - Date.now()) / 86400e3); return d > 1 ? `${d}일 뒤 완전히 지워짐` : '곧 완전히 지워짐'; }   // the server keeps the trash for 7 days
-function pageOf(s, pages) { const o = Number.isInteger(s.o) ? s.o : null; return o == null ? `${s.page + 1} / ${pages}쪽` : `${s.page + 1 + o} / ${pages + o}면`; }   // same numbers as the reader
+function pageOf(s, pages) { const o = Number.isInteger(s.o) ? s.o : null; return o == null ? `${s.page + 1} / ${pages}쪽` : `${s.page + 1 + o >= 1 ? s.page + 1 + o : '표지'} / ${pages + o}면`; }   // same numbers as the reader (표지: before the page printed 1)
 function ago(t) { if (!t) return ''; const s = (Date.now() - t) / 1000; if (s < 90) return '방금'; if (s < 3600) return Math.round(s / 60) + '분 전'; if (s < 86400) return Math.round(s / 3600) + '시간 전'; if (s < 86400 * 7) return Math.round(s / 86400) + '일 전'; return date(t); }
 function stem(n) { return String(n || '').replace(/\.pdf$/i, ''); }
 function rid(n) { const a = 'abcdefghijklmnopqrstuvwxyz0123456789'; const b = crypto.getRandomValues(new Uint8Array(n)); return [...b].map((x) => a[x % 36]).join(''); }

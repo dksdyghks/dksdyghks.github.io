@@ -9,6 +9,9 @@ case number → "category|file stem", one file a year (the year in the number: 2
 import json, os, re, sys, collections
 
 NO = re.compile(r'^((?:19|20)\d{2}|42\d{2}|\d{2})([가-힣]{1,4})(\d{1,7})')
+# a file name with more before the number, or spaces inside it (사건2023구단13473, 서울고법2006누16559, 2011다 95564): the number
+# found in it, its spaces taken out (as the index of judgments by their words reads it)
+NO_IN = re.compile(r'(?<!\d)((?:19|20)\d{2}|42\d{2}|\d{2})\s*([가-힣]{1,4})\s*(\d{1,7})')
 
 
 def main(listing, dst):
@@ -21,11 +24,15 @@ def main(listing, dst):
         seg = stem.split('_')
         if len(seg) < 3 or not seg[0].endswith('법원'):
             continue
-        m = NO.match('_'.join(seg[2:]))
+        m = NO.match('_'.join(seg[2:])) or NO_IN.search('_'.join(seg[2:]))
         if not m:
             continue
-        key, year = m.group(0), m.group(1)
+        key, year = ''.join(m.groups()), m.group(1)
         entry = cat + '|' + stem
+        # a judgment kept under the other level's folder (a 고등법원 judgment under 대법원/): its folder said, as the app
+        # otherwise reads the folder from the court's name
+        if (parts[1] == '대법원') != (seg[0] == '대법원'):
+            entry += '|' + parts[1]
         have = out[year].get(key)
         if not have:
             out[year][key] = entry

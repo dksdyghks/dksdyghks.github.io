@@ -23,8 +23,16 @@ async function signedOut(sent) {
   onSignedOut();
 }
 
+// (the server's answer comes along as extra: its own `code` and `status` — ScienceON's error code, its status line — are kept
+// as srcCode and srcStatus, never in place of the server's word for the trouble and the HTTP status)
 export class ApiError extends Error {
-  constructor(code, status, extra = {}) { super(code); this.code = code; this.status = status; Object.assign(this, extra); }
+  constructor(code, status, extra = {}) {
+    super(code);
+    Object.assign(this, extra);
+    if (extra && extra.code !== undefined && extra.code !== code) this.srcCode = extra.code;
+    if (extra && extra.status !== undefined && extra.status !== status) this.srcStatus = extra.status;
+    this.code = code; this.status = status;
+  }
 }
 export const isOffline = (e) => e && e.code === 'offline';
 
@@ -44,7 +52,11 @@ async function call(path, { method = 'GET', body, headers = {}, raw = false, sig
     throw new ApiError('offline', 0);
   }
   if (r.status === 401 && path !== '/login') { await signedOut(sent); throw new ApiError('auth', 401); }
-  if (raw) { if (!r.ok) throw new ApiError('http_' + r.status, r.status); return r; }
+  // raw: the answer itself; raw 'text': its text, and a refusal keeps the server's word for it (no_key, kci_refused …)
+  if (raw) {
+    if (!r.ok) { const d = raw === 'text' ? await r.json().catch(() => null) : null; throw new ApiError((d && d.error) || 'http_' + r.status, r.status, d || {}); }
+    return raw === 'text' ? r.text() : r;
+  }
   let data = null;
   try { data = await r.json(); } catch (e) { /* not JSON */ }
   if (!r.ok) throw new ApiError((data && data.error) || 'http_' + r.status, r.status, data || {});
@@ -75,7 +87,31 @@ export const lawSearch = (params) => call('/law/search?' + new URLSearchParams(p
 export const lawItem = (params) => call('/law/item?' + new URLSearchParams(params));       // … and one law or one judgment in full
 export const nlib = (op, params) => call('/nl/' + op + '?' + new URLSearchParams(params));   // 국립중앙도서관 (소장자료 검색 …)
 export const nanet = (op, params) => call('/nanet/' + op + '?' + new URLSearchParams(params));   // 국회도서관 국가학술정보 클라우드 (통합검색 search, 상세보기 view)
-export const scienceon = (op, params) => call('/scienceon/' + op + '?' + new URLSearchParams(params));   // KISTI ScienceON 논문 (search: q, field, page; view: cn)
+// The outside sources the server may not be able to ask yet — its key not set, or the source refusing it (KCI, ScienceON):
+// once one says so it is not asked again in this session (its reloads included) for a few hours, and then asked again, so a
+// key set meanwhile is found without anything to do. Nothing about keys is ever shown: such a source is simply left out.
+const DOWN_KEY = 'shelf:down';
+const DOWN_FOR = { no_key: 3 * 3600e3, kci_refused: 3 * 3600e3, scienceon_token: 3 * 3600e3, scienceon: 30 * 60e3 };
+let down = null;
+const downMap = () => { if (!down) { try { down = JSON.parse(sessionStorage.getItem(DOWN_KEY) || '{}') || {}; } catch (e) { down = {}; } } return down; };
+export const sourceDown = (name) => (downMap()[name] || 0) > Date.now();
+// a refusal (no_key, kci_refused …) of this source: left alone for a while. The word made up here for a source already left
+// alone (quiet) is no new refusal: it never moves the time on, or a source asked about now and then would never be asked again
+export function markSource(name, e) {
+  const ms = e && !e.quiet && DOWN_FOR[e.code];
+  if (!ms) return false;
+  downMap()[name] = Date.now() + ms;
+  try { sessionStorage.setItem(DOWN_KEY, JSON.stringify(down)); } catch (x) { /* this page only */ }
+  return true;
+}
+async function guarded(name, ask, mark = true) {
+  if (sourceDown(name)) throw new ApiError('no_key', 503, { quiet: true });
+  try { return await ask(); } catch (e) { if (mark) markSource(name, e); throw e; }
+}
+export const scienceon = (op, params) => guarded('scienceon', () => call('/scienceon/' + op + '?' + new URLSearchParams(params)));   // KISTI ScienceON 논문 (search: q, field, page; view: cn)
+// KCI's own Open API (논문 검색: articleSearch by title and the like, articleDetail by id) — KCI's XML answer, the key taken out.
+// mark: false for a way of asking KCI may not take (by author alone): its refusal is not KCI's refusal of the key
+export const kciSearch = (params, { mark = true } = {}) => guarded('kci', () => call('/kci/search?' + new URLSearchParams(params), { raw: 'text' }), mark);
 export const foreignText = (id) => call('/foreign/' + encodeURIComponent(id), { raw: true }).then((r) => r.text());   // 비교법 원문 (일본·미국·캐나다), as the source gives it
 export const kciOai = (params) => call('/kci/oai?' + new URLSearchParams(params), { raw: true }).then((r) => r.text());   // KCI's OAI-PMH through the server (a whole record, with the full abstract)
 // a paper's openly-posted PDF, found and fetched by the server: { blob, host }, or (asked with probe: true) { host } when

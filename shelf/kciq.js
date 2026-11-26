@@ -14,7 +14,7 @@ export const words = (q) => String(q || '').normalize('NFKC').replace(LETTERS, '
 // a word's ending particle, as typed ('직업의 자유', '헌법재판소의 결정'), is not asked for: '업의' would leave out every title
 // that says '직업선택의'; a two-letter word (정의, 국가) is left as it is
 const PARTICLE = /(?:으로서|에서|에게|으로|부터|까지|로서|의|은|는|이|가|을|를|에|와|과|로|도|만)$/;
-const bare = (w) => { if (!/[가-힣]$/.test(w) || w.length < 3) return w; const b = w.replace(PARTICLE, ''); return b.length >= 2 ? b : w; };
+export const bare = (w) => { if (!/[가-힣]$/.test(w) || w.length < 3) return w; const b = w.replace(PARTICLE, ''); return b.length >= 2 ? b : w; };
 const piecesOf = (w) => { const out = []; for (let i = 0; i + 1 < w.length; i++) { const p = w.slice(i, i + 2); if (!/\d/.test(p) && !out.includes(p)) out.push(p); } return out; };
 const shardOf = (p, n) => { let h = 0; for (let i = 0; i < p.length; i++) h = (Math.imul(h, 31) + p.charCodeAt(i)) >>> 0; return h % n; };
 

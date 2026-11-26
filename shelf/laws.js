@@ -519,11 +519,12 @@ async function mirrorCourt(no, court) {
   if (!idx) throw fail('unavailable');
   const all = idx[no];
   if (!all) return null;
-  const list = all.split(';').map((e) => { const [cat, stem] = e.split('|'); const c = stem.split('_')[0]; return { cat, stem, court: c, sup: c === '대법원' }; });
+  // (a third part names the folder when the mirror keeps the judgment under the other level's: a 고등법원 judgment under 대법원/)
+  const list = all.split(';').map((e) => { const [cat, stem, lv] = e.split('|'); const c = stem.split('_')[0]; return { cat, stem, court: c, sup: c === '대법원', lv }; });
   const want = courtName(court), lower = list.filter((x) => !x.sup);
   const pick = !want ? list[0] : list.find((x) => courtName(x.court) === want) || (want !== '대법원' && lower.length === 1 ? lower[0] : null);
   if (!pick) return null;
-  const r = await fetch(PREC + encodeURIComponent(pick.cat) + '/' + (pick.sup ? encodeURIComponent('대법원') : encodeURIComponent('하급심')) + '/' + encodeURIComponent(pick.stem) + '.md');
+  const r = await fetch(PREC + encodeURIComponent(pick.cat) + '/' + encodeURIComponent(pick.lv === '대법원' || pick.lv === '하급심' ? pick.lv : pick.sup ? '대법원' : '하급심') + '/' + encodeURIComponent(pick.stem) + '.md');
   if (r.status === 404) return null;
   if (!r.ok) throw fail('unavailable');
   const { head, body } = front(await r.text());
@@ -540,12 +541,14 @@ async function mirrorCourt(no, court) {
 }
 async function askCourt(no, court, k) {
   const kept = await store.get('kv', 'court:' + k).catch(() => null);
-  if (kept && kept.v === 3 && (kept.d || Date.now() - kept.at < 3 * 864e5)) return kept.d;
+  // a judgment read stays; 'not there' is asked again after three days, and at once when it was said before the year index
+  // learnt the numbers written oddly in the mirror's file names (v 3)
+  if (kept && (((kept.v === 3 || kept.v === 4) && kept.d) || (kept.v === 4 && Date.now() - kept.at < 3 * 864e5))) return kept.d;
   if (!navigator.onLine) { if (kept && kept.d) return kept.d; throw fail('offline'); }
   let d;
   try { d = await mirrorCourt(no, court); } catch (e) { if (kept && kept.d) return kept.d; throw e; }
   if (d === null && drfReady()) d = await drfCourt(no).catch(() => null);   // not in the mirror: 국가법령정보, once it answers us
-  await store.put('kv', 'court:' + k, { v: 3, at: Date.now(), d }).catch(() => {});
+  await store.put('kv', 'court:' + k, { v: 4, at: Date.now(), d }).catch(() => {});
   return d;
 }
 async function drfCourt(no) {
@@ -566,32 +569,170 @@ export const courtCite = (d) => `${d.courtName || '법원'} ${d.date ? d.date + 
    name, so a long spaced name links whole ("국가를 당사자로 하는 계약에 관한 법률 제27조"); a version note "(…개정된 것)"
    between the name and 제 is stepped over. A name not in the dictionary (a repealed law, say) links as before, so it still
    opens 국가법령정보센터 and the 헌재 decisions on it. A foreign jurisdiction governing the clause ("일본 공직선거법",
-   "수정헌법", "(Parliamentary Elections Act 1954)") never links to the same-named Korean law. Lists of articles, 항 and
-   circled numbers, 「」 names and 헌법 전문 are handled. */
+   "수정헌법", "(Parliamentary Elections Act 1954)") never links to the same-named Korean law, nor does the same law cited bare
+   later in the section about it (below). Lists of articles, 항 and circled numbers, 「」 names and 헌법 전문 are handled. */
 const SUFFIX = /(?:법률|법|령|규칙|헌법|법전)$/;
 // a foreign law written with a Korean name is not the Korean law of that name. A country must govern the name itself —
 // "일본국 민법", "일본의 행정절차법", "영국 1998년 인권법", glued "수정헌법"·"연방선거법" — not merely appear in the sentence
 // ("미국회사로부터 … 근로기준법 제24조", "[2] 영국 해상보험법 제33조, 상법 제693조" are Korean). "우리 민법", "현행 헌법" are Korean
 // always. The one reach-back: a parenthetical source right after a statement about that same foreign law ("일본
-// 형사소송법(…)도 …로 정하고 있다(형사소송법 제199조)"). 인도(引渡)·호주(戶主) are delivery and head of household, not countries.
-const CTRY = '일본|日本|독일|獨逸|미국|美國|프랑스|佛蘭西|영국|英國|영연방|캐나다|대만|臺灣|중국|中國|오스트리아|오스트레일리아|스위스|이탈리아|스페인|핀란드|뉴질랜드|네덜란드|벨기에|유럽연합|러시아|브라질';
-const GOVERNS = new RegExp(`(?:${CTRY})(?:국)?(?:의)?\\s*(?:(?:1[89]|20)\\d{2}\\s*년\\s*|연방\\s*|구\\s*)?$`);
+// 형사소송법(…)도 …로 정하고 있다(형사소송법 제199조)"). 인도(引渡)·호주(戶主)·이란(…이란) are words, not countries here.
+const CTRY = '일본|日本|독일|獨逸|미국|美國|프랑스|佛蘭西|영국|英國|영연방|캐나다|대만|臺灣|중국|中國|오스트리아|오스트레일리아|스위스|이탈리아|스페인|핀란드|뉴질랜드|네덜란드|벨기에|유럽연합|러시아|브라질' +
+  '|싱가포르|스웨덴|노르웨이|덴마크|아이슬란드|폴란드|헝가리|체코|그리스|포르투갈|아일랜드|스코틀랜드|룩셈부르크|이스라엘|튀르키예|터키|멕시코|아르헨티나|칠레|콜롬비아|필리핀|인도네시아|태국|베트남|말레이시아|홍콩|몽골|이집트|남아프리카공화국|남아공|우크라이나' +
+  '|파나마|라이베리아|마셜제도|마샬군도|바하마|몰타|키프로스|사이프러스|케이맨|버뮤다|캘리포니아|뉴욕|델라웨어|텍사스|플로리다|일리노이|하와이|뉴저지|네바다|온타리오|퀘벡';   // (ships' flags; states and provinces)
+const GOVERNS = new RegExp(`(?:${CTRY})(?:국|주|(?:연방)?공화국)?(?:의)?\\s*(?:(?:1[89]|20)\\d{2}\\s*년\\s*|연방\\s*|구\\s*)?$`);
 const GLUED_FOREIGN = /(?:수정|연방)\s*$/;
 const KOREAN_ANCHOR = /(?:우리|우리나라|한국|대한민국|현행|국내)\s*(?:의\s*)?$/;
 const reEsc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const unwrap = (s) => s.replace(/([가-힣])[ \t]*\n[ \t]*([가-힣])/g, '$1$2');   // a word broken across a line of the PDF is one word
+// what the clause says of the law named at `at`: 'f' foreign, 'k' Korean (우리 민법, 현행헌법, 대한민국 헌법), '' neither
 function foreignLaw(text, at, law) {
-  // (a word broken across a line of the PDF is one word: '앞의 일⏎본 헌법 제33조' is Japan's)
-  const near = text.slice(Math.max(0, at - 30), at).replace(/([가-힣])[ \t]*\n[ \t]*([가-힣])/g, '$1$2');
-  if (KOREAN_ANCHOR.test(near)) return false;
-  if (GOVERNS.test(near) || GLUED_FOREIGN.test(text.slice(Math.max(0, at - 7), at))) return true;
+  const near = unwrap(text.slice(Math.max(0, at - 30), at));   // ('앞의 일⏎본 헌법 제33조' is Japan's)
+  if (KOREAN_ANCHOR.test(near) || /^(?:현행|대한민국)/.test(text.slice(at, at + 4))) return 'k';
+  if (GOVERNS.test(near) || GLUED_FOREIGN.test(text.slice(Math.max(0, at - 7), at))) return 'f';
   if (/\(\s*$/.test(near)) {   // "(형사소송법 제199조" after "일본 형사소송법 … 정하고 있다"
-    const nm = reEsc(NAME_NORM(law)), under = new RegExp(`(?:${CTRY})(?:국)?(?:의)?(?:\\d{4}년)?${nm}`);
+    const nm = reEsc(NAME_NORM(law)), under = new RegExp(`(?:${CTRY})(?:국|주|(?:연방)?공화국)?(?:의)?(?:\\d{4}년)?${nm}`);
     const sent = NAME_NORM(text.slice(Math.max(0, at - 160), at).split(/[.。!?]\s/).pop());   // a line break in a PDF is a wrap, not a sentence's end
     const close = text.indexOf(')', at), inParen = NAME_NORM(text.slice(at, close > at ? Math.min(close, at + 200) : at + 200));
     // …unless the same parenthesis names it again under a country: "(저작권법 제3조 제3항 및 중국 저작권법 제…)" — a contrast, so this one is Korean
-    if (under.test(sent) && !under.test(inParen)) return true;
+    if (under.test(sent) && !under.test(inParen)) return 'f';
   }
+  return '';
+}
+
+/* A foreign law cited bare in the section about it. A comparative passage names the law as foreign once — "일본 형사소송법",
+   "캐나다 형법은", or the Korean name with the law's own title: "형사소송법(刑事訴訟法)", "형법(Criminal Code)" — and then cites
+   it bare: "(형사소송법 제189조 제2항)". Such a bare citation is foreign as well, and is not linked, while all of this holds:
+   - the section is about a foreign law: the nearest heading above it that says where it stands names a country or a
+     comparison (Ⅲ. 일본 사례의 비교법적 검토 · 2. 캐나다 · 1. 영미법계 · 외국의 입법례), and not Korea (우리, 국내, 현행,
+     시사점, 개선, 결론 …). A lower heading (가., (1)) can only say Korea. With no such heading above, the text is Korean,
+     whatever it mentions — a Korean section never loses a link this way;
+   - the same law was named foreign after the last heading (every heading closes what was named before it), and not named
+     Korean after that ("우리 형사소송법", "현행 형법");
+   - its own sentence says nothing Korean (우리나라, 한국, 현행 …) after the foreign naming.
+   A citation that cannot be Korean names its law foreign too: one whose footnote quotes the provision in its own language
+   ("헌법 제45조39)" with note 39 "Subject to this Article, a person shall not be …"), or one beyond the last article of the
+   Korean law (형법 has 372; "형법 제750조"). A heading is a short line opening with Ⅰ./I./1./가./(1)/(가)/1); four or more in a
+   row are the table of contents. A page is read on its own: what the pages before it left (articleScope of each, in turn)
+   comes in as `scope`. */
+const CTRY_SCAN = new RegExp(CTRY.split('|').map((c) => [...c].join('(?:[ \\t]*\\n[ \\t]*)?')).join('|'), 'g');   // (cut by a line break too)
+const HOME_SCAN = /우리나라|우리|한국|대한민국|현행|국내/g;
+const GLOSS_SCAN = /[(（][ \t]*(?=[\u3400-\u9fff\uf900-\ufaff\u3040-\u30ffA-Za-z])/g;   // (刑事訴訟法), (公職選挙法), (Criminal Code)
+const HEAD_LINE = /^[ \t]*(?:([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]{1,3})[ \t]*[.．]?|(X?(?:IX|IV|V?I{1,3}|V))[ \t]*[.．]|(\d{1,2})[ \t]*[.．](?![ \t]*\d)|([가-하])[ \t]*[.．]|[(（](\d{1,2})[)）]|[(（]([가-하])[)）]|(\d)\))[ \t]*(\S[^\n]*)$/gm;
+const NOTE_WORDS = /\d{3}|면|쪽|頁|p\.|앞의|위의|같은\s*(?:글|책|논문)|참조|판결|결정|선고|[“”"]|http/;   // "16) 위의 책, 23면" is a note, not a heading
+const ABROAD = new RegExp(`${CTRY.replace('일본', '일본(?!군)')}|(?:^|[^재])외국(?!인|환|법인|국적)|해외\\s*(?:입법|사례|법제)|비교법|입법례|영미|대륙법|북미|남미|유럽|주요국|각국|연방|최고재판소`);
+const AT_HOME = /우리|한국|대한민국|국내|현행|시사점|개선|입법론|결론/;
+const HOME_WORD = /우리|한국|대한민국|국내|현행(?!범)/;
+const abroadAt = (path) => {   // the headings above, deepest first: the first that says where it stands decides
+  for (let l = path.length - 1; l >= 1; l--) { const h = path[l]; if (!h) continue; if (h.home) return false; if (l <= 2 && h.abroad) return true; }
   return false;
+};
+// the provision quoted in its own language in the footnote its marker points to (a statute's words, not a book or a case)
+function quotedAbroad(text, end) {
+  const mk = /^[ \t]*(\d{1,3})\)/.exec(text.slice(end, end + 6));
+  if (!mk) return false;
+  const at = text.indexOf('\n' + mk[1] + ')', end);
+  if (at < 0 || at - end > 6000) return false;
+  let note = text.slice(at + 1 + mk[1].length + 1, at + 420);
+  const next = note.search(/\n\s*\n|\n\d{1,3}\)\s/); if (next > 0) note = note.slice(0, next);
+  const han = (note.match(/[가-힣]/g) || []).length, lat = (note.match(/[A-Za-zÀ-ÿ]/g) || []).length, cjk = (note.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+  if (han > 4 || (lat < 40 && cjk < 12)) return false;
+  if (/\b(?:pp?|S|Vol|vol|Rn|Bd|Aufl|ed|eds|Hrsg|Id|Ibid|supra)\.|\bet al\b|Press|Univ|Journal|Review|Rev\.|U\.S\.\s*\d|F\.\s?\d|BVerfGE|\((?:19|20)\d{2}\)|頁|巻/.test(note)) return false;
+  return /\b(?:shall|may|Article|Section|person|Act|Code|article|alinéa|peut|sont|Abs\.|wird|ist)\b|§|第[〇一二三四五六七八九十百千\d]+条/.test(note);
+}
+// the last article of a law (and whether it has 가지조문, 제N조의M), from the legalize-kr mirror files: an article beyond it,
+// by a margin (a law can grow at its end), cannot be this Korean law's — the old text a version note or 구 marks aside
+const LAST_ART = { 헌법: [130, 0], 형법: [372, 1], 형사소송법: [494, 1], 민법: [1118, 1], 상법: [935, 1], 민사집행법: [312, 1], 행정소송법: [46, 1],
+  공직선거법: [279, 1], 헌법재판소법: [79, 1], 국가공무원법: [85, 1], 지방자치법: [211, 1], 관세법: [330, 1], 군형법: [94, 1], 정치자금법: [65, 1],
+  국민투표법: [119, 1], 노동조합및노동관계조정법: [96, 1], 집회및시위에관한법률: [26, 1], 국가재정법: [102, 1], 행정기본법: [40, 1], 선거관리위원회법: [20, 1] };
+const beyond = (law, art, sub) => { const b = LAST_ART[NAME_NORM(law)]; return !!b && typeof art === 'number' && (art > b[0] + Math.max(10, Math.ceil(b[0] / 10)) || (!!sub && !b[1])); };
+
+// the headings and the namings of a text, read once and only when asked; `from` is what the text before it left
+function sections(text, from) {
+  const start = from && from.path ? from : { path: [], named: [] };
+  let heads = null, paths = null, named = null;
+  const dyn = [];   // what the citations themselves say, as they are read (in order)
+  const readHeads = () => {
+    heads = []; paths = []; const ends = [];
+    let path = start.path.slice();
+    HEAD_LINE.lastIndex = 0; let m;
+    while ((m = HEAD_LINE.exec(text))) {
+      const lvl = m[1] || m[2] ? 1 : m[3] ? 2 : m[4] ? 3 : m[5] ? 4 : m[6] ? 5 : 6, t = m[8].trim();
+      if (t.length > (lvl <= 2 ? 50 : lvl < 6 ? 40 : 30) || !/[가-힣]{2}/.test(t) || /[.。]$|[.。?!]\s+\S/.test(t) || (lvl === 6 && NOTE_WORDS.test(t))) continue;
+      path = path.slice(0, lvl); path[lvl] = { abroad: ABROAD.test(t), home: AT_HOME.test(t) };
+      heads.push(m.index); paths.push(path); ends.push(m.index + m[0].length);
+    }
+    // a run of four or more heading lines one under another is the table of contents, not a section: after it, no heading is above
+    for (let a = 0, b = 0; a < heads.length; a = b) {
+      for (b = a + 1; b < heads.length && /^\s*$/.test(text.slice(ends[b - 1], heads[b])); b++);
+      if (b - a >= 4) for (let k = a; k < b; k++) paths[k] = [];
+    }
+  };
+  const lastHead = (at) => { let lo = 0, hi = heads.length - 1, k = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (heads[mid] < at) { k = mid; lo = mid + 1; } else hi = mid - 1; } return k; };
+  // the law named right after `from` (within 50 letters), when the clause says what `want` asks: its longest name there
+  const after = (from, min, want, out) => {
+    let got = null;
+    for (let e = from; e < Math.min(text.length, from + 50); e++) {
+      const c = text[e];
+      if (!/[가-힣·ㆍ\s\d「」]/.test(c)) break;
+      if (!/[법률령칙전」]/.test(c)) continue;
+      const r = lawBefore(text, e + 1);
+      if (!r || r.start < min) continue;
+      if (got && r.start !== got.start) break;
+      if (!got && foreignLaw(text, r.start, r.law) !== want) return;
+      got = r;
+    }
+    if (got) out.push({ i: got.start, law: got.law, k: want });
+  };
+  const readNamings = () => {   // (only in the stretches under a foreign heading: nothing named elsewhere is ever asked for)
+    const out = [];
+    for (let k = -1; k < heads.length; k++) {
+      if (!abroadAt(k >= 0 ? paths[k] : start.path)) continue;
+      const a = k >= 0 ? heads[k] : 0, b = k + 1 < heads.length ? heads[k + 1] : text.length;
+      let m;
+      CTRY_SCAN.lastIndex = a; while ((m = CTRY_SCAN.exec(text)) && m.index < b) after(m.index + m[0].length, m.index + m[0].length, 'f', out);
+      HOME_SCAN.lastIndex = a; while ((m = HOME_SCAN.exec(text)) && m.index < b) after(m.index + m[0].length, m.index, 'k', out);
+      GLOSS_SCAN.lastIndex = a;
+      while ((m = GLOSS_SCAN.exec(text)) && m.index < b) { const r = lawBefore(text, m.index); if (r) out.push({ i: r.start, law: r.law, k: foreignLaw(text, r.start, r.law) === 'k' ? 'k' : 'f' }); }
+    }
+    return out.sort((x, y) => x.i - y.i);
+  };
+  // the last naming of `law` (of the law, or of this very article) after `lo` and before `at`; what came before this text first
+  const lastNaming = (law, art, sub, lo, at, before) => {
+    const fits = (n) => n.law === law && (n.art == null || (n.art === art && n.sub === sub));
+    let last = null;
+    if (before) for (const n of start.named) if (fits(n)) last = { ...n, i: -1 };
+    for (const list of [named, dyn]) for (const n of list) if (n.i > lo && n.i < at && fits(n) && (!last || n.i >= last.i)) last = n;
+    return last;
+  };
+  return {
+    note(law, at, k, art, sub) { dyn.push(art == null ? { i: at, law, k } : { i: at, law, k, art, sub }); },
+    // 'f': a bare citation of a law named foreign in this foreign section · 'fa': foreign by its footnote's quote (this
+    // article only) · 'k': one its own sentence says is Korean · '' none of these
+    said(law, at, end, art, sub) {
+      if (!heads) readHeads();
+      const k = lastHead(at), path = k >= 0 ? paths[k] : start.path;
+      if (!abroadAt(path)) return '';
+      if (!named) named = readNamings();
+      const lo = k >= 0 ? heads[k] : -1, last = lastNaming(law, art, sub, lo, at, k < 0);
+      if (!last) return quotedAbroad(text, end) ? 'fa' : '';
+      if (last.k !== 'f') return '';
+      const sent = text.slice(Math.max(0, last.i, at - 200), at).split(/[.。!?](?=\s)/).pop();
+      return HOME_WORD.test(unwrap(sent)) ? 'k' : 'f';
+    },
+    // what this text leaves for the text after it: the headings above its end, and what its last section named, in order
+    end() {
+      if (!heads) readHeads();
+      const k = heads.length - 1, path = k >= 0 ? paths[k] : start.path;
+      if (!abroadAt(path)) return { path, named: [] };
+      if (!named) named = readNamings();
+      const lo = k >= 0 ? heads[k] : -1, last = new Map();
+      for (const n of [...(k < 0 ? start.named.map((x) => ({ ...x, i: -1 })) : []), ...named, ...dyn].filter((x) => x.i === -1 || x.i > lo).sort((x, y) => x.i - y.i)) {
+        const key = n.law + (n.art == null ? '' : `|${n.art}|${n.sub}`); last.delete(key); last.set(key, { law: n.law, k: n.k, ...(n.art == null ? {} : { art: n.art, sub: n.sub }) });
+      }
+      return { path, named: [...last.values()] };
+    },
+  };
 }
 // not a law's name on its own (the bare-name fallback): 같은 법, 동법, a bare 법률·특별법, or a name that begins with a country
 const NOT_A_LAW = /^(?:같은|동)(?:법|법률)(?:시행령|시행규칙)$|^(?:같은|동|이|위|본|해당|그|각|이사건|관계|관련|구|신|개정|현행|종전|입|방|불|위|사|공|행정|국제|실정|자연|위헌|합헌|모|부|당해|관련)(?:법률|법|령|규칙)$|^(?:법률|위헌법률|헌법률|수정헌법|기본법|특례법|특별법|조치법|처벌법|시행령|시행규칙|진흥법|촉진법|보호법|관리법|조직법|절차법)$|^(?:미국|독일|프랑스|일본|영국|연방|미|독|불|일|영)/;
@@ -601,6 +742,18 @@ const SHORT = new Set(['헌법', '민법', '형법', '상법']);   // the two-le
 const QUALIFIER = /^(?:현행|개정|신|新)$/;   // "the current one" only — 구민법 is the old 의용민법 and 제헌헌법 the 1948 text, not today's
 const PARTICLE = /[의은는을를과와에로인및]$/;   // not 상·중·등: they end nouns as often (보상·집중·평등) — 산업재해보상보험업법 is not 보험업법
 // the law named just before `end` (the index of 제); null when nothing is there
+// "같은 법 시행령 제76조", "동법 제5조", "같은 법률 시행규칙 제3조", "같은 영 제4조": the law cited just before (its 시행령 or
+// 시행규칙 when said), only when that one is a law this app knows and was not a foreign one
+const SAME_LAW = /(?:같은|동)\s*(법률|법|영)(?:\s*(시행령|시행규칙))?\s*$/;
+function lawSaidAgain(text, end, prev) {
+  if (!prev || prev.foreign) return null;
+  const m = SAME_LAW.exec(text.slice(Math.max(0, end - 16), end));
+  if (!m) return null;
+  const base = prev.law.replace(/\s*(?:시행령|시행규칙)$/, '');
+  const want = m[1] === '영' ? (/시행령$/.test(prev.law) ? prev.law : '') : m[2] ? base + ' ' + m[2] : base;
+  const law = want && resolveName(NAME_NORM(want));
+  return law ? { law, start: end - m[0].length + (m[0].length - m[0].trimStart().length) } : null;
+}
 function lawBefore(text, end) {
   let s = end;
   while (s > 0 && /\s/.test(text[s - 1])) s--;
@@ -657,34 +810,50 @@ const PARA_MORE = /\s*(?:,|·|ㆍ|및|와|과)\s*(?:제\s*(\d{1,3})\s*항|([①-
 // 헌법 전문(前文), not 전문(專門): only before a standalone particle, a list or closing punctuation — "헌법 전문은", "헌법 전문과 제1조", "(헌법 전문)" —
 // never "헌법전문가", "헌법 전문성", "헌법소송을 전담할 헌법전문재판소"
 const JEONMUN = /(?:대한민국)?헌법\s*전문(?=[은는을를의과와](?![가-힣])|에|\s*(?:[,·ㆍ]|및|[)）.。"”’」]|$))/g;   // 전문과 제1조 ✓, 전문과정 ✗
-export function scanArticles(textIn) {
+// scope: what the text before this one left (articleScope), when a page is read on its own
+export function scanArticles(textIn, scope = null) { return scan(textIn, scope, false); }
+// what a text (a page) leaves for the one after it: the headings above, the foreign laws named in the section
+export function articleScope(textIn, scope = null) { return scan(textIn, scope, true); }
+function scan(textIn, scope, wantScope) {
   const out = [];
-  if (!textIn) return out;
+  if (!textIn) return wantScope ? (scope && scope.path ? scope : { path: [], named: [] }) : out;
+  const sec = sections(textIn, scope);
   ART_TAIL.lastIndex = 0;
-  let m;
+  // (the law cited last, for "같은 법 시행령 제76조", "동법 제5조"; carried over from the page before when read page by page)
+  let m, prev = scope && scope.prev && scope.prev.law ? { law: scope.prev.law, foreign: !!scope.prev.foreign, start: -1 } : null;
   while ((m = ART_TAIL.exec(textIn))) {
-    const tailEnd = m.index + m[0].length, nm = lawBefore(textIn, m.index);
-    if (!nm || foreignLaw(textIn, nm.start, nm.law)) continue;
+    const tailEnd = m.index + m[0].length, nm = lawBefore(textIn, m.index) || lawSaidAgain(textIn, m.index, prev);
+    if (!nm) continue;
+    prev = nm;
     let art = Number(m[1]), sub = m[2] ? Number(m[2]) : 0;
-    out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start });
+    const old = /구\s*$/.test(textIn.slice(Math.max(0, nm.start - 2), nm.start)) || /\)\s*$/.test(textIn.slice(nm.start, m.index));
+    const said = foreignLaw(textIn, nm.start, nm.law) || sec.said(nm.law, nm.start, tailEnd, art, sub);
+    // no such article in the Korean law: not linked, nor is the same article cited again in this section — but the list after
+    // it goes on ("형법 제535조, 제55조 제1항": a slip of the pen, then a real one)
+    const none = !old && beyond(nm.law, art, sub);
+    if (said === 'fa' || (!said && none)) sec.note(nm.law, nm.start, 'f', art, sub);
+    else if (said) sec.note(nm.law, nm.start, said);
+    if (said === 'f' || said === 'fa') { prev = { ...nm, foreign: true }; continue; }
+    const keep = (a, s) => old || !beyond(nm.law, a, s);
+    if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: m[3] ? Number(m[3]) : circ(m[4]), i: nm.start, len: tailEnd - nm.start });
     let at = tailEnd;   // the same law's list: a new article, or another 항 of this article
     for (;;) {
       PARA_MORE.lastIndex = at; const p = PARA_MORE.exec(textIn);
       ART_MORE.lastIndex = at; const a = ART_MORE.exec(textIn);
-      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); out.push({ law: nm.law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k }); at = PARA_MORE.lastIndex; }
-      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); out.push({ law: nm.law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
+      if (p && (!a || p.index <= a.index)) { const k = p[0].search(/[제①-⑳]/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: p[1] ? Number(p[1]) : circ(p[2]), i: p.index + k, len: p[0].length - k }); at = PARA_MORE.lastIndex; }
+      else if (a) { art = Number(a[1]); sub = a[2] ? Number(a[2]) : 0; const k = a[0].search(/제/); if (keep(art, sub)) out.push({ law: nm.law, art, sub, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
       else break;
     }
     ART_TAIL.lastIndex = at;
   }
   JEONMUN.lastIndex = 0; let j;   // 헌법 전문 (and the articles after it in "헌법 전문, 제1조 …" belong to 헌법)
   while ((j = JEONMUN.exec(textIn))) {
-    if (foreignLaw(textIn, j.index, '헌법')) continue;
+    if (foreignLaw(textIn, j.index, '헌법') === 'f' || /^fa?$/.test(sec.said('헌법', j.index, j.index + j[0].length, '전문', 0))) continue;
     out.push({ law: '헌법', art: '전문', sub: 0, para: 0, i: j.index, len: j[0].length });
     let at = j.index + j[0].length, a;
     for (;;) { ART_MORE.lastIndex = at; a = ART_MORE.exec(textIn); if (!a) break; const k = a[0].search(/제/); out.push({ law: '헌법', art: Number(a[1]), sub: a[2] ? Number(a[2]) : 0, para: a[3] ? Number(a[3]) : circ(a[4]), i: a.index + k, len: a[0].length - k }); at = ART_MORE.lastIndex; }
   }
-  return out;
+  return wantScope ? { ...sec.end(), prev: prev ? { law: prev.law, foreign: !!prev.foreign } : null } : out;
 }
 // a court's case cited in a paper: 대법원 2004. 4. 22. 선고 2000두7735 판결, 대판 2010다12345, 85다카1151, 2016수64 (단기 4287민상…)
 // longer kinds first so 다카 is tried before 다 (alternation is ordered)

@@ -6,7 +6,7 @@
 import { lib, pageItems } from './pdfkit.js';
 import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
 import { scanCases, linkCases, caseView, judgmentView, wireCase, cite } from './cases.js';
-import { scanArticles, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText } from './laws.js';
+import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText } from './laws.js';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
 // soft tints: butter, mint, sky, pink, lilac, apricot.
@@ -226,7 +226,12 @@ export class Reader {
 
   setIndex(index) {
     if (!index || this.dead) return;
+    const had = this.texts;
     this.texts = index.pages || this.texts;
+    if (this.texts !== had) {   // the pages before each page are known now: its citations are read again in their sections
+      this.scopes = null;
+      for (const p of this.pages) if (p.tl && p.casesSrc) this.casesFor(p, p.casesSrc);
+    }
     if (index.labels && index.labels.confident) { this.labels = index.labels; this.updateInd(); }
     if (index.outline && index.outline.length && (!this.outline || !this.outline.length || this.outline === this.outlineData)) { this.outlineData = this.A && this.A.tidyOutline ? this.A.tidyOutline(index.outline) : index.outline; this.outline = this.outlineData; if (!this.$('.rd-panel').hidden && this.tab === 'toc') this.showTab('toc'); }
     if (!this.$('.rd-panel').hidden && this.tab === 'marks') this.showTab('marks');
@@ -584,7 +589,7 @@ export class Reader {
     const found = [
       ...scanCases(flat).map((c) => ({ ...c, kind: 'case' })),
       ...scanCourtCases(flat).map((c) => ({ ...c, kind: 'court' })),
-      ...scanArticles(flat).map((c) => ({ ...c, kind: 'art' })),
+      ...scanArticles(flat, this.scopeAt(p.n)).map((c) => ({ ...c, kind: 'art' })),
     ].sort((x, y) => x.i - y.i);
     let end = 0;
     for (const c of found) {
@@ -604,6 +609,14 @@ export class Reader {
         layer.appendChild(d);
       }
     }
+  }
+  // what the pages before page n leave for its citations — the headings above it, the foreign laws named in its section — read
+  // from the document's page texts, page by page, once (null until those texts are here: each page is then read on its own)
+  scopeAt(n) {
+    if (!this.texts) return null;
+    const s = this.scopes || (this.scopes = [null]);
+    for (let i = s.length; i <= n; i++) s[i] = articleScope(this.texts[i - 1] || '', s[i - 1]);
+    return s[n];
   }
   caseAt(p, x, y) {   // x, y as fractions of the page
     const padX = 4 / p.cw, padY = 4 / p.ch;
@@ -702,7 +715,7 @@ export class Reader {
     this.walkI = clamp(i, 0, n - 1);
     const m = this.walkList[this.walkI];
     if (move) { this.scrollToPage(m.p, m.rects[0][1], true); this.flash(m.id); }
-    this.$('.rd-walk .wn').innerHTML = `<b>${this.walkI + 1} / ${n}</b><small>${esc(this.label(m.p))}${this.unit()}</small>`;
+    this.$('.rd-walk .wn').innerHTML = `<b>${this.walkI + 1} / ${n}</b><small>${esc(this.pageName(m.p))}</small>`;
     this.$('.rd-walk [data-w="prev"]').disabled = this.walkI === 0;
     this.$('.rd-walk [data-w="next"]').disabled = this.walkI === n - 1;
   }
@@ -1450,8 +1463,10 @@ export class Reader {
   }
 
   /* ---------------- page indicator and jumps ---------------- */
-  label(n) { const o = this.labelOff(); return String(n + 1 + (o == null ? 0 : o)); }
+  // (a page before the one printed 1 — a notice or a cover put before the paper — has no number of its own: 표지)
+  label(n) { const o = this.labelOff(), v = n + 1 + (o == null ? 0 : o); return v >= 1 ? String(v) : '표지'; }
   unit() { return this.labels && this.labels.confident ? '면' : '쪽'; }
+  pageName(n) { const l = this.label(n); return l === '표지' ? l : l + this.unit(); }   // a page by itself, as a mark or a hit names it (표지, not 표지면)
   updateInd() {
     if (!this.pages.length) return;
     const c = this.current().page;
@@ -1537,7 +1552,7 @@ export class Reader {
     } else {
       const ms = this.marks().sort((a, b) => a.p - b.p || a.rects[0][1] - b.rects[0][1]);
       this.$('.rd-panel .seg [data-tab="marks"]').textContent = ms.length ? `밑줄 ${ms.length}` : '밑줄';
-      box.innerHTML = ms.length ? '<ul class="mlist">' + ms.map((m) => `<li><button data-mark="${m.id}"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${m.color}"></i><span>${esc(m.text)}</span><em>${this.label(m.p)}${this.unit()}</em></button></li>`).join('') + '</ul>'
+      box.innerHTML = ms.length ? '<ul class="mlist">' + ms.map((m) => `<li><button data-mark="${m.id}"><i class="${m.kind === 'ul' ? 'uw' : 'sw'}" style="--c:${m.color}"></i><span>${esc(m.text)}</span><em>${this.pageName(m.p)}</em></button></li>`).join('') + '</ul>'
         : '<p class="empty">아직 밑줄이 없습니다.<br>형광펜이나 밑줄을 켜고 글자 위를 드래그하세요.</p>';
       if (ms.length) box.insertAdjacentHTML('beforeend', '<div class="mfoot"><button type="button" class="btn ghost" data-copyall>모두 복사</button><span class="sp"></span><button type="button" class="btn ghost danger" data-clear>밑줄 모두 지우기</button></div>');
     }
@@ -1546,7 +1561,7 @@ export class Reader {
     if (e.target.closest('[data-clear]')) { this.erase('all'); return; }
     if (e.target.closest('[data-copyall]')) {   // every marked passage, in reading order, with its printed page
       const ms = this.marks().sort((a, b) => a.p - b.p || a.rects[0][1] - b.rects[0][1] || a.rects[0][0] - b.rects[0][0]);
-      this.copy([this.o.title || '', '', ...ms.map((m) => `${this.label(m.p)}${this.unit()}  ${m.text}`)].join('\n'));
+      this.copy([this.o.title || '', '', ...ms.map((m) => `${this.pageName(m.p)}  ${m.text}`)].join('\n'));
       return;
     }
     const t = e.target.closest('[data-toc]');
@@ -1597,7 +1612,7 @@ export class Reader {
     });
     this.hits = hits;
     n.textContent = hits.length ? `${hits.length}곳` : '없음';
-    list.innerHTML = hits.slice(0, 200).map((h, i) => `<button data-hit="${i}"><em>${this.label(h.page)}${this.unit()}</em><span>…${esc(h.snip)}<mark>${esc(h.word)}</mark>${esc(h.after)}…</span></button>`).join('');
+    list.innerHTML = hits.slice(0, 200).map((h, i) => `<button data-hit="${i}"><em>${this.pageName(h.page)}</em><span>…${esc(h.snip)}<mark>${esc(h.word)}</mark>${esc(h.after)}…</span></button>`).join('');
     list.hidden = !hits.length;
     for (const p of this.pages) if (p.tl) this.paintHits(p);
     if (hits.length) {

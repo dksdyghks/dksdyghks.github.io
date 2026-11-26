@@ -46,7 +46,8 @@ export async function ask(op, params) {
   const d = await api.nanet(op, params);
   const r = d && Array.isArray(d.result) ? d.result.find((x) => x && x.error) : null;
   const e = r && (Array.isArray(r.error) ? r.error[0] : r.error);
-  if (e) throw Object.assign(new Error(String(e.message || 'nanet')), { code: /트랙픽|트래픽|초과|traffic|limit/i.test(String(e.message || '')) ? 'busy' : 'unavailable' });
+  // (code 201, "요청에 대한 정상 처리이지만, 결과값이 없습니다", is how it says it found nothing: an answer, not a failure)
+  if (e && !(String(e.code) === '201' || /결과값이 없습니다/.test(String(e.message || '')))) throw Object.assign(new Error(String(e.message || 'nanet')), { code: /트랙픽|트래픽|초과|traffic|limit/i.test(String(e.message || '')) ? 'busy' : 'unavailable' });
   return d;
 }
 const asked = new Map();   // each question asked once while the app is open
@@ -58,7 +59,7 @@ export async function search(q, { kind = 'ARTICLE', page = 1, sort = '', by = ''
   if (sort === 'new') { params.searchSort = 'year'; params.sortType = 'desc'; }
   if (by === 'author') params.searchType = 'AUTHOR';
   const d = await ask('search', params);
-  const r = (d && d.result && d.result[0]) || {};
+  const r = ((d && d.result) || []).find((x) => x && Array.isArray(x.searchList)) || (d && d.result && d.result[0]) || {};
   const out = { total: Number(r.totalCount) || 0, rows: (r.searchList || []).map(shape).filter((x) => x.id && x.title) };
   asked.set(key, out);
   return out;
