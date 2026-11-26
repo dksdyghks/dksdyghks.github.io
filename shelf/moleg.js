@@ -3,7 +3,7 @@
 // only — its lawService.do (the text itself) does not exist there — so each row links to its own public page at
 // 국가법령정보센터 (www.law.go.kr/LSW/…InfoP.do by the row's serial number, as the site itself links them), never to the DRF
 // links in the answer, which carry another party's OC. Answers are kept for this session.
-import * as api from './api.js?v=999a221565';
+import * as api from './api.js?v=3dab24bfa8';
 
 const fail = (code) => Object.assign(new Error(code), { code });
 const LSW = 'https://www.law.go.kr/LSW/';

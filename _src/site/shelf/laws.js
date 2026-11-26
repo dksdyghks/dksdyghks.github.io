@@ -56,6 +56,7 @@ const noAnswer = () => (navigator.onLine === false ? 'offline' : 'server');
 const mem = {};
 const asking = {};
 export function lawText(name) {
+  ucWatch();   // (the 위헌·헌법불합치 bands on the cards it makes: below)
   // (an old name: a repealed law is said so at once, with what took its place; a renamed one is today's law)
   const o = oldLaw(name);
   if (o && o.gone) return Promise.reject(Object.assign(fail('repealed'), { date: o.gone, now: o.now, was: o.name }));
@@ -1393,4 +1394,215 @@ export function scanCourtCases(textIn) {
     COURT_RE.lastIndex = at;
   }
   return out;
+}
+
+/* ---------------- 위헌·헌법불합치 결정 (헌법재판소 통계 + 미개정 법령현황, through the server) ----------------
+  The server's compact list (/api/ccourt/unconst: 위헌결정 법률현황 joined with the two 미개정 lists) is asked once a day and
+  kept on this device (kv 'unconst'); an article's card gets a short band for each decision on that article, and a law's own
+  page those on the law as a whole (no article named, a 부칙, or a law renamed by a 전부개정, whose numbers may differ) and
+  those not yet amended, with a quiet mark on each article line that has one. A row is matched by its law's name, spaces and
+  dots out — the exact law, so 공직선거법 is never 공직선거법 시행령 — and an old name (OLD_LAWS) by today's: a renamed law's
+  articles are today's, a repealed law's are no one's. Each band's line opens the decision's sheet (data-case-open). */
+const UC_V = 1, UC_KEY = 'unconst', UC_DAY = 864e5;
+const ucEsc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// what is kept of a row: no more than a band needs. The server keeps a row's first article as art and the rest in part
+// ('제269조 제1항' + ', 제270조 제1항 중 ‘의사’에 관한 부분'): the articles that follow it at once are kept too (not one
+// named inside 중 ‘…’); pre: the text before a 전부개정 (its numbers may be other articles' today)
+const UC_LEAD = /^(?:\s*(?:,|및|ㆍ|·|본문|단서|전단|후단|전문|후문|제\s*\d+\s*조(?:\s*의\s*\d+)?|제\s*\d+\s*항|제\s*\d+\s*호(?:\s*의\s*\d+)?|[가-하]목))+/;
+export const ucSlim = (x) => {
+  const o = { law: String(x.law || ''), kind: String(x.kind || ''), date: String(x.date || ''), no: String(x.eventNo || '') };
+  if (x.art) { const more = UC_LEAD.exec(String(x.part || '')); o.art = String(x.art) + (more && /제\s*\d+\s*조/.test(more[0]) ? more[0].replace(/\s+$/, '') : ''); }
+  if (x.old) o.old = 1;
+  if (/(?:전부|전문)\s*개정\s*되기\s*전/.test(String(x.ver || ''))) o.pre = 1;
+  if (x.unam && typeof x.unam === 'object') { o.un = { kind: String(x.unam.kind || '') }; if (x.unam.progress) o.un.progress = String(x.unam.progress); if (x.unam.deadline) o.un.deadline = String(x.unam.deadline); }
+  return o;
+};
+// the articles a row names: '제26조 제1항' → [{ art: 26, sub: 0, para: 1 }]; a list ('제10조, 제23조 제1호') → each
+export function ucArts(s) {
+  const out = [], re = /제\s*(\d{1,4})\s*조(?:\s*의\s*(\d{1,3}))?(?:\s*제\s*(\d{1,3})\s*항)?/g;
+  let m;
+  while ((m = re.exec(String(s || '')))) out.push({ art: Number(m[1]), sub: m[2] ? Number(m[2]) : 0, para: m[3] ? Number(m[3]) : 0 });
+  return out;
+}
+// whose row it is: { key (today's law, as lawId gives it), was (an old name it was cited by), whole (renamed by a 전부개정),
+// add (a 부칙's article), gone (a repealed law: matched to nothing in force) }
+export function ucLawOf(name) {
+  let n = String(name || '').replace(/[「」｢｣『』‘’“”]/g, '').trim().replace(/^구\s+/, '');
+  n = NAME_NORM(n);
+  const ad = /^(.{2,}?)부칙$/.exec(n);
+  if (ad) n = ad[1];
+  const o = oldLaw(n);
+  const r = o ? (o.gone ? { key: NAME_NORM(n), gone: true } : { key: lawId(o.now), was: o.name, whole: !!o.whole }) : { key: lawId(n) };
+  if (ad) r.add = true;
+  return r;
+}
+// the list, by law: key → rows, each with its articles worked out
+export function ucIndex(rows) {
+  const idx = new Map();
+  for (const x of rows || []) {
+    if (!x || !x.law || !x.no) continue;
+    const w = ucLawOf(x.law);
+    if (w.gone) continue;
+    const r = { ...x, ...w, arts: ucArts(x.art) };
+    if (!idx.has(w.key)) idx.set(w.key, []);
+    idx.get(w.key).push(r);
+  }
+  return idx;
+}
+// one decision once (two rows of one decision: the parts it held, or two versions of the article): not yet amended if
+// either says so, an old version only if both are
+function ucOnce(rows) {
+  const at = new Map();
+  for (const r of rows) {
+    const y = at.get(r.no);
+    if (!y) { at.set(r.no, { ...r }); continue; }
+    if (!y.un && r.un) y.un = r.un;
+    if (!r.old) y.old = 0;
+    if (!r.pre) y.pre = 0;
+    if (!r.was) y.was = '';
+  }
+  return [...at.values()].sort((a, b) => (b.un ? 1 : 0) - (a.un ? 1 : 0) || String(b.date).localeCompare(String(a.date)));
+}
+// an article's decisions (the law's name as any text gives it; art and sub as numbers)
+export function ucForArticle(idx, law, art, sub = 0) {
+  const rows = (idx && idx.get(lawId(law))) || [];
+  return ucOnce(rows.filter((r) => !r.whole && !r.add && !r.pre && r.arts.some((a) => a.art === art && a.sub === (sub || 0))));
+}
+// a law's: on the law as a whole (shown on its page), not yet amended (shown there too), and by article (marked on its lines).
+// has: the articles its page lists ('26:0', '66:2'), when known — a row on none of them (an article today's law no longer
+// has) is shown with the law's, not counted as marked
+export function ucForLaw(idx, law, has = null) {
+  const rows = (idx && idx.get(lawId(law))) || [];
+  const listed = (r) => !has || !has.size || r.arts.some((a) => has.has(a.art + ':' + a.sub));
+  const lawLevel = (r) => !r.arts.length || r.whole || r.add || r.pre || !listed(r);
+  const whole = ucOnce(rows.filter(lawLevel)), seen = new Set(whole.map((r) => r.no));
+  return { whole, unam: ucOnce(rows.filter((r) => !lawLevel(r) && r.un && !seen.has(r.no))), arts: rows.filter((r) => !lawLevel(r)) };
+}
+const ucToday = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const ucDate = (d) => dateText(String(d || '').replace(/-/g, ''));
+// one band line: '헌재 위헌 결정 2004헌마554 (2004. 10. 21.)' · '헌법불합치 · 아직 개정 안 됨 (2023헌마…, 개정 시한 …)';
+// here: the article the card shows (its 항 said after, when the row names one); else the row's own article, if any
+export function ucLine(r, here = null, today = ucToday()) {
+  const d = ucDate(r.date), bits = [];
+  let head, tail;
+  if (r.un) {
+    const dl = r.un.deadline, past = (dl && dl < today) || r.un.progress === '경과';
+    head = `${r.un.kind || r.kind} · 아직 개정 안 됨`;
+    tail = `(${r.no}, ${dl ? `개정 시한 ${ucDate(dl)}${past ? ' 지남' : ''}` : `${d} 결정`})`;
+  } else { head = `헌재 ${r.kind} 결정`; tail = `${r.no}${d ? ` (${d})` : ''}`; }
+  if (here) { const a = r.arts.find((x) => x.art === here.art && x.sub === (here.sub || 0)); if (a && a.para) bits.push(`제${a.para}항`); }
+  else if (r.art) bits.push((r.add ? '부칙 ' : '') + String(r.art).replace(/\s+/g, ' '));
+  if (r.was) bits.push(`옛 이름 ${r.was}${r.whole && r.art ? ' 때의 조문' : ''}`);
+  if (r.pre) bits.push('전부개정 전 조문');
+  else if (r.old) bits.push('개정 전 조문');
+  return `<button type="button" class="vb-l${r.un ? ' vb-un' : ''}" data-case-open="${ucEsc(r.no)}" data-cdate="${ucEsc(d)}"><b>${ucEsc(head)}</b> <span class="vb-no">${ucEsc(tail)}</span>${bits.length ? `<small>${ucEsc(bits.join(' · '))}</small>` : ''}</button>`;
+}
+const UC_SHOW = 3;
+function ucBand(rows, here, extra = '', cls = '') {
+  if (!rows.length && !extra) return '';
+  const first = rows.slice(0, UC_SHOW).map((r) => ucLine(r, here)).join(''), rest = rows.slice(UC_SHOW);
+  const more = rest.length ? `<details class="vb-more"><summary>외 ${rest.length}건</summary>${rest.map((r) => ucLine(r, here)).join('')}</details>` : '';
+  return `<div class="vb-band${cls}" role="note" aria-label="헌법재판소 위헌·헌법불합치 결정">${first}${more}${extra}</div>`;
+}
+// the band for an article's card, or '' (the list not at hand, or nothing on it)
+export function ucArticleBand(idx, law, art, sub = 0) { return ucBand(ucForArticle(idx, law, art, sub), { art, sub }); }
+// the law page's: its law-level and not-yet-amended decisions, and how many more are marked on its article lines
+export function ucLawBand(idx, law, asOf = '', has = null) {
+  const f = ucForLaw(idx, law, has), n = new Set(f.arts.map((r) => r.no)).size;
+  if (!f.whole.length && !f.unam.length && !n) return '';
+  const src = /^\d{4}-\d{2}$/.test(asOf) ? ` · 헌법재판소 통계 ${asOf.slice(0, 4)}. ${Number(asOf.slice(5))}. 기준` : '';
+  const note = `<p class="vb-note">${n ? `조문별 위헌·헌법불합치 결정 ${n}건은 조문 목록에 표시했습니다` : '조문별 위헌·헌법불합치 결정은 없습니다'}${src}</p>`;
+  return ucBand([...f.unam, ...f.whole].sort((a, b) => (b.un ? 1 : 0) - (a.un ? 1 : 0) || String(b.date).localeCompare(String(a.date))), null, note, ' vb-law');
+}
+// the mark on a law page's article line ('헌법불합치', '위헌 2건', '개정 안 됨' first)
+export function ucTag(idx, law, art, sub = 0) {
+  const rows = ucForArticle(idx, law, art, sub);
+  if (!rows.length) return '';
+  const r = rows[0], un = rows.some((x) => x.un);
+  return `<em class="vb-tag${un ? ' vb-un' : ''}">${ucEsc(un ? `${r.un ? r.un.kind || r.kind : r.kind} · 개정 안 됨` : r.kind)}${rows.length > 1 ? ` 외 ${rows.length - 1}` : ''}</em>`;
+}
+
+// the list: the copy kept here while it is under a day old (or there is no connection); else asked again, and the kept copy
+// used when the server cannot give it. One ask a session at most (another after 10 minutes when it failed)
+let ucAsk = null, ucIdx = null, ucTried = 0;
+async function ucFetch() {
+  if (!api.hasToken() || !api.base()) throw fail('auth');
+  let r;
+  try { r = await fetch(api.base() + '/api/ccourt/unconst', { headers: api.authHeader(), cache: 'no-store' }); } catch (e) { throw fail('offline'); }
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d || !Array.isArray(d.items)) throw fail((d && d.error) || 'unavailable');
+  return d;
+}
+export function unconstList() {
+  // (a session left open past a day asks again, at most once in 10 minutes)
+  const stale = ucIdx && Date.now() - ucIdx.rec.got > UC_DAY && Date.now() - ucTried > 10 * 60e3 && navigator.onLine !== false;
+  if (ucAsk && !stale) return ucAsk;
+  ucTried = Date.now();
+  const me = ucAsk = (async () => {
+    const kept = await store.get('kv', UC_KEY).catch(() => null);
+    const ok = kept && kept.v === UC_V && Array.isArray(kept.rows);
+    if (ok && (Date.now() - kept.got < UC_DAY || navigator.onLine === false)) return kept;
+    if (!ok && ucIdx && Date.now() - ucIdx.rec.got < UC_DAY) return ucIdx.rec;   // (storage refused it: the copy in memory)
+    try {
+      const d = await ucFetch();
+      const rec = { v: UC_V, got: Date.now(), at: d.at || 0, asOf: String(d.asOf || ''), rows: d.items.map(ucSlim) };
+      await store.put('kv', UC_KEY, rec).catch(() => {});
+      return rec;
+    } catch (e) {
+      setTimeout(() => { if (ucAsk === me) ucAsk = null; }, 10 * 60e3);   // (asked again later in this session: this ask, not one begun since)
+      if (ok) return kept;
+      return null;
+    }
+  })().then((rec) => { ucIdx = rec ? { rec, idx: ucIndex(rec.rows) } : null; return ucIdx; });
+  return ucAsk;
+}
+// the cards on screen, marked once each: an article's card by its 국가법령정보센터 link (law and article as the card built it),
+// a law's page by its own. Watched from the first law text asked, so no other screen pays for it.
+const LGK = 'https://www.law.go.kr/법령/';
+function ucWhere(href) {
+  let p;
+  try { p = decodeURIComponent(String(href || '')); } catch (e) { return null; }
+  if (!p.startsWith(LGK)) return null;
+  const [name, at] = p.slice(LGK.length).split('/');
+  if (!name || name === '신구법비교') return null;
+  if (at === undefined) return { law: name };
+  const m = /^제(\d{1,4})조(?:의(\d{1,3}))?$/.exec(at);
+  return m ? { law: name, art: Number(m[1]), sub: m[2] ? Number(m[2]) : 0 } : null;
+}
+function ucDecorate(card, u) {
+  if (card.classList.contains('law-whole')) {
+    const w = ucWhere(card.querySelector(':scope > .lc-h .lc-out')?.getAttribute('href'));
+    if (!w) return;
+    const lines = [...card.querySelectorAll('.lw-a[data-lq]')].map((b) => [b, articleQuery(b.dataset.lq)]).filter(([, q]) => q && typeof q.art === 'number');
+    const band = ucLawBand(u.idx, w.law, u.rec.asOf, new Set(lines.map(([, q]) => q.art + ':' + (q.sub || 0))));
+    if (band) (card.querySelector(':scope > .lc-renamed') || card.querySelector(':scope > .lc-h')).insertAdjacentHTML('afterend', band);
+    for (const [b, q] of lines) {
+      const tag = ucTag(u.idx, w.law, q.art, q.sub);
+      if (tag) { const t = b.querySelector('b'); if (t) t.insertAdjacentHTML('beforeend', ' ' + tag); }
+    }
+    // (a long law's chapters are folded: each closed chapter says how many of its articles are marked)
+    for (const d of card.querySelectorAll('.lw-fold')) {
+      const n = d.querySelectorAll('.lw-a .vb-tag').length, t = d.querySelector(':scope > summary > b');
+      if (n && t) t.insertAdjacentHTML('beforeend', ` <em class="vb-tag${d.querySelector('.lw-a .vb-tag.vb-un') ? ' vb-un' : ''}">위헌·헌법불합치 ${n}개 조</em>`);
+    }
+    return;
+  }
+  const w = ucWhere(card.querySelector(':scope > .lc-acts a[href^="https://www.law.go.kr/"]')?.getAttribute('href'));
+  if (!w || typeof w.art !== 'number') return;
+  const band = ucArticleBand(u.idx, w.law, w.art, w.sub), t = card.querySelector(':scope > .lc-t');
+  if (band && t) t.insertAdjacentHTML('beforebegin', band);
+}
+let ucWatching = false, ucQueued = false;
+function ucScan() {
+  ucQueued = false;
+  const cards = [...document.querySelectorAll('.law-card:not([data-vb])')].filter((c) => c.querySelector(':scope > .lc-h'));
+  if (!cards.length) return;
+  for (const c of cards) c.dataset.vb = '';
+  unconstList().then((u) => { if (u) for (const c of cards) if (c.isConnected && !c.querySelector('.vb-band')) ucDecorate(c, u); }).catch(() => {});
+}
+function ucWatch() {
+  if (ucWatching || typeof document === 'undefined' || typeof MutationObserver === 'undefined' || !document.body) return;
+  ucWatching = true;
+  new MutationObserver(() => { if (!ucQueued) { ucQueued = true; setTimeout(ucScan, 30); } }).observe(document.body, { childList: true, subtree: true });
+  ucScan();
 }

@@ -1,7 +1,8 @@
 // Tests for worker.js through the mock runtime. Uses a throwaway PIN (never the real one).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { MockR2, serve } from './mock.mjs';
+import { MockR2, serve, fakeData } from './mock.mjs';
+import worker from './worker.js';
 const PORT = Number(process.env.PORT) || 8791, BASE = `http://127.0.0.1:${PORT}/api`, ORIGIN = 'http://127.0.0.1:8770';
 const PEPPER = 'test-pepper', PIN = '123456';
 const dir = '/tmp/claude-0/-home-user/32c96ca5-ace8-5bfb-8ce5-1b09a2bc0eb1/scratchpad/seojae-mock-test';
@@ -652,6 +653,247 @@ ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'f
   ok((await call('/write/stop', { method: 'POST', body: JSON.stringify({ id: '../x' }) }, T)).status === 400, 'a stop needs a proper id');
 
   delete env.ANTHROPIC_API_KEY;
+  globalThis.fetch = realFetch;
+}
+
+{ // 7차 b: 헌재 소식, 위헌·헌법불합치 법령, 국회입법조사처 발간물, 행정심판 재결례, and the cron (the daily check among it).
+  // The services are played by fakeData (mock.mjs: real rows recorded 2026-11-26, more made up in their shape); nothing
+  // outside is asked — every other address answers 503 here
+  const realFetch = globalThis.fetch, asked = [], other = [];
+  const fopts = { key: 'fake-data-key', asked, statLatest: '2026-10' };
+  const fake = fakeData(fopts);
+  let kciUp = false;   // (KCI's OAI answering, for the daily check)
+  globalThis.fetch = (input, init) => {
+    const u = String(typeof input === 'string' ? input : input.url);
+    if (u.startsWith('http://127.0.0.1')) return realFetch(input, init);
+    const f = fake(input, init);
+    if (f) return f;
+    other.push(u);
+    if (kciUp && u.startsWith('https://open.kci.go.kr/oai/')) return Promise.resolve(new Response('<?xml version="1.0"?><OAI-PMH><Identify><repositoryName>KCI</repositoryName></Identify></OAI-PMH>', { headers: { 'content-type': 'text/xml' } }));
+    return Promise.resolve(new Response('offline in test', { status: 503 }));
+  };
+  const get = async (path, t = T) => { const r = await call(path, {}, t); const text = await r.text(); let body = null; try { body = JSON.parse(text); } catch (e) { /* not JSON */ } return { status: r.status, body, text, cc: r.headers.get('cache-control') || '' }; };
+  const enc = encodeURIComponent;
+
+  // no key: the service is not asked
+  let x = await get('/ccourt/recent');
+  ok(x.status === 503 && x.body.error === 'no_key' && asked.length === 0, '헌재 소식 with no key: no_key, nothing asked');
+  for (const p of ['/ccourt/recent', '/ccourt/unconst', '/nars/reports?q=x', '/acrc/index', '/acrc/body?no=202500966', '/diag/last']) ok((await get(p, null)).status === 401, `${p} needs a signed-in device`);
+  env.DATA_GO_KR_KEY = 'fake-data-key';
+
+  // 헌재 소식
+  x = await get('/ccourt/schedule?year=2026&month=10');
+  ok(x.status === 200 && x.body.year === 2026 && x.body.month === 10 && x.body.sentence.length === 1 && x.body.sentence[0].at === '202610221400' && x.body.sentence[0].date === '2026-10-22' && x.body.sentence[0].time === '14:00', '선고 일정 of a month: at, date, time');
+  ok(x.body.discuss.length === 2 && x.body.discuss[0].at === '202610211500' && x.body.discuss[0].time === '15:00', '변론 일정 of the same month (the service\'s trailing spaces off), in order');
+  ok(/private, max-age=/.test(x.cc), 'kept a little by the device too');
+  let n = asked.length;
+  x = await get('/ccourt/schedule?year=2026&month=10');
+  ok(x.status === 200 && asked.length === n, 'asked again: kept at the edge, the service is not asked');
+  ok(new URL(asked[0]).searchParams.get('month') === '10' && new URL(asked[0]).searchParams.get('type') === 'json', 'asked as JSON, the month two-digit');
+  ok((await get('/ccourt/schedule?year=2026&month=13')).status === 400 && (await get('/ccourt/schedule?year=x&month=1')).status === 400, 'a bad month is refused');
+  x = await get('/ccourt/day?at=202611261400');
+  const d0 = x.body.items[0];
+  ok(x.status === 200 && x.body.date === '2026-11-26' && x.body.items.length === 4 && d0.eventNo === '2023헌가21' && d0.result === '심리중' && d0.court === '부산고등법원' && d0.merged.join() === '2023헌가21,2025헌가10' && d0.changed === '2026-11-23', '그날 선고 목록: 사건번호, 사건명, 결과, 제청법원, 병합');
+  ok(!('outline' in d0) && !('party' in d0) && x.body.items[2].court === undefined, 'empty fields are left out');
+  ok((await get('/ccourt/day?at=2026112614')).status === 400, 'a bad time is refused');
+  x = await get('/ccourt/recent');
+  ok(x.status === 200 && x.body.total === 3288 && x.body.page === 1 && x.body.items[0].seq === '4268001' && x.body.items[0].date === '2026-10-22' && x.body.items[0].result === '합헌', '최근 주요 결정: seq, 사건, date, result');
+  x = await get('/ccourt/outline?seq=4268001');
+  ok(x.status === 200 && x.body.eventNo === '2022헌가28' && x.body.text.startsWith('마약류관리법 위반자의 택배서비스사업') && !/<p>|&nbsp;|&lsquo;/.test(x.body.text) && x.body.text.includes('‘화물자동차 운수사업법’ 제9조의2') && x.body.text.includes('\n□ 심판대상'), '결정 개요 as plain text: paragraphs a line, no HTML or entities');
+  ok((await get('/ccourt/outline?seq=999')).status === 404 && (await get('/ccourt/outline?seq=x1')).status === 400, 'an unknown seq: 404; a bad one: 400');
+  x = await get('/ccourt/hearings');
+  ok(x.status === 200 && x.body.total === 287 && x.body.items[3].title === '경찰청장(조지호) 탄핵 (경찰청장에 대한 탄핵심판 사건)' && x.body.items[0].half === '2027/상반기' && x.body.items[0].date === '2027-01-14', '주요 변론 일정 (spaces in names made one)');
+  x = await get('/ccourt/hearing?eventNo=' + enc('2026헌마1630'));
+  ok(x.status === 200 && x.body.items[0].files[0].name === '변론사건_개요(2026헌마1630).pdf' && x.body.items[0].files[0].url.startsWith('https://www.ccourt.go.kr/') && x.body.items[0].text === '', '주요 변론 상세: the 변론 개요 PDF');
+  ok((await get('/ccourt/hearing?eventNo=' + enc('../x'))).status === 400 && (await get('/ccourt/nope')).status === 404, 'a bad 사건번호, an unknown op');
+  ok(asked.every((u) => new URL(u).searchParams.get('serviceKey') === 'fake-data-key'), 'every ask carries the owner\'s key (added here)');
+  ok(!JSON.stringify(x.body).includes('fake-data-key'), 'and no answer carries it');
+
+  // 위헌결정 법률현황 + 미개정 법령: every page gathered (a service that gives 50 a page whatever is asked, too), joined
+  fopts.statCap = 50;
+  n = asked.length;
+  x = await get('/ccourt/unconst');
+  const statAsks = asked.slice(n).filter((u) => u.includes('getVioconstitDecsnLawSttus'));
+  ok(x.status === 200 && x.body.total === 860 && x.body.asOf === '2026-10' && x.body.items.filter((i) => !i.unam || i.full !== i.law).length === 860, `위헌결정 법률현황: all 860 rows gathered (${statAsks.length} asks)`);
+  ok(statAsks.some((u) => /year=2026&month=11/.test(u)) && statAsks.some((u) => /year=2026&month=10/.test(u)), 'this month not out yet: the month before is taken');
+  ok(new Set(x.body.items.filter((i) => i.eventNo.startsWith('20') && /^시험/.test(i.law)).map((i) => i.eventNo)).size === 856, 'no row twice, none lost (pages asked at the service\'s own size)');
+  const gs = x.body.items.find((i) => i.eventNo === '2022헌마1247');
+  ok(gs && gs.law === '공직선거법' && gs.old === true && gs.ver.startsWith('2022. 4. 20. 법률 제18841호로 개정되고') && gs.art === '제26조 제1항' && gs.part.startsWith('[별표 2]') && gs.kind === '헌법불합치' && gs.date === '2025-10-23', '구 공직선거법(…) 제26조 제1항 [별표 2] …: law, 구, version, article, part, kind, date');
+  const yu = x.body.items.find((i) => i.eventNo === '2024헌가12');
+  ok(yu && yu.law === '국가유공자 등 예우 및 지원에 관한 법률' && !yu.old && yu.art === '제13조 제2항 제3호' && /^전문 전단 중/.test(yu.part), '국가유공자 등 예우 및 지원에 관한 법률(…) 제13조 제2항 제3호 전문 전단 중 …');
+  const jp = x.body.items.find((i) => i.eventNo === '2008헌가25');
+  ok(jp && jp.law === '집회 및 시위에 관한 법률' && jp.art === '제10조' && jp.book === '21-2상' && jp.page === '427' && jp.unam && jp.unam.kind === '헌법불합치' && jp.unam.progress === '경과' && jp.unam.deadline === '2010-06-30' && jp.unam.office === '경찰청' && /^https:\/\/www\.ccourt\.go\.kr\//.test(jp.outline) && /\.hwp$/.test(jp.hwp), '미개정 헌법불합치 (집시법 2008헌가25) joined to its row: 경과, 개정 시한, 소관부처, 개요 link');
+  const nk = x.body.items.filter((i) => i.law === '국가보안법' && i.unam);
+  ok(nk.length === 2 && nk.every((i) => i.unam.kind === '위헌' && i.src === undefined && i.full === '국가보안법' && /\.hwp$/.test(i.hwp)) && x.body.unamended.vio === 3 && x.body.unamended.cnstit === 3, '미개정 위헌 laws the statistics do not list are kept as their own rows');
+  ok(x.body.items.every((i, k, a) => !k || a[k - 1].date >= i.date), 'newest first');
+  ok(x.text.length < 400 * 1024, `compact: ${Math.round(x.text.length / 1024)} KB for ${x.body.items.length} rows`);
+  n = asked.length;
+  x = await get('/ccourt/unconst');
+  ok(x.status === 200 && x.body.total === 860 && asked.length === n && (await bucket.head('ccourt/unconst.json')), 'kept in R2: asked again, served from there');
+  delete fopts.statCap;
+
+  // 국회입법조사처 발간물
+  x = await get('/nars/reports?q=' + enc('선거'));
+  const r0 = x.body.items[0];
+  ok(x.status === 200 && x.body.total === 3 && x.body.items.length === 3 && r0.id === 'BDM00000018503' && r0.kind === '이슈와 논점' && r0.kindCode === '201010000' && r0.date === '2026-11-26' && /^http:\/\/www\.nars\.go\.kr\/fileDownload2\.do\?doc_id=1Q8GqL7SYg9/.test(r0.pdf) && /^http:\/\/drm\.nars\.go\.kr:7003\//.test(r0.viewer), '발간물: id, title, kind, date, pdf, viewer');
+  ok(new URL(asked[asked.length - 1]).searchParams.get('book_nm') === '선거' && new URL(asked[asked.length - 1]).searchParams.get('resultType') === 'json', 'asked by book_nm (LIKE), as JSON');
+  x = await get('/nars/reports?q=' + enc('지방 선거'));
+  ok(x.status === 200 && x.body.items.length === 1 && x.body.items[0].title.startsWith('511명의 무투표당선') && new URL(asked[asked.length - 1]).searchParams.get('book_nm') === '지방', 'two words: the longer asked of the service, both matched here');
+  x = await get('/nars/reports?q=' + enc('선거') + '&kind=201190000');
+  ok(x.status === 200 && x.body.items.length === 1 && x.body.items[0].kind === 'NARS 브리프', 'by kind (div_cd)');
+  ok((await get('/nars/reports?kind=abc')).status === 400, 'a bad kind is refused');
+  // its PDF onto the shelf (/api/paper/pdf with nars: the link as given): NARS only, by https first
+  const pp = (b) => call('/paper/pdf', { method: 'POST', body: JSON.stringify(b) }, T);
+  n = asked.length;
+  let pr = await pp({ nars: r0.pdf, probe: true });
+  let pj = await pr.json();
+  ok(pr.status === 200 && pj.found === true && pj.host === 'www.nars.go.kr' && asked.slice(n).every((u) => u.startsWith('https://www.nars.go.kr/fileDownload2.do?doc_id=1Q8GqL7SYg9')), 'NARS PDF: found, asked by https (whatever type its server says)');
+  pr = await pp({ nars: r0.pdf });
+  const pb = Buffer.from(await pr.arrayBuffer());
+  ok(pr.status === 200 && pr.headers.get('content-type') === 'application/pdf' && pb.subarray(0, 4).toString() === '%PDF' && pr.headers.get('x-pdf-source') === 'www.nars.go.kr', 'and the PDF itself, for the shelf');
+  fopts.narsHttps = false; n = asked.length;
+  pr = await pp({ nars: x.body.items[0].pdf });
+  ok(pr.status === 200 && (pr.headers.get('content-type') || '').includes('pdf') && asked.slice(n).some((u) => u.startsWith('http://www.nars.go.kr/')), 'https not answering: the link as given (http), that host only');
+  delete fopts.narsHttps;
+  n = asked.length; const on = other.length;
+  for (const bad of ['https://evil.example/fileDownload2.do?doc_id=1Q8GqL7SYg9', 'http://www.nars.go.kr/other.do?doc_id=1Q8GqL7SYg9', 'http://www.nars.go.kr:8080/fileDownload2.do?doc_id=1Q8GqL7SYg9', 'http://www.nars.go.kr.evil.example/fileDownload2.do?doc_id=1Q8GqL7SYg9', 'http://www.nars.go.kr/fileDownload2.do?doc_id=../../x', 'javascript:alert(1)']) {
+    pr = await pp({ nars: bad, probe: true });
+    ok(pr.status === 400, `not a NARS PDF link: refused (${bad.slice(0, 48)})`);
+  }
+  ok(asked.length === n && other.length === on, 'and nothing was fetched for them (no open proxy)');
+
+  // 행정심판 재결례: one 재결 (about 4 MB as the service gives it, a picture in base64) kept as its text only
+  n = asked.length;
+  x = await get('/acrc/body?no=202500966');
+  const b = x.body;
+  ok(x.status === 200 && b.no === '202500966' && b.cmt === '경기도행정심판위원회' && b.date === '2025-10-13' && b.clme === '성남시' && b.title === '수의계약 배제처분 취소청구' && b.result === '각하' && b.order === '이 사건 심판청구를 각하한다.' && b.claim.startsWith('피청구인이 2025. 8. 1.'), '재결: 위원회, 재결일, 피청구인, 사건명, 결과, 주문, 청구취지');
+  ok(b.reason.startsWith('1. 사건개요\n청구인은') && b.reason.includes('[표]') && b.reason.endsWith('주문과 같이 재결한다.') && !/<\/?Text>|<Object|CDATA|Qk1KqC4|<표 삽입/.test(b.reason), '재결 이유: as text, the editor\'s marks out, a table shown as [표]');
+  ok(b.laws.startsWith('【행정심판법】') && b.lawNames.includes('행정심판법') && b.lawNames.includes('지방자치단체를 당사자로 하는 계약에 관한 법률'), '관련 법령: the text and the law names');
+  ok(b.raw === undefined || b.raw > 3e6, 'the raw size, where the service tells it');
+  ok(x.text.length < 100 * 1024 && !x.text.includes('Qk1KqC4') && b.hwp.startsWith('https://ino.simpan.go.kr/'), `trimmed: ${(x.text.length / 1024).toFixed(1)} KB (from ~4 MB), the HWP link kept`);
+  ok(asked.length === n + 1 && (await bucket.head('acrc/body/202500966.json')), 'asked once, kept in R2');
+  x = await get('/acrc/body?no=202500966');
+  ok(x.status === 200 && x.body.reason === b.reason && asked.length === n + 1, 'asked again: from R2, the service is not asked');
+  ok((await get('/acrc/body?no=12ab')).status === 400 && (await get('/acrc/body?no=209900001')).status === 404, 'a bad number: 400; one the service does not have: 404');
+  x = await get('/acrc/index');
+  ok(x.status === 200 && x.body.rows.length === 0 && x.body.want === 36, 'before the cron ran: an empty index (the app says it is being gathered)');
+
+  // the cron, with a clock of its own. 2026-11-26 10:00 in Korea: this month (to today) has 230 재결, September 450
+  const KST = (s) => Date.parse(s + '+09:00');
+  const counts = { '2026-11': 230, '2026-09': 450 };
+  fopts.acrcCount = (ym) => counts[ym] ?? (Number(ym.slice(5)) % 3) + 1;
+  const inMonth = (ym, through = 31) => Array.from({ length: fopts.acrcCount(ym) }, (_, i) => (i % 28) + 1).filter((d) => d <= through).length;
+  env.CRON_ACRC_CALLS = '4';   // the checks below were written for four asks a run (the deployed worker makes two)
+  const pend = [];
+  const cron = async (t) => { await worker.scheduled({ scheduledTime: t, cron: '17 * * * *' }, env, { waitUntil: (p) => pend.push(p) }); await Promise.allSettled(pend); return JSON.parse(await (await bucket.get('cron/state.json')).text()); };
+  const listAsks = () => asked.filter((u) => u.includes('adjdctexeList') && new URL(u).searchParams.get('numOfRows') !== '1');
+  const astate = async () => JSON.parse(await (await bucket.get('acrc/state.json')).text());
+  let t0 = KST('2026-11-26T10:00:00'), before = listAsks().length;
+  let st = await cron(t0);
+  let la = listAsks().slice(before);
+  ok(st.last.did[0] === 'diag' && st.diag === '2026-11-26', 'first run of the day: the daily check');
+  ok(la.length === 4 && la.slice(0, 3).every((u) => /adjdcStartDe=20261101&adjdcEndDe=20261126/.test(u)) && /adjdcStartDe=20261001&adjdcEndDe=20261031/.test(la[3]), 'then 4 asks: this month (to today, 3 pages), then last month');
+  let as = await astate();
+  ok(as.months['2026-11'].n === inMonth('2026-11', 26) && as.months['2026-10'].n === inMonth('2026-10'), `both months whole (${as.months['2026-11'].n} and ${as.months['2026-10'].n})`);
+  x = await get('/acrc/month?ym=2026-11');
+  ok(x.status === 200 && x.body.items.length === as.months['2026-11'].n && x.body.items[0].date >= x.body.items[x.body.items.length - 1].date && x.body.items.every((i) => i.date <= '2026-11-26'), 'a month\'s list, newest first');
+  const it = x.body.items.find((i) => i.no === '2026110001');
+  ok(it && it.cmt === '서울특별시행정심판위원회' && it.clme === '국세청장' && it.title.startsWith('영업정지처분 취소청구') && it.result === '기각' && it.field === '영업' && it.laws.join() === '행정심판법,식품위생법' && it.upd === '2026-11-28', 'each: 위원회, 재결일, 피청구인, 사건명, 결과, 분야, 관련 법령 names');
+  ok(!x.text.includes('제3조(행정심판의 대상)'), 'the laws\' text itself is not kept in the list');
+  // September has 450: four asks this run, the fifth carried to the next
+  t0 += 3600e3; before = listAsks().length;
+  st = await cron(t0);
+  la = listAsks().slice(before);
+  as = await astate();
+  ok(st.last.did[0] === 'unconst' && la.length === 4 && la.every((u) => /adjdcStartDe=20260901/.test(u)) && as.part && as.part.ym === '2026-09' && as.part.next === 5 && !as.months['2026-09'], 'next run: the 위헌 법령 list, then September 4 pages of 5, carried over (not yet in the index)');
+  t0 += 3600e3; before = listAsks().length;
+  st = await cron(t0);
+  la = listAsks().slice(before);
+  as = await astate();
+  ok(/pageNo=5/.test(la[0]) && /adjdcStartDe=20260901/.test(la[0]) && as.months['2026-09'].n === 450 && !as.part && /adjdcStartDe=20260801/.test(la[1]) && la.length === 4, 'the run after: September\'s last page first (all 450), then on to August, July…');
+  // on until three years are in: never more than 4 asks a run
+  let runs = 3, most = 0;
+  while (Object.keys((await astate()).months).length < 36 && runs < 40) { t0 += 3600e3; before = listAsks().length; await cron(t0); most = Math.max(most, listAsks().length - before); runs++; }
+  as = await astate();
+  ok(Object.keys(as.months).length === 36 && as.months['2023-12'] && !as.months['2023-11'] && most <= 4, `three years (2023-12 … 2026-11) in ${runs} runs, at most ${most} asks a run`);
+  x = await get('/acrc/index');
+  const ix = x.body;
+  ok(x.status === 200 && ix.rows.length === Object.values(as.months).reduce((s, m) => s + m.n, 0) && Object.keys(ix.months).length === 36 && ix.months['2026-09'] === 450, `the index: ${ix.rows.length} 재결 in ${Math.round(x.text.length / 1024)} KB`);
+  const row = ix.rows.find((r) => r[0] === '2026110001');
+  ok(row && row[1] === '2026-11-01' && ix.cmts[row[2]] === '서울특별시행정심판위원회' && row[3] === '국세청장' && row[4].startsWith('영업정지처분') && ix.results[row[5]] === '기각' && row[6].map((k) => ix.laws[k]).join() === '행정심판법,식품위생법' && ix.fields[row[7]] === '영업', 'a row: [no, date, 위원회#, 피청구인, 사건명, 결과#, [법령#], 분야#]');
+  ok(ix.rows.every((r, k, a) => !k || a[k - 1][1] >= r[1]) && new Set(ix.rows.map((r) => r[0])).size === ix.rows.length, 'newest first, no 재결 twice');
+  // nothing due: nothing asked; the next day this month and last again (and the day's check)
+  t0 += 3600e3; before = listAsks().length;
+  st = await cron(t0);
+  ok(listAsks().length === before && !st.last.did.length, 'all gathered and fresh: a run asks nothing');
+  t0 = KST('2026-11-27T09:30:00'); before = listAsks().length;
+  st = await cron(t0);
+  la = listAsks().slice(before);
+  ok(st.last.did[0] === 'diag' && st.diag === '2026-11-27' && la.length === 4 && la.slice(0, 3).every((u) => /adjdcEndDe=20261127/.test(u)) && /20261001/.test(la[3]), 'a day later: the check, then this month (now to the 27th) and last month again');
+  as = await astate();
+  ok(as.months['2026-11'].n === inMonth('2026-11', 27), 'this month now has the 27th too');
+  // a new month in Korea (00:30 on 1 December, 15:30 the day before in UTC): it comes first, the oldest one leaves
+  counts['2026-12'] = 2;
+  t0 = KST('2026-12-01T00:30:00'); before = listAsks().length;
+  st = await cron(t0);
+  la = listAsks().slice(before);
+  as = await astate();
+  x = await get('/acrc/index');
+  ok(/adjdcStartDe=20261201&adjdcEndDe=20261201/.test(la[0]) && as.months['2026-12'] && !as.months['2023-12'] && !x.body.rows.some((r) => r[1] < '2024-01') && x.body.months['2023-12'] === undefined, 'a new month (Korea\'s calendar): asked first; three years back from it, the oldest left out');
+  // a page that fails: told, carried, asked again next run; three times running, that month waits a day
+  counts['2026-12'] = 5;
+  fopts.acrcFail = (ym) => ym === '2026-12';
+  t0 = KST('2026-12-02T01:00:00');
+  st = await cron(t0);
+  as = await astate();
+  ok(/acrc 2026-12 p1: upstream 503/.test(st.last.err || '') && as.part && as.part.ym === '2026-12' && as.part.fails === 1 && as.months['2026-12'].n === 1, 'a failing page: the error kept, the month carried (what was there stays)');
+  for (let i = 0; i < 2; i++) { t0 += 3600e3; st = await cron(t0); }
+  as = await astate();
+  ok(!as.part && as.skip && as.skip['2026-12'] > t0, 'three failures running: it waits a day, the others go on');
+  before = listAsks().length; t0 += 3600e3; st = await cron(t0);
+  ok(!listAsks().slice(before).some((u) => /20261201/.test(u)), 'meanwhile it is not asked');
+  delete fopts.acrcFail;
+  t0 += 86400e3; before = listAsks().length; st = await cron(t0);
+  as = await astate();
+  ok(listAsks().slice(before).some((u) => /20261201/.test(u)) && as.months['2026-12'].n === inMonth('2026-12', 3) && !as.skip, 'a day later asked again, and taken');
+  // a service that gives fewer a page than asked (50 of 100), seen on the first page: asked page by page at that size
+  {
+    fs.rmSync(dir + '-acrc-cap', { recursive: true, force: true });
+    const b2 = new MockR2(dir + '-acrc-cap'), env2 = { ...env, BUCKET: b2 };
+    fopts.acrcCap = 50; counts['2026-12'] = 120;
+    const a0 = asked.length;
+    await worker.scheduled({ scheduledTime: KST('2026-12-31T12:00:00'), cron: '17 * * * *' }, env2, { waitUntil: (p) => pend.push(p) });
+    const s2 = JSON.parse(await (await b2.get('acrc/state.json')).text());
+    const pages = asked.slice(a0).filter((u) => /adjdctexeList/.test(u) && /20261201/.test(u) && !/numOfRows=1&/.test(u));
+    ok(s2.rows === 50 && s2.months['2026-12'].n === 120 && pages.length === 3 && /numOfRows=100/.test(pages[0]) && /pageNo=2&numOfRows=50/.test(pages[1]), 'a service capped at 50 a page: all 120 taken in 3 asks');
+    delete fopts.acrcCap;
+  }
+
+  // the daily check: 14 days kept, a source failing two days running flagged (KCI's OAI does not answer here)
+  x = await get('/diag/last');
+  ok(x.status === 200 && Array.isArray(x.body.days) && x.body.days.length >= 3 && x.body.cron && x.body.acrc && x.body.acrc.want === 36 && x.body.results && x.body.from === 'cron', '/api/diag/last: the latest check whole, the days, the cron\'s last run, 재결례 gathered');
+  const dl = x.body.days[x.body.days.length - 1];
+  ok(dl.ok.ccourt === true && dl.ok.nars === true && dl.ok.acrc === true && dl.ok.kci === false && dl.why.kci === 'HTTP 503' && !('law' in dl.ok) && dl.from.includes('cron'), 'a day: the new sources working, KCI not (HTTP 503); sources with no key not judged');
+  ok(x.body.failing.includes('kci') && !x.body.failing.includes('ccourt') && !x.body.failing.includes('acrc'), `failing two days in a row: ${x.body.failing.join(', ')}`);
+  for (let dd = 0; dd < 16; dd++) await cron(KST('2026-12-04T03:00:00') + dd * 86400e3);
+  x = await get('/diag/last');
+  ok(x.body.days.length === 14 && x.body.days[13].day === '2026-12-19' && x.body.days[0].day === '2026-12-06', 'only the last 14 days are kept');
+  // a check from Korea the same day finds KCI working: that day counts as working, and the flag goes
+  kciUp = true;
+  const realNow = Date.now; Date.now = () => KST('2026-12-19T12:00:00');
+  x = await get('/diag');
+  Date.now = realNow;
+  x = await get('/diag/last');
+  ok(x.body.days[13].ok.kci === true && x.body.days[13].runs === 2 && !x.body.failing.includes('kci') && x.body.from === 'device', 'a later check that day finds KCI working: the day counts as working, no flag');
+  // the cron's check (made elsewhere) does not replace a fresh one from Korea
+  await bucket.put('diag/last.json', JSON.stringify({ at: KST('2026-12-20T02:00:00'), country: 'KR', results: {} }));
+  await cron(KST('2026-12-20T03:00:00'));
+  x = await get('/diag/last');
+  ok(x.body.country === 'KR' && x.body.days[13].day === '2026-12-20', 'a fresh check from Korea stays the latest; the cron\'s still counts for the day');
+  ok(other.every((u) => !/^https?:\/\/(?:127\.0\.0\.1)/.test(u)) && !other.some((u) => u.includes('apis.data.go.kr')), 'nothing real was asked (every outside address played or refused)');
+  ok(asked.every((u) => /^https:\/\/apis\.data\.go\.kr\/|^https?:\/\/www\.nars\.go\.kr\//.test(u)), 'and the services only where they are');
+
+  delete env.DATA_GO_KR_KEY;
   globalThis.fetch = realFetch;
 }
 

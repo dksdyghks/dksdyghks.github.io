@@ -4,10 +4,10 @@
 //   The mouse drags over the text to choose it. Either way, two handles then set its ends exactly, and a small bar offers
 //   형광펜 and 밑줄 colours and 복사. An Apple Pencil marks at once, in the way the last mark was made.
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
-import { lib, pageItems } from './pdfkit.js?v=999a221565';
-import { HAS_HAN, searchForm, hangulize, soft } from './naming.js?v=999a221565';
-import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js?v=999a221565';
-import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js?v=999a221565';
+import { lib, pageItems } from './pdfkit.js?v=3dab24bfa8';
+import { HAS_HAN, searchForm, hangulize, soft } from './naming.js?v=3dab24bfa8';
+import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js?v=3dab24bfa8';
+import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js?v=3dab24bfa8';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
 // soft tints: butter, mint, sky, pink, lilac, apricot.

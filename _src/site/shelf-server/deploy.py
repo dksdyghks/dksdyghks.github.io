@@ -8,6 +8,9 @@ API = 'https://api.cloudflare.com/client/v4'
 BUCKET = 'bookshelf'
 SCRIPT = 'bookshelf'
 ORIGINS = 'https://0128.kr,https://www.0128.kr'
+# the Worker's cron (its scheduled handler): hourly, at a minute off the hour's crowd. Each run does one daily job (the self-check,
+# the 위헌 법령 list) and a few asks for 행정심판 재결례; the worker itself decides what is due, so the schedule can stay this one
+CRONS = ['17 * * * *']
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 def call(method, path, body=None, headers=None, raw=None):
@@ -70,6 +73,15 @@ def main(first):
     print('workers.dev route:', s.get('success'), s.get('errors'))
     sub = (call('GET', f'/accounts/{acc}/workers/subdomain').get('result') or {}).get('subdomain')   # needs a permission an update token may lack
     if sub: print('url: https://%s.%s.workers.dev' % (SCRIPT, sub))
+    # 4. the cron schedule: the whole list is put each time (PUT replaces it), and only when it differs from what is there
+    have = call('GET', f'/accounts/{acc}/workers/scripts/{SCRIPT}/schedules')
+    now = sorted(x.get('cron') for x in ((have.get('result') or {}).get('schedules') or []))
+    if have.get('success') and now == sorted(CRONS):
+        print('schedules: unchanged', now)
+    else:
+        sc = call('PUT', f'/accounts/{acc}/workers/scripts/{SCRIPT}/schedules', [{'cron': c} for c in CRONS])
+        print('schedules:', sc.get('success'), sc.get('errors') or [x.get('cron') for x in ((sc.get('result') or {}).get('schedules') or [])])
+        if not sc.get('success'): sys.exit(1)
 
 if __name__ == '__main__':
     main('--first' in sys.argv)

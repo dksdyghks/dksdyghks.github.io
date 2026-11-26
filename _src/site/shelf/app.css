@@ -1217,3 +1217,184 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
 .crumbs button { flex: 0 3 auto; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
 .crumbs b { flex: 0 1 auto; min-width: min(9em, 100%); }
 .crumbs .sl { flex: none; }
+/* 위헌·헌법불합치 결정 band (laws.js): on an article's card and a law's page; each line opens the decision */
+.vb-band { margin: 2px 0 10px; border-radius: 10px; background: var(--chip); overflow: hidden; }
+.vb-l { display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 1px 7px; width: 100%; min-height: 44px; padding: 8px 12px; text-align: left; border-left: 3px solid var(--accent); font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.vb-l + .vb-l, .vb-more, .vb-note { border-top: 1px solid var(--rule); }
+.vb-l.vb-un { border-left-color: var(--danger); }
+.vb-l b { font-weight: 700; color: var(--ink); }
+.vb-l.vb-un b { color: var(--danger); }
+.vb-no { color: var(--accent); font-weight: 600; text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+.vb-l small { font-size: 12px; color: var(--muted); }
+.vb-l:hover .vb-no { text-decoration-style: solid; }
+.vb-l:focus-visible { outline-offset: -2px; border-radius: 0; }
+.vb-more > summary { display: flex; align-items: center; min-height: 40px; padding: 0 12px 0 15px; font-size: 12.5px; font-weight: 600; color: var(--accent); cursor: pointer; list-style: none; }
+.vb-more > summary::-webkit-details-marker { display: none; }
+.vb-more > summary::after { content: ""; width: 5px; height: 5px; margin-left: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); }
+.vb-more[open] > summary { display: none; }
+.vb-more > .vb-l { border-top: 1px solid var(--rule); }
+.vb-note { margin: 0; padding: 7px 12px 8px 15px; font-size: 12px; color: var(--muted); }
+.vb-tag { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 6px; font-size: 11px; font-weight: 700; font-style: normal; line-height: 1.6; white-space: nowrap; vertical-align: 1px; color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent); }
+.vb-tag.vb-un { color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
+/* 헌재 소식 (판례 first screen, ccnews.js): 선고 일정 · 주요 결정 · 변론 in one card, a quiet line when nothing can be shown */
+.cn { margin: 0 0 22px; }
+.cn-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin: 18px 0 10px; }
+.cn-head .sec-h { margin: 0 2px; }
+.cn-tabs { display: flex; gap: 3px; padding: 3px; border-radius: 12px; background: var(--chip); }
+.cn-tabs button { height: 34px; padding: 0 13px; border-radius: 9px; font-weight: 600; font-size: 13.5px; color: var(--muted); white-space: nowrap; }
+.cn-tabs button[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px #0F1A2B22; }
+.cn-card { background: var(--card); border-radius: 16px; box-shadow: var(--shadow); padding: 4px 18px 8px; }
+.cn.cn-off .cn-tabs { display: none; }
+.cn.cn-off .cn-card { background: none; box-shadow: none; padding: 0 4px; }
+.cn-quiet, .cn-wait, .cn-none, .cn-old { margin: 12px 0; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.cn.cn-off .cn-quiet { margin: 0; }
+.cn-none { color: var(--faint); }
+.cn-old { font-size: 12.5px; color: var(--faint); margin: 6px 0 8px; }
+/* 선고 일정: a row a month, its 선고일 as chips */
+.cn-cal { padding: 4px 0 2px; }
+.cn-mo { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--rule); align-items: start; }
+.cn-mo:first-child { border-top: 0; }
+.cn-mk { font-size: 13px; font-weight: 700; color: var(--accent); padding-top: 10px; }
+.cn-mv { min-width: 0; }
+.cn-days { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 40px; }
+.cn-days .cn-none { margin: 0; }
+.cn-day { display: grid; justify-items: start; gap: 1px; min-height: 44px; min-width: 84px; padding: 5px 12px; border-radius: 12px; background: var(--chip); text-align: left; }
+.cn-day b { font-size: 14px; font-weight: 700; color: var(--ink); }
+.cn-day b span { font-weight: 500; color: var(--muted); }
+.cn-day small { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cn-day small i { font-style: normal; font-weight: 700; color: var(--accent); }
+.cn-day.cn-past b { color: var(--ink-2); }
+.cn-day[aria-pressed="true"] { background: var(--navy); }
+.cn-day[aria-pressed="true"] b, .cn-day[aria-pressed="true"] b span, .cn-day[aria-pressed="true"] small, .cn-day[aria-pressed="true"] small i { color: #F7F9FC; }
+@media (prefers-color-scheme: dark) { .cn-day[aria-pressed="true"] { background: var(--accent); } .cn-day[aria-pressed="true"] b, .cn-day[aria-pressed="true"] b span, .cn-day[aria-pressed="true"] small, .cn-day[aria-pressed="true"] small i { color: #0A1426; } }
+@media (hover: hover) { .cn-day:not([aria-pressed="true"]):hover { background: color-mix(in srgb, var(--accent) 9%, var(--chip)); } }
+.cn-disc { margin: 6px 2px 0; font-size: 12.5px; color: var(--faint); }
+/* one 선고일's cases */
+.cn-dayp { border-top: 1px solid var(--rule); }
+.cn-dh { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 14px 0 4px; }
+.cn-dh b { font-size: 15px; font-weight: 700; }
+.cn-dh > span { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cn-dh small { flex-basis: 100%; font-size: 12.5px; color: var(--faint); }
+.cn-tag { font-style: normal; display: inline-block; margin-left: 2px; padding: 1px 7px; border-radius: 8px; font-size: 11.5px; font-weight: 700; vertical-align: 1px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.cn-dh .cn-tag { margin-left: 0; }
+.cn-th { margin: 14px 0 2px; font-size: 12.5px; font-weight: 700; color: var(--faint); font-variant-numeric: tabular-nums; }
+.cn-th[hidden], .cn-item[hidden], .cn-row[hidden] { display: none; }
+.cn-list { display: grid; }
+.cn-row { display: grid; gap: 3px; width: 100%; min-height: 44px; text-align: left; padding: 11px 0; border-top: 1px solid var(--rule); }
+.cn-dayp .cn-list .cn-row:first-child { border-top: 0; }
+.cn-row b { font-size: 14.5px; font-weight: 600; line-height: 1.45; word-break: keep-all; overflow-wrap: anywhere; }
+.cn-row span { font-size: 12.5px; color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+.cn-row .cn-sub { color: var(--ink-2); font-size: 13px; }
+.cn-res { font-style: normal; font-weight: 700; color: var(--accent); }
+.cn-res.cn-hot { color: var(--danger); }
+@media (hover: hover) { .cn-row:hover b { color: var(--accent); } }
+.cn-more { display: block; width: 100%; min-height: 44px; padding: 10px; border-top: 1px solid var(--rule); color: var(--accent); font-weight: 600; font-size: 13.5px; }
+/* 주요 결정 and 변론: a line, its 개요 button beside it, the 개요 opened under it */
+.cn-main .cn-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; align-items: start; }
+.cn-main .cn-item > .cn-row { grid-column: 1 / -1; }
+.cn-main .cn-item:has(.cn-ol) > .cn-row { grid-column: 1; }
+.cn-main .cn-item { border-top: 1px solid var(--rule); }
+.cn-main .cn-th + .cn-item, .cn-main > .cn-item:first-child { border-top: 0; }
+.cn-main .cn-item .cn-row { border-top: 0; }
+.cn-ol { align-self: center; height: 34px; min-width: 52px; padding: 0 11px; border-radius: 17px; background: var(--chip); font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.cn-ol::after { content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 0 3px 6px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(45deg); }
+.cn-ol[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--chip)); color: var(--accent); }
+.cn-ol[aria-expanded="true"]::after { transform: rotate(-135deg); margin-bottom: -1px; }
+.cn-olbox { grid-column: 1 / -1; margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--bg); }
+.cn-olbox[hidden] { display: none; }
+.cn-olbox .cn-quiet, .cn-olbox .cn-none, .cn-olbox .cn-wait { margin: 0; }
+.cn-ot p { margin: 0 0 8px; font-size: 14px; line-height: 1.75; color: var(--ink-2); word-break: keep-all; overflow-wrap: anywhere; }
+.cn-ot p.cn-lead { font-weight: 700; color: var(--ink); }
+.cn-ot h4 { margin: 14px 0 6px; font-size: 13.5px; font-weight: 700; color: var(--accent); }
+.cn-ofull summary { cursor: pointer; display: inline-flex; align-items: center; min-height: 40px; color: var(--accent); font-weight: 600; font-size: 13.5px; list-style: none; }
+.cn-ofull summary::-webkit-details-marker { display: none; }
+.cn-ofull summary::after, .cn-row[data-cn-hearing]::after { content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 0 3px 8px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(45deg); }
+.cn-ofull[open] summary::after, .cn-row[data-cn-hearing][aria-expanded="true"]::after { transform: rotate(-135deg); margin-bottom: -1px; }
+.cn-row[data-cn-hearing] { position: relative; padding-right: 30px; }
+.cn-row[data-cn-hearing]::after { position: absolute; right: 8px; top: 50%; margin: -5px 0 0; color: var(--faint); }
+.cn-row[data-cn-hearing][aria-expanded="true"]::after { margin-top: -1px; color: var(--accent); }
+.cn-row .cn-nw { white-space: nowrap; }
+.cn-ofull[open] summary { margin-bottom: 4px; }
+.cn-files { display: flex; flex-wrap: wrap; gap: 8px; }
+.cn-file { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 20px; background: var(--card); box-shadow: var(--shadow); color: var(--ink); font-weight: 600; font-size: 13.5px; text-decoration: none; }
+.cn-file small { font-size: 11px; font-weight: 700; color: var(--danger); }
+.cn-go { display: inline-flex; align-items: center; min-height: 40px; margin-top: 6px; color: var(--accent); font-weight: 600; font-size: 13.5px; }
+@media (max-width: 560px) {
+  .cn-card { padding: 2px 14px 6px; }
+  .cn-head { margin-top: 16px; }
+  .cn-tabs { width: 100%; }
+  .cn-tabs button { flex: 1; padding: 0 6px; }
+  .cn-mo { grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+  .cn-olbox { padding: 10px 12px; }
+}
+@media (pointer: coarse) { .cn-tabs button { height: 40px; } .cn-ol { height: 40px; } }
+
+/* ---------- 국회입법조사처 보고서 (nars.js): under the papers in 논문 찾기, and under a law in 법령 ---------- */
+.nr-sec { margin-top: 6px; }
+.nr-list .nr-item { padding: 12px 18px 13px; border-top: 1px solid var(--rule); }
+.nr-list .nr-item:first-child { border-top: 0; }
+.nr-t { margin: 0; font-size: 14.5px; font-weight: 600; line-height: 1.45; }
+.nr-t .pp-mine { font-style: normal; }
+.nr-m { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.nr-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.nr-acts .btn { height: 34px; padding: 0 13px; text-decoration: none; }
+.nr-acts .nr-view { box-shadow: inset 0 0 0 1px var(--rule); }
+.nr-acts .nr-put { color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, var(--rule)); }
+.nr-acts .nr-put:disabled { opacity: .6; }
+@media (min-width: 760px) {   /* (a wide list: the two buttons beside the title, not under it) */
+  .nr-list .nr-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 18px; align-items: center; }
+  .nr-acts { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; flex-wrap: nowrap; }
+}
+
+/* ---------- 행정심판 재결례 (adjud.js): a section of 판례 after 법원 판결, and its sheet ---------- */
+.aj-sec .aj-scope { margin: -4px 4px 10px; font-size: 12.5px; line-height: 1.55; color: var(--faint); }
+.aj-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 2px 10px; }
+.aj-chips button { height: 32px; padding: 0 12px; border-radius: 16px; background: var(--card); box-shadow: inset 0 0 0 1px var(--rule); font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.aj-chips button i { font-style: normal; font-weight: 500; color: var(--faint); margin-left: 2px; }
+.aj-chips button[aria-pressed="true"] { background: var(--accent); color: var(--card); box-shadow: none; }
+.aj-chips button[aria-pressed="true"] i { color: inherit; opacity: .8; }
+.lrow .aj-ll { font-size: 12px; color: var(--faint); }
+.aj-res { display: inline-block; padding: 0 6px; border-radius: 5px; font-size: 11.5px; font-weight: 700; font-style: normal; line-height: 1.6; white-space: nowrap; vertical-align: 1px; }
+.lrow em.aj-res, .aj-res { color: var(--ink-2); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.lrow em.aj-res.aj-in, .aj-res.aj-in { color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, transparent); }
+.lrow em.aj-res.aj-dis, .aj-res.aj-dis { color: var(--faint); background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
+.aj-sheet .aj-meta { margin-top: 2px; }
+.aj-sheet .aj-txt { max-width: 68ch; }
+.aj-sheet .aj-txt p { margin: 0 0 .5em; padding-bottom: 0; white-space: normal; }
+.aj-sheet .aj-txt .aj-h { margin: 18px 0 6px; font-size: 14.5px; font-weight: 700; color: var(--ink); line-height: 1.5; }
+.aj-sheet .aj-txt .aj-h:first-child { margin-top: 0; }
+.aj-sheet .aj-txt .aj-lh { margin-top: 12px; font-weight: 600; }
+.aj-sheet .aj-txt .aj-art .case-ln { font-weight: 600; }
+.aj-sheet .aj-txt .aj-fig { font-size: 13px; color: var(--faint); }
+.aj-sheet .aj-lawtext .aj-txt p { font-size: 14px; line-height: 1.7; }
+.aj-sheet .aj-rmore, .aj-sheet .aj-lawtext { margin-top: 10px; }
+.aj-lawnames { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.aj-lawnames .aj-lawn { display: inline-flex; align-items: center; min-height: 32px; padding: 3px 12px; border-radius: 16px; box-shadow: inset 0 0 0 1px var(--rule); text-decoration: none; font-size: 13px; font-weight: 600; line-height: 1.4; }
+.aj-sheet .aj-cut { margin-top: 14px; }
+.aj-lawn.aj-masked { color: var(--muted); font-weight: 500; }
+@media (pointer: coarse) { .nr-acts .btn { height: 40px; } .aj-chips button { height: 38px; } .aj-lawnames .aj-lawn { min-height: 38px; } }
+
+/* ---------- 점검 결과 (설정) and a screen's source down two days in a row ---------- */
+.vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.law-top > .dn-note { flex-basis: 100%; margin: 2px 2px 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.dg-sum { margin: 4px 0 6px; font-size: 13.5px; color: var(--ink-2); }
+.dg-sum.dg-warn { color: var(--danger); font-weight: 600; }
+.dg-why { margin: 0 0 8px; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
+.dg-why li { margin: 2px 0; }
+.dg-why b { font-weight: 600; margin-right: 4px; }
+.dg-wrap { margin: 8px 0 4px; }
+.dg-t { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px; font-size: 12px; }
+.dg-t th { font-weight: 500; color: var(--faint); font-size: 11px; padding: 0; text-align: center; font-variant-numeric: tabular-nums; }
+.dg-t th.dg-c0 { width: 7.6em; text-align: left; }
+.dg-t th.dg-today { color: var(--ink); font-weight: 700; }
+.dg-t tbody th { text-align: left; color: var(--ink-2); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 4px; }
+.dg-t tbody tr.dg-bad th { color: var(--danger); font-weight: 600; }
+.dg-t td { height: 16px; padding: 0; border-radius: 3px; text-align: center; font-size: 10px; line-height: 16px; }
+.dg-t td.dg-ok, .dg-key i.dg-ok { background: var(--accent); }
+.dg-t td.dg-x, .dg-key i.dg-x { background: var(--danger); color: #fff; font-weight: 700; }
+.dg-t td.dg-n, .dg-key i.dg-n { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
+.dg-key { margin: 6px 0 8px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px 6px; flex-wrap: wrap; }
+.dg-key i { display: inline-grid; place-items: center; width: 12px; height: 12px; border-radius: 3px; font-style: normal; font-size: 9px; line-height: 1; margin-left: 6px; }
+.dg-key i:first-child { margin-left: 0; }
+@media (prefers-color-scheme: dark) { .dg-t td.dg-x, .dg-key i.dg-x { color: #0A1426; } }
+@media (max-width: 420px) { .dg-t th.dg-c0 { width: 6.4em; } .dg-t tbody th { font-size: 11.5px; } .dg-t { border-spacing: 1.5px; } }

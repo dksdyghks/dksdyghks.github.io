@@ -685,3 +685,10 @@ export function journalCounts(f, hidden) {
   for (const e of t.values()) e.n = Math.max(e.n, e.idx);
   return t;
 }
+
+/* ---------- 국회입법조사처 보고서 (nars.js): a section under the papers, by the words of their titles — loaded only when
+   asked, so the papers never wait for it (and a device whose offline copy lacks the file still finds papers) ----------
+   narsSection(sec, q, ui): sec an empty <section> (it stays hidden when nothing is found); ui { upload(files), toast(msg),
+   mine?(title), live?() }. narsForLaw(name, { aliases }): the reports whose title names that law, for 법령. */
+export const narsSection = (sec, q, ui) => import('./nars.js').then((m) => m.mount(sec, q, ui), () => 0);
+export const narsForLaw = (name, opts) => import('./nars.js').then((m) => m.forLaw(name, opts));

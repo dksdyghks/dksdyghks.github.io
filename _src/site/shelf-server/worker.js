@@ -25,6 +25,11 @@
 //                                  what they cost (estimated from the usage Anthropic reports), for the day's budget
 //   write/last.json                the latest 글쓰기 answer as it was streamed (so an app that lost the connection gets it)
 //   write/stop.json                the id of a 글쓰기 answer the owner stopped (read by the request still running)
+//   ccourt/unconst.json            위헌결정 법률현황 + 미개정 위헌·헌법불합치 법령, one compact list (the cron, daily)
+//   acrc/m/<YYYY-MM>.json          행정심판 재결례 of one month (the cron gathers them, newest first, three years back)
+//   acrc/index.json                all of them, compact, for the app to search by words; acrc/state.json what is gathered
+//   acrc/part.json                 a month half gathered (carried to the next run); acrc/body/<incdntNo>.json one 재결's text
+//   diag/days.json                 the daily check, one entry a day, 14 days; cron/state.json what the cron did last
 //
 // Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
 //   /api/law/search|item   국가법령정보 공동활용 (법령·판례·헌재결정례…): env.LAW_OC
@@ -41,6 +46,12 @@
 //   /api/foreign/<id>       비교법 원문: a few foreign election laws from their official sources, by name only (FOREIGN)
 //   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
 //   /api/write              글쓰기 도우미: Anthropic's Messages API (Claude), the answer streamed on: env.ANTHROPIC_API_KEY
+//   /api/ccourt/<op>        헌재 소식 (schedule, day, recent, outline, hearings, hearing) and unconst (위헌·헌법불합치 법령)
+//   /api/nars/reports       국회입법조사처 발간물 by title words and kind (its PDF goes on the shelf through /api/paper/pdf)
+//   /api/acrc/<op>          행정심판 재결례: index, month, body (one 재결's 주문·청구취지·이유·관련 법령)
+//                           (these three: 공공데이터포털 with env.DATA_GO_KR_KEY, answers trimmed to what the app shows)
+// The cron (scheduled, hourly): the daily self-check (/api/diag/last: 14 days, sources failing two days in a row), the
+// 위헌 법령 list, and 행정심판 재결례 a few asks a run.
 // Their answers are kept at Cloudflare's edge for a while (kept()), but only real answers: an error, a daily-limit answer or a
 // maintenance page is never kept, so the next ask goes out again.
 
@@ -64,6 +75,10 @@ export default {
     const h = new Headers(res.headers);
     for (const [k, v] of Object.entries(cors)) h.set(k, v);
     return new Response(res.body, { status: res.status, headers: h });
+  },
+  // the hourly cron (deploy.py registers it): the daily self-check, the 위헌 법령 list, 행정심판 재결례 month by month
+  async scheduled(event, env, ctx) {
+    await cronRun(env, ctx, Number(event && event.scheduledTime) || Date.now());
   },
 };
 
@@ -197,7 +212,16 @@ async function route(req, env, ctx) {
         break;
       case 'diag':
         if (m === 'GET' && p.length === 2) return await diag(req, env);
-        if (m === 'GET' && p[2] === 'last') { const o = await env.BUCKET.get('diag/last.json'); return o ? new Response(o.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } }) : err('none', 404); }
+        if (m === 'GET' && p[2] === 'last' && p.length === 3) return await diagLast(env);
+        break;
+      case 'ccourt':   // 헌재 소식 (선고·변론 일정, 주요 결정·개요) and 위헌·헌법불합치 법령
+        if (m === 'GET' && p.length === 3) return await ccourtApi(env, ctx, p[2], url);
+        break;
+      case 'nars':   // 국회입법조사처 발간물
+        if (m === 'GET' && p[2] === 'reports' && p.length === 3) return await narsReports(env, ctx, url);
+        break;
+      case 'acrc':   // 행정심판 재결례 (gathered by the cron)
+        if (m === 'GET' && p.length === 3) return await acrcApi(env, p[2], url);
         break;
     }
   } catch (e) {
@@ -649,26 +673,30 @@ async function openPdfUrls(body, env) {
 }
 // probe: true asks only whether there is one — the start of each candidate is read (a range; a server that ignores it is
 // cut off after the first bytes) — so the app offers its button only for a paper whose original is really there
+// A 국회입법조사처 report (nars: its PDF_FILE_URL from /api/nars/reports) is fetched from that one host only (narsPdfUrls).
 async function paperPdf(req, env, ctx) {
   const body = (await readJSON(req, 8 * 1024)) || {};
   const probe = body.probe === true;
-  const pkey = new Request('https://kept.bookshelf.invalid/pdfprobe/' + (await sha256hex(JSON.stringify([String(body.doi || ''), String(body.title || '').slice(0, 300), String(body.art || '')]))));
+  const nars = body.nars ? narsPdfUrls(body.nars) : null;
+  if (nars && !nars.length) return err('bad_url', 400);
+  const pkey = new Request('https://kept.bookshelf.invalid/pdfprobe/' + (await sha256hex(JSON.stringify([String(body.doi || ''), String(body.title || '').slice(0, 300), String(body.art || ''), ...(nars ? [nars[0]] : [])]))));
   if (probe) {
     const hit = await caches.default.match(pkey).catch(() => null);
     if (hit) return json(await hit.json());
   }
   const keep = (found) => { if (ctx) ctx.waitUntil(caches.default.put(pkey, new Response(JSON.stringify(found), { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${found.found ? 7 * 86400 : 86400}` } })).catch(() => {})); };
-  const urls = await openPdfUrls(body, env);
+  const urls = nars || (await openPdfUrls(body, env));
   for (const u of urls) {
     try {
       const r = await fetch(u, { headers: { 'user-agent': UA, accept: 'application/pdf,*/*', ...(probe ? { range: 'bytes=0-4095' } : {}) }, redirect: 'follow', signal: AbortSignal.timeout(15000) });
       if (!r.ok) { if (r.body) r.body.cancel().catch(() => {}); continue; }
-      const final = new URL(r.url);
-      if (final.protocol !== 'https:') continue;   // a redirect must not drop to http
+      const final = new URL(r.url || u);
+      if (nars ? !NARS_HOST.test(final.hostname) : final.protocol !== 'https:') { if (r.body) r.body.cancel().catch(() => {}); continue; }   // a redirect must not drop to http (NARS: must stay there)
       if (PDF_SKIP.test(final.hostname)) continue;   // a redirect that ended on a paywall host
       const host = final.hostname;
       const ct = (r.headers.get('content-type') || '').toLowerCase();
-      if (ct && !/pdf|octet-stream|download/.test(ct)) { if (r.body) r.body.cancel().catch(() => {}); continue; }
+      // (NARS' downloads come with whatever type its server says: the first bytes decide)
+      if (!nars && ct && !/pdf|octet-stream|download/.test(ct)) { if (r.body) r.body.cancel().catch(() => {}); continue; }
       if (probe) {
         // the whole size, where the answer tells it: a notice page is tiny
         const total = Number((/\/(\d+)\s*$/.exec(r.headers.get('content-range') || '') || [])[1] || (r.status === 200 && r.headers.get('content-length')) || 0);
@@ -768,20 +796,28 @@ async function embed(req, env) {
 }
 // KCI's key as the owner pasted it, without the spaces or quotes a paste can bring along
 const kciKeyOf = (env) => String(env.KCI_KEY || '').trim().replace(/^["'“‘]+|["'”’]+$/g, '').trim();
-async function diag(req, env) {
+async function diag(req, env) { return json(await diagRun(env, req.cf, 'device')); }
+// from: 'device' (asked by the app, or once from Korea) or 'cron' (the daily check); every run is also added to the day's record
+async function diagRun(env, cf, from, now = Date.now()) {
+  const dk = dataKey(env, ['9750000']);
+  const lastMonth = acrcRange(acrcMonths(now, 2)[1], now);
   const tries = [
     ['kci', 'https://open.kci.go.kr/oai/request?verb=Identify'],
     ['law', env.LAW_OC && `https://www.law.go.kr/DRF/lawSearch.do?OC=${encodeURIComponent(env.LAW_OC)}&target=law&type=JSON&display=1&query=${encodeURIComponent('헌법')}`, lawHeaders(env)],
     ['assembly', env.ASSEMBLY_KEY && `https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn?KEY=${encodeURIComponent(env.ASSEMBLY_KEY)}&Type=json&pIndex=1&pSize=1&AGE=22`, { 'user-agent': UA, accept: 'application/json' }],
     ['data', env.DATA_GO_KR_KEY && `https://apis.data.go.kr/9750000/PrecedentInfomationService/getKorPrcdntList?serviceKey=${encodeURIComponent(env.DATA_GO_KR_KEY)}&type=json&numOfRows=1&pageNo=1&eventNo=${encodeURIComponent('2004헌마554')}`],
     ['nl', env.NL_KEY && `https://www.nl.go.kr/NL/search/openApi/search.do?key=${encodeURIComponent(env.NL_KEY)}&apiType=json&kwd=${encodeURIComponent('관습헌법')}&pageNum=1&pageSize=1`],
+    // (7차 b) 헌재 소식, 국회입법조사처 발간물, 행정심판 재결례 (last month's list, one row)
+    ['ccourt', dk && `https://apis.data.go.kr/${CC}getRecentMainDecsnList?${new URLSearchParams({ serviceKey: dk, type: 'json', pageNo: '1', numOfRows: '1' })}`],
+    ['nars', dk && `https://apis.data.go.kr/9735000/PublicationService/getResearchReportList?${new URLSearchParams({ serviceKey: dk, pageNo: '1', numOfRows: '1', resultType: 'json' })}`],
+    ['acrc', dk && `https://apis.data.go.kr/${ACRC}adjdctexeList?${new URLSearchParams({ serviceKey: dk, pageNo: '1', numOfRows: '1', ...lastMonth })}`],
   ];
   const keys = [env.LAW_OC, env.ASSEMBLY_KEY, env.DATA_GO_KR_KEY, env.MOLEG_KEY, env.NL_KEY, env.NANET_KEY, env.SCIENCEON_CLIENT_ID, env.SCIENCEON_KEY, env.SCIENCEON_MAC, env.KCI_KEY, kciKeyOf(env), env.ANTHROPIC_API_KEY].filter(Boolean);
   // the shape of each data.go.kr key (never its value): a 64-letter hex key is the portal's newer '일반 인증키'
   const shape = (k) => (k ? { len: k.length, hex: /^[0-9a-f]+$/i.test(k) } : null);
   // KCI's key as pasted (never its value): its length, and whether spaces, quotes or other letters came with it
   const kshape = (k) => (k ? { len: k.length, trimmed: k.trim().length, digits: /^\d+$/.test(k.trim()), alnum: /^[0-9A-Za-z]+$/.test(k.trim()), quoted: /^["'“‘]|["'”’]$/.test(k.trim()), inner: /\s/.test(k.trim()), hex: /^[0-9a-f]+$/i.test(k.trim()), sameAsDataKey: [env.DATA_GO_KR_KEY, env.MOLEG_KEY].some((d) => d && d.trim() === k.trim()) } : null);
-  const out = { at: Date.now(), colo: req.cf && req.cf.colo, country: req.cf && req.cf.country, keys: { DATA_GO_KR_KEY: shape(env.DATA_GO_KR_KEY), MOLEG_KEY: shape(env.MOLEG_KEY), KCI_KEY: kshape(env.KCI_KEY) }, results: {} };
+  const out = { at: now, from, colo: cf && cf.colo, country: cf && cf.country, keys: { DATA_GO_KR_KEY: shape(env.DATA_GO_KR_KEY), MOLEG_KEY: shape(env.MOLEG_KEY), KCI_KEY: kshape(env.KCI_KEY) }, results: {} };
   tries.push(['nanet', env.NANET_KEY && (() => nanetAsk(env, 'searchTotal', { searchTerm: '관습헌법', printRowCnt: '1' }))]);
   // KCI's own Open API (논문 검색): whether the owner's key is taken, and the shape of its answer (the key taken out)
   // the owner's Claude key: taken or not, and which models it may use (a list, no tokens spent)
@@ -806,8 +842,585 @@ async function diag(req, env) {
       out.results[k] = { status: r.status, head: t };
     } catch (e) { out.results[k] = { error: String((e && e.message) || e).slice(0, 200) }; }
   }));
-  await env.BUCKET.put('diag/last.json', JSON.stringify(out), { httpMetadata: { contentType: 'application/json' } });
-  return json(out);
+  // the cron's check (made elsewhere) does not take the place of a fresh one made from Korea
+  const last = from === 'cron' ? await getJ(env, 'diag/last.json') : null;
+  if (!(last && last.country === 'KR' && now - last.at < 86400e3)) await env.BUCKET.put('diag/last.json', JSON.stringify(out), { httpMetadata: { contentType: 'application/json' } });
+  await diagDays(env, out, from).catch(() => {});
+  return out;
+}
+
+/* ---------------- 7차 b: 헌재 소식, 위헌·헌법불합치 법령, 국회입법조사처 발간물, 행정심판 재결례, the daily check ---------------- */
+// Small typed routes over the 공공데이터포털 services: each asks the service from here (the owner's key added, as /api/data
+// does), keeps only what the app shows, and keeps that for a while (at the edge, or in R2 for what the cron gathers).
+
+const upstreamErr = (code, status = 502) => Object.assign(new Error(code), { status });
+// one service, its text back. use (the cron's budget: { left }) counts each ask going out
+async function dataAsk(env, path, params, use, read = (r) => r.text()) {
+  const keys = dataKeys(env, path.split('/'));
+  if (!keys.length) throw upstreamErr('no key', 503);
+  let out;
+  for (const key of keys) {
+    if (use) { if (use.left <= 0) throw upstreamErr('budget', 429); use.left--; }
+    const u = `https://apis.data.go.kr/${path}?${new URLSearchParams({ serviceKey: key, ...params })}`;
+    let r;
+    try { r = await fetch(u, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(25000) }); } catch (e) { throw upstreamErr('upstream unreachable', 504); }
+    out = { ok: r.ok, status: r.status, text: await read(r) };
+    if (!notRegistered(out.text)) break;
+  }
+  if (!out.ok) throw upstreamErr('upstream ' + out.status);
+  if (/SERVICE_KEY_IS|LIMITED_NUMBER|OpenAPI_ServiceResponse|<returnReasonCode>/.test(out.text.slice(0, 1500))) throw upstreamErr('upstream refused');
+  return out.text;
+}
+// an answer we made from a service's answer, kept at the edge (ttl seconds, or ttl(obj))
+async function keptJson(ctx, id, ttl, make) {
+  const key = new Request(KEPT + 'typed/' + (await sha256hex(id)));
+  const hit = await caches.default.match(key).catch(() => null);
+  if (hit) return hit.json();
+  const obj = await make();
+  const s = typeof ttl === 'function' ? ttl(obj) : ttl;
+  if (s > 0 && ctx) ctx.waitUntil(caches.default.put(key, new Response(JSON.stringify(obj), { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${s}` } })).catch(() => {}));
+  return obj;
+}
+const shown = (obj, age = 300) => json(obj, 200, { 'cache-control': `private, max-age=${age}` });
+// a stored JSON in R2 handed on as it is (no parsing here)
+const storedJson = (o, age = 600) => new Response(o.body, { headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': `private, max-age=${age}` } });
+const getJ = (env, key) => env.BUCKET.get(key).then((o) => (o ? o.json() : null)).catch(() => null);
+const putJ = (env, key, obj) => env.BUCKET.put(key, JSON.stringify(obj), { httpMetadata: { contentType: 'application/json' } });
+
+const one = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+const ymd = (s) => { const m = /^(\d{4})\D?(\d{2})\D?(\d{2})/.exec(String(s || '').trim()); return m ? `${m[1]}-${m[2]}-${m[3]}` : ''; };
+const hhmm = (s) => { const m = /(\d{2}):?(\d{2})$/.exec(String(s || '').trim()); return m ? m[1] + ':' + m[2] : ''; };
+const pad2 = (n) => String(n).padStart(2, '0');
+const httpUrl = (s) => (/^https?:\/\/[^\s"<>]+$/.test(String(s || '').trim()) ? String(s).trim() : '');
+const ENT = { nbsp: ' ', lt: '<', gt: '>', quot: '"', apos: "'", amp: '&', middot: '·', hellip: '…', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', ndash: '–', mdash: '—', bull: '•', times: '×', para: '¶', sect: '§' };
+const lines = (s) => s.split('\n').map((l) => l.replace(/[ \t 　]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+// 헌재's HTML (결정 개요) as plain text: one paragraph a line
+function htmlText(h) {
+  const t = String(h || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(?:p|div|li|tr|h\d|table)>/gi, '\n').replace(/<[^>]*>/g, '')
+    .replace(/&#x([0-9a-f]+);/gi, (m, x) => String.fromCodePoint(parseInt(x, 16))).replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
+    .replace(/&([a-z]+);/gi, (m, n) => (n.toLowerCase() in ENT ? ENT[n.toLowerCase()] : m));
+  return lines(t.replace(/\r/g, ''));
+}
+// 헌재's JSON answers: { header: { resultCode: '0' }, body: { items: { item: [...] | {...} | '' }, totalCount } }
+function ccItems(text) {
+  let j; try { j = JSON.parse(text); } catch (e) { throw upstreamErr('upstream unexpected'); }
+  const h = j.header || (j.response && j.response.header) || {};
+  if (h.resultCode != null && !/^0+$/.test(String(h.resultCode))) throw upstreamErr('upstream refused');
+  const b = j.body || (j.response && j.response.body) || {};
+  const it = b.items && (b.items.item !== undefined ? b.items.item : b.items);
+  const items = (Array.isArray(it) ? it : it && typeof it === 'object' ? [it] : []).filter((x) => x && typeof x === 'object');
+  return { items, total: Number(b.totalCount) || items.length };
+}
+const CC = '9750000/SentenceCaseService/', CD = '9750000/DiscussCaseService/';
+const EVENT_NO = /^\d{2,4}헌[가-힣]{1,2}\d{1,6}$/;
+const ccAsk = (env, op, params, use) => dataAsk(env, op, { type: 'json', pageNo: '1', numOfRows: '100', ...params }, use).then(ccItems);
+// (a page past max is refused, 0: it was answered as page max, which a client asking page after page got again and again)
+const pageOf = (url, max = 1000) => { const n = Math.floor(Number(url.searchParams.get('page'))); return n > max ? 0 : n >= 1 ? n : 1; };
+
+async function ccourtApi(env, ctx, op, url) {
+  const sp = url.searchParams, H = 3 * 3600;
+  switch (op) {
+    case 'schedule': {   // 선고 일정 and 변론 일정 of one month
+      const y = sp.get('year') || '', mo = sp.get('month') || '';
+      if (!/^(?:19|20)\d{2}$/.test(y) || !/^(?:0?[1-9]|1[0-2])$/.test(mo)) return err('bad_month', 400);
+      const month = pad2(Number(mo));
+      const slot = (at, time) => ({ at: one(at), date: ymd(at), time: hhmm(time) || hhmm(one(at).slice(8, 12)) });
+      return shown(await keptJson(ctx, `cc/schedule/${y}${month}`, (o) => (o.discuss ? H : 1800), async () => {
+        const [s, d] = await Promise.all([
+          ccAsk(env, CC + 'getSentenceSchduleList', { year: y, month }),
+          ccAsk(env, CD + 'getDscsSchdulList', { year: y, month }).catch(() => null),
+        ]);
+        const by = (a, b) => a.at.localeCompare(b.at);
+        return { year: +y, month: +month, sentence: s.items.map((x) => slot(x.adjudgeDateTime, x.time)).filter((x) => /^\d{12}$/.test(x.at)).sort(by),
+          discuss: d ? d.items.map((x) => slot(x.dscsDateTime, x.time)).filter((x) => /^\d{12}$/.test(x.at)).sort(by) : null };
+      }));
+    }
+    case 'day': {   // the cases to be decided (or decided) at one 선고 time
+      const at = sp.get('at') || '';
+      if (!/^\d{12}$/.test(at)) return err('bad_at', 400);
+      // that day's results come in on the day: kept half an hour around it, three hours otherwise
+      const near = Math.abs(Date.parse(ymd(at) + 'T00:00:00+09:00') - Date.parse(kstDay() + 'T00:00:00+09:00')) <= 2 * 86400e3;
+      return shown(await keptJson(ctx, 'cc/day/' + at, near ? 1800 : H, async () => {
+        const items = [];
+        for (let page = 1; page <= 3; page++) {
+          const r = await ccAsk(env, CC + 'getSentenceList', { adjudgeDateTime: at, pageNo: String(page) });
+          items.push(...r.items);
+          if (!r.items.length || items.length >= r.total) break;
+        }
+        return { at, date: ymd(at), time: hhmm(at.slice(8)), items: items.map((x) => {
+          const merged = one(x.mrgInfo).replace(/\(병합\)/g, '').split(/\s*,\s*/).filter((e) => EVENT_NO.test(e));
+          const o = { eventNo: one(x.eventNo), title: one(x.eventNm), result: one(x.endRsta) };
+          if (merged.length > 1) o.merged = merged;
+          if (one(x.reqLaw)) o.court = one(x.reqLaw);
+          if (one(x.demdNmSub)) o.party = one(x.demdNmSub);
+          if (one(x.othDemdNm)) o.other = one(x.othDemdNm);
+          if (httpUrl(x.decsnOutlineLink)) o.outline = httpUrl(x.decsnOutlineLink);
+          if (httpUrl(x.dtmPpLink)) o.file = httpUrl(x.dtmPpLink);
+          if (ymd(x.chgDate)) o.changed = ymd(x.chgDate);
+          return o;
+        }) };
+      }));
+    }
+    case 'recent': {   // 최근 주요 결정, newest first, 50 a page
+      const page = pageOf(url);
+      if (!page) return err('bad_page', 400);
+      return shown(await keptJson(ctx, 'cc/recent/' + page, H, async () => {
+        const r = await ccAsk(env, CC + 'getRecentMainDecsnList', { pageNo: String(page), numOfRows: '50' });
+        return { total: r.total, page, items: r.items.map((x) => ({ seq: one(x.seqNo), eventNo: one(x.eventNo), title: one(x.eventNm), date: ymd(x.endDate || x.adjuDate), result: one(x.endResult) })) };
+      }));
+    }
+    case 'outline': {   // one 주요 결정's 개요 (보도자료), as plain text
+      const seq = sp.get('seq') || '';
+      if (!/^\d{1,12}$/.test(seq)) return err('bad_seq', 400);
+      const o = await keptJson(ctx, 'cc/outline/' + seq, (x) => (x.found ? 86400 : 1800), async () => {
+        const r = await ccAsk(env, CC + 'getDecsnOutlineDetail', { seqNo: seq });
+        const x = r.items[0];
+        if (!x) return { found: false };
+        return { found: true, seq, eventNo: one(x.eventNo), title: one(x.eventNm), date: ymd(x.endDate || x.adjuDate), result: one(x.endRsta), text: htmlText(x.decsnOutline).slice(0, 200000) };
+      });
+      if (!o.found) return err('none', 404);
+      const { found, ...rest } = o;
+      return shown(rest, 3600);
+    }
+    case 'hearings': {   // 주요 변론 일정, newest first, 50 a page
+      const page = pageOf(url);
+      if (!page) return err('bad_page', 400);
+      return shown(await keptJson(ctx, 'cc/hearings/' + page, H, async () => {
+        const r = await ccAsk(env, CD + 'getMainDscsSchduleList', { pageNo: String(page), numOfRows: '50' });
+        return { total: r.total, page, items: r.items.map((x) => ({ seq: one(x.seqNo), half: one(x.gubun), eventNo: one(x.eventNo), title: one(x.eventNm), date: ymd(x.dscsDate) })) };
+      }));
+    }
+    case 'hearing': {   // one 주요 변론: its dates, the 변론 개요 PDF(s), any text
+      const no = one(sp.get('eventNo'));
+      if (!EVENT_NO.test(no)) return err('bad_event', 400);
+      return shown(await keptJson(ctx, 'cc/hearing/' + no, 6 * 3600, async () => {
+        const r = await ccAsk(env, CD + 'getMainDscsSchduleDetail', { eventNo: no });
+        return { eventNo: no, items: r.items.map((x) => ({ date: ymd(x.dscsDate), title: one(x.eventNm),
+          files: (Array.isArray(x.fileList) ? x.fileList : []).map((f) => ({ name: one(f && f.atchFileNm), url: httpUrl(f && f.atchFileLink) })).filter((f) => f.url),
+          text: x.content ? htmlText(x.content).slice(0, 100000) : '' })) };
+      }));
+    }
+    case 'unconst': {   // 위헌결정 법률현황 + 미개정 위헌·헌법불합치 법령, one list (made daily by the cron; here when missing)
+      const o = await env.BUCKET.get(UNCONST_KEY);
+      if (o) return storedJson(o, 3600);
+      return shown(await unconstBuild(env, Date.now(), { left: 40 }), 600);
+    }
+  }
+  return err('not_found', 404);
+}
+
+// 위헌결정 법률현황 (헌법재판통계): every law (or part of one) the court has held 위헌·헌법불합치·한정위헌…, about 860 rows,
+// and the two lists of those not yet amended (미개정 위헌결정 법령, 미개정 헌법불합치결정 법령), joined into one compact list
+const UNCONST_KEY = 'ccourt/unconst.json';
+const STAT = '9750000/CourtStatisticsService/getVioconstitDecsnLawSttus', UNAM = '9750000/UnamLegStatService/';
+// '구 공직선거법(2022. 4. 20. 법률 제18841호로 개정되고, … 전의 것) 제26조 제1항 [별표 2] … 부분' → its parts
+function lawParts(s) {
+  let t = one(s).replace(/[‘’“”「」｢｣]/g, '');
+  const out = { law: '', full: one(s) };
+  if (/^구\s/.test(t)) { out.old = true; t = t.replace(/^구\s+/, ''); }
+  let i = -1;
+  for (let k = t.indexOf('('); k >= 0; k = t.indexOf('(', k + 1)) if (/^\(\s*(?:\d{4}\s*\.|법률\s*제|[^)]{0,40}(?:개정|제정|시행))/.test(t.slice(k))) { i = k; break; }
+  let rest;
+  if (i > 0) {
+    let depth = 0, j = i;
+    for (; j < t.length; j++) { if (t[j] === '(') depth++; else if (t[j] === ')' && --depth === 0) break; }
+    out.law = t.slice(0, i).trim(); out.ver = t.slice(i + 1, j).trim(); rest = t.slice(j + 1).trim();
+  } else {
+    const a = /\s(제\d+조)/.exec(t);
+    out.law = (a ? t.slice(0, a.index) : t.replace(/\s중\s.*$/, '')).trim(); rest = a ? t.slice(a.index).trim() : '';
+  }
+  const art = /^(제\d+조(?:의\s?\d+)?(?:\s*제\d+항)?(?:\s*제\d+호)?(?:\s*[가-하]목)?)\s*(.*)$/.exec(rest);
+  if (art) { out.art = art[1].replace(/\s+/g, ' '); if (art[2]) out.part = art[2]; } else if (rest) out.part = rest;
+  return out;
+}
+const lawKey = (s) => one(s).replace(/^구\s+/, '').replace(/[\s·ㆍ・‧∙]/g, '');
+async function allPages(env, path, params, use, max = 20) {
+  const first = ccItems(await dataAsk(env, path, { ...params, pageNo: '1', numOfRows: '100' }, use));
+  const items = [...first.items];
+  // a service that gives fewer a page than asked (and says there are more) is asked page by page at that size
+  const rows = first.items.length && first.items.length < 100 && first.total > first.items.length ? first.items.length : 100;
+  for (let p = 2; items.length < first.total && p <= max; p++) {
+    const r = ccItems(await dataAsk(env, path, { ...params, pageNo: String(p), numOfRows: String(rows) }, use));
+    if (!r.items.length) break;
+    items.push(...r.items);
+  }
+  return { items, total: first.total };
+}
+async function unconstBuild(env, now, use) {
+  const d = new Date(now + 9 * 3600e3);
+  let y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, stat = null, asOf = '';
+  // the newest month the statistics have: this month's may not be out yet, and they can lag by many months, so up to a year
+  // back is tried — starting no later than two months after the month the list was last made from (so a daily run asks
+  // only a couple of empty months, and still finds a newer month when it comes out)
+  const was = await env.BUCKET.head(UNCONST_KEY).then((o) => (o && o.customMetadata && o.customMetadata.asOf) || '').catch(() => '');
+  if (/^\d{4}-\d{2}$/.test(was)) {
+    const [py, pm] = was.split('-').map(Number), s = new Date(Date.UTC(py, pm - 1 + 2, 1));
+    if (`${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}` < `${y}-${pad2(m)}`) { y = s.getUTCFullYear(); m = s.getUTCMonth() + 1; }
+  }
+  const TRIES = 13;
+  for (let i = 0; i < TRIES && !stat; i++) {
+    let r;
+    try { r = await allPages(env, STAT, { type: 'json', year: String(y), month: pad2(m) }, use); } catch (e) { if (e.status === 503 || e.message === 'budget' || i === TRIES - 1) throw e; r = { items: [] }; }
+    if (r.items.length) { stat = r; asOf = `${y}-${pad2(m)}`; } else if (--m === 0) { m = 12; y--; }
+  }
+  if (!stat) throw upstreamErr('upstream empty');
+  const [vio, cns] = await Promise.all([allPages(env, UNAM + 'getVioconstitQotatDecsnRefreeeIncdnt', { type: 'json' }, use, 5), allPages(env, UNAM + 'getCnstitDscrdRefreeeIncdnt', { type: 'json' }, use, 5)]);
+  const unam = [...vio.items.map((x) => ['위헌', x]), ...cns.items.map((x) => ['헌법불합치', x])].map(([kind, x]) => ({ kind, x, used: false }));
+  const unamOf = (u) => { const o = { kind: u.kind }; if (one(u.x.progress)) o.progress = one(u.x.progress); if (ymd(u.x.passDate)) o.deadline = ymd(u.x.passDate); if (one(u.x.office)) o.office = one(u.x.office); return o; };
+  const links = (o, x) => { if (httpUrl(x.decsnOutlineLink)) o.outline = httpUrl(x.decsnOutlineLink); if (httpUrl(x.dtmPpLink)) o.hwp = httpUrl(x.dtmPpLink); };
+  const keyOf = new Map();
+  const items = stat.items.map((x) => {
+    const o = { ...lawParts(x.lawNm), kind: one(x.rstaRsta), date: ymd(x.rstaDate), eventNo: one(x.eventNo) };
+    if (one(x.precdntBook)) o.book = one(x.precdntBook);
+    if (x.precdntPage != null && one(x.precdntPage)) o.page = one(x.precdntPage);
+    keyOf.set(o, o.eventNo + '|' + lawKey(o.law));
+    return o;
+  });
+  // joined by 사건번호 and law, and by kind: a case can hold one article 헌법불합치 and another 위헌, and a 헌법불합치 list's
+  // entry says nothing of the 위헌 one (한정위헌·한정합헌… count as 위헌 here). Only a case with no row of that kind for that
+  // law takes the entry on its other rows.
+  const kindOf = (k) => (/불합치/.test(k) ? '헌법불합치' : '위헌');
+  for (const any of [false, true]) {
+    for (const u of unam) {
+      if (u.used) continue;
+      const key = one(u.x.eventNo) + '|' + lawKey(u.x.lawNm);
+      const hits = items.filter((o) => !o.unam && keyOf.get(o) === key && (any || kindOf(o.kind) === u.kind));
+      if (!hits.length) continue;
+      u.used = true;
+      for (const o of hits) { o.unam = unamOf(u); links(o, u.x); }
+    }
+  }
+  for (const u of unam.filter((z) => !z.used)) {   // a not-yet-amended law the statistics do not list (as of their month)
+    const o = { law: one(u.x.lawNm), full: one(u.x.lawNm), kind: u.kind, date: ymd(u.x.decsnDate), eventNo: one(u.x.eventNo), unam: unamOf(u) };
+    if (one(u.x.article)) o.art = one(u.x.article);
+    links(o, u.x);
+    items.push(o);
+  }
+  items.sort((a, b) => b.date.localeCompare(a.date) || a.law.localeCompare(b.law));
+  const out = { v: 1, at: now, asOf, total: stat.total, unamended: { vio: vio.total, cnstit: cns.total }, items };
+  await env.BUCKET.put(UNCONST_KEY, JSON.stringify(out), { httpMetadata: { contentType: 'application/json' }, customMetadata: { asOf } });
+  return out;
+}
+
+// 국회입법조사처 발간물 (이슈와 논점·NARS 현안분석·입법·정책보고서…): by the words of a title (the service takes one LIKE
+// word: the longest is asked, the others are matched here) and a kind (DIV_CD)
+const NARS_PAGES = 100;
+async function narsReports(env, ctx, url) {
+  const sp = url.searchParams;
+  const words = one(sp.get('q')).slice(0, 100).split(' ').filter(Boolean).slice(0, 6);
+  const kind = sp.get('kind') || '';
+  if (kind && !/^\d{6,12}$/.test(kind)) return err('bad_kind', 400);
+  const page = pageOf(url, NARS_PAGES), ask = [...words].sort((a, b) => b.length - a.length)[0] || '';
+  if (!page) return err('bad_page', 400);
+  const more = words.length > 1, rows = more ? 100 : 20;
+  return shown(await keptJson(ctx, `nars/${ask}/${kind}/${page}/${rows}`, 6 * 3600, async () => {
+    const q = { pageNo: String(page), numOfRows: String(rows), resultType: 'json' };
+    if (ask) q.book_nm = ask;
+    if (kind) q.div_cd = kind;
+    let j; try { j = JSON.parse(await dataAsk(env, '9735000/PublicationService/getResearchReportList', q)); } catch (e) { if (e.status) throw e; throw upstreamErr('upstream unexpected'); }
+    const g = j.getResearchReportList || j.response || j;
+    const code = String((g.header && g.header.code) || '');
+    if (code && code !== '00' && code !== '03') throw upstreamErr('upstream refused');   // (03: nothing found)
+    const it = g.item || (g.body && g.body.items && g.body.items.item) || [];
+    const list = (Array.isArray(it) ? it : [it]).filter((x) => x && typeof x === 'object');
+    return { total: Number(g.totalCount) || 0, page, rows, items: list.map((x) => {
+      const o = { id: one(x.DATA_ID), title: one(x.BOOK_NM), kind: one(x.DIV_NM), kindCode: one(x.DIV_CD), date: ymd(x.INSERT_DT) };
+      if (narsPdfUrls(x.PDF_FILE_URL).length) o.pdf = one(x.PDF_FILE_URL);
+      if (httpUrl(x.VIEWER_URL)) o.viewer = httpUrl(x.VIEWER_URL);
+      return o;
+    }) };
+  }).then((r) => {
+    const further = r.page * r.rows < r.total && r.page < NARS_PAGES;   // (the last page served says so)
+    if (!more) return { q: words.join(' '), kind, ...r, more: further };
+    const has = (t) => words.every((w) => t.toLowerCase().includes(w.toLowerCase()));
+    return { q: words.join(' '), kind, total: r.total, page: r.page, rows: r.rows, more: further, items: r.items.filter((x) => has(x.title)) };
+  }));
+}
+// a NARS PDF link (www.nars.go.kr/fileDownload2.do?doc_id=…, as the service gives it): only that host and path, asked by
+// https first and then as given (http) — the server never fetches any other address a caller names
+const NARS_HOST = /^(?:www\.)?nars\.go\.kr$/i;
+function narsPdfUrls(s) {
+  let u; try { u = new URL(String(s || '').trim()); } catch (e) { return []; }
+  if (!/^https?:$/.test(u.protocol) || !NARS_HOST.test(u.hostname) || u.port || u.username || u.password || u.pathname !== '/fileDownload2.do') return [];
+  const doc = u.searchParams.get('doc_id') || '';
+  if (!/^[A-Za-z0-9_-]{6,40}$/.test(doc)) return [];
+  const q = new URLSearchParams({ doc_id: doc });
+  const name = u.searchParams.get('fileName');
+  if (name && name.length <= 400) q.set('fileName', name);
+  return [`https://www.nars.go.kr/fileDownload2.do?${q}`, `http://www.nars.go.kr/fileDownload2.do?${q}`];
+}
+
+// 행정심판 재결례 (국민권익위원회 온라인행정심판, 1140100/data). The service takes no words, only a date range of a month at most,
+// and one 재결 whole is about 4 MB (a picture of each table, in base64): so the cron gathers each month's list into R2
+// (newest month first, back three years, a few asks a run), keeps a small index of all of them for the app to search by
+// words, and a 재결 asked for is fetched once, without its pictures, and kept in R2 as its text.
+const ACRC = '1140100/data/', ACRC_MONTHS = 36, ACRC_ROWS = 100, CRON_ACRC_CALLS = 2;   // two asks a run keep the parsing well inside the free plan's CPU time
+const XT = new Map();
+const xtag = (s, t) => { let re = XT.get(t); if (!re) XT.set(t, (re = new RegExp(`<${t}>([\\s\\S]*?)</${t}>`))); const m = re.exec(s); return m ? xmlText(m[1]) : ''; };
+const lawNamesOf = (s) => [...new Set([...String(s || '').matchAll(/【\s*([^【】\n]{1,80}?)\s*】/g)].map((m) => one(m[1])))].slice(0, 30);
+function acrcPage(text) {
+  if (!/<response\b/.test(text.slice(0, 400))) throw upstreamErr('upstream unexpected');
+  if (!/^(?:200|0+)$/.test(xtag(text.slice(0, 2000), 'resultCode'))) throw upstreamErr('upstream refused');
+  const items = [];
+  for (const m of text.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+    const s = m[1], no = xtag(s, 'incdntNo');
+    if (!/^\d{4,14}$/.test(no)) continue;
+    const o = { no, cmt: one(xtag(s, 'cmtNm')), date: ymd(xtag(s, 'redcYmd')), clme: one(xtag(s, 'clmeNm')), title: one(xtag(s, 'clmIncdntNm')), result: one(xtag(s, 'adjdcResultNm')), field: one(xtag(s, 'parentCdNm')), laws: lawNamesOf(xtag(s, 'relSttDeidntfCn')) };
+    if (ymd(xtag(s, 'chgDt'))) o.upd = ymd(xtag(s, 'chgDt'));
+    if (xtag(s, 'docRlsYn') === 'N') o.pub = false;
+    items.push(o);
+  }
+  return { items, total: Number(xtag(text.slice(-600), 'totalCount')) || 0 };
+}
+// the months the index covers (the owner's calendar, in Korea): this one first
+function acrcMonths(now, n = ACRC_MONTHS) {
+  const d = new Date(now + 9 * 3600e3); let y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
+  const out = [];
+  for (let i = 0; i < n; i++) { out.push(`${y}-${pad2(m)}`); if (--m === 0) { m = 12; y--; } }
+  return out;
+}
+const acrcEvery = (age) => (age <= 1 ? 20 * 3600e3 : age <= 5 ? 7 * 86400e3 : 30 * 86400e3);   // this month and last: daily
+// which months to ask next: one left half-done, this month and last when due, then those never gathered (newest first),
+// then older ones due again (a 재결 is often published months after it was given)
+function acrcDue(st, now) {
+  const months = acrcMonths(now), have = st.months || {}, skip = st.skip || {};
+  const due = (ym, age) => !have[ym] || now - have[ym].at >= acrcEvery(age);
+  return [...new Set([
+    ...(st.part && months.includes(st.part.ym) ? [st.part.ym] : []),
+    ...months.slice(0, 2).filter((ym, age) => due(ym, age)),
+    ...months.filter((ym) => !have[ym]),
+    ...months.filter((ym, age) => due(ym, age)),
+  ])].filter((ym) => !(skip[ym] > now));   // (a month that failed three times running waits a day)
+}
+function acrcRange(ym, now) {
+  const [y, m] = ym.split('-').map(Number), last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const end = `${ym}-${pad2(last)}`, today = kstDay(now);
+  return { adjdcStartDe: `${y}${pad2(m)}01`, adjdcEndDe: (end > today ? today : end).replace(/-/g, '') };
+}
+async function acrcCollect(env, now, use) {
+  const st = (await getJ(env, 'acrc/state.json')) || { v: 1, months: {} };
+  st.months = st.months || {};
+  const done = new Map(), out = { done: [], asked: 0 };
+  const left0 = use.left;
+  let part = st.part ? await getJ(env, 'acrc/part.json') : null;
+  if (st.part && (!part || part.ym !== st.part.ym)) { part = null; delete st.part; }
+  for (const ym of acrcDue(st, now)) {
+    if (use.left <= 0) break;
+    const cur = part && part.ym === ym ? part : { ym, next: 1, total: 0, items: [] };
+    part = null;
+    let finished = false;
+    while (use.left > 0) {
+      let page;
+      const rows = st.rows || ACRC_ROWS;
+      try { page = acrcPage(await dataAsk(env, ACRC + 'adjdctexeList', { pageNo: String(cur.next), numOfRows: String(rows), ...acrcRange(ym, now) }, use)); }
+      catch (e) { if (e.message === 'budget') break; out.err = `${ym} p${cur.next}: ${e.message}`; break; }
+      cur.total = page.total;
+      cur.items.push(...page.items);
+      // fewer than asked on the first page, more said to be there: the service's own page size (asked at that from now on)
+      if (cur.next === 1 && page.items.length && page.items.length < rows && page.total > page.items.length) st.rows = page.items.length;
+      else if (!page.items.length || page.items.length < rows || cur.items.length >= page.total) { finished = true; break; }
+      cur.next++;
+    }
+    if (!finished) {   // carried over to the next run (or after an error, asked again then: three times, then a day later)
+      const fails = out.err ? ((st.part && st.part.ym === ym && st.part.fails) || 0) + 1 : 0;
+      if (fails >= 3) {
+        delete st.part; await env.BUCKET.delete('acrc/part.json');
+        st.skip = { ...(st.skip || {}), [ym]: now + 86400e3 };
+      } else {
+        st.part = { ym, next: cur.next, total: cur.total, ...(fails ? { fails } : {}) };
+        await putJ(env, 'acrc/part.json', cur);
+      }
+      break;
+    }
+    const seen = new Set(), items = cur.items.filter((x) => !seen.has(x.no) && seen.add(x.no));
+    items.sort((a, b) => b.date.localeCompare(a.date) || b.no.localeCompare(a.no));
+    await putJ(env, `acrc/m/${ym}.json`, { v: 1, ym, at: now, total: cur.total, items });
+    st.months[ym] = { at: now, n: items.length };
+    done.set(ym, items); out.done.push(ym);
+    if (st.part && st.part.ym === ym) { delete st.part; await env.BUCKET.delete('acrc/part.json'); }
+  }
+  const keep = new Set(acrcMonths(now));
+  for (const ym of Object.keys(st.months)) if (!keep.has(ym)) delete st.months[ym];
+  for (const ym of Object.keys(st.skip || {})) if (!(st.skip[ym] > now)) delete st.skip[ym];
+  if (st.skip && !Object.keys(st.skip).length) delete st.skip;
+  if (done.size || !(await env.BUCKET.head('acrc/index.json'))) await acrcIndex(env, st, done, now);
+  st.last = { at: now, done: out.done, asked: left0 - use.left, ...(out.err ? { err: out.err.slice(0, 200) } : {}) };
+  await putJ(env, 'acrc/state.json', st);
+  out.asked = left0 - use.left;
+  return out;
+}
+// the index: every 재결 of the months gathered, as rows of [no, date, 위원회, 피청구인, 사건명, 결과, [법령…], 분야], with the
+// 위원회, 결과, 법령 and 분야 given as numbers into its lists (cmts, results, laws, fields)
+async function acrcIndex(env, st, done, now) {
+  const old = (await getJ(env, 'acrc/index.json')) || { v: 1, cmts: [], results: [], laws: [], fields: [], rows: [] };
+  const dict = (name) => { const list = old[name] || (old[name] = []); const at = new Map(list.map((x, i) => [x, i])); return (v) => { if (!at.has(v)) { at.set(v, list.length); list.push(v); } return at.get(v); }; };
+  const cmt = dict('cmts'), res = dict('results'), law = dict('laws'), fld = dict('fields');
+  const keep = new Set(acrcMonths(now)), redo = new Set(done.keys()), fresh = new Set();
+  for (const items of done.values()) for (const x of items) fresh.add(x.no);
+  const rows = old.rows.filter((r) => keep.has(String(r[1]).slice(0, 7)) && !redo.has(String(r[1]).slice(0, 7)) && !fresh.has(r[0]));
+  for (const items of done.values()) for (const x of items) rows.push([x.no, x.date, cmt(x.cmt), x.clme, x.title, res(x.result), x.laws.map(law), fld(x.field)]);
+  rows.sort((a, b) => String(b[1]).localeCompare(String(a[1])) || String(b[0]).localeCompare(String(a[0])));
+  const months = {};
+  for (const [ym, v] of Object.entries(st.months)) months[ym] = v.n;
+  await putJ(env, 'acrc/index.json', { v: 1, at: now, want: ACRC_MONTHS, months, cmts: old.cmts, results: old.results, laws: old.laws, fields: old.fields, rows });
+}
+// a response's text with every <tag>…</tag> left out as it streams in (the 재결's pictures), at most max letters kept
+async function textWithout(r, tag, max = 3e6) {
+  const enc = new TextEncoder(), open = enc.encode(`<${tag}>`), close = enc.encode(`</${tag}>`);
+  const find = (buf, pat, from) => {
+    for (let j = buf.indexOf(pat[0], from); j >= 0 && j <= buf.length - pat.length; j = buf.indexOf(pat[0], j + 1)) {
+      let k = 1; while (k < pat.length && buf[j + k] === pat[k]) k++;
+      if (k === pat.length) return j;
+    }
+    return -1;
+  };
+  const dec = new TextDecoder(), rd = r.body.getReader();
+  let out = '', inside = false, carry = new Uint8Array(0);
+  for (;;) {
+    const { value, done } = await rd.read();
+    if (done) break;
+    let buf = value;
+    if (carry.length) { buf = new Uint8Array(carry.length + value.length); buf.set(carry); buf.set(value, carry.length); }
+    let i = 0;
+    for (;;) {
+      if (inside) {
+        const k = find(buf, close, i);
+        if (k < 0) { i = Math.max(i, buf.length - close.length + 1); break; }
+        inside = false; i = k + close.length;
+      } else {
+        const k = find(buf, open, i);
+        if (k < 0) { const end = Math.max(i, buf.length - open.length + 1); out += dec.decode(buf.subarray(i, end), { stream: true }); i = end; break; }
+        out += dec.decode(buf.subarray(i, k), { stream: true }); inside = true; i = k + open.length;
+      }
+    }
+    carry = buf.slice(i);
+    if (out.length > max) { rd.cancel().catch(() => {}); throw upstreamErr('too large'); }
+  }
+  if (!inside) out += dec.decode(carry);
+  return out;
+}
+// a 재결's own text: CDATA and the editor's marks (<Text>, <Object … Type="Table">) out, a table shown as [표]
+const acrcText = (s, max) => {
+  const t = lines(String(s || '').replace(/\r/g, '').replace(/<Object\b[^>]*Type="Table"[^>]*>/gi, '[표]').replace(/<Object\b[^>]*>/gi, '[그림]')
+    .replace(/<\/?(?:Text|Object|Image)\b[^>]*>/gi, '').replace(/<표 삽입을 위한 여백>/g, ''));
+  return t.length > max ? [t.slice(0, max), true] : [t, false];
+};
+const ACRC_BODY_V = 1;
+async function acrcBody(env, url) {
+  const no = url.searchParams.get('no') || '';
+  if (!/^\d{4,14}$/.test(no)) return err('bad_no', 400);
+  const key = `acrc/body/${no}.json`;
+  const o = await env.BUCKET.get(key);
+  if (o) return storedJson(o, 86400);
+  let size = 0;
+  const text = await dataAsk(env, ACRC + 'adjdctexe', { pageNo: '1', numOfRows: '1', incdntNo: no }, null, (r) => {
+    size = Number(r.headers.get('content-length')) || 0;
+    return r.body ? textWithout(r, 'object') : r.text();
+  });
+  if (!/<response\b/.test(text.slice(0, 400))) throw upstreamErr('upstream unexpected');
+  if (!/^(?:200|0+)$/.test(xtag(text.slice(0, 2000), 'resultCode'))) throw upstreamErr('upstream refused');
+  const s = (/<item>([\s\S]*?)<\/item>/.exec(text) || [])[1];
+  if (!s || xtag(s, 'incdntNo') !== no) return err('none', 404);
+  const [order, c1] = acrcText(xtag(s, 'dcsnOrdr'), 20000), [claim, c2] = acrcText(xtag(s, 'clmIntn'), 20000);
+  const [reason, c3] = acrcText(xtag(s, 'dcsnReason'), 150000), [laws, c4] = acrcText(xtag(s, 'relSttDeidntfCn'), 80000);
+  const b = { v: ACRC_BODY_V, no, cmt: one(xtag(s, 'cmtNm')), date: ymd(xtag(s, 'redcYmd')), clme: one(xtag(s, 'clmeNm')), title: one(xtag(s, 'clmIncdntNm')), result: one(xtag(s, 'adjdcResultNm')), field: one(xtag(s, 'parentCdNm')),
+    order, claim, reason, laws, lawNames: lawNamesOf(xtag(s, 'relSttDeidntfCn')), at: Date.now() };
+  const hwp = httpUrl(xtag(s, 'hwpFileDownUrl'));
+  if (hwp) b.hwp = hwp;
+  if (c1 || c2 || c3 || c4) b.cut = true;
+  if (size) b.raw = size;
+  await putJ(env, key, b);
+  return shown(b, 86400);
+}
+async function acrcApi(env, op, url) {
+  if (op === 'index') {
+    const o = await env.BUCKET.get('acrc/index.json');
+    if (o) return storedJson(o, 1800);
+    return shown({ v: 1, at: 0, want: ACRC_MONTHS, months: {}, cmts: [], results: [], laws: [], fields: [], rows: [] }, 60);
+  }
+  if (op === 'month') {
+    const ym = url.searchParams.get('ym') || '';
+    if (!/^\d{4}-(?:0[1-9]|1[0-2])$/.test(ym)) return err('bad_month', 400);
+    const o = await env.BUCKET.get(`acrc/m/${ym}.json`);
+    return o ? storedJson(o, 1800) : err('none', 404);
+  }
+  if (op === 'body') return acrcBody(env, url);
+  return err('not_found', 404);
+}
+
+// The cron (every hour, see deploy.py): one daily job a run — the self-check (diag) first, then the 위헌 법령 list — and then a
+// few asks for 행정심판 재결례. Within the free plan: at most 44 outside asks a run (its limit is 50), the services' own far off.
+async function cronRun(env, ctx, now) {
+  const st = (await getJ(env, 'cron/state.json')) || {};
+  const day = kstDay(now), did = [], errs = [];
+  try {
+    if (st.diag !== day) { st.diag = day; await putJ(env, 'cron/state.json', st); await diagRun(env, null, 'cron', now); did.push('diag'); }
+    else if (st.unconst !== day && !(st.unconstTry && now - st.unconstTry < 3 * 3600e3)) {
+      st.unconstTry = now;
+      await unconstBuild(env, now, { left: 40 });   // (statistics lagging a year and 50 a page: 11 + 18 + 2; with 4 for 재결례, under 50)
+      st.unconst = day; did.push('unconst');
+    }
+  } catch (e) { errs.push(String((e && e.message) || e).slice(0, 120)); }
+  try {
+    const r = await acrcCollect(env, now, { left: Number(env.CRON_ACRC_CALLS) || CRON_ACRC_CALLS });
+    if (r.done.length) did.push('acrc ' + r.done.join(','));
+    if (r.err) errs.push('acrc ' + r.err);
+  } catch (e) { errs.push('acrc ' + String((e && e.message) || e).slice(0, 120)); }
+  st.last = { at: now, did, ...(errs.length ? { err: errs.join('; ').slice(0, 300) } : {}) };
+  await putJ(env, 'cron/state.json', st);
+  return st.last;
+}
+
+// The daily check's record: one entry a day (the owner's day), 14 days. A source counts as working that day when any check
+// that day found it working (a check from Korea and the cron's, which runs elsewhere, can differ); failing: those that did
+// not work on each of the last two days in a row
+const DIAG_DAYS = 14;
+const DIAG_BAD = /SERVICE_KEY_IS|LIMITED_NUMBER|<errMsg>|<returnReasonCode>|<html|<!DOCTYPE|"error(?:Code)?"\s*:|"result"\s*:\s*"[^"]*실패/i;
+function diagOk(k, r) {
+  if (!r || r.status === 'no key') return null;
+  if (r.error || !(r.status >= 200 && r.status < 300)) return false;
+  const h = String(r.head || '');
+  if (k === 'acrc') return /<resultCode>\s*(?:200|0+)\s*</.test(h);
+  if (k === 'nars') return /"code"\s*:\s*"00"/.test(h);
+  if (k === 'kci') return /<OAI-PMH/.test(h) && !/<error\b/.test(h);
+  if (k === 'kcisearch') return /<record\b|<total>\s*\d/.test(h);
+  if (k === 'assembly' && /"CODE"\s*:\s*"(?!INFO-000|INFO-200)/.test(h)) return false;
+  if (/"resultCode"\s*:\s*"(?!0+")|<resultCode>(?!0+<|00<)/.test(h)) return false;
+  return !DIAG_BAD.test(h);
+}
+async function diagDays(env, out, from) {
+  const day = kstDay(out.at), days = (await getJ(env, 'diag/days.json')) || [];
+  let d = days.find((x) => x.day === day);
+  if (!d) { d = { day, runs: 0, from: [], ok: {}, why: {} }; days.push(d); }
+  d.runs++; d.at = out.at;
+  const where = from === 'cron' ? 'cron' : (out.country || from);
+  if (!d.from.includes(where)) d.from.push(where);
+  for (const [k, r] of Object.entries(out.results)) {
+    const ok = diagOk(k, r);
+    if (ok === null) continue;
+    if (ok) { d.ok[k] = true; delete d.why[k]; } else if (d.ok[k] !== true) { d.ok[k] = false; d.why[k] = r.error ? String(r.error).slice(0, 80) : r.status >= 200 && r.status < 300 ? 'refused' : 'HTTP ' + r.status; }
+    // (and by where it was asked from: the cron, or a device's check)
+    const by = from === 'cron' ? (d.cron = d.cron || {}) : (d.dev = d.dev || {});
+    by[k] = by[k] === true || ok;
+  }
+  days.sort((a, b) => a.day.localeCompare(b.day));
+  await putJ(env, 'diag/days.json', days.slice(-DIAG_DAYS));
+}
+// A source that answers Korean addresses only (ScienceON, some public sites) fails every check of the cron, which runs
+// elsewhere: one that has worked from a device and never from the cron (in the days kept) is failing only when a device's
+// check found it not working on both days — two days the owner did not open the app say nothing of it.
+function diagFailing(days) {
+  const [a, b] = days.slice(-2);
+  if (!a || !b || Date.parse(b.day) - Date.parse(a.day) !== 86400e3) return [];
+  const away = (k) => days.some((d) => d.dev && d.dev[k] === true) && !days.some((d) => d.cron && d.cron[k] === true);
+  return Object.keys(b.ok).filter((k) => b.ok[k] === false && a.ok[k] === false && (!away(k) || (a.dev && a.dev[k] === false && b.dev && b.dev[k] === false))).sort();
+}
+async function diagLast(env) {
+  const [last, days, cron, acrc] = await Promise.all([getJ(env, 'diag/last.json'), getJ(env, 'diag/days.json'), getJ(env, 'cron/state.json'), getJ(env, 'acrc/state.json')]);
+  if (!last && !days) return err('none', 404);
+  const list = days || [];
+  return json({ ...(last || {}), days: list, failing: diagFailing(list), ...(cron && cron.last ? { cron: cron.last } : {}),
+    ...(acrc ? { acrc: { months: Object.keys(acrc.months || {}).length, want: ACRC_MONTHS, last: acrc.last || null } } : {}) });
 }
 
 // An outside answer, kept at the edge for ttl seconds when real(text) says it is a real one (not an error, a daily-limit answer

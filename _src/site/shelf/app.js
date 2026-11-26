@@ -18,6 +18,7 @@ import * as moleg from './moleg.js';
 import * as precq from './precq.js';
 import * as kciq from './kciq.js';
 import * as pfind from './pfind.js';
+import * as ccnews from './ccnews.js';
 import * as verify from './verify.js';
 import * as write from './write.js';
 
@@ -889,6 +890,7 @@ let ppSeq = 0;   // each drawing of 논문 찾기 (an older one still waiting fo
 async function renderPapers(cIn) {
   const q = (S.pq || '').trim(), key = paperKey(), seq = ++ppSeq;
   paperFrame(cIn);
+  downNote(cIn, 'papers');
   const inp = $('.law-find input', cIn);
   if (inp && inp.value.trim() !== q && document.activeElement !== inp) inp.value = q;
   const c = $('.pp-body', cIn);
@@ -1068,7 +1070,9 @@ function openPaper(r) {
 function ppPaint(cIn, c, q, f, v, jl, live) {
   if (c.dataset.kq !== q) {   // 내 책장에서 and 다른 곳에서: once per question (a sort, a kind or a journal leaves them as they are)
     c.dataset.kq = q;
-    c.innerHTML = `<section class="pp-res pp-kci"></section><section class="pp-mine-sec"></section>${elsewhereRow(q)}`;
+    c.innerHTML = `<section class="pp-res pp-kci"></section><section class="pp-mine-sec"></section><section class="nr-sec" hidden></section>${elsewhereRow(q)}`;
+    // 국회입법조사처's reports whose titles hold the words (nars.js, loaded on first use; nothing found: nothing shown)
+    pfind.narsSection($('.nr-sec', c), q, { upload, toast, live, mine: (t) => shelfTitles().has(papers.norm(papers.mainTitle(t))) });
     const sec = $('.pp-mine-sec', c);
     if (sec && q.replace(/\s+/g, '').length >= 2) mineSec(sec, [q.replace(/\s+/g, '')], q, live, null, '편 본문에');
   }
@@ -1730,6 +1734,7 @@ async function renderLaw(cIn) {
   const mode = S.view.kind === 'cases' ? 'cases' : 'law';
   const q = lawQ().trim();
   lawFrame(cIn);
+  downNote(cIn, mode);
   const inp = $('.law-find input', cIn);
   if (inp && inp.value.trim() !== q && document.activeElement !== inp) inp.value = q;
   const c = $('.law-body', cIn);
@@ -1741,6 +1746,7 @@ async function renderLaw(cIn) {
     const mine = await Promise.race([research.mine(), new Promise((ok) => setTimeout(() => ok(null), 1500))]);
     if (!live()) return;
     c.innerHTML = mode === 'cases' ? caseHome(mine) : lawHome(mine);
+    if (mode === 'cases') ccnews.mount($('.law-home', c));   // 헌재 소식 (선고 일정 · 주요 결정 · 변론) at the top of 판례
     return;
   }
   rememberLaw(q, mode);
@@ -1785,9 +1791,17 @@ async function casesView(box, q, live) {
     if (named) { head = xHead(name, '법령 보기', 'data-lq', key ? q : name); none = '이 법령을 다룬 판례를 찾지 못했습니다'; }
   }
   box.innerHTML = head + secs.map(([k, t]) => lawSec(k, t)).join('') + `<p class="none law-empty" hidden>${none}</p>`
-    + (art ? '' : '<p class="law-note faint cs-scope">헌법재판소 결정은 사건명·판례요지집·주요 결정에서, 법원 판결은 사건명·판시사항·판결요지에서, 법령해석례는 안건명에서 찾습니다 (결정문·판결문 전문은 찾지 않습니다)</p>');
+    + (art ? '' : '<p class="law-note faint cs-scope">헌법재판소 결정은 사건명·판례요지집·주요 결정에서, 법원 판결은 사건명·판시사항·판결요지에서, 법령해석례는 안건명에서, 행정심판 재결례는 사건명·피청구인·관련 법령에서 찾습니다 (결정문·판결문 전문은 찾지 않습니다)</p>');
   let left = secs.length, any = false;
-  for (const [k, , ask] of secs) fillSec(box, k, ask, live).then((n) => { any = any || n > 0; if (--left === 0 && !any && live()) $('.law-empty', box).hidden = false; });
+  const done = (n) => { any = any || n > 0; if (--left === 0 && !any && live()) $('.law-empty', box).hidden = false; };
+  // 행정심판 재결례 (국민권익위 온라인행정심판): right after 법원 판결, from the server's index of the last three years (adjud.js)
+  const courtSec = !art && $('[data-sec="court"]', box);
+  if (courtSec) {
+    // (a heading like every section's, the section hidden until it has rows: adjud.js draws it then)
+    courtSec.insertAdjacentHTML('afterend', lawSec('acrc', '행정심판 재결례 <small>국민권익위 온라인행정심판</small>').replace('<section ', '<section hidden ')); left++;
+    import('./adjud.js').then((m) => m.render($('[data-sec="acrc"]', box), q, live, { sheet, closeSheet, lawGo, caseSheet, courtSheet, toast }), () => 0).then(done, () => done(0));
+  }
+  for (const [k, , ask] of secs) fillSec(box, k, ask, live).then(done);
 }
 // 법령: a law, or one article of it — its text, the coming amendments, the bills before the Assembly, the shelf's papers that
 // cite it — and its cases one tap away in 판례
@@ -1812,13 +1826,15 @@ async function lawsView(box, q, live) {
   if (key || named || lawish(q)) {
     // the law itself (a name the index does not hold is asked of 법제처: a law too new for the index, a rule); if none has that
     // name, the laws whose names come close
-    box.innerHTML = '<div class="whole-sec"></div><section class="bill-sec" hidden></section><div class="x-cases"></div>';
+    box.innerHTML = '<div class="whole-sec"></div><section class="bill-sec" hidden></section><section class="nr-sec" hidden></section><div class="x-cases"></div>';
     lawWhole($('.whole-sec', box), key || (named ? named.name : q), live).then((law) => {
       if (!live()) return;
       if (!law) { if ($('.whole-sec', box).dataset.err === 'repealed') casesLink($('.x-cases', box), q, null, live); else lawNamesSec(box, q, live, true); return; }
       const ren = named && named.was ? renamedNote(laws.oldLaw(q)) : '', h = ren && $('.whole-sec .lc-h', box);
       if (h) h.insertAdjacentHTML('afterend', ren);
       billsSec($('.bill-sec', box), law, null, live);
+      // 국회입법조사처's reports that name this law in their titles (the law itself, not its 시행령 or 규칙)
+      if (!/(?:시행령|시행규칙)$/.test(law.full)) import('./nars.js').then((m) => m.lawSection($('.nr-sec', box), law.full, { upload, toast, live, aliases: laws.lawAliases(law.full), mine: (t) => shelfTitles().has(papers.norm(papers.mainTitle(t))) }), () => 0);
       casesLink($('.x-cases', box), key ? q : law.full, null, live, law);
       if (key !== '헌법') ruleSecs(box, law.full.replace(/\s*(?:시행령|시행규칙)$/, ''), live);
     });
@@ -3767,6 +3783,124 @@ function keepMode() {
 }
 
 /* ================= settings ================= */
+/* ---------- 점검 결과: the server's daily check of the outside sources (/api/diag/last) ---------- */
+// Each day the server (its hourly cron, and a check from Korea when a device there signs in) asks every outside source once;
+// a source counts as working that day when any check found it working, and as failing when it did not work two days in a
+// row. 설정 shows the last 14 days; a screen whose source failed two days in a row says so in one quiet line under its box.
+const SRC_NAMES = { data: '헌재 판례정보', ccourt: '헌재 소식', acrc: '행정심판 재결례', law: '국가법령정보센터', moleg: '법제처 해석례·규칙',
+  assembly: '국회 의안정보', nars: '국회입법조사처', kci: 'KCI 논문 수집', kcisearch: 'KCI 논문 검색', nanet: '국회도서관', nl: '국립중앙도서관',
+  scienceontoken: 'ScienceON 접속', scienceon: 'ScienceON', anthropic: '글쓰기 도우미' };
+const SCREEN_SRCS = { cases: ['data', 'ccourt', 'acrc', 'law', 'moleg'], law: ['law', 'moleg', 'assembly', 'nars'], papers: ['kci', 'kcisearch', 'nanet', 'scienceontoken', 'scienceon', 'nars'] };
+const kstDay = (ms) => new Date(ms + 9 * 3600e3).toISOString().slice(0, 10);
+const dayDot = (day, year) => { const [y, m, d] = day.split('-'); return `${year ? y + '. ' : ''}${+m}. ${+d}.`; };
+const DIAG_FRESH = 3 * 3600e3;
+let diagMem = null, diagAsk = null, diagMiss = 0;   // { got, d } (d: null when the server has no record yet); the last failed ask
+async function diagLast(force) {
+  if (!diagMem) { const k = await store.get('kv', 'diagLast').catch(() => null); if (k && k.got) diagMem = k; }
+  if (!force && diagMem && Date.now() - diagMem.got < DIAG_FRESH) return diagMem.d;
+  const fail = (code) => Object.assign(new Error(code), { code });
+  if (!force && Date.now() - diagMiss < 10 * 60e3) { if (diagMem) return diagMem.d; throw fail('server'); }   // (asked again in a while)
+  if (!api.base() || !api.hasToken()) throw fail('auth');
+  if (navigator.onLine === false) throw fail('offline');
+  diagAsk = diagAsk || (async () => {
+    let r;
+    try { r = await fetch(api.base() + '/api/diag/last', { headers: api.authHeader(), cache: 'no-store' }); } catch (e) { throw fail(navigator.onLine === false ? 'offline' : 'server'); }
+    const d = await r.json().catch(() => null);
+    if (r.status === 404) return null;   // (no check made yet)
+    if (!r.ok || !d) throw fail((d && d.error) || 'http_' + r.status);
+    // kept: what the screens need (the answers' own text is left on the server)
+    return { at: d.at, from: d.from, country: d.country, days: Array.isArray(d.days) ? d.days : [], failing: Array.isArray(d.failing) ? d.failing : [], acrc: d.acrc || null };
+  })().then((d) => { diagMem = { got: Date.now(), d }; store.put('kv', 'diagLast', diagMem).catch(() => {}); return d; }, (e) => { diagMiss = Date.now(); throw e; }).finally(() => { diagAsk = null; });
+  return diagAsk;
+}
+// the sources of this screen that failed two days in a row (an old record — the last check more than a day ago — says nothing)
+const downKeys = (d, screen) => (!d || !d.days || !d.days.length || !d.failing || !d.failing.length || d.days[d.days.length - 1].day < kstDay(Date.now() - 864e5)
+  ? [] : (SCREEN_SRCS[screen] || []).filter((k) => d.failing.includes(k)));
+function downFor(d, screen) { return [...new Set(downKeys(d, screen).map((k) => SRC_NAMES[k].replace(/ 접속$/, '')))]; }
+// how many days in a row, to the last day checked, a source did not work (a day with no check ends the count)
+function downRun(days, k) {
+  let n = 0;
+  for (let i = days.length - 1; i >= 0 && days[i].ok && days[i].ok[k] === false; i--) {
+    if (i < days.length - 1 && Date.parse(days[i + 1].day) - Date.parse(days[i].day) !== 864e5) break;
+    n++;
+  }
+  return n;
+}
+// the screen's note: '국회입법조사처에 이틀째 닿지 않습니다 …' (사흘째, 5일째; several sources down for different spans: 며칠째)
+function downText(d, screen) {
+  const names = downFor(d, screen); if (!names.length) return '';
+  const runs = new Set(downKeys(d, screen).map((k) => downRun(d.days, k)));
+  const n = runs.size === 1 ? [...runs][0] : 0;
+  const span = n === 2 ? '이틀째' : n === 3 ? '사흘째' : n === 4 ? '나흘째' : n > 4 ? (n >= 14 ? `${n}일 넘게` : `${n}일째`) : '며칠째';
+  return `${names.join(' · ')}에 ${span} 닿지 않습니다 · 그 결과는 빠질 수 있습니다`;
+}
+function downNote(cIn, screen) {
+  const top = cIn.querySelector(':scope > .law-top'); if (!top) return;
+  const paint = (d) => {
+    if (!top.isConnected) return;
+    const t = downText(d, screen);
+    let p = top.querySelector(':scope > .dn-note');
+    if (!t) { if (p) p.remove(); return; }
+    if (!p) { p = el('p', 'dn-note'); top.appendChild(p); }
+    p.textContent = t;
+  };
+  if (diagMem) paint(diagMem.d);
+  diagLast().then(paint, () => {});
+}
+const whyText = (w) => (!w ? '' : /^HTTP \d+$/.test(w) ? w : w === 'refused' ? '요청을 받지 않음' : /timeout|abort/i.test(w) ? '응답 없음' : '연결 안 됨');
+function diagHtml(d, keptAt) {
+  if (!d) return '<p class="kv-note">아직 점검한 기록이 없습니다 · 서버가 하루 한 번 점검합니다</p>';
+  const now = Date.now(), cols = [];
+  for (let i = 13; i >= 0; i--) cols.push(kstDay(now - i * 864e5));
+  const byDay = new Map((d.days || []).map((x) => [x.day, x]));
+  const seen = new Set();
+  for (const x of d.days || []) for (const k of Object.keys(x.ok || {})) seen.add(k);
+  const srcs = [...Object.keys(SRC_NAMES).filter((k) => seen.has(k)), ...[...seen].filter((k) => !SRC_NAMES[k]).sort()];
+  const name = (k) => SRC_NAMES[k] || k;
+  const t = new Date((d.at || 0) + 9 * 3600e3);
+  const when = d.at ? `${t.getUTCMonth() + 1}. ${t.getUTCDate()}. ${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}` : '';
+  const where = d.from === 'cron' ? '자동 점검' : d.country === 'KR' ? '한국에서' : '';
+  const failing = d.failing || [];
+  // (the record's last day before yesterday: the server has not checked since — what it found then is said as of then)
+  const lastDay = (d.days || []).length ? d.days[d.days.length - 1].day : '', stale = lastDay && lastDay < kstDay(now - 864e5);
+  // each source not working on the latest day it was checked: since when, and what it answered
+  const now0 = [];
+  for (const k of srcs) {
+    const recs = (d.days || []).filter((x) => x.ok && k in x.ok);
+    const last = recs[recs.length - 1];
+    if (!last || last.ok[k] !== false) continue;
+    let from = last.day;
+    for (let i = recs.length - 2; i >= 0 && recs[i].ok[k] === false; i--) from = recs[i].day;
+    now0.push(`<li><b>${esc(name(k))}</b> ${from === last.day ? dayDot(from) : `${dayDot(from)}부터`} 안 됨${last.why && last.why[k] ? ` · ${esc(whyText(last.why[k]))}` : ''}</li>`);
+  }
+  const cell = (day, k) => {
+    const x = byDay.get(day), v = x && x.ok ? x.ok[k] : undefined;
+    if (v === true) return `<td class="dg-ok" title="${dayDot(day)} 됨"><span class="vh">됨</span></td>`;
+    if (v === false) return `<td class="dg-x" title="${dayDot(day)} 안 됨${x.why && x.why[k] ? ' · ' + esc(whyText(x.why[k])) : ''}"><span aria-hidden="true">✕</span><span class="vh">안 됨</span></td>`;
+    return `<td class="dg-n" title="${dayDot(day)} ${x ? '점검하지 않음' : '점검 없음'}"><span class="vh">점검 없음</span></td>`;
+  };
+  const head = cols.map((day) => `<th scope="col" title="${dayDot(day, true)}"${day === cols[cols.length - 1] ? ' class="dg-today"' : ''}>${+day.slice(8)}</th>`).join('');
+  const rows = srcs.map((k) => `<tr${failing.includes(k) ? ' class="dg-bad"' : ''}><th scope="row" title="${esc(name(k))}">${esc(name(k))}</th>${cols.map((day) => cell(day, k)).join('')}</tr>`).join('');
+  const lastLine = `<p class="kv"><span>마지막 점검</span><b>${esc([when, where].filter(Boolean).join(' · ') || '—')}</b></p>`;
+  if (!srcs.length) return lastLine + '<p class="kv-note">날짜별 점검 기록은 아직 없습니다 · 서버가 하루 한 번 점검합니다</p>';
+  return lastLine
+    + (failing.length ? `<p class="dg-sum dg-warn">${stale ? dayDot(lastDay) + ' 점검에서 ' : ''}이틀 연속 안 된 곳 · ${failing.map((k) => esc(name(k))).join(', ')}</p>` : '<p class="dg-sum">이틀 연속 안 된 곳은 없습니다</p>')
+    + (stale ? `<p class="kv-note">${dayDot(lastDay)} 뒤로는 점검한 기록이 없습니다</p>` : '')
+    + (now0.length ? `<ul class="dg-why">${now0.join('')}</ul>` : '')
+    + (srcs.length ? `<div class="dg-wrap"><table class="dg-t"><caption class="vh">최근 14일 점검 결과</caption><thead><tr><th scope="col" class="dg-c0">${+cols[0].slice(5, 7) === +cols[13].slice(5, 7) ? +cols[0].slice(5, 7) : +cols[0].slice(5, 7) + '–' + +cols[13].slice(5, 7)}월</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="dg-key" aria-hidden="true"><i class="dg-ok"></i>됨 <i class="dg-x">✕</i>안 됨 <i class="dg-n"></i>점검 없음</p>` : '')
+    + (d.acrc && d.acrc.want ? `<p class="kv-note">행정심판 재결례 ${d.acrc.want}개월 가운데 ${Math.min(d.acrc.months || 0, d.acrc.want)}개월을 모았습니다</p>` : '')
+    + (keptAt ? `<p class="kv-note">지금은 새 결과를 받지 못해 ${esc(keptAt)}에 받은 결과를 보여 드립니다</p>` : '');
+}
+async function diagSection(body) {
+  try { const d = await diagLast(true); if (body.isConnected) body.innerHTML = diagHtml(d); }
+  catch (e) {
+    if (!body.isConnected) return;
+    if (diagMem) { const t = new Date(diagMem.got + 9 * 3600e3); body.innerHTML = diagHtml(diagMem.d, `${t.getUTCMonth() + 1}. ${t.getUTCDate()}. ${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}`); return; }
+    body.innerHTML = `<p class="kv-note">${e && e.code === 'offline' ? '인터넷에 연결되면 볼 수 있습니다' : '지금은 점검 결과를 불러오지 못했습니다'}</p>`;
+  }
+}
+
 async function settings() {
   const used = S.index.files.reduce((s, f) => s + (f.size || 0), 0);
   const local = await store.filesSize().catch(() => 0);
@@ -3781,9 +3915,11 @@ async function settings() {
     <section><h3>올리기</h3><label class="opt"><input type="checkbox" class="an" ${S.prefs.autoName === false ? '' : 'checked'}><span>이름을 ‘저자_제목’으로 정리 <small>(부제 생략, 확실할 때만)</small></span></label></section>
     <section><h3>공유로 넣기 <small>아이패드·아이폰</small></h3><p class="sheet-p small">Safari나 파일 앱의 공유 버튼에서 바로 책장에 넣습니다. 키를 한 번 만들어 단축어에 넣어 두면 됩니다.</p><button class="btn share-key">공유 키 만들기</button></section>
     <section><h3>백업</h3><p class="sheet-p small">표시와 폴더 정리는 날마다, 처음 바뀌기 전 상태가 서버에 60일 동안 남습니다. 표시를 잘못 지웠다면 그 논문의 ⋯ 메뉴에서 <b>예전 표시 되살리기</b>를 고르세요.</p><button class="btn export-marks">모든 표시를 파일로 받기</button></section>
+    <section class="dg"><h3>점검 결과 <small>바깥 자료에 닿는지 · 최근 14일</small></h3><div class="dg-body"><p class="kv-note">불러오는 중…</p></div></section>
     <section><h3>로그인된 기기</h3><ul class="devs"><li class="none">불러오는 중…</li></ul></section>
     <section class="foot"><button class="btn danger ghost signout">이 기기에서 로그아웃</button><p class="ver">연구실 책장 ${esc(VERSION)}</p></section>`);
   $('.share-key', box).onclick = () => shareKeySheet();
+  diagSection($('.dg-body', box));
   $('.export-marks', box).onclick = () => { closeSheet(); exportAllMarks(); };
   $('.an', box).onchange = (e) => { S.prefs.autoName = e.target.checked; store.put('kv', 'prefs', S.prefs); };
   $('.keep', box).onchange = (e) => { if (e.target.name !== 'keep') return; S.prefs.keep = e.target.value; store.put('kv', 'prefs', S.prefs); prefetch(); };
