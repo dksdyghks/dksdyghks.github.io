@@ -1,5 +1,5 @@
 // Talking to the 연구실 책장 server. Every call carries this device's token; a 401 means the device was signed out.
-import * as store from './store.js?v=c7790c4af0';
+import * as store from './store.js?v=aedca5545d';
 
 const CONFIG_API = (globalThis.SHELF_CONFIG && globalThis.SHELF_CONFIG.api) || '';
 export function base() {

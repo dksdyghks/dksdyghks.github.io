@@ -6,8 +6,8 @@
 // what is printed: it picks between two printed issues (two journals' headers laid one over the other), and no volume,
 // issue or month is ever taken from its digits (선거연구's …/nec.2026.1.24.003 is 제24호 of 2026: no 제1권, no January).
 // A society that is the journal's printer (박영사, 법문사 …) gives way to the society KCI names for the journal.
-import * as naming from './naming.js?v=c7790c4af0';
-import { glyphs, stripLinks, notPubDates, doisIn as doisOfText, doiParts } from './cite.js?v=c7790c4af0';
+import * as naming from './naming.js?v=aedca5545d';
+import { glyphs, stripLinks, notPubDates, doisIn as doisOfText, doiParts } from './cite.js?v=aedca5545d';
 
 const squash = (s) => naming.hangulize(String(s || '')).replace(/\s+/g, '');
 const PRINTERS = /^(?:박영사|법문사|관악사|피앤씨미디어|한국학술정보|경인문화사|세창출판사|진원사|삼영사|신영사|오래|도서출판\s*\S+|\(주\)\s*\S+)$/;

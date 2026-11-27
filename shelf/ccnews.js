@@ -5,8 +5,8 @@
 // too: shown at once next time, and when the server or the internet cannot be reached; with nothing kept, one quiet line.
 //
 //   mount(home)   home: the 판례 first screen (.law-home); the section is put at its top. Safe to call on every render.
-import * as api from './api.js?v=c7790c4af0';
-import * as store from './store.js?v=c7790c4af0';
+import * as api from './api.js?v=aedca5545d';
+import * as store from './store.js?v=aedca5545d';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WD = '일월화수목금토';

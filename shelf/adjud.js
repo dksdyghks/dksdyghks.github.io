@@ -9,10 +9,10 @@
 //   find(q)                   → { rows, total, range, gathered } (rows: { no, date, cmt, clme, title, result, laws, field })
 //   open(no, ui, row?)        → the 재결's sheet
 //   ui: { sheet(html) → box, closeSheet(), lawGo(q, kind, old), caseSheet(no), courtSheet(ref), toast(msg) }
-import * as api from './api.js?v=c7790c4af0';
-import * as store from './store.js?v=c7790c4af0';
-import * as cases from './cases.js?v=c7790c4af0';
-import * as laws from './laws.js?v=c7790c4af0';
+import * as api from './api.js?v=aedca5545d';
+import * as store from './store.js?v=aedca5545d';
+import * as cases from './cases.js?v=aedca5545d';
+import * as laws from './laws.js?v=aedca5545d';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fail = (code, status = 0) => Object.assign(new Error(code), { code, status });

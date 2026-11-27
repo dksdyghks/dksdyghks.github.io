@@ -12,14 +12,14 @@
 // once; the server keeps the description, shows it here to be read, and sets it before every request.
 // Kept on this device: the draft, as typed, and where it came from; the last 20 answers (다듬은 기록), also kept with the
 // server and so on every device while '기기 사이에 맞추기' is on.
-import * as api from './api.js?v=c7790c4af0';
-import * as store from './store.js?v=c7790c4af0';
-import { ME } from './research.js?v=c7790c4af0';
-import { cleanCopy } from './analyze.js?v=c7790c4af0';
-import * as cases from './cases.js?v=c7790c4af0';
-import * as laws from './laws.js?v=c7790c4af0';
-import * as kciq from './kciq.js?v=c7790c4af0';
-import * as papers from './papers.js?v=c7790c4af0';
+import * as api from './api.js?v=aedca5545d';
+import * as store from './store.js?v=aedca5545d';
+import { ME } from './research.js?v=aedca5545d';
+import { cleanCopy } from './analyze.js?v=aedca5545d';
+import * as cases from './cases.js?v=aedca5545d';
+import * as laws from './laws.js?v=aedca5545d';
+import * as kciq from './kciq.js?v=aedca5545d';
+import * as papers from './papers.js?v=aedca5545d';
 
 const ACTS = {
   polish: { label: '내 문체로 다듬기', rewrite: true },

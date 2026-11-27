@@ -4,12 +4,12 @@
 //   The mouse drags over the text to choose it. Either way, two handles then set its ends exactly, and a small bar offers
 //   형광펜 and 밑줄 colours and 복사. An Apple Pencil marks at once, in the way the last mark was made.
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
-import { lib, pageItems } from './pdfkit.js?v=c7790c4af0';
-import { HAS_HAN, searchForm, hangulize, soft } from './naming.js?v=c7790c4af0';
-import * as casesMod from './cases.js?v=c7790c4af0';
-import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js?v=c7790c4af0';
-import * as lawsMod from './laws.js?v=c7790c4af0';
-import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js?v=c7790c4af0';
+import { lib, pageItems } from './pdfkit.js?v=aedca5545d';
+import { HAS_HAN, searchForm, hangulize, soft } from './naming.js?v=aedca5545d';
+import * as casesMod from './cases.js?v=aedca5545d';
+import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js?v=aedca5545d';
+import * as lawsMod from './laws.js?v=aedca5545d';
+import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js?v=aedca5545d';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
 // soft tints: butter, mint, sky, pink, lilac, apricot.

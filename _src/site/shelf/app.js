@@ -5189,8 +5189,11 @@ async function diagLast(force) {
   return diagAsk;
 }
 // the sources of this screen that failed two days in a row (an old record — the last check more than a day ago — says nothing)
+// a source the screen only falls back on (or adds to) is not news while the one it stands beside works: 국가법령정보센터's own
+// service backs up 법제처's, KCI's search and ScienceON add to the KCI index and 국회도서관 (설정 '점검 결과' still lists them all)
+const SRC_BESIDE = { law: 'moleg', kcisearch: 'kci', scienceontoken: 'nanet', scienceon: 'nanet' };
 const downKeys = (d, screen) => (!d || !d.days || !d.days.length || !d.failing || !d.failing.length || d.days[d.days.length - 1].day < kstDay(Date.now() - 864e5)
-  ? [] : (SCREEN_SRCS[screen] || []).filter((k) => d.failing.includes(k)));
+  ? [] : (SCREEN_SRCS[screen] || []).filter((k) => d.failing.includes(k) && !(SRC_BESIDE[k] && !d.failing.includes(SRC_BESIDE[k]))));
 function downFor(d, screen) { return [...new Set(downKeys(d, screen).map((k) => SRC_NAMES[k].replace(/ 접속$/, '')))]; }
 // how many days in a row, to the last day checked, a source did not work (a day with no check ends the count)
 function downRun(days, k) {
