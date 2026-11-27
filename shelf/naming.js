@@ -7,8 +7,8 @@
 // Input: page objects as made by pdfkit.pageItems(): { W, H, items: [{ s, x, y, w, h }] } (y grows downward).
 // Where it was published is read by cite.js from every line of the first pages (running heads too), the reading here by
 // position standing in when cite.js finds nothing.
-import { PAIRS } from './hanja.js?v=3dab24bfa8';
-import { printedCitation, issueText as citeIssue, dateText, glyphs, cleanName, plausibleName, notPubDates, stripLinks, nameKey } from './cite.js?v=3dab24bfa8';
+import { PAIRS } from './hanja.js?v=c7790c4af0';
+import { printedCitation, issueText as citeIssue, dateText, glyphs, cleanName, plausibleName, notPubDates, stripLinks, nameKey } from './cite.js?v=c7790c4af0';
 
 // ---------------------------------------------------------------- hanja → hangul
 let HANJA = null;
@@ -380,10 +380,16 @@ const JOURNALS = [
   ['언론과 법', '한국언론법학회'], ['유럽헌법연구', '유럽헌법학회'], ['미국헌법연구', '미국헌법학회'], ['입법학연구', '한국입법학회'],
   ['법과 정책연구', '한국법정책학회'], ['동북아법연구', '전북대학교 동북아법연구소'], ['경제규제와 법', '서울대학교 공익산업법센터'],
   ['신앙과 학문', '기독교학문연구회'], ['과학기술법연구', '한남대학교 과학기술법연구원'], ['법제', '법제처'], ['사법', '사법발전재단'], ['노동법학', '한국노동법학회'], ['조세법연구', '한국세법학회'],
-  ['국제법학회논총', '대한국제법학회'], ['서울대학교 법학', '서울대학교 법학연구소'], ['법학논집', null], ['법학연구', null], ['법학논총', null],
+  ['국제법학회논총', '대한국제법학회'], ['서울대학교 법학', '서울대학교 법학연구소'], ['가천법학', '가천대학교 법학연구소'], ['중앙법학', '중앙법학회'],
+  ['법학논집', null], ['법학연구', null], ['법학논총', null],
 ];
 const squash = (s) => s.replace(/\s+/g, '');
 function knownJournal(name) { const k = squash(name); return JOURNALS.find(([j]) => squash(j) === k) || null; }
+// 8차: the society of a journal known here for certain ('가천법학' → '가천대학교 법학연구소'), or '' — for a shelf line read
+// before the journal was known (the app may fill the society it lacks from it)
+export function journalSociety(name) { const k = knownJournal(String(name || '').replace(/[「」『』]/g, '').trim()); return (k && k[1]) || ''; }
+// 8차: a paper's line that names its journal but no volume or issue (권호 확인 필요): the app marks it from this
+export const issuePartial = (info) => !!(info && info.journal && !String(info.issue || '').trim());
 function knownJournalAt(line) {   // a line that starts with a known journal's name (a header like 「경제규제와 법(Journal of …)」 or a footer)
   const k = squash(line);
   return JOURNALS.filter(([j, soc]) => soc !== undefined && squash(j).length >= 3 && k.startsWith(squash(j))).sort((a, b) => b[0].length - a[0].length)[0] || null;
@@ -621,6 +627,8 @@ export function readFirstPages(p1, p2, more = [], known = null) {
   r = r || {};
   const info = withPrinted({ journal: '', society: '', issue: '', date: '', ...(r.info || {}) }, c);
   const out = { journal: info.journal || '', society: info.society || '', issue: info.issue || '', date: info.date || '', title: r.title || '', misread: r.misread || '', authors: r.authors || null, name: null, page };
+  if (!out.society && out.journal) out.society = journalSociety(out.journal);   // (a journal known for certain: its society, though the page did not print it)
+  if (issuePartial(out)) out.partial = true;   // (the journal read but not its 권호: '권호 확인 필요' on the shelf's row)
   if (!r.thesis && out.title && out.authors && out.authors.length) {
     const name = (authorText(out.authors) + '_' + out.title).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
     out.name = name.length > 150 ? name.slice(0, name.lastIndexOf(' ', 150) > 60 ? name.lastIndexOf(' ', 150) : 150).trim() : name;

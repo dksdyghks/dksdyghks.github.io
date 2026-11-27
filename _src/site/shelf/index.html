@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>연구실 책장</title>
 <meta name="robots" content="noindex, nofollow">
-<meta name="theme-color" content="#0A1426">
+<meta name="theme-color" content="#F2F4F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#080B11" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -17,6 +18,11 @@
 <link rel="stylesheet" href="/fonts/pretendard/pretendardvariable-dynamic-subset.css">
 <link rel="stylesheet" href="app.css?v=__V__">
 <script src="config.js?v=__V__"></script>
+<script>
+/* (a device that has not shown its shelf here yet — a first visit, or its storage cleared — goes to the sign-in next: its
+   first screen is the sign-in's own navy one, never a shelf's frame that then turns into the PIN pad) */
+try { if (!localStorage.getItem('shelf.lastN')) document.documentElement.classList.add('boot-first'); } catch (e) { document.documentElement.classList.add('boot-first'); }
+</script>
 <script>
 /* Outside the app's modules, so a module that fails to load stops neither: the service worker is registered here (it brings
    the next version), and when the app has not started within 12 s (or a module failed) the first screen offers to load it
@@ -57,5 +63,5 @@
 </script>
 <script type="module" src="app.js?v=__V__"></script>
 </head>
-<body><div class="gate"><div class="gate-card"><h1 class="brand-big">연구실 책장</h1><p class="gate-s">여는 중…</p></div></div></body>
+<body><div class="gate boot"><div class="boot-shell" aria-hidden="true"><div class="boot-rail"><div class="brand"><span class="brand-mark"></span><b>연구실 책장</b></div></div><div class="boot-main"><div class="boot-bar"><span class="boot-menu"></span><b>연구실 책장</b></div><div class="boot-tools"><span class="boot-find"></span></div><div class="boot-list sk-list"><div class="sk-row"></div><div class="sk-row"></div><div class="sk-row"></div></div></div></div><div class="gate-card"><h1 class="brand-big">연구실 책장</h1><p class="gate-s" role="status">여는 중…</p></div></div></body>
 </html>

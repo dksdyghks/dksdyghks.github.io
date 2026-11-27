@@ -6,7 +6,9 @@
 //   Marks follow the letters (a drag is turned into text ranges, never a free stroke) and are kept as page-relative boxes.
 import { lib, pageItems } from './pdfkit.js';
 import { HAS_HAN, searchForm, hangulize, soft } from './naming.js';
+import * as casesMod from './cases.js';
 import { scanCases, linkCases, caseView, judgmentView, wireCase, cite, oldBand, citeCopy, missingView, missingCites, COPY_NO } from './cases.js';
+import * as lawsMod from './laws.js';
 import { scanArticles, articleScope, scanCourtCases, articleQuery, courtQuery, artLabel, paras, lawGoKr, courtCite, pendingArt, pendingParas, dateText, corners } from './laws.js';
 
 // Highlights are drawn at 45% with Multiply (on screen and in the exported PDF), so on white paper these come out as
@@ -88,7 +90,8 @@ export class Reader {
     this.A = o.analyze;
     this.labels = (o.index && o.index.labels) || { offset: null, confident: false };
     this.texts = (o.index && o.index.pages) || null;
-    this.outlineData = o.analyze && o.analyze.tidyOutline ? o.analyze.tidyOutline((o.index && o.index.outline) || []) : (o.index && o.index.outline) || [];
+    // (the page texts go with it: a scan's chapters are mended by its printed 목차 box — analyze.tidyOutline)
+    this.outlineData = o.analyze && o.analyze.tidyOutline ? o.analyze.tidyOutline((o.index && o.index.outline) || [], { pages: o.index && o.index.pages, ocr: !!(o.index && o.index.ocr) }) : (o.index && o.index.outline) || [];
     this.allMarks = (o.marks || []).slice();   // includes deletions (kept for syncing)
     this.undoStack = [];   // this reading's changes to marks, newest last (되돌리기)
     this.ocr = o.ocr || null;   // a scan's words, page by page (read by ocr.js)
@@ -128,6 +131,7 @@ export class Reader {
       </div>
       <div class="rd-body">
         <div class="rd-scroll" tabindex="0"><div class="rd-pages"></div></div>
+        <div class="rd-scrim" hidden></div>
         <aside class="rd-panel" hidden>
           <div class="seg"><button data-tab="toc" class="on">목차</button><button data-tab="marks">표시</button></div>
           <div class="rd-panel-in"></div>
@@ -192,6 +196,7 @@ export class Reader {
       else this.walkStop();
     };
     this.$('.rd-panel-in').onclick = (e) => this.panelClick(e);
+    this.$('.rd-scrim').onclick = () => this.setPanel(false);   // (a tap beside the panel, over the page, closes it)
     this.wire();
   }
 
@@ -205,8 +210,20 @@ export class Reader {
       this.pagesEl.appendChild(p.el);
       this.pages.push(p);
     }
+    // the paper's saved cover (the shelf's thumbnail: o.cover, a Blob or an address) is the first page's picture until it is
+    // drawn — a first open shows the paper at once, never a white page
+    if (this.o.cover) {
+      try {
+        const url = typeof this.o.cover === 'string' ? this.o.cover : URL.createObjectURL(this.o.cover);
+        if (typeof this.o.cover !== 'string') this.coverUrl = url;
+        this.pages[0].cover = url; this.pages[0].el.style.backgroundImage = `url("${url}")`;
+      } catch (e) { /* none */ }
+    }
     this.endEl = el('div', 'rd-end');
-    const gb = (n, label, g) => `<button type="button" data-star="${n}" aria-label="${label}" aria-pressed="false">${gradeSVG(g)}</button>`;
+    // (each mark with the name the owner gave it — 인용 후보, 중요, 핵심, 보류, 안 씀 — as in the file menu: a closing card says
+    // what a mark means, not a bare 3-star rating)
+    const nm = (n) => { try { const v = this.o.markName && this.o.markName(n); return v ? String(v) : ''; } catch (e) { return ''; } };
+    const gb = (n, label, g) => { const t = nm(n); return `<button type="button" data-star="${n}" aria-label="${label}${t ? ' · ' + esc(t) : ''}" aria-pressed="false">${gradeSVG(g)}${t ? `<span class="mark-lbl">${esc(t)}</span>` : ''}</button>`; };
     this.endEl.innerHTML = `<div class="end-cover" aria-hidden="true"><i class="es s3"></i><i class="es s2"></i><span class="ec-pg"><img alt="" decoding="async" hidden></span><span class="end-mark"></span></div>
       <div class="rd-grade" role="group" aria-label="평가">${gb(1, '별 1개', 1)}${gb(2, '별 2개', 1)}${gb(3, '별 3개', 1)}<span class="sep"></span>${gb(-2, '세모', -2)}${gb(-1, '엑스', -1)}</div>`;
     this.endEl.onclick = (e) => { const b = e.target.closest('[data-star]'); if (!b) return; const n = Number(b.dataset.star); const v = n === this.stars ? 0 : n; this.setStars(v, true); this.o.onRate && this.o.onRate(v); };   // the same choice again clears it
@@ -234,7 +251,26 @@ export class Reader {
     if (to.query) { this.action('search'); this.$('.rd-find input').value = to.query; this.find(to.query, to.page); }
     if (to.mark) { const mk = this.allMarks.find((m) => m.id === to.mark && !m.del && m.rects); if (mk) { this.scrollToPage(mk.p, mk.rects[0][1], false); this.flash(mk.id); } }
     this.loadOutline();
+    // start() is done when the pages in view are drawn (each its canvas, or its picture): whoever shows the reader then —
+    // a tab switch keeps the paper on screen until this — never shows an undrawn page (a slow one is not waited on long)
+    await this.firstPaint(this.o.paintWait > 0 ? this.o.paintWait : 2500);
   }
+  // the pages on screen all have their drawing or their picture; resolves at once if so, else when they do (or after ms)
+  inViewPainted() {
+    const [a, b] = this.inView(), s = this.scroller, top = s.scrollTop, bot = top + s.clientHeight;
+    for (let i = a; i <= b; i++) { const p = this.pages[i]; if (p && p.top < bot && p.top + p.ch > top && !p.canvas && !p.snap && !p.cover && p.failed !== this.scale) return false; }   // (a page that failed to draw is not waited on: it is tried again later)
+    return true;
+  }
+  firstPaint(ms = 2500) {
+    if (this.dead || !this.pages.length || this.inViewPainted()) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const done = (v) => { clearTimeout(t); this.paintWaiters = (this.paintWaiters || []).filter((f) => f !== check); resolve(v); };
+      const check = () => { if (this.dead || this.inViewPainted()) done(!this.dead); };
+      const t = setTimeout(() => done(false), ms);
+      (this.paintWaiters = this.paintWaiters || []).push(check);
+    });
+  }
+  painted() { for (const f of (this.paintWaiters || []).slice()) f(); }
 
   setIndex(index) {
     if (!index || this.dead) return;
@@ -245,7 +281,7 @@ export class Reader {
       for (const p of this.pages) if (p.tl && p.casesSrc) this.casesFor(p, p.casesSrc);
     }
     if (index.labels && index.labels.confident) { this.labels = index.labels; this.updateInd(); }
-    if (index.outline && index.outline.length && (!this.outline || !this.outline.length || this.outline === this.outlineData)) { this.outlineData = this.A && this.A.tidyOutline ? this.A.tidyOutline(index.outline) : index.outline; this.outline = this.outlineData; if (!this.$('.rd-panel').hidden && this.tab === 'toc') this.showTab('toc'); }
+    if (index.outline && index.outline.length && (!this.outline || !this.outline.length || this.outline === this.outlineData)) { this.outlineData = this.A && this.A.tidyOutline ? this.A.tidyOutline(index.outline, { pages: index.pages, ocr: !!index.ocr }) : index.outline; this.outline = this.outlineData; if (!this.$('.rd-panel').hidden && this.tab === 'toc') this.showTab('toc'); }
     if (!this.$('.rd-panel').hidden && this.tab === 'marks') this.showTab('marks');
   }
 
@@ -402,6 +438,7 @@ export class Reader {
     } catch (e) {
       if (timedOut || (e && e.name === 'Stalled')) { p.failed = this.scale; p.failedAt = Date.now(); }
       else if (!(e && e.name === 'RenderingCancelledException')) { console.warn('render', p.n, e); p.failed = this.scale; p.failedAt = Date.now(); }
+      if (p.failed === this.scale) this.painted();   // (start() waits for no page that cannot be drawn now)
     } finally { clearTimeout(guard); clearTimeout(giveUp); p.stall = null; p.busy = false; }
   }
   async draw(p) {
@@ -430,6 +467,7 @@ export class Reader {
       p.el.insertBefore(c, p.el.firstChild);
       p.canvas = c; p.cScale = scale;
       p.el.classList.add('ready');
+      this.painted();
       this.snapshot(p, c);
       this.textLayerSoon(p, scale);
     }
@@ -616,7 +654,7 @@ export class Reader {
       const r = document.createRange(); r.setStart(map[a][0], map[a][1]); r.setEnd(map[b][0], map[b][1] + 1);
       const rects = this.rectsFor(r, p);
       if (!rects.length) continue;
-      p.cases.push({ ...c, rects });
+      p.cases.push({ ...c, rects, ...(c.kind === 'art' ? { ctx: flat.slice(Math.max(0, c.i - 160), c.i + c.len + 80) } : {}) });
       for (const q of rects) {
         const d = el('i', 'case-ref');
         d.style.left = (q[0] * 100) + '%'; d.style.top = ((q[1] + q[3]) * 100) + '%'; d.style.width = (q[2] * 100) + '%';
@@ -642,12 +680,19 @@ export class Reader {
   renderTabs() {
     const box = this.$('.rd-title'), tabs = this.tabs;
     if (!box) return;
+    this.tabsNarrow = this.root.clientWidth < 600;
+    // a phone: the paper's name and the count of open papers, which opens their list — where each is closed (the small ×
+    // beside the name is gone: '‹ 서재' is the way out, and a finger meant for the title no longer closes the paper)
+    if (this.tabsNarrow && this.o.onTabList) {
+      box.innerHTML = `<b>${esc(this.o.title || '')}</b><button type="button" class="rd-tabcount" aria-label="열린 문서 ${Math.max(1, tabs.length)}개 · 목록에서 닫기">${Math.max(1, tabs.length)}</button>`;
+      box.classList.remove('one'); box.classList.add('has-tabs'); return;
+    }
     if (tabs.length < 2) {   // one paper: its name, and the same × as a tab has (closes it and goes back to the shelf)
       box.innerHTML = `<b>${esc(this.o.title || '')}</b><button type="button" class="rd-close1" data-doc-x="${this.o.id}" aria-label="이 문서 닫기" title="닫기">${ICON.close}</button>`;
       box.classList.remove('has-tabs'); box.classList.add('one'); return;
     }
     box.classList.remove('one'); box.classList.add('has-tabs');
-    if (this.root.clientWidth < 600) {
+    if (this.tabsNarrow) {
       box.innerHTML = `<b>${esc(this.o.title || '')}</b><button type="button" class="rd-tabcount" aria-label="열린 문서 ${tabs.length}개">${tabs.length}</button>`;
       return;
     }
@@ -850,6 +895,12 @@ export class Reader {
   }
   // what is copied of a range: the letters of its part on each page, read as one text (a word broken at the page's end
   // joined as at a line's end)
+  // (for 다듬기: the same letters, as paragraphs — polishText)
+  polishCopy(range) {
+    const raw = this.rangeParts(range).map((q) => this.rangeText(q.sub, q.keep, true)).join(LINE_END).replace(/\uE000[\s\uE000]*/g, LINE_END);
+    const t = polishText(raw.split(LINE_END), (ls) => this.clean(joinLines(ls.join(LINE_END))));
+    return t || this.rangeCopy(range);
+  }
   rangeCopy(range) { return this.clean(joinLines(this.rangeParts(range).map((q) => this.rangeText(q.sub, q.keep, true)).join(LINE_END))); }
   // The part of a range on each page it touches. A range over a page break follows the text layer's order, which is the
   // PDF's: the foot of a page (its footnotes, its page number) comes after its last line of text, and the next page's
@@ -1042,7 +1093,7 @@ export class Reader {
     pop.classList.add('slim');
     pop.innerHTML = colours
       ? `<div class="pop-row pal">${HL.map((c, i) => `<button data-mk="hl" data-c="${c}" class="pd ${c === this.hlColor ? 'on' : ''}" style="--c:${c}" aria-label="형광펜 ${HL_NAMES[i]}" title="형광펜 ${HL_NAMES[i]}"><i></i></button>`).join('')}<span class="sep"></span>${UL.map((c, i) => `<button data-mk="ul" data-c="${c}" class="pl ${c === this.ulColor ? 'on' : ''}" style="--c:${c}" aria-label="밑줄 ${UL_NAMES[i]}" title="밑줄 ${UL_NAMES[i]}"><i></i></button>`).join('')}</div>`
-      : `<div class="pop-row acts"><button data-mk="hl" data-c="${this.hlColor}"><i class="sa-dot" style="--c:${this.hlColor}"></i><span>형광펜</span></button><span class="sep"></span><button data-mk="ul" data-c="${this.ulColor}"><i class="sa-line" style="--c:${this.ulColor}"></i><span>밑줄</span></button><span class="sep"></span><button data-act="copy"><span>복사</span></button><span class="sep"></span><button data-act="pal" class="sa-more" aria-label="색 고르기" title="색 고르기"><i class="sa-pal"></i></button></div>`;
+      : `<div class="pop-row acts"><button data-mk="hl" data-c="${this.hlColor}"><i class="sa-dot" style="--c:${this.hlColor}"></i><span>형광펜</span></button><span class="sep"></span><button data-mk="ul" data-c="${this.ulColor}"><i class="sa-line" style="--c:${this.ulColor}"></i><span>밑줄</span></button><span class="sep"></span><button data-act="copy"><span>복사</span></button>${this.o.onPolish ? '<span class="sep"></span><button data-act="polish"><span>다듬기</span></button>' : ''}<span class="sep"></span><button data-act="pal" class="sa-more" aria-label="색 고르기" title="색 고르기"><i class="sa-pal"></i></button></div>`;
     pop.onclick = (e) => {
       const b = e.target.closest('button'); if (!b || !this.sel) return;
       if (b.dataset.act === 'pal') { this.selPop(true); return; }
@@ -1055,6 +1106,11 @@ export class Reader {
       } else if (b.dataset.act === 'copy') {
         this.copy(this.rangeCopy(this.sel.range));
         this.clearSel(); this.hidePop();
+      } else if (b.dataset.act === 'polish' && this.o.onPolish) {   // (8차 계약: the passage to 다듬기, with the page it starts on)
+        const range = this.sel.range, text = this.polishCopy(range), first = this.rangeParts(range)[0];
+        const n = first ? first.p.n : this.current().page;
+        this.clearSel(); this.hidePop();
+        if (text.trim()) this.o.onPolish(text, { fileId: this.o.id, page: n, label: this.label(n), title: this.o.title || '' });
       }
     };
     this.showPop('sel', rect, true);
@@ -1205,7 +1261,8 @@ export class Reader {
     // A change of the screen's height alone (a phone's address bar or keyboard, a bar opening above the pages) moves nothing
     // and redraws nothing; only a change of width lays the pages out again, keeping the reader's place.
     this.ro = new ResizeObserver(() => {
-      if (this.tabs && this.tabs.length > 1) { const narrow = this.root.clientWidth < 600; if (narrow !== this.tabsNarrow) { this.tabsNarrow = narrow; this.renderTabs(); } }
+      { const narrow = this.root.clientWidth < 600; if (narrow !== this.tabsNarrow) { this.tabsNarrow = narrow; this.renderTabs(); } }
+      this.scrimFit();
       if (!this.pages.length || this.dead) return;
       const w = s.clientWidth;
       if (w !== this.lastW && w > 0) { this.lastW = w; this.keepPlace(() => this.relayout()); }
@@ -1529,7 +1586,10 @@ export class Reader {
       if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); this.walkGo(this.walkI - 1); return; }
       if (e.key === 'Escape') { this.walkStop(); return; }
     }
-    if (e.key === 'Escape') { this.clearSel(); this.hidePop(); this.$('.rd-erase').hidden = true; return; }
+    if (e.key === 'Escape') {
+      if (!this.sel && !this.popKind && this.root.classList.contains('panel-open') && this.root.clientWidth < 1100) { this.setPanel(false); return; }   // (the panel over the pages: Escape closes it)
+      this.clearSel(); this.hidePop(); this.$('.rd-erase').hidden = true; return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && this.sel && this.sel.range) { e.preventDefault(); this.copy(this.rangeCopy(this.sel.range)); return; }
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') { e.preventDefault(); this.undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); this.zoomBy(1.15); }
@@ -1560,7 +1620,7 @@ export class Reader {
   refPop(c, x, y) {
     this.noteTrail = []; this.noteFrom = { x, y }; this.noteSide = null;
     // (an article the paper cites as it read before — 구 …법, "(… 개정되기 전의 것)" — keeps that: the box says the text is today's)
-    this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para, old: c.old || '', oldcon: c.oldcon || '' } } : { kind: c.kind, no: c.no });
+    this.noteShow(c.kind === 'art' ? { kind: 'art', ref: { law: c.law, art: c.art, sub: c.sub, para: c.para, old: c.old || '', oldcon: c.oldcon || '', ctx: c.ctx || '' } } : { kind: c.kind, no: c.no });
   }
   noteShow(v) {
     this.noteView = v;
@@ -1571,7 +1631,7 @@ export class Reader {
     if (v.kind === 'case') { head.textContent = '헌재 ' + v.no; v.copy = '헌재 ' + v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.caseFill(v, head, body); }
     else if (v.kind === 'court') { head.textContent = v.no; v.copy = v.no; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.courtFill(v, head, body); }
     // (an old constitution's article is headed as the paper names it: 1972년 헌법 제40조)
-    else { const t = `${v.ref.oldcon ? v.ref.oldcon.replace(/\(.*$/, '') : v.ref.law} ${artLabel(v.ref)}${v.ref.para ? ` 제${v.ref.para}항` : ''}`; head.textContent = t; v.copy = t; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.artFill(v, head, body); }
+    else { const w = v.ref.oldcon ? null : wholeOld(v.ref); const t = `${v.ref.oldcon ? v.ref.oldcon.replace(/\(.*$/, '') : w ? '구 ' + w.name : v.ref.law} ${artLabel(v.ref)}${v.ref.para ? ` 제${v.ref.para}항` : ''}`; head.textContent = t; v.copy = t; body.innerHTML = '<p class="cs-wait">불러오는 중…</p>'; this.artFill(v, head, body); }
     n.onclick = (e) => {
       const go = (to) => { this.noteTrail.push(v); this.noteShow(to); };
       const ln = e.target.closest('[data-case]');
@@ -1643,17 +1703,11 @@ export class Reader {
       this.notePlace(); return;
     }
     const reviewed = r.law === '헌법' ? '' : `<details class="cs-fold" data-reviewed><summary>이 조문을 심판한 헌재 결정</summary><p></p></details>`;
-    const wire = () => {
-      const f = body.querySelector('[data-reviewed]');
-      if (!f || !this.o.reviewed) return;
-      f.addEventListener('toggle', async () => {
-        const p = f.querySelector('p'); if (!f.open || p.dataset.done) return; p.dataset.done = '1'; p.textContent = '찾는 중…';
-        try {
-          const got = await this.o.reviewed(r.law, r.art, r.para);
-          p.innerHTML = got.rows.length ? got.rows.map((x) => `<button type="button" class="case-ln" data-case="${esc(x.no)}">${esc(x.no)}</button> ${esc(x.result || '')}${x.date ? ' · ' + esc(x.date) : ''}`).join('<br>') + (got.total > got.rows.length ? `<br>외 ${got.total - got.rows.length}건` : '') : '없습니다';
-        } catch (e) { p.textContent = '지금은 찾지 못했습니다'; }
-      });
-    };
+    const wire = () => this.wireReviewed(body, r.law, r.art, r.para);
+    // (an article of a law cited by a name a 전부개정 replaced — 구 정치자금에관한법률 제30조 — or cited "전부 개정되기 전의 것":
+    // today's article of that number is another article; it is never shown as this one's text — artWhole)
+    const whole = r.oldcon ? null : wholeOld(r);
+    if (whole) { await this.artWhole(v, head, body, r, whole, outTo); return; }
     let got;
     try { got = await (this.o.article ? this.o.article(r) : Promise.reject(Object.assign(new Error('x'), { code: 'unavailable' }))); }
     catch (e) {
@@ -1689,6 +1743,52 @@ export class Reader {
     body.innerHTML = `${was}${a.title ? `<div class="cs-name">${artLabel(a)}(${esc(a.title)})</div>` : ''}<div class="cs-meta">${[a.chapter, law.title].filter(Boolean).map(esc).join(' · ')}</div>`
       + `<div class="lc-t">${ps.map((t, k) => `<p class="${pick === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div>${coming}<p>${outTo(law, a)}</p>${reviewed}`;
     wire();
+    this.notePlace();
+  }
+  // the fold '이 조문을 심판한 헌재 결정', read when opened: every decision on the article under each name it had (cases.byLawAll:
+  // today's name, a renamed law's old one, and the old article a 전부개정 renumbered), 심리중 first, then newest; a decision found
+  // only under an old name says so (구 공직선거및선거부정방지법)
+  wireReviewed(body, law, art, para) {
+    const f = body.querySelector('[data-reviewed]');
+    const ask = this.o.reviewedAll || (typeof casesMod.byLawAll === 'function' ? casesMod.byLawAll : null) || this.o.reviewed;
+    if (!f || !ask) return;
+    f.addEventListener('toggle', async () => {
+      const p = f.querySelector('p'); if (!f.open || p.dataset.done) return; p.dataset.done = '1'; p.textContent = '찾는 중…';
+      try {
+        let got;
+        try { got = await ask(law, art, para); } catch (e) { if (ask === this.o.reviewed || !this.o.reviewed) throw e; got = await this.o.reviewed(law, art, para); }
+        p.innerHTML = got.rows.length ? got.rows.map((x) => `<button type="button" class="case-ln" data-case="${esc(x.no)}">${esc(x.no)}</button> ${esc(x.result || '')}${x.date ? ' · ' + esc(x.date) : ''}${x.oldName ? ` · <span class="cs-was">구 ${esc(x.oldName)}</span>` : ''}`).join('<br>') + (got.total > got.rows.length ? `<br>외 ${got.total - got.rows.length}건` : '') : '없습니다';
+      } catch (e) { p.textContent = unreached(e, '심판한 결정을') || (navigator.onLine === false ? unreached({ code: 'offline' }, '심판한 결정을') : '') || '지금은 찾지 못했습니다'; }
+      this.notePlace();
+    });
+  }
+  // an article of a law as it read before a 전부개정 (renamed by it — 정치자금에관한법률 → 정치자금법 — or written anew under the
+  // same name — 식품위생법 2009): its numbers do not carry over, so today's article of that number is not shown as it. What
+  // is shown: what became of it (laws.successor's note), the article as it read then where the mirror keeps that version,
+  // and the articles of today's law that took its place (the 신구 대비 map first, then the likeliest by title and words, the
+  // citing sentence's words among them), each opened with a tap; and the 헌재 decisions on it under its old name
+  async artWhole(v, head, body, r, w, outTo) {
+    const lbl = `${artLabel(r)}${r.para ? ` 제${r.para}항` : ''}`;
+    head.textContent = `구 ${w.name} ${lbl}`; v.copy = `구 ${w.name} ${lbl}${w.date ? ` (${w.date} 전부개정 전)` : ''}`;
+    const words = citeWords(r.ctx, [w.name, r.law]);
+    let suc = null;
+    try { suc = typeof lawsMod.successor === 'function' ? await lawsMod.successor(w.name, r.art, w.date || '', { words }) : null; } catch (e) { suc = null; }
+    if (this.noteView !== v) return;
+    const band = `<p class="lc-ahead lc-old">${esc((suc && suc.note) || oldBand(r.old, r.by || 'paper'))}</p>`;
+    const old = suc && suc.old && suc.old.text ? suc.old : null;
+    const then = old ? `<div class="cs-name">그때 조문 · ${artLabel(r)}${old.title ? `(${esc(old.title)})` : ''}</div>${old.d ? `<div class="cs-meta">${esc(dateText(String(old.d).replace(/-/g, '')))} 공포된 조문</div>` : ''}`
+      + `<div class="lc-t">${paras(old).map((t, k) => `<p class="${r.para === k + 1 ? 'on' : ''}">${linkCases(t)}</p>`).join('')}</div>` : '';
+    if (old) v.copy = `구 ${w.name} ${lbl}${w.date ? ` (${w.date} 전부개정 전)` : ''}\n${(r.para && paras(old)[r.para - 1]) || old.text}`;
+    const cs = (suc && suc.candidates) || [];
+    const why = { map: '신구 대비', title: '제목이 같음', text: '내용이 비슷함', words: '본문 낱말', same: '같은 번호' };
+    const succ = cs.length ? `<div class="cs-name">이어받은 현행 조문${cs.some((c) => c.why === 'map') ? '' : '(후보)'}</div><p class="lc-succ">${cs.map((c) => `<button type="button" class="case-ln" data-art="${esc(`${c.law} ${artLabel(c)}`)}">${esc(c.law)} ${artLabel(c)}</button>${c.title ? `(${esc(c.title)})` : ''}${why[c.why] ? ` · ${why[c.why]}` : ''}`).join('<br>')}</p>`
+      : `<p class="cs-wait">${navigator.onLine === false ? unreached({ code: 'offline' }, '이어받은 현행 조문을') : '이어받은 현행 조문을 찾지 못했습니다. 국가법령정보센터의 신구법 비교에서 확인하세요.'}</p>`;
+    const nowName = (suc && suc.now) || w.now || r.law;
+    const links = `<p><a class="btn ghost small" href="${lawGoKr.oldNew ? lawGoKr.oldNew(nowName) : lawGoKr.search(nowName)}" target="_blank" rel="noopener">국가법령정보센터 신구법 비교</a> ${outTo(null)}</p>`;
+    // (the decisions on it: asked under the old name and number — a same-name 전부개정's old number is today's too: not asked)
+    const fold = w.kind === 'rename' ? `<details class="cs-fold" data-reviewed><summary>이 조문을 심판한 헌재 결정</summary><p></p></details>` : '';
+    body.innerHTML = band + then + succ + links + fold;
+    if (fold) this.wireReviewed(body, w.name, r.art, r.para);
     this.notePlace();
   }
   // near where it was opened: below that point when there is room, else above. The side is chosen once, for the room the
@@ -1784,16 +1884,34 @@ export class Reader {
 
   /* ---------------- actions ---------------- */
   action(a, b) {
-    if (a === 'search') { const f = this.$('.rd-find'); f.hidden = false; const i = f.querySelector('input'); i.focus(); i.select(); return; }
+    // (찾기 and the 목차·표시 panel are never open together: the one opened puts the other away — 찾기's words and hits are kept
+    // and come back with it)
+    if (a === 'search') { this.setPanel(false); const f = this.$('.rd-find'); f.hidden = false; const i = f.querySelector('input'); i.focus(); i.select(); return; }
     if (a === 'closefind') { this.$('.rd-find').hidden = true; this.findQ = ''; this.hits = []; this.$('.rd-find-list').hidden = true; this.$('.rd-find-n').textContent = ''; this.root.querySelectorAll('.hit').forEach((x) => x.remove()); return; }
     if (a === 'next' || a === 'prev') { if (this.hits && this.hits.length) this.gotoHit((this.hitI + (a === 'next' ? 1 : -1) + this.hits.length) % this.hits.length); return; }
-    if (a === 'panel') { const pn = this.$('.rd-panel'); pn.hidden = !pn.hidden; this.root.classList.toggle('with-panel', !pn.hidden); if (!pn.hidden) this.showTab(this.tab || 'toc'); return; }
+    // (.rd.panel-open, 8차 계약: the 목차·표시 panel is open — the shell hides the tools and the page number under it)
+    if (a === 'panel') { this.setPanel(this.$('.rd-panel').hidden); return; }
     if (a === 'share') { this.o.onShare && this.o.onShare(b); return; }
     if (a === 'jump') { this.jump(); return; }
     if (a === 'zin') this.zoomBy(1.2);
     if (a === 'zout') this.zoomBy(1 / 1.2);
   }
 
+  // the 목차·표시 panel opened or closed: .rd.panel-open (and with-panel, as before) while it is open — under 1100 px the shell
+  // hides the floating tools and the page number then, and the scrim beside it closes it; 찾기 is put away while it is open
+  setPanel(open) {
+    const pn = this.$('.rd-panel');
+    if (!pn || this.dead) return;
+    if (open && !this.$('.rd-find').hidden) this.$('.rd-find').hidden = true;
+    pn.hidden = !open;
+    this.root.classList.toggle('with-panel', open); this.root.classList.toggle('panel-open', open);
+    this.scrimFit();
+    if (open) this.showTab(this.tab || 'toc');
+  }
+  scrimFit() {   // (only where the panel lies over the pages: under 1100 px; beside them it needs none)
+    const sc = this.$('.rd-scrim');
+    if (sc) sc.hidden = !(this.root.classList.contains('panel-open') && this.root.clientWidth < 1100);
+  }
   async loadOutline() {
     try {
       const ol = await this.doc.getOutline();
@@ -1846,7 +1964,7 @@ export class Reader {
       return;
     }
     const t = e.target.closest('[data-toc]');
-    if (t) { const x = this.outline[Number(t.dataset.toc)]; this.scrollToPage(x.page, x.y && this.pages[x.page] ? x.y / this.pages[x.page].h : 0); if (innerWidth < 900) this.action('panel'); return; }
+    if (t) { const x = this.outline[Number(t.dataset.toc)]; this.scrollToPage(x.page, x.yf != null ? x.yf : x.y && this.pages[x.page] ? x.y / this.pages[x.page].h : 0); if (innerWidth < 900) this.action('panel'); return; }
     const m = e.target.closest('[data-mark]');
     if (m) {
       const mk = this.allMarks.find((x) => x.id === m.dataset.mark);
@@ -1955,8 +2073,65 @@ export class Reader {
       if (p.snap) URL.revokeObjectURL(p.snap);
       try { p.pdfPage && p.pdfPage.cleanup(); } catch (e) { /* ignore */ }
     }
+    if (this.coverUrl) URL.revokeObjectURL(this.coverUrl);
+    this.painted();
     this.root.remove();
   }
+}
+
+// a citation of an article as it read before a 전부개정: { name (the law then), date, now, kind: 'rename' | 'same' } or null.
+// ref.old is laws.scan's note: '정치자금에관한법률: 2005. 8. 4. 전부개정 전' (a name a 전부개정 replaced), or the paper's own
+// '(2009. 2. 6. 법률 제9432호로 전부 개정되기 전의 것)'
+function wholeOld(r) {
+  const o = String((r && r.old) || '').trim();
+  if (!o) return null;
+  const nm = /^([^:]+?):\s*(.*)$/.exec(o);
+  const ol = nm && typeof lawsMod.oldLaw === 'function' ? lawsMod.oldLaw(nm[1]) : null;
+  if (ol && ol.whole && !ol.gone) return { name: ol.name, date: ol.date || '', now: ol.now || r.law, kind: 'rename' };
+  if (ol) return null;   // (renamed only: the numbers stay — today's article, said so)
+  if (!/전부\s*개정/.test(o)) return null;
+  const d = /((?:19|20)\d{2})\s*[.년]\s*(\d{1,2})\s*[.월]\s*(\d{1,2})/.exec(o);
+  return { name: r.law, date: d ? `${d[1]}. ${Number(d[2])}. ${Number(d[3])}.` : '', now: r.law, kind: 'same' };
+}
+// the words of the sentence a citation stands in, for finding the article that took an old one's place ('기부', '정치자금',
+// '수수'): Korean words of two letters or more, their endings (조사) taken off, the law's own name and the words every
+// article has left out
+const CITE_STOP = new Set(['법률', '조문', '규정', '경우', '이하', '관한', '대한', '따른', '따라', '의하여', '위반', '처벌', '해당', '같은', '이러한', '그러나', '또한', '있는', '없는', '것이', '것은', '하는', '한다', '이다', '있다', '없다', '된다', '및', '등']);
+export function citeWords(ctx, names = []) {
+  const skip = new Set(names.filter(Boolean).map((n) => String(n).replace(/\s/g, '')));
+  const out = [];
+  for (const m of String(ctx || '').matchAll(/[가-힣]{2,}/g)) {
+    let w = m[0].replace(/(?:으로|에서|에게|에는|이나|이라|이며|이고|하여|하는|되는|된|한|은|는|이|가|을|를|의|에|와|과|도|로)$/, '');
+    if (w.length < 2 || CITE_STOP.has(w) || [...skip].some((n) => n.includes(w) || w.includes(n)) || /^제\d*/.test(w)) continue;
+    if (/(?:개정|제정|폐지|시행|공포)$/.test(w) || /(?:하였|했|되었|됐|하며|하고|는데|으며|였다|한다|된다|있다|없다)/.test(w)) continue;   // (the history and the verbs say nothing of the article)
+    if (!out.includes(w)) out.push(w);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+// a passage sent to 다듬기: the page's lines run together again as the paragraphs they were. A line ends a paragraph when it
+// ends a sentence and falls short of the passage's full lines (a single line break is the page's, not the author's); an
+// empty line ends one too. Each paragraph is then joined as 복사 joins lines (Korean syllables meeting at a line's end are
+// one word, anything else meets across a space, a word broken at a hyphen is mended) — so what is polished is the prose,
+// paragraph by paragraph, not the page's layout.  lines: the visual lines; join(lines) → one paragraph's text
+export function polishText(lines, join = (ls) => ls.join(' ')) {
+  // (a line that ends in a space keeps it for the join: '선거 ' + '운동' is two words, as 복사 has them; the tests read it trimmed)
+  const ls = (lines || []).map((l) => String(l || '').replace(/[ \t\u00a0\u3000]+/g, ' ').replace(/^ /, ''));
+  const lens = ls.map((l) => l.trim()).filter(Boolean).map((l) => [...l].length).sort((x, y) => x - y);
+  const wide = lens.length >= 3 ? lens[Math.floor(lens.length * 0.75)] : 0;   // (a full line: the passage's longer lines)
+  const out = [];
+  let cur = [];
+  const flush = () => { if (cur.length) { const t = join(cur).trim(); if (t) out.push(t); cur = []; } };
+  for (let i = 0; i < ls.length; i++) {
+    const l = ls[i].trim();
+    if (!l) { flush(); continue; }
+    cur.push(ls[i]);
+    const ends = /(?:[.?!。．]|[.?!]["”’」』)\]])$/.test(l), short = wide && [...l].length < wide * 0.8;
+    if (ends && short) flush();
+  }
+  flush();
+  return out.join('\n\n');
 }
 
 let ocrMeasure = null;

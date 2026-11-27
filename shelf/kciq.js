@@ -6,7 +6,7 @@
 // is narrowed (by journal, by year) and ordered (최신·피인용) without reading a row. Rows for the page shown come from m/.
 // The parts are fetched as needed and kept on this device until the index is made again, so a search asked again, or
 // offline, is answered at once.
-import * as store from './store.js?v=3dab24bfa8';
+import * as store from './store.js?v=c7790c4af0';
 
 const BASE = new URL('./kciq/', import.meta.url);
 const LETTERS = /[^0-9A-Za-zㄱ-ㆎ가-힣㐀-䶿一-鿿豈-﫿]+/g;
@@ -187,3 +187,59 @@ export async function search(q, { journal = -1, y0 = 0, y1 = 9999, sort = 'rel',
 // the journals, as [name, publisher, count], most papers first (for the 골라 보기 list)
 export async function journals() { const v = await version(); return v ? v.journals : []; }
 export async function ready() { return !!(await version()); }
+// 8차: a journal's issues in the index, newest first, for the journal page's headers — journal as search takes it (an
+// index, or "name\u0001publisher"). Each issue: its volume and number as KCI gives them, its month ('2026. 10.'; the year
+// alone when the month is unknown), how many of its papers the index holds, its key (issueKey of a row, for grouping a
+// list's rows under it), and gapAfter: true when the issue after it in the list (the older one) is not the one before it
+// (same volume and a number more than one apart, or volumes more than one apart, or the next older volume's last issue
+// not reached: 제23권 제3호 → 제21권 제1호) — the issues between are ones the index has not gathered. from / to: the oldest
+// and newest issue's date; count: papers.
+//   → { issues: [{ vol, no, date, n, key, gapAfter }], from, to, count, gaps }   (an empty answer when the index is not here)
+export const issueKey = (r) => [r.v || '', r.i || '', r.y || ''].join('|');
+export async function issues(journal) {
+  const none = { issues: [], from: '', to: '', count: 0, gaps: 0 };
+  const v = await version().catch(() => null);
+  if (!v) return none;
+  const r = await search('', { sort: 'new', journal, page: 1, size: v.n }).catch(() => null);
+  if (!r || !r.rows.length) return none;
+  const at = new Map();
+  for (const x of r.rows) {
+    const k = issueKey(x);
+    let g = at.get(k);
+    if (!g) { g = { vol: x.v || '', no: x.i || '', date: x.y ? `${x.y}.${x.m ? ` ${x.m}.` : ''}` : '', n: 0, key: k, ym: Number(x.y || 0) * 13 + Number(x.m || 0) }; at.set(k, g); }
+    g.n++;
+  }
+  const list = [...at.values()].sort((a, b) => b.ym - a.ym || (Number(b.vol) || 0) - (Number(a.vol) || 0) || (Number(b.no) || 0) - (Number(a.no) || 0));
+  // (how many issues a volume of this journal has, as far as the index shows: the highest number seen)
+  const most = Math.max(0, ...list.map((g) => Number(g.no) || 0));
+  let gaps = 0;
+  list.forEach((g, k) => {
+    const o = list[k + 1];
+    if (!o) { g.gapAfter = false; return; }
+    const v1 = Number(g.vol), v0 = Number(o.vol), n1 = Number(g.no), n0 = Number(o.no);
+    let gap;
+    if (v1 && v0 && n1 && n0) gap = v1 === v0 ? n1 - n0 > 1 : v1 - v0 > 1 || (v1 - v0 === 1 && (n1 > 1 || (most && n0 < most)));
+    else if (n1 && n0 && !v1 && !v0) gap = n1 - n0 > 1;   // (numbered by issue alone)
+    else gap = !!(g.ym && o.ym && g.ym - o.ym > 13 * 1);   // (no numbers: more than a year apart)
+    g.gapAfter = !!gap;
+    if (gap) gaps++;
+  });
+  return { issues: list.map(({ ym, ...g }) => g), from: list[list.length - 1].date, to: list[0].date, count: r.rows.length, gaps };
+}
+// 8차: the index's rows that pass a test (a case number in a title or the start of an abstract, which the two-letter
+// pieces do not hold): every row read, a block at a time (blocks kept on this device), newest first. Up to `most`.
+export async function rowsHolding(test, { most = 40 } = {}) {
+  const v = await version();
+  if (!v) return [];
+  const out = [];
+  const nb = Math.min(Math.ceil(v.n / v.block), 60);   // (a far larger index would want an index of its own)
+  for (let b = 0; b < nb && out.length < most; b++) {
+    for (let k = 0; k < v.block && out.length < most; k++) {
+      const id = b * v.block + k;
+      if (id >= v.n) break;
+      const r = await rowOf(v, id).catch(() => null);
+      if (r && test(r)) out.push(r);
+    }
+  }
+  return out;
+}

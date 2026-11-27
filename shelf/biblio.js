@@ -7,8 +7,8 @@
 // What the paper itself prints stays: the libraries only fill what is missing (a journal read with something around it —
 // ❙선거연구❙ 2026년, 뺷입법과 정책뺸 — is set right from itself, or, when nothing is left of it, filled in).
 // Pure functions: the app asks the libraries and keeps the answer (app.js libraryInfo).
-import * as naming from './naming.js?v=3dab24bfa8';
-import { normalize, cleanName } from './cite.js?v=3dab24bfa8';
+import * as naming from './naming.js?v=c7790c4af0';
+import { normalize, cleanName } from './cite.js?v=c7790c4af0';
 
 export const norm = (s) => naming.hangulize(String(s || '')).replace(/<[^>]+>/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
 export const mainTitle = (t) => { const m = /^(.{8,}?)\s+[-―—–]\s*\S.*$/.exec(t) || /^(.{8,}?)\s*:\s*\S.*$/.exec(t); return (m ? m[1] : String(t)).trim(); };

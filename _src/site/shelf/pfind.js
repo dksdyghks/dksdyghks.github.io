@@ -12,6 +12,7 @@ import * as api from './api.js';
 import * as papers from './papers.js';
 import * as kciq from './kciq.js';
 import * as naming from './naming.js';
+import * as terms from './terms.js';
 
 export const PAGE = 20;                                   // papers shown at a time
 const SIZE = { idx: 20, nanet: 20, kci: 50, so: 20 };     // asked of each source at a time (KCI has no order by relevance of its
@@ -99,12 +100,7 @@ const person = (s) => naming.personName(s) || papers.clean(s);
 // a title as the others write it: 국회도서관's catalogue marks (' :부제', ' =부제') as KCI's ' - 부제 -', and quotation marks a
 // database doubled (''관습헌법'', ''''관습헌법'''') as one pair. (' = ' before a title in another script, English, is that title
 // in the other tongue, and stays.)
-export function tidyTitle(t) {
-  let s = String(t == null ? '' : t).replace(/\s+/g, ' ').trim().replace(/'{2,}([^']{1,80}?)'{2,}/g, '‘$1’').replace(/'{2,}/g, "'");
-  const m = /^(.*?[가-힣].*?)\s+[:=]\s*(.*[가-힣].*)$/.exec(s);
-  if (m && !/^[-―—–]/.test(m[2])) s = `${m[1]} - ${m[2].replace(/\s*[-―—–]\s*$/, '')} -`;
-  return s;
-}
+export const tidyTitle = papers.tidyTitle;
 // an abstract without the label some write before it ('국문초록 본 연구는 …', '요 약', 'Abstract')
 const AB_LABEL = /^\s*[[(〈<【]?\s*(?:국문\s*초록|국문\s*요약|한글\s*초록|초\s*록|요\s*약|요\s*지|abstract|summary)\s*[\])〉>】]?(?=[\s:：.\-–—]|$)[\s:：.\-–—]*/i;
 const tidyAb = (s) => String(s || '').replace(AB_LABEL, '');
@@ -123,29 +119,40 @@ function fromSo(x) {
   };
 }
 
-/* ---------- what kind of piece: a journal's paper, a magazine's (잡지·기사), or an issue's front matter ----------
-   국회도서관 indexes weeklies and monthlies with the journals and writes nothing that tells them apart, so the journal's name
-   does: one KCI lists is a journal (kci-journals.json, given by setJournals); else a name that says weekly, monthly, news … is a
-   magazine. KCI's own papers (and the index's) are always a journal's. */
+/* ---------- what kind of piece: a journal's paper, another piece (그 밖의 글: a magazine's, a newspaper's, a forum's), or an
+   issue's front matter ----------
+   국회도서관 indexes weeklies, monthlies and newsletters with the journals and writes nothing that tells them apart (no ISSN
+   comes with its rows), so the journal's name does: one KCI lists is a journal's (kci-journals.json, given by setJournals),
+   as are the journals named the way scholarly ones are (…학회지, …논총, …연구, …법학, …Review); a name that says weekly,
+   monthly, news … is a magazine's, and so is any other name (폴리피플, 미래한국, 프레지던트, 문학공간). KCI's own papers (and the
+   index's) are always a journal's; so is a row that names no journal (nothing to tell it by). */
 let KJ = null, kjGen = 0;
 export function setJournals(list) {
   if (!Array.isArray(list) || !list.length || KJ) return;
   KJ = new Set(); kjGen++;
   for (const j of list) { const k = jkey(j && j.k); if (k) KJ.add(k); }
 }
-const MAG = /주간|월간|격주간|격월간|시사|뉴스|신문|한겨레|매거진|이코노미스트|weekly|monthly|magazine|newsweek/i;
-const MAG_NAMES = new Set(['anda', '국회보', '신동아', '통일']);
+const MAG = /주간|월간|격주간|격월간|시사|뉴스|신문|한겨레|매거진|이코노미스트|weekly|monthly|magazine|newsweek|people|피플|입법민원/i;
+const MAG_NAMES = new Set(['anda', '국회보', '신동아', '통일', '고시계', '월간조선', '시사저널', '이달의입법민원']);
+// a council's or a group's plea, not a paper (국회도서관 files the 이달의 입법민원 issues' 건의문 · 결의문 · 성명서 as articles)
+const PLEA = /(?:촉구\s*)?(?:건의문|건의안|결의문|결의안|성명서|촉구문|규탄문|호소문|탄원서|청원서)(?:\s*$|\s*[-–—―(（])|촉구\s*(?:건의|결의)(?:\s*$|\s*[-–—―(（])/;
+const ACADEMIC = /학회|학보|논총|논집|논문|연구|학$|법학|법과|법률|판례|법$|사법|법조|법제|입법|헌법|공법|행정|정치|정의|인권|공익|선거|저스티스|정책|사회과학|저널|학술|대학|review|journal|law|studies|bulletin|quarterly|annals|proceedings/i;
 const FRONT = /^[\s[(〈《「『<【]*(?:발간사|發刊辭|권두언|卷頭言|머리말|머리글|편집후기|編輯後記|축사|祝辭|인사말|간행사|刊行辭|창간사|創刊辭|책머리에|격려사|기념사)\s*(?:$|[\])〉》」』>】:：\-–—―·,]|\s+[-–—―:：])/;
-export function magazine(name) {
+// a journal of scholarship, by its name (see above)
+export function scholarly(name) {
   const k = jkey(name);
-  if (!k || (KJ && KJ.has(k))) return false;
-  return MAG.test(naming.hangulize(papers.clean(name))) || MAG_NAMES.has(k);
+  if (!k) return false;
+  if (KJ && KJ.has(k)) return true;
+  const h = naming.hangulize(papers.clean(name));
+  if (MAG.test(h) || MAG_NAMES.has(k)) return false;
+  return ACADEMIC.test(h);
 }
-// 0 a journal's paper (or a thesis, a book), 1 a magazine piece, 2 front matter (발간사, 권두언 …)
+export function magazine(name) { return !!jkey(name) && !scholarly(name); }
+// 0 a journal's paper (or a thesis, a book), 1 another piece (그 밖의 글), 2 front matter (발간사, 권두언 …)
 export function venue(r) {
   if (r.ver && r._vv === r.ver + ':' + kjGen) return r._vg;   // (asked again and again while a list is sorted: kept until the paper changes)
   const g = r.kind && r.kind !== 'ARTICLE' ? 0 : FRONT.test(papers.clean(r.t)) ? 2
-    : r.kci || (r.srcs && (r.srcs.has('kci') || r.srcs.has('idx'))) ? 0 : r.journal && magazine(r.journal) ? 1 : 0;
+    : r.kci || (r.srcs && (r.srcs.has('kci') || r.srcs.has('idx'))) ? 0 : (r.journal && magazine(r.journal)) || PLEA.test(papers.clean(r.t)) ? 1 : 0;
   if (r.ver) { r._vv = r.ver + ':' + kjGen; r._vg = g; }
   return g;
 }
@@ -183,6 +190,7 @@ const RANK = { kci: 0, idx: 1, so: 2, nanet: 3 };   // whose word stands for the
 const GRADE = new Map();   // a journal's KCI standing (등재, 등재후보) as KCI's answers gave it, for its papers from any source
 function enrich(r, p, seq) {
   r.srcs.add(p.src);
+  if (!p.relax) r.exact = true;   // (a paper the question itself found, not only one of its words: see View.relax)
   if (!r.parts[p.src]) r.parts[p.src] = p;
   const rk = RANK[p.src];
   for (const k of ['t', 'journal', 'publisher', 'y', 'm', 'v', 'i', 'fp', 'lp']) if (p[k] && (!r[k] || rk < (r.from[k] ?? 9))) { r[k] = String(p[k]); r.from[k] = rk; }
@@ -195,7 +203,7 @@ function enrich(r, p, seq) {
   if (p.open) r.open = true;
   if (p.affs && p.affs.length && !(r.affs && r.affs.length)) r.affs = p.affs;
   if (p.affOf) r.affOf = { ...p.affOf, ...(r.affOf || {}) };
-  if (p.kw && p.kw.length) r.kw = [...new Set([...(r.kw || []), ...p.kw])];
+  if (p.kw && p.kw.length) r.kw = papers.koFirst([...new Set([...(r.kw || []), ...p.kw])]);
   if (p.so && !r.so) r.so = p.so;
   if (p.at && !r.at) r.at = p.at;
   r.tk = norm(mainOf(r.t)); r.fk = norm(r.t); r.sub = subOf(r.t);
@@ -308,6 +316,67 @@ export function scorer(q) {
     return score;
   };
 }
+// the words of a question, each with the other forms the shelf's synonym groups give it (terms.expand), as the score reads
+// them: [['선거운동'], ['과잉금지원칙', '과잉금지', '비례원칙', '비례의원칙']]
+const formsOf = (q) => kciq.words(q).map(kciq.bare).filter((w) => w.length >= 2).map((w) => [...new Set([w, ...terms.expand(w)].map(norm).filter(Boolean))]);
+// a widened question's papers, by how many of its words (in any of their forms) they hold — in the title 3, among the
+// subjects 2, in the abstract 1 (a long word by its two halves a little less) — the year a tiebreak
+// words found in titles of every kind: never a question's point by themselves
+const GENERIC = new Set(['위원회', '독립성', '필요성', '가능성', '문제점', '개선방안', '방안', '문제', '제도', '연구', '고찰', '검토', '쟁점', '과제', '현황',
+  '역할', '기능', '의미', '효과', '영향', '관계', '기준', '한계', '비교', '분석', '방향', '개선', '현상', '특징', '중심', '사례', '실태', '이론', '논의']);
+const generic = (w) => { const k = norm(w); return GENERIC.has(k) || (terms.isLegalTerm(w) && !terms.groupOf(w).length); };
+function widerScorer(q) {
+  const groups = formsOf(q);
+  const best = (f, g) => { let b = 0; for (const w of g) b = Math.max(b, f.T.includes(w) || f.A.includes(w) ? 3 : f.K.includes(w) ? 2 : f.B.includes(w) ? 1 : halves(f.T, w) ? 2.2 : halves(f.K, w) ? 1.5 : 0); return b; };
+  const score = (r) => {
+    const f = fieldsOf(r);
+    let sum = 0;
+    for (const g of groups) sum += best(f, g);
+    const y = Number(r.y) || 0;
+    // (a law journal's paper a little before another field's holding as many words: 재량권 in 토지공법연구 before 재량권 in 정부학연구)
+    return sum + (LAWJ.test(naming.hangulize(papers.clean(r.journal || ''))) ? 0.8 : 0) + (y ? 0.4 * Math.min(1, Math.max(0, (y - 1980) / 46)) : 0);
+  };
+  // a similar paper holds at least one of the words that say something by themselves (not GENERIC, not a common word of
+  // the law), when the question has one: '위원회' alone, of '선거구획정 위원회 독립성', makes nothing similar
+  const telling = groups.map((g) => !generic(g[0]));
+  score.telling = (r) => { if (!telling.some(Boolean)) return true; const f = fieldsOf(r); return groups.some((g, k) => telling[k] && best(f, g) > 0); };
+  return score;
+}
+const LAWJ = /법|판례|헌법|공법|행정|입법|선거|정당|사법|법조|저스티스|인권|law/i;
+// the asks a widened question makes: with one word fewer (the shortest, most common one let go first), then two words at a
+// time — each word also in its other forms (선거운동 과잉금지 · 선거운동 비례원칙 · 선관위 독립성) — then each word alone.
+// 국회도서관 gets the first three, and (singles) the two longest words alone when those bring too few; this device's index
+// up to twelve of them all
+export function widerQuestions(q) {
+  const raw = [...new Set(kciq.words(q).map(kciq.bare).filter((w) => w.length >= 2))];
+  if (raw.length < 2) return { nanet: [], singles: [], idx: [] };
+  const forms = raw.map((w) => [...new Set([w, ...terms.expand(w)].map((x) => String(x).trim()).filter(Boolean))]);
+  const whole = norm(raw.join(''));
+  const asks = [];
+  const push = (ws) => { const t = ws.join(' '), k = norm(t); if (k && k !== whole && !asks.some((x) => norm(x) === k)) asks.push(t); };
+  const byLen = raw.map((w, i) => i).sort((a, b) => raw[b].length - raw[a].length);
+  // (two words: each in its other forms, the other as typed; more: one word fewer first, as a question of many words
+  // finds nothing mostly for one too many)
+  const synonyms = () => { for (let i = 0; i < raw.length; i++) for (const f of forms[i].slice(1)) push(raw.map((w, k) => (k === i ? f : w))); };
+  if (raw.length > 2) for (const drop of byLen.slice().reverse()) push(raw.filter((w, k) => k !== drop));
+  synonyms();
+  for (let a = 0; a < byLen.length; a++) for (let b = a + 1; b < byLen.length; b++) {
+    const i = byLen[a], j = byLen[b];
+    for (const fi of forms[i]) for (const fj of forms[j]) if (raw.length > 2 || fi !== raw[i] || fj !== raw[j]) push(i < j ? [fi, fj] : [fj, fi]);
+  }
+  const pairs = asks.slice();
+  // (a word alone only when it says something by itself: three letters or more, not a common word of the law (요건 · 선거 ·
+  // 남용) nor a common word of any title (위원회 · 독립성 · 방안: GENERIC) — asked alone, those bring papers on anything that
+  // has them; a word with other names (선관위, 과잉금지원칙) is a notion of its own)
+  const alone = byLen.filter((i) => raw[i].length >= 3 && !generic(raw[i]));
+  for (const i of alone) for (const f of forms[i]) push([f]);
+  // (a word alone, the longest first: asked of 국회도서관 only when the others bring too few — a second round, two at most)
+  const singles = alone.map((i) => raw[i]).slice(0, 2);
+  return { nanet: pairs.slice(0, 3), singles, idx: asks.slice(0, 12) };
+}
+const rx = (s) => !!(s && s.opts && s.opts.relax);
+// 을/를, 이/가 … by the word's last letter
+const josa = (w, withF, without) => { const c = String(w || '').charCodeAt(String(w || '').length - 1) - 0xac00; return c >= 0 && c < 11172 && c % 28 ? withF : without; };
 // the paper says every word in its title, its keywords, its authors' names or its journal's name (not only in its abstract
 // or its full text, where 국회도서관 also finds them)
 export function holder(q) {
@@ -332,7 +401,7 @@ const wkey = (q) => kciq.words(q).join(' ') || String(q || '').trim();
 const ASK = {
   idx: (q, o, page) => once(['idx', wkey(q), page, o.sort, o.journal || ''].join('\u0001'), async () => {
     if (!(await kciq.ready())) throw Object.assign(new Error('kciq'), { code: 'unavailable' });
-    const r = await kciq.search(q, { sort: o.sort, journal: o.journal || -1, page, size: SIZE.idx, facets: page === 1 && !o.journal });
+    const r = await kciq.search(q, { sort: o.sort, journal: o.journal || -1, page, size: SIZE.idx, facets: page === 1 && !o.journal && !o.relax });
     // (with the first page, how many of the whole answer each journal holds: the index knows it without reading a row)
     const jf = r.jFacet && r.jFacet.length ? r.jFacet.map(([ji, n]) => [(r.journals[ji] || [''])[0], n]).filter((x) => x[0]) : null;
     return { total: r.total, rows: r.rows.map(fromIdx), common: r.common, jf };
@@ -409,7 +478,7 @@ class Feed {
     if (!s.more || (s.state === 'err' && refused(s.err))) return Promise.resolve();
     const page = s.page + 1;
     s.state = 'busy';
-    return (s.p = ASK[s.base](this.q, { ...s.opts, kind: this.kind }, page).then((r) => {
+    return (s.p = ASK[s.base]((s.opts && s.opts.rq) || this.q, { ...s.opts, kind: this.kind }, page).then((r) => {
       const rows = r.rows || [];
       // (r.kept: only some of what the source gave are this question's — a person's papers on a topic — so its count is of
       // those kept so far, and the source says itself whether it has more, and up to which page it read)
@@ -417,7 +486,7 @@ class Feed {
       if (r.jf) s.jf = r.jf;
       if (r.seen) s.seen = true;
       s.more = r.more != null ? !!r.more : rows.length > 0 && page * SIZE[s.base] < s.total;
-      for (const p of rows) this.pool.add(p, this.seq++);
+      for (const p of rows) this.pool.add(rx(s) ? { ...p, relax: true } : p, this.seq++);
       this.tell(s);
     }, (e) => { s.state = 'err'; s.err = e; this.tell(s); }));
   }
@@ -453,7 +522,8 @@ const PERSON = /^[가-힣]{2,5}$/;
 // names end as the words of the law do too (김중권, 윤재학, 박종권) and some have two letters (허영), so probe() asks for those
 // as well; but the screen offers '…의 글에서 … 찾기' (hint) only for a word that does not read as a word (WORDLIKE: 정당법,
 // 기본권, 정치학, 선거), unless an answer has shown that it is someone's
-const NAMELIKE = (w) => /^[가-힣]{2,4}$/.test(w) && (w.length === 4 ? /^(?:남궁|선우|독고|제갈|황보|사공|서문|동방|어금|망절)/.test(w) : naming.isSurnameStart(w));
+// (never a word of the law: 남용, 일탈, 처분, 재량 … — terms.isLegalTerm — are words, whatever surname they begin with)
+const NAMELIKE = (w) => /^[가-힣]{2,4}$/.test(w) && !terms.isLegalTerm(w) && (w.length === 4 ? /^(?:남궁|선우|독고|제갈|황보|사공|서문|동방|어금|망절)/.test(w) : naming.isSurnameStart(w));
 const WORDLIKE = (w) => w.length === 2 || /[법론적의권률령칙학]$/.test(w);
 // the names the app knows for people's (the owner's, the shelf's authors): setPeople, from the screen
 const PEOPLE = new Set();
@@ -461,13 +531,20 @@ export function setPeople(names) { for (const n of names || []) { const k = Stri
 class View {
   constructor(f, sort, journal, idxJournals) {
     Object.assign(this, { f, sort, j: journal ? jkey(journal) : '', jname: journal ? String(journal).split('\u0001')[0] : '', shown: [], set: new Set(), who: '', addedAt: 0 });
-    const sc = scorer(f.q), memo = new Map(), holds = holder(f.q);
+    const sc = scorer(f.q), memo = new Map(), holds = holder(f.q), wide = widerScorer(f.q), wmemo = new Map();
+    this.holds = holds;
     this.score = (r) => { if (!memo.has(r) || memo.get(r)[1] !== r._n) { const v = sc(r); memo.set(r, [v, r._n]); } return memo.get(r)[0]; };
+    this.wide = (r) => { if (!wmemo.has(r) || wmemo.get(r)[1] !== r._n) { const v = wide(r); wmemo.set(r, [v, r._n, wide.telling(r)]); } return wmemo.get(r)[0]; };
+    this.wideHeld = (r) => { this.wide(r); return wmemo.get(r)[2]; };   // (holds a word that says something: see widerScorer)
     const by0 = ORDER[sort](this.score);
-    // the group: [venue, not the person's own, said only in the abstract (최신) / no citation count (피인용)] as one number
-    this.g = (r) => venue(r) * 4 + (this.who && !this.own(r) ? 2 : 0) + (sort === 'new' ? (holds(r) ? 0 : 1) : sort === 'cited' ? (r.c == null ? 1 : 0) : 0);
-    // (a person's own papers newest first — but those on a topic asked with the name by how well they hold it)
-    this.cmp = (a, b) => this.g(a) - this.g(b) || (sort === 'rel' && this.who && !this.topic && this.own(a) ? ym(b) - ym(a) : 0) || by0(a, b) || tie(a, b);
+    // the level of a paper: 0 the question's own (a journal's paper), 1 a similar paper (found only when the question was
+    // widened, holding some of its words: View.relax), 2 another piece (그 밖의 글), 3 front matter
+    this.lv = (r) => { const v = venue(r); if (v === 2) return 3; if (this.relaxed && !r.exact && !holds(r)) return v === 0 ? 1 : 2; return v === 0 ? 0 : 2; };
+    // the group: [level, not the person's own, said only in the abstract (최신) / no citation count (피인용)] as one number
+    this.g = (r) => this.lv(r) * 4 + (this.who && !this.own(r) ? 2 : 0) + (sort === 'new' ? (holds(r) ? 0 : 1) : sort === 'cited' ? (r.c == null ? 1 : 0) : 0);
+    // (a person's own papers newest first — but those on a topic asked with the name by how well they hold it; similar
+    // papers by how many of the words they hold, title before subjects before abstract)
+    this.cmp = (a, b) => this.g(a) - this.g(b) || (sort === 'rel' && this.who && !this.topic && this.own(a) ? ym(b) - ym(a) : 0) || (sort !== 'new' && this.lv(a) === 1 ? this.wide(b) - this.wide(a) : 0) || by0(a, b) || tie(a, b);
     const kind = f.kind, art = kind === 'ARTICLE' || kind === '';
     const by = this.by = sort === 'new' ? 'new' : 'rel';   // (피인용 orders the same answers as 관련도: nothing more is asked of the servers)
     this.ids = [];
@@ -480,12 +557,15 @@ class View {
       this.add('kci:' + by + ':j:' + this.j, 'kci', { sort: by, journal: this.jname });
       for (const [nm, pb] of idxJournals || []) if (jkey(nm) === this.j) this.add('idx:' + by + ':j:' + nm + '\u0001' + pb, 'idx', { sort: by, journal: nm + '\u0001' + (pb || '') });
     }
-    f.hear.add(() => { if (f.cur === this) this.person(); });   // (before the screen hears of an answer: see person())
+    f.hear.add(() => { if (f.cur === this) { this.person(); this.relax(); } });   // (before the screen hears of an answer: see person())
   }
   add(id, base, opts) { this.f.source(id, base, opts); if (!this.ids.includes(id)) this.ids.push(id); }
   get srcs() { return this.ids.map((id) => this.f.srcs.get(id)); }
   keep(r) {
     if (this.j && jkey(r.journal) !== this.j) return false;
+    // (what only a widened ask found: a journal's paper holding some of the words in its title, subjects or abstract — one
+    // that says something by itself among them — not a magazine's piece, nor one that has them only in its full text)
+    if (this.relaxed && !r.exact && (venue(r) !== 0 || this.wide(r) < 1 || !this.wideHeld(r))) return false;
     const k = this.f.kind;
     if (k && k !== 'ARTICLE') return r.kind === k;
     if (k === 'ARTICLE') return !r.kind || r.kind === 'ARTICLE';
@@ -519,12 +599,12 @@ class View {
     if (this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return '';
     const probed = this.srcs.find((s) => s.opts && s.opts.probe && s.seen);
     const w = probed ? probed.opts.author : ws.find((x) => /^[가-힣]{2,4}$/.test(x) && (PEOPLE.has(x) || theirs(x)));
-    if (!w) return '';
+    if (!w || w === this.notName) return '';
     this.split(w);
     return w;
   }
   split(w) {
-    if (this.who) return;
+    if (this.who || w === this.notName) return;
     const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean), topic = ws.filter((x) => x !== w).join(' ');
     this.who = w; this.topic = topic;
     this.add('nanet:by:' + w, 'nanet', { author: w, topic });
@@ -537,6 +617,19 @@ class View {
   // is asked first (its authors are in it: no server asked); then 국회도서관 for that author's papers on the rest — its answer
   // decides (named). Once a question, two words at most; true when it asked anything (the screen waits for it)
   async probe() {
+    const named = await this.probeName();
+    return this.relax() || named;
+  }
+  // what probeName would ask about: the first or last of two words or more, read as a name, with nothing holding every word
+  mayBeName() {
+    if (this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return false;
+    const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean);
+    if (ws.length < 2) return false;
+    const holds = holder(this.f.q);
+    if (this.f.pool.recs.some((r) => this.keep(r) && holds(r))) return false;
+    return [ws[0], ws[ws.length - 1]].some(NAMELIKE);
+  }
+  async probeName() {
     if (this.who || this.probed || this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return false;
     const ws = String(this.f.q || '').trim().split(/\s+/).filter(Boolean);
     if (ws.length < 2) return false;
@@ -564,6 +657,67 @@ class View {
     return w ? { who: w, topic: ws.filter((x) => x !== w).join(' ') } : null;
   }
   force(w) { if (!this.who && String(this.f.q || '').trim().split(/\s+/).includes(w)) this.split(w); }   // (the offer taken)
+  /* Few papers hold every word (fewer than 10, the question of two words or more): the question is widened — asked again
+     of 국회도서관 (three asks at most) and of this device's KCI index (as many as it takes: nothing is sent) with fewer of its
+     words, and with the other forms the shelf's synonym groups give them (terms.expand: 과잉금지원칙 ↔ 비례원칙, 선관위 ↔
+     선거관리위원회). What only those asks found comes after the question's own papers, under '여기부터 비슷한 논문', ordered
+     by how many of the words each holds (title, then subjects, then abstract). Once a view, when every source asked for
+     the question itself has answered; a person's papers on a topic are widened only when that person has none on it.
+     True when it asked anything (the screen waits a little for it). */
+  relax() {
+    if (this.j || !(this.f.kind === 'ARTICLE' || this.f.kind === '')) return false;
+    if (this.relaxed) return this.relaxMore();
+    if (wordsOf(this.f.q).length < 2) return false;
+    // (the library asked for the question itself has answered — the others may still come: what they bring joins the
+    // question's own papers above)
+    const lib = this.srcs.filter((s) => s.base === 'nanet' && !rx(s) && !(s.opts && (s.opts.author || s.opts.probe)));
+    if (!lib.length || lib.some((s) => s.state === 'busy' || s.state === 'idle')) return false;
+    if (this.srcs.some((s) => s.opts && (s.opts.author || s.opts.probe) && (s.state === 'busy' || s.state === 'idle'))) return false;
+    if (this.who && (!this.topic || this.f.pool.recs.some((r) => this.keep(r) && this.own(r)))) return false;
+    // (a word that may be a name, nothing holding every word, and the name not asked about yet — '김대인 공법상 계약': the
+    // probe decides first (probe() asks it, then widens if it must), so a person's papers on a topic are not widened into
+    // the papers holding the name or the topic alone)
+    if (!this.who && !this.probed && this.mayBeName()) return false;
+    if (this.f.pool.recs.filter((r) => this.keep(r) && r.exact && venue(r) === 0).length >= 10) return false;
+    const qs = widerQuestions(this.f.q);
+    if (!qs.nanet.length && !qs.singles.length && !qs.idx.length) return false;
+    this.relaxed = 1;
+    this.later = qs.nanet.length ? qs.singles : [];
+    for (const q of qs.nanet.length ? qs.nanet : qs.singles) this.add('nanet:rx:' + q, 'nanet', { relax: true, rq: q, sort: 'rel' });
+    for (const q of qs.idx) this.add('idx:rx:' + q, 'idx', { relax: true, rq: q, sort: 'rel' });
+    this.addedAt = Date.now();
+    for (const s of this.srcs) if (s.state === 'idle') this.f.pull(s);
+    return true;
+  }
+  // (the second round: the first widened asks all answered and brought fewer than ten similar papers — the longest words
+  // asked alone)
+  relaxMore() {
+    if (this.relaxed !== 1 || !this.later || !this.later.length) return false;
+    if (this.srcs.some((s) => rx(s) && (s.state === 'busy' || s.state === 'idle'))) return false;
+    if (this.f.pool.recs.filter((r) => this.keep(r) && this.lv(r) === 1).length >= 10) { this.relaxed = 2; return false; }
+    this.relaxed = 2;
+    for (const q of this.later) this.add('nanet:rx:' + q, 'nanet', { relax: true, rq: q, sort: 'rel' });
+    this.addedAt = Date.now();
+    for (const s of this.srcs) if (s.state === 'idle') this.f.pull(s);
+    return true;
+  }
+  // a word taken for a person's name whose papers on the rest came to none: shown with what the words alone give, and a
+  // line the screen may offer — '‘남용’을 사람 이름으로 찾았습니다 · 낱말로 다시 찾기' (null when there is nothing to say)
+  nameNote() {
+    if (!this.who || !this.topic || PEOPLE.has(this.who)) return null;   // (one the app knows for a person: a person)
+    const by = this.srcs.filter((s) => /^(?:nanet|kci|so):by:/.test(s.id));
+    if (!by.length || by.some((s) => s.state === 'busy' || s.state === 'idle') || this.f.pool.recs.some((r) => this.keep(r) && this.own(r))) return null;
+    return { who: this.who, text: `‘${this.who}’${josa(this.who, '을', '를')} 사람 이름으로 찾았습니다`, again: '낱말로 다시 찾기' };
+  }
+  // … and taken: the word is a word again (for this question), the person's own sources left, the question widened
+  unsplit() {
+    if (!this.who || !this.topic) return false;
+    this.notName = this.who; this.who = ''; this.topic = '';
+    this.ids = this.ids.filter((id) => !/^(?:nanet|kci|so):by:/.test(id));
+    this.reset();
+    this.relax();
+    return true;
+  }
   // the sources asked (first pages), those that failed for a passing reason asked again: resolves at once
   start() {
     this.f.cur = this;
@@ -603,7 +757,9 @@ class View {
   held(g) { return g >= 2 || (this.sort === 'new' && g % 2 === 1); }   // a group kept for after the ones before it
   left(hidden) { return this.f.pool.recs.filter((r) => !this.set.has(r) && this.keep(r) && !(hidden && hidden(r))); }
   // what may be shown now: a held group only once no source can give more of the groups before it
-  avail(hidden) { const l = this.left(hidden); return this.srcs.some((s) => this.live(s)) ? l.filter((r) => !this.held(this.g(r))) : l; }
+  // (a source asked for the question itself, that is: what the widened asks bring holds nothing back — nor does a name's
+  // probe that found no one of that name)
+  avail(hidden) { const l = this.left(hidden); return this.srcs.some((s) => this.live(s) && !rx(s) && !(s.opts && s.opts.probe && !s.seen)) ? l.filter((r) => !this.held(this.g(r))) : l; }
   next(n, hidden, all) {   // the next n papers in this view's order (shown from now on in this place)
     const out = (all ? this.left(hidden) : this.avail(hidden)).sort(this.cmp).slice(0, n);
     for (const r of out) { this.shown.push(r); this.set.add(r); }
@@ -636,25 +792,44 @@ class View {
   // how many papers the answer holds, as far as can be told: the largest count a source gave (the others are mostly the
   // same papers again), never less than what is here; `more` when several sources found some (so there may be more), or
   // when, in one journal's view, the count is only of the pages fetched so far
+  // n counts them all (the denominator of '더 보기 · 22 / 39'); exact: the question's own papers, sim: the similar ones (a
+  // widened question), other: 그 밖의 글 — countLine() says it as one line ('2편 · 비슷한 논문 37편', '33편 이상 · 그 밖의 글 4편')
   count(hidden) {
-    const got = this.srcs.filter((s) => s.page > 0 && !(s.state === 'err' && refused(s.err)) && (!this.j || /:j:/.test(s.id)));
-    const n = Math.max(this.shown.length + this.left(hidden).length, ...got.map((s) => s.total));
+    const got = this.srcs.filter((s) => s.page > 0 && !rx(s) && !(s.state === 'err' && refused(s.err)) && (!this.j || /:j:/.test(s.id)));
+    const here = this.shown.length + this.left(hidden).length;
+    const lvs = this.f.pool.recs.filter((r) => this.keep(r) && !(hidden && hidden(r))).map((r) => this.lv(r));
+    const sim = lvs.filter((x) => x === 1).length, other = lvs.filter((x) => x === 2).length;
+    // (그 밖의 글 apart: a source's own count holds them too, so those here are taken from it)
+    const exact = Math.max(0, here - sim - other, ...got.map((s) => s.total - other));
     const several = !this.j && new Set(got.filter((s) => s.total > 0).map((s) => s.base)).size > 1;
     const partial = !!this.j && this.srcs.some((s) => this.pageable(s) && !/:j:/.test(s.id) && s.more);
-    return { n, more: several || partial };
+    return { n: exact + sim + other, exact, sim, other, more: several || partial };
+  }
+  countLine(hidden) {
+    const k = this.count(hidden);
+    if (!k.n) return '';
+    return [`${k.exact.toLocaleString()}편${k.more ? ' 이상' : ''}`, k.sim ? `비슷한 논문 ${k.sim.toLocaleString()}편` : '', k.other ? `그 밖의 글 ${k.other.toLocaleString()}편` : ''].filter(Boolean).join(' · ');
   }
   state(base) { const l = this.srcs.filter((s) => s.base === base); return l.find((s) => s.state === 'ok') || l.find((s) => s.state === 'busy') || l[0] || null; }
   hasCites() { return this.f.pool.recs.some((r) => r.c != null && this.keep(r)); }
   // the line above a group of rows (none above the first): '' for a journal's papers
   label(g) {
     const v = g >> 2;
-    if (v === 2) return '발간사 · 권두언';
-    if (v === 1) return '잡지 · 기사';
+    if (v === 3) return '발간사 · 권두언';
+    if (v === 2) return '그 밖의 글';
+    if (v === 1) return '여기부터 비슷한 논문';
     if (g & 2) return '다른 저자의 글';
     if (g & 1) return this.sort === 'new' ? '초록 · 본문에만 나오는 글' : this.sort === 'cited' ? '피인용 정보 없음' : '';
     return '';
   }
-  groupCount(g, hidden) { return this.f.pool.recs.filter((r) => this.keep(r) && !(hidden && hidden(r)) && this.g(r) >> 2 === g >> 2).length; }
+  groupCount(g, hidden) { return this.f.pool.recs.filter((r) => this.keep(r) && !(hidden && hidden(r)) && this.lv(r) === g >> 2).length; }
+  // the whole line above a group, as the screen may show it
+  groupLine(g, hidden) {
+    const v = g >> 2;
+    if (v === 1) return '여기부터 비슷한 논문 · 낱말 일부가 든 순서';
+    if (v >= 2) return `${this.label(g)} ${this.groupCount(g, hidden).toLocaleString()}편`;
+    return this.label(g);
+  }
 }
 export function view(f, sort, journal, idxJournals) {
   const key = sort + '\u0001' + jkey(journal || '');
@@ -678,10 +853,10 @@ export function journalCounts(f, hidden) {
     return e;
   };
   for (const r of f.pool.recs) {
-    if (!r.journal || (hidden && hidden(r)) || (r.kind && r.kind !== 'ARTICLE')) continue;
+    if (!r.journal || !r.exact || (hidden && hidden(r)) || (r.kind && r.kind !== 'ARTICLE')) continue;
     const e = note(r.journal, 1); if (e) e.n++;
   }
-  for (const s of f.srcs.values()) if (s.base === 'idx' && s.jf && !/:j:/.test(s.id)) for (const [name, n] of s.jf) { const e = note(name, 0); if (e) e.idx = Math.max(e.idx, n); }
+  for (const s of f.srcs.values()) if (s.base === 'idx' && s.jf && !/:j:/.test(s.id) && !rx(s)) for (const [name, n] of s.jf) { const e = note(name, 0); if (e) e.idx = Math.max(e.idx, n); }
   for (const e of t.values()) e.n = Math.max(e.n, e.idx);
   return t;
 }
@@ -692,3 +867,64 @@ export function journalCounts(f, hidden) {
    mine?(title), live?() }. narsForLaw(name, { aliases }): the reports whose title names that law, for 법령. */
 export const narsSection = (sec, q, ui) => import('./nars.js').then((m) => m.mount(sec, q, ui), () => 0);
 export const narsForLaw = (name, opts) => import('./nars.js').then((m) => m.forLaw(name, opts));
+
+/* ---------- 8차: papers about a case (평석) ----------
+   aboutCase(no, { shelf }) → Promise<rows[]>: the papers that name the case number (2003두1684, 2007헌마1001) — 국회도서관
+   asked for the number, and the KCI index on this device read for it (its title and the start of its abstract, the number
+   written as one word or spaced: '2003두1684', '2003 두 1684', '2003두 1684'). One record a paper, as the views give them
+   (t, a, journal, y, m, v, i, fp, lp, kci, doi, url, srcs …), at most 20; shelf(rec) → true marks a paper on the shelf
+   (onShelf), those first, then the newest. Never rejects: [] when nothing is found, offline, or a source refuses. */
+const about = new Map();
+const caseRe = (no) => { const m = /^(\d{2,4})([가-힣]{1,3})(\d{1,7})$/.exec(no); return m ? new RegExp(`(?<!\\d)${m[1]}\\s*${m[2].split('').join('\\s*')}\\s*${m[3]}(?!\\d)`) : null; };
+export function aboutCase(no, { shelf = null } = {}) {
+  const key = String(no || '').replace(/\s+/g, '');
+  if (!key) return Promise.resolve([]);
+  if (!about.has(key)) {
+    const p = (async () => {
+      const pool = new Pool();
+      let seq = 0;
+      const re = caseRe(key);
+      const [lib, idx] = await Promise.all([
+        papers.search(key, { kind: 'ARTICLE', page: 1 }).catch(() => null),
+        re ? kciq.rowsHolding((x) => re.test(x.t) || re.test(x.ab)).catch(() => []) : Promise.resolve([]),
+      ]);
+      for (const x of idx || []) pool.add(fromIdx(x), seq++);
+      for (const x of (lib && lib.rows) || []) pool.add(fromNanet(x), seq++);
+      return pool.recs.filter((x) => x.t);
+    })().catch(() => []);
+    about.set(key, p);
+    p.then((rows) => { if (!rows.length) about.delete(key); });   // (none: asked again the next time, the source may answer then)
+  }
+  return about.get(key).then((rows) => rows.map((x) => ({ ...x, onShelf: !!(shelf && safe(() => shelf(x))) }))
+    .sort((a, b) => Number(b.onShelf) - Number(a.onShelf) || ym(b) - ym(a)).slice(0, 20));
+}
+const safe = (fn) => { try { return fn(); } catch (e) { return false; } };
+
+/* ---------- 8차: a researcher's works, merged and grouped ----------
+   researcherWorks(name, id, { page, shelf }) → { groups: [{ key, label, rows }], more, total } — 국회도서관's works by that
+   person (its author search, newest first, the namesakes left out by id), with, on the first page, the KCI index's papers
+   by that name and the shelf's own papers filed by it (shelf: [{ title, journal, publisher, year, month, issue, id }]),
+   each paper once; in three groups: 학술논문 (a journal's papers), 학위논문, 토론회·기타 (forums, reports, books,
+   magazines). Throws as papers.search does (busy, unavailable) when the library cannot be asked. */
+export async function researcherWorks(name, id = '', { page = 1, shelf = [] } = {}) {
+  const r = await papers.search(name, { kind: '', page, sort: 'new', by: 'author' });
+  const pool = new Pool();
+  let seq = 0;
+  const who = akey(name);
+  const theirs = r.rows.filter((x) => (x.authors || []).includes(name) && (!id || !x.ids || !x.ids[name] || x.ids[name] === id));
+  for (const x of theirs) pool.add(fromNanet(x), seq++);
+  if (page === 1) {
+    const k = await kciq.search(name, { size: 40, sort: 'new' }).catch(() => null);
+    for (const x of (k && k.rows) || []) if ((x.a || []).some((a) => akey(a) === who)) pool.add(fromIdx(x), seq++);
+    for (const f of shelf || []) {
+      if (!f || !f.title) continue;
+      const iss = /제\s*(\d+)\s*[권집](?:\s*제\s*(\d+)\s*호)?|제\s*(\d+)\s*호/.exec(f.issue || '') || [];
+      pool.add({ src: 'shelf', t: tidyTitle(f.title), a: [name], journal: f.journal || '', publisher: f.publisher || '', y: String(f.year || ''), m: String(f.month || ''),
+        v: iss[1] || '', i: iss[2] || iss[3] || '', kind: 'ARTICLE', shelfId: f.id || '' }, seq++);
+    }
+  }
+  const kindOf = (x) => (x.kind === 'THESIS' ? 'thesis' : x.kind && x.kind !== 'ARTICLE' ? 'other' : x.journal && venue(x) === 0 ? 'article' : 'other');
+  const all = pool.recs.filter((x) => x.t).sort((a, b) => ym(b) - ym(a) || a.pos - b.pos);
+  const groups = [['article', '학술논문'], ['thesis', '학위논문'], ['other', '토론회·기타']].map(([key, label]) => ({ key, label, rows: all.filter((x) => kindOf(x) === key) })).filter((g) => g.rows.length);
+  return { groups, more: r.rows.length > 0 && page * SIZE.nanet < r.total, total: r.total };
+}

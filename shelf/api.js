@@ -1,5 +1,5 @@
 // Talking to the 연구실 책장 server. Every call carries this device's token; a 401 means the device was signed out.
-import * as store from './store.js?v=3dab24bfa8';
+import * as store from './store.js?v=c7790c4af0';
 
 const CONFIG_API = (globalThis.SHELF_CONFIG && globalThis.SHELF_CONFIG.api) || '';
 export function base() {
@@ -61,7 +61,7 @@ async function call(path, { method = 'GET', body, headers = {}, raw = false, sig
   reached(true);
   if (r.status === 401 && path !== '/login') { await signedOut(sent); throw new ApiError('auth', 401); }
   // raw: the answer itself; raw 'text': its text, and a refusal keeps the server's word for it (no_key, kci_refused …);
-  // raw 'stream': the answer itself, to be read as it comes, a refusal kept in the server's words too (글쓰기)
+  // raw 'stream': the answer itself, to be read as it comes, a refusal kept in the server's words too (다듬기)
   if (raw) {
     if (!r.ok) { const d = raw === 'text' || raw === 'stream' ? await r.json().catch(() => null) : null; throw new ApiError((d && d.error) || 'http_' + r.status, r.status, d || {}); }
     return raw === 'text' ? r.text() : r;
@@ -132,7 +132,7 @@ export async function paperPdf(body) {
   const d = await r.json().catch(() => null);
   return d && d.found ? { host: String(d.host || '') } : null;
 }
-// 글쓰기 도우미 (Claude, through the server, which holds the owner's Anthropic key): what the screen needs (key set?, the
+// 다듬기 도우미 (Claude, through the server, which holds the owner's Anthropic key): what the screen needs (key set?, the
 // models, limits, today's count, when the style was learned), the style itself, and one request — its answer streamed
 export const writeInfo = () => call('/write');
 export const writeStyle = () => call('/write/style');
@@ -219,3 +219,111 @@ export async function getMeta(id, kind) {
   const r = await call('/meta/' + id + '/' + kind, { raw: true });
   return r.blob();
 }
+
+/* ---------------- 8차 계약 (L5 fills the server side in): routes a server may not have yet ----------------
+   Each resolves null when the server lacks the route (an older server: 404/405/501), so the app keeps its own way then;
+   other trouble (offline, signed out) is thrown as from any call. */
+const lacks = (e) => !!e && (e.status === 404 || e.status === 405 || e.status === 501 || e.code === 'not_found');
+const orNull = (p) => p.catch((e) => { if (lacks(e)) return null; throw e; });
+// every live paper's page texts in a few answers: GET /api/texts/bundle?after=<id>&limit=40. The server sends each paper's
+// stored texts as they are kept (gzipped: it never unpacks them — the free plan's CPU would not do), framed:
+//   {"id":"…","n":<bytes>}\n<n bytes of gzip> … and last {"next":<id>|null,"none":[…],"count":k}\n   (application/x-shelf-texts)
+// — read here as it streams in, each paper unpacked and handed on at once: onItem({ id, text }) (text: the parsed JSON, what
+// meta/<id>/text is). A plain NDJSON answer ({id, text} a line, the last {next}) is read too.
+// → { count, done } — or null when the server has no such route, or this browser cannot unpack gzip (each paper's text is
+// then read alone, as before). opts: after (go on from there), limit (≤40 a call), pages (calls at most), signal
+const NL = 10;
+async function gunzipBytes(bytes) {
+  const head = bytes[0] === 0x1f && bytes[1] === 0x8b;
+  const s = head ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text() : new TextDecoder().decode(bytes);
+  return JSON.parse(s);
+}
+async function readFrames(r, onItem, signal) {
+  const rd = r.body.getReader();
+  let buf = new Uint8Array(0), more = null, said = false, count = 0;
+  const grow = (chunk) => { const b = new Uint8Array(buf.length + chunk.length); b.set(buf); b.set(chunk, buf.length); buf = b; };
+  let want = null, ended = false;   // want: the frame whose bytes are awaited ({ id, n })
+  for (;;) {
+    // take every whole frame in what has come
+    for (;;) {
+      // (stopped: nothing more is handed on, not even what has already come — a caller that stopped wants no late papers)
+      if (signal && signal.aborted) { try { await rd.cancel(); } catch (e) { /* gone */ } throw new DOMException('aborted', 'AbortError'); }
+      if (want) {
+        if (buf.length < want.n) break;
+        const bytes = buf.subarray(0, want.n); buf = buf.subarray(want.n);
+        const id = want.id; want = null;
+        let text = null;
+        try { text = await gunzipBytes(bytes); } catch (e) { text = null; }   // (one paper unreadable: it is read alone later)
+        if (text) { count++; try { onItem && onItem({ id, text }); } catch (e) { /* the caller's own */ } }
+        continue;
+      }
+      const nl = buf.indexOf(NL);
+      if (nl < 0) break;
+      const line = new TextDecoder().decode(buf.subarray(0, nl)); buf = buf.subarray(nl + 1);
+      let d = null; try { d = JSON.parse(line); } catch (e) { d = null; }
+      if (!d) continue;
+      if (d.id && Number.isFinite(d.n) && d.n >= 0) { want = { id: String(d.id), n: d.n }; continue; }
+      if ('next' in d && !('id' in d)) { more = d.next || null; said = true; }
+    }
+    if (ended) break;
+    if (signal && signal.aborted) { try { await rd.cancel(); } catch (e) { /* gone */ } throw new DOMException('aborted', 'AbortError'); }
+    const { done, value } = await rd.read();
+    if (done) { ended = true; continue; }
+    grow(value);
+  }
+  if (!said) more = r.headers.get('x-next') || null;
+  return { more, count };
+}
+async function readLines(r, onItem, signal) {
+  let more = null, said = false, count = 0;
+  for (const l of (await r.text()).split('\n')) {
+    if (signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
+    if (!l.trim()) continue;
+    let d; try { d = JSON.parse(l); } catch (e) { continue; }   // (a line cut short: that paper is read alone later)
+    if (d && 'next' in d && !('id' in d)) { more = d.next || null; said = true; continue; }
+    if (d && d.id && d.text) { count++; try { onItem && onItem(d); } catch (e) { /* the caller's own */ } }
+  }
+  if (!said) more = r.headers.get('x-next') || null;
+  return { more, count };
+}
+export async function textsBundle(onItem, { after = '', limit = 40, pages = 50, signal } = {}) {
+  if (typeof DecompressionStream === 'undefined' || typeof ReadableStream === 'undefined') return null;
+  let count = 0, next = after;
+  for (let k = 0; k < pages; k++) {
+    let r;
+    try { r = await call('/texts/bundle?' + new URLSearchParams({ ...(next ? { after: next } : {}), limit: String(Math.max(1, Math.min(40, limit))) }), { raw: true, signal }); }
+    catch (e) { if (lacks(e) && !k) return null; throw e; }
+    const framed = /x-shelf-texts/.test(r.headers.get('content-type') || '') && r.body;
+    const got = framed ? await readFrames(r, onItem, signal) : await readLines(r, onItem, signal);
+    count += got.count;
+    if (!got.more || got.more === next) return { count, done: true };
+    next = got.more;
+  }
+  return { count, done: false };
+}
+// the mirror's history of a law's file, through the server's six-hour cache: GET /api/lawgit/commits?path=&until= → the
+// GitHub commits list (sha, commit.message, commit.author.date … as laws.js reads them); null when the server lacks it
+export const lawGitCommits = (path, until = '') => orNull(call('/lawgit/commits?' + new URLSearchParams({ path, ...(until ? { until } : {}) }))
+  .then((d) => (Array.isArray(d) ? d : d && Array.isArray(d.commits) ? d.commits : [])));
+// 다듬은 기록 kept with the server (the last 20, merged by id): writeHistory() / writeHistory.get() → [{ id, act, at, input,
+// out, model, … }] or null when the server lacks it; writeHistory.put(list) → the list as the server keeps it now, or null.
+// An entry { id, del: true } in the list deletes that answer on every device (the server remembers it, so another device's
+// older list never brings it back). Each answer is kept with its input cut to 4,000 letters (inputCut: true when cut).
+// (the list is an array as before; its ids deleted on another device ride along on it, not enumerated: list.gone — a
+// device drops those from its own copy, so an answer deleted elsewhere does not live on here)
+const withGone = (d) => { const list = Array.isArray(d) ? d : (d && Array.isArray(d.list) ? d.list : []); Object.defineProperty(list, 'gone', { value: d && Array.isArray(d.gone) ? d.gone : [], enumerable: false }); return list; };
+const histGet = () => orNull(call('/write/history').then(withGone));
+// (sent in parts of < 180 KB — the server takes 200 KB a call — so twenty long answers still go up; the last answer is the list)
+const histPut = (list) => orNull((async () => {
+  const xs = list || [], all = [...xs.filter((x) => x && !x.del).slice(0, 20), ...xs.filter((x) => x && x.del).slice(0, 50)];
+  const parts = [[]]; let size = 0;
+  for (const e of all) {
+    const n = new Blob([JSON.stringify(e)]).size + 1;
+    if (parts[parts.length - 1].length && size + n > 180 * 1024) { parts.push([]); size = 0; }
+    parts[parts.length - 1].push(e); size += n;
+  }
+  let d = null;
+  for (const part of parts) d = await call('/write/history', { method: 'PUT', body: { list: part } });
+  return withGone(d);
+})());
+export const writeHistory = Object.assign(() => histGet(), { get: histGet, put: histPut });

@@ -17,6 +17,18 @@ export function mainTitle(t) {
   const m = /^(.{8,}?)\s+[-―—–]\s*\S.*$/.exec(t) || /^(.{8,}?)\s*:\s*\S.*$/.exec(t) || /^(.{8,}?)\s+=\s+\S.*$/.exec(t);
   return (m ? m[1] : t).trim();
 }
+// a title as the lists write it: 국회도서관's catalogue marks (' :부제', ' =부제') as KCI's ' - 부제 -', and quotation marks a
+// database doubled (''관습헌법'', ''''관습헌법'''') as one pair — so a paper's sheet, its row and its citation read the same.
+// (' = ' before a title in another script, English, is that title in the other tongue, and stays.)
+export function tidyTitle(t) {
+  let s = String(t == null ? '' : t).replace(/\s+/g, ' ').trim().replace(/'{2,}([^']{1,80}?)'{2,}/g, '‘$1’').replace(/'{2,}/g, "'");
+  const m = /^(.*?[가-힣].*?)\s+[:=]\s*(.*[가-힣].*)$/.exec(s);
+  if (m && !/^[-―—–]/.test(m[2])) s = `${m[1]} - ${m[2].replace(/\s*[-―—–]\s*$/, '')} -`;
+  return s;
+}
+// subjects in Korean first, those in other tongues after them (each kind in the order the source gave): a pair of the
+// same idea in two tongues is then read once in each line, not alternately
+export const koFirst = (list) => { const ko = [], other = []; for (const k of list || []) (/[가-힣]/.test(k) ? ko : other).push(k); return [...ko, ...other]; };
 const hanjaShare = (s) => { const h = (s.match(/[\u3400-\u9FFF\uF900-\uFAFF]/g) || []).length, k = (s.match(/[가-힣]/g) || []).length; return h + k ? h / (h + k) : 0; };
 const person = (s) => naming.personName(s) || clean(s);
 const ym = (s) => { const d = String(s || '').replace(/\D/g, ''); return d.length >= 6 ? `${d.slice(0, 4)}. ${+d.slice(4, 6)}.` : d.slice(0, 4); };
@@ -26,7 +38,7 @@ const dlPage = (control) => (/^[A-Z]{2,6}\d{6,}$/.test(control) ? `https://dl.na
 const web = (u) => (/^https?:\/\/[^\s"'<>]+$/.test(String(u || '')) ? String(u).replace(/^http:\/\/dl\.nanet\.go\.kr\//, 'https://dl.nanet.go.kr/') : '');
 
 function shape(x) {
-  const title = clean(x.title), control = clean(x.controlNum);
+  const title = tidyTitle(clean(x.title)), control = clean(x.controlNum);
   return {
     id: clean(x.lodID), kind: clean(x.divFlag), kindName: kindName(clean(x.divFlag)),
     title, reading: hanjaShare(title) >= 0.3 ? naming.hangulize(title) : '',   // a title in hanja, also in Hangul
@@ -35,7 +47,7 @@ function shape(x) {
     ids: Object.fromEntries((x.authorList || []).filter((a) => a && a.lodAuthorID).map((a) => [person(a.name), String(a.lodAuthorID)])),
     journal: naming.hangulize(clean(x.journal && x.journal.title)),
     publisher: naming.hangulize(clean(x.publisher)),
-    keywords: [...new Set((x.keywordList || []).map((k) => clean(k && k.name)).filter(Boolean))],
+    keywords: koFirst([...new Set((x.keywordList || []).map((k) => clean(k && k.name)).filter(Boolean))]),
     page: web(x.url) || dlPage(control),
   };
 }
@@ -74,13 +86,13 @@ export async function detail(row) {
   if (!v) return null;
   const out = {
     ...row,
-    title: clean(v.title) || row.title,
+    title: tidyTitle(clean(v.title)) || row.title,
     authors: (v.author || []).map(person).filter(Boolean).length ? [...new Set((v.author || []).map(person).filter(Boolean))] : row.authors,
     journal: naming.hangulize(clean(v.journalName)) || row.journal,
     publisher: naming.hangulize(clean(v.orgName)) || row.publisher,
     when: ym(v.pubYear || v.confermentYear) || row.year,
     uci: clean(v.uci), doi: clean(v.doi),
-    keywords: [...new Set([...(v.keyword || []).map(clean), ...row.keywords].filter(Boolean))],
+    keywords: koFirst([...new Set([...(v.keyword || []).map(clean), ...row.keywords].filter(Boolean))]),
     abstract: block(v.abst), toc: block(v.toc),
     degree: clean(v.degreeType).replace(/^학위논문\((.+)\)$/, '$1'), major: clean(v.major), advisor: person(v.advisor), school: clean(v.graduateSchool),
     isbn: clean(v.isbn || v.ISBN),
@@ -123,30 +135,76 @@ export async function scienceon(p) {
   soSeen.set(key, out);
   return out;
 }
-// a footnote citation as Korean law journals write it: 저자, "제목", 『학술지』 제N권 제N호, 발행기관, 연도, 쪽.
-export function cite(p, so) {
-  const who = p.authors.length > 3 ? p.authors[0] + ' 외' : p.authors.join('·');
-  const t = p.title.replace(/\s*:\s*/, ' - ').replace(/\s+-\s+(.+)$/, ' - $1 -').trim();
-  if (p.kind === 'THESIS') return `${who}, 『${p.title}』, ${[p.school || p.publisher, p.degree ? p.degree + '학위논문' : '학위논문'].filter(Boolean).join(' ')}, ${p.year}.`;
-  if (p.kind === 'BOOK') return `${who}, 『${p.title}』, ${p.publisher}, ${p.year}.`;
-  const vol = so && so.volume ? ` 제${so.volume}권` : '', no = so && so.issue ? ` 제${so.issue}호` : '';
-  const pages = so && so.pages ? `, ${so.pages}면` : '';
-  return `${who}, "${t}", 『${p.journal}』${vol}${no}, ${p.publisher}, ${p.year}${pages}.`;
+// a journal's volume, as the journal itself numbers it: 집 (공법연구 제50집 제3호), 권 (헌법학연구 제30권 제1호), or an issue
+// alone (행정법연구 제68호) — from the journals known here, and from what the shelf's own papers print (learnVolWord, given by
+// the app the issue lines it read from first pages); 권 when nothing says otherwise
+const VOL_WORD = new Map([
+  ['공법연구', '집'], ['토지공법연구', '집'], ['헌법논총', '집'], ['중앙법학', '집'],
+  ['헌법학연구', '권'], ['공법학연구', '권'], ['미국헌법연구', '권'], ['세계헌법연구', '권'], ['법조', '권'], ['서울대학교법학', '권'],
+  ['법과정책연구', '권'], ['입법학연구', '권'], ['지방자치법연구', '권'], ['환경법연구', '권'], ['한국정당학회보', '권'], ['가천법학', '권'],
+  ['성균관법학', '권'], ['강원법학', '권'], ['경희법학', '권'], ['홍익법학', '권'], ['언론과법', '권'], ['경제규제와법', '권'], ['비교사법', '권'],
+  ['행정법연구', '호'], ['유럽헌법연구', '호'], ['행정법학', '호'], ['사법', '호'], ['저스티스', '호'], ['인권과정의', '호'], ['동아법학', '호'], ['선거연구', '호'],
+].map(([j, w]) => [norm(j), w]));
+export const volWord = (journal) => VOL_WORD.get(norm(journal)) || '권';
+export function learnVolWord(journal, issue) {
+  const k = norm(journal), m = /제\s*\d+\s*([권집])/.exec(String(issue || ''));
+  if (k && m && !VOL_WORD.has(k)) VOL_WORD.set(k, m[1]);
+  else if (k && !m && /^제\s*\d+\s*호$/.test(String(issue || '').trim()) && !VOL_WORD.has(k)) VOL_WORD.set(k, '호');
 }
+// 제50집 제3호 · 제30권 제1호 · 제68호 — x: { journal, v, i } (a journal numbered by issue alone: its one number)
+export function issueText(x) {
+  const v = String((x && x.v) || '').trim(), i = String((x && x.i) || '').trim(), w = volWord(x && x.journal);
+  if (w === '호') { const n = i || v; return n ? `제${n}호` : ''; }
+  return v && i ? `제${v}${w} 제${i}호` : i ? `제${i}호` : v ? `제${v}${w}` : '';
+}
+// a footnote citation as Korean law journals write it: 저자, "제목", 『학술지』 제N권(집) 제N호, 발행기관, 연도, 쪽면.
+// citeOf → { text, partial }: partial when no volume or issue is known (the sheet says 권호 미상 · 확인 후 쓰세요, and the copy
+// is not to go into a footnote as it is); cite → the text alone (as before)
+export function citeOf(p, so) {
+  const who = p.authors.length > 3 ? p.authors[0] + ' 외' : p.authors.join('·');
+  let t = tidyTitle(p.title);
+  if (/\s[-―—–]\s/.test(t) && !/\s[-―—–]$/.test(t)) t += ' -';
+  if (p.kind === 'THESIS') return { text: `${who}, 『${p.title}』, ${[p.school || p.publisher, p.degree ? p.degree + '학위논문' : '학위논문'].filter(Boolean).join(' ')}, ${p.year}.`, partial: false };
+  if (p.kind === 'BOOK') return { text: `${who}, 『${p.title}』, ${p.publisher}, ${p.year}.`, partial: false };
+  const iss = so ? issueText({ journal: p.journal, v: so.volume, i: so.issue }) : '';
+  const pages = so && so.pages ? `, ${so.pages}면` : '';
+  // (a publisher or year not known leaves no empty ', ,' behind)
+  return { text: `${who}, "${t}", 『${p.journal}』${iss ? ' ' + iss : ''}${p.publisher ? ', ' + p.publisher : ''}${p.year ? ', ' + p.year : ''}${pages}.`, partial: !iss };
+}
+export const cite = (p, so) => citeOf(p, so).text;
+// the volume and issue for a paper's sheet, as its citation writes them ('제50집 제3호'), and its pages in the same unit ('153-187면')
+export const sheetIssue = (p, so) => (so ? issueText({ journal: p.journal, v: so.volume, i: so.issue }) : '');
+export const sheetPages = (so) => (so && so.pages ? `${so.pages}면` : '');
 
 // a researcher, as 국회도서관 knows them: who and where (소속, 직위), how much they wrote each year, the researchers working on the
-// same things, the journals they publish in and their subjects. id: the library's own id (else the name is looked up)
+// same things, the journals they publish in and their subjects. id: the library's own id (else the name is looked up).
+// Namesakes (others) come in the order most likely to be the one meant: ctx.aff — the affiliation the paper it was opened
+// from gives its author — first; then the one whose works (the library's author search, the same page the researcher's
+// list reads first) are law papers, in the journals ctx.journals names or in law journals; a university's or a court's
+// before a hospital's or a firm's. Each says, beside where they are, the journal they write in most (hint, label)
 const people = new Map();
 const firstList = (d, k) => { const r = d && d.result; const x = Array.isArray(r) ? r.find((y) => y && y[k]) : null; return (x && x[k]) || []; };
-export async function researcher(name, id) {
-  const key = (id || '') + ':' + name;
+const LAW_J = /법|헌법|공법|행정|판례|입법|선거|정당|정치|사법|법조|저스티스|인권/;
+// (a school's own name: '한양대학교 법학전문대학원', '한양대 법대' and '한양대학교' all '한양' — and two such names the same
+// school only when they are equal, or the shorter has three letters or more: '서울' is not '서울시립')
+const affKey = (s) => {
+  let t = String(s || '').replace(/\(.*?\)/g, '').trim();
+  for (let k = 0; k < 3; k++) { const u = t.replace(/\s*(?:법학전문대학원|대학원|법과대학|법대|법학과|법학부|대학교|대학)\s*$/, ''); if (u === t) break; t = u; }
+  t = norm(t);
+  return t.length >= 3 && t.endsWith('대') ? t.slice(0, -1) : t;
+};
+const sameAff = (a, b) => !!(a && b && (a === b || (Math.min(a.length, b.length) >= 3 && (a.includes(b) || b.includes(a)))));
+export async function researcher(name, id, ctx = {}) {
+  const key = (id || '') + ':' + name + ':' + (ctx.aff || '') + ':' + (ctx.journals || []).join('|');
   if (people.has(key)) return people.get(key);
   let prof = null;
   const pd = await ask('author', id ? { lodID: id } : { name_ko: name, size: '20' }).catch((e) => { if (e && e.code === 'busy') throw e; return null; });
   const profs = (((pd && pd.result) || []).flat()).filter(Boolean).map((x) => ({ id: clean(x.lodID), name: person(x.name_ko) || clean(x.name_ko), nameEn: clean(x.name_en), org: clean(x.orgName_ko), position: clean(x.position) }));
   if (id) prof = profs.find((x) => x.id === id) || profs[0] || null;
   else if (profs.length === 1) prof = profs[0];
-  const out = { name, id: id || (prof && prof.id) || '', prof, others: id || prof ? [] : profs.filter((x) => x.name === name).slice(0, 12), years: [], people: [], journals: [], keywords: [] };
+  let others = id || prof ? [] : profs.filter((x) => x.name === name).slice(0, 12);
+  if (others.length > 1) others = await rankNamesakes(name, others, ctx);
+  const out = { name, id: id || (prof && prof.id) || '', prof, others, years: [], people: [], journals: [], keywords: [] };
   if (out.id) {
     const q = { searchTerm: name, searchType: 'AUTHOR', searchID: out.id };
     const [tr, ra, rj, rk] = await Promise.all(['trend', 'relAuthor', 'relJournal', 'relKeyword'].map((op) => ask(op, q).catch(() => null)));
@@ -157,6 +215,34 @@ export async function researcher(name, id) {
   }
   people.set(key, out);
   return out;
+}
+async function rankNamesakes(name, others, ctx) {
+  const r = await search(name, { kind: '', page: 1, sort: 'new', by: 'author' }).catch(() => null);   // (cached: the list asks it too)
+  const by = new Map();
+  for (const x of (r && r.rows) || []) {
+    const aid = x.ids && x.ids[name]; if (!aid) continue;
+    const e = by.get(aid) || { n: 0, law: 0, js: new Map() };
+    e.n++;
+    if (x.kind === 'ARTICLE' && LAW_J.test(x.journal + ' ' + x.publisher)) e.law++;
+    if (x.journal) e.js.set(x.journal, (e.js.get(x.journal) || 0) + 1);
+    by.set(aid, e);
+  }
+  const want = new Set((ctx.journals || []).map(norm).filter(Boolean)), aff = affKey(ctx.aff);
+  const score = (o) => {
+    const e = by.get(o.id), ok = affKey(o.org);
+    let v = 0;
+    if (sameAff(aff, ok)) v += 100;
+    if (e) { v += 4 * e.law + 0.5 * e.n; for (const j of e.js.keys()) if (want.has(norm(j))) v += 20; }
+    if (/대학|대학교|법원|헌법재판소|국회|연구원|연구소|법제처/.test(o.org)) v += 2;
+    if (/교수|연구|판사|변호사|조사관/.test(o.position || '')) v += 1;
+    if (/병원|의원|사무소|회사|주식회사|건축|센터$/.test(o.org) && !(e && e.law)) v -= 3;
+    return v;
+  };
+  return others.map((o, k) => {
+    const e = by.get(o.id), top = e ? [...e.js.entries()].sort((a, b) => b[1] - a[1])[0] : null;
+    const hint = top ? top[0] : '';
+    return { ...o, hint, label: [o.org, hint].filter(Boolean).join(' · '), score: score(o), k };
+  }).sort((a, b) => b.score - a.score || a.k - b.k).map(({ score, k, ...o }) => o);
 }
 
 // Crossref (the DOI registry, where many Korean journals deposit their papers): the same paper — its Korean title (Crossref

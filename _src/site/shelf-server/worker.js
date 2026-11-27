@@ -20,15 +20,19 @@
 //   auth/try/<addr>/<ms>-<r>       one sign-in try from one address (a hash of it), kept an hour unless the PIN was right
 //   auth/tryall/<ms>-<r>           the same try, among everyone's
 //   auth/known/<addr>              an address the right PIN came from (not slowed when many addresses try; see login)
-//   write/style.json               the owner's writing style as Claude described it from the owner's own papers (글쓰기)
-//   write/use.json                 글쓰기 requests counted for the day (the owner's day, in Korea), for the daily cap, and
+//   write/style.json               the owner's writing style as Claude described it from the owner's own papers (다듬기)
+//   write/use.json                 다듬기 requests counted for the day (the owner's day, in Korea), for the daily cap, and
 //                                  what they cost (estimated from the usage Anthropic reports), for the day's budget
-//   write/last.json                the latest 글쓰기 answer as it was streamed (so an app that lost the connection gets it)
-//   write/stop.json                the id of a 글쓰기 answer the owner stopped (read by the request still running)
+//   write/last.json                the latest 다듬기 answer as it was streamed (so an app that lost the connection gets it)
+//   write/stop.json                the id of a 다듬기 answer the owner stopped (read by the request still running)
 //   ccourt/unconst.json            위헌결정 법률현황 + 미개정 위헌·헌법불합치 법령, one compact list (the cron, daily)
 //   acrc/m/<YYYY-MM>.json          행정심판 재결례 of one month (the cron gathers them, newest first, three years back)
 //   acrc/index.json                all of them, compact, for the app to search by words; acrc/state.json what is gathered
 //   acrc/part.json                 a month half gathered (carried to the next run); acrc/body/<incdntNo>.json one 재결's text
+//   bundle/texts/manifest.json     where each paper's text lies again in the bundle bins (bundle/texts/b-*.bin), for
+//                                  /api/texts/bundle: a new device reads the shelf's texts in three answers
+//   cache/lawgit/<hash>.json       the law mirror's last history list of a file (/api/lawgit/commits), when GitHub refuses
+//   write/history.json             다듬은 기록: the last 20 answers, the same on every device
 //   diag/days.json                 the daily check, one entry a day, 14 days; cron/state.json what the cron did last
 //
 // Lookups asked through here, so their keys never leave the server (secrets set in the Cloudflare dashboard):
@@ -45,10 +49,13 @@
 //                           (its access token, issued with those, is kept in R2 at auth/scienceon.json and renewed when it runs out)
 //   /api/foreign/<id>       비교법 원문: a few foreign election laws from their official sources, by name only (FOREIGN)
 //   /api/diag               which of these answer, asked from where the device is (Cloudflare runs us near it); kept in diag/last.json
-//   /api/write              글쓰기 도우미: Anthropic's Messages API (Claude), the answer streamed on: env.ANTHROPIC_API_KEY
+//   /api/write              다듬기 도우미: Anthropic's Messages API (Claude), the answer streamed on: env.ANTHROPIC_API_KEY
 //   /api/ccourt/<op>        헌재 소식 (schedule, day, recent, outline, hearings, hearing) and unconst (위헌·헌법불합치 법령)
 //   /api/nars/reports       국회입법조사처 발간물 by title words and kind (its PDF goes on the shelf through /api/paper/pdf)
 //   /api/acrc/<op>          행정심판 재결례: index, month, body (one 재결's 주문·청구취지·이유·관련 법령)
+//   /api/texts/bundle       every live paper's page texts, forty a call, as stored (gzipped): a new device's 찾기 in 3 asks
+//   /api/lawgit/commits     the law mirror's history of one file (GitHub), kept six hours: env.GITHUB_TOKEN (optional)
+//   /api/write/history      다듬은 기록, the same last 20 answers on every device
 //                           (these three: 공공데이터포털 with env.DATA_GO_KR_KEY, answers trimmed to what the app shows)
 // The cron (scheduled, hourly): the daily self-check (/api/diag/last: 14 days, sources failing two days in a row), the
 // 위헌 법령 list, and 행정심판 재결례 a few asks a run.
@@ -144,6 +151,12 @@ async function route(req, env, ctx) {
         if (p.length === 3 && m === 'PUT') return await putFile(req, env, p[2]);
         if (p[3] === 'mpu') return await multipart(req, env, p[2], p.slice(4));
         break;
+      case 'texts':   // every paper's page texts, forty a call (a new device's 찾기)
+        if (m === 'GET' && p[2] === 'bundle' && p.length === 3) return await textsBundle(env, ctx, url);
+        break;
+      case 'lawgit':   // the law mirror's history of a file, kept six hours
+        if (m === 'GET' && p[2] === 'commits' && p.length === 3) return await lawgitCommits(env, ctx, url);
+        break;
       case 'meta':
         if (!ID.test(p[2] || '') || !['thumb', 'text', 'ocr'].includes(p[3])) return err('bad_id', 400);
         if (m === 'GET') return await getMeta(env, p[2], p[3]);
@@ -209,6 +222,8 @@ async function route(req, env, ctx) {
         if (m === 'GET' && p[2] === 'style' && p.length === 3) return await writeStyle(env);
         if (m === 'GET' && p[2] === 'last' && p.length === 3) return await writeLast(env, url);
         if (m === 'POST' && p[2] === 'stop' && p.length === 3) return await writeStop(req, env);
+        if (m === 'GET' && p[2] === 'history' && p.length === 3) return await writeHistoryGet(env);
+        if (m === 'PUT' && p[2] === 'history' && p.length === 3) return await writeHistoryPut(req, env);
         break;
       case 'diag':
         if (m === 'GET' && p.length === 2) return await diag(req, env);
@@ -1921,6 +1936,240 @@ async function putMeta(req, env, id, kind) {
   return json({ ok: true, size: o ? o.size : 0 });
 }
 
+/* ---------------- every paper's page texts, in a few answers (본문 묶음) ----------------
+   A new device needs the page texts of the whole shelf for 찾기. Asked one paper at a time that is a hundred requests and
+   more; asked here it is three: GET /api/texts/bundle?after=<id>&limit=40 gives the next ≤ 40 live papers' texts (by id,
+   ≤ 8 MB), framed as
+       {"id":"<id>","n":<bytes>}\n<n bytes: meta/<id>/text.json.gz as stored>     … one a paper, then
+       {"next":"<id>"|null,"none":[ids the index says have a text but have none],"count":k}\n
+   The texts go out gzipped as stored — never unpacked or packed again here (the free plan's 10 ms of CPU would not do it):
+   the app unpacks each (api.textsBundle). x-next carries next too.
+   What is read stays small: the stored texts are kept again, side by side, in a few bundle objects (bins) with a manifest
+   saying where each lies and which version of it (its etag) it is. One list of meta/ tells every text's current etag, so a
+   text that changed since (a scan read, a page fixed) is never served stale: it is read alone, and the bins are brought up
+   to date after the answer (ctx.waitUntil) — the next device reads the bins. A steady shelf costs ~5 storage reads an
+   answer; a cold one at most 40 + a few (well inside the 50 subrequests and 1,000 storage calls an invocation may make). */
+const BUNDLE_DIR = 'bundle/texts/', BUNDLE_MAN = BUNDLE_DIR + 'manifest.json';
+const BUNDLE_FILES = 40, BUNDLE_BYTES = 8 * 1024 * 1024, BUNDLE_READS = 40, BUNDLE_BINS = 6, BUNDLE_TYPE = 'application/x-shelf-texts';
+const TEXT_KEY = /^meta\/([0-9a-f]{24})\/text\.json\.gz$/;
+async function textTags(env) {   // every stored text: id → { etag, size } (meta/ holds three objects a paper: one list call for ~330)
+  const out = new Map(); let cursor, calls = 0;
+  for (; calls < 8; ) {
+    const l = await env.BUCKET.list({ prefix: 'meta/', cursor, limit: 1000 }); calls++;
+    for (const o of l.objects) { const m = TEXT_KEY.exec(o.key); if (m) out.set(m[1], { etag: o.etag, size: o.size }); }
+    if (!l.truncated) break;
+    cursor = l.cursor;
+  }
+  return { tags: out, calls };
+}
+async function readManifest(env) {
+  const o = await env.BUCKET.get(BUNDLE_MAN).catch(() => null);
+  if (!o) return { man: { v: 1, bins: {}, items: {} }, etag: null };
+  try { const man = await o.json(); return { man: man && man.v === 1 && man.items && man.bins ? man : { v: 1, bins: {}, items: {} }, etag: o.etag }; }
+  catch (e) { return { man: { v: 1, bins: {}, items: {} }, etag: o.etag }; }
+}
+const liveTexted = (idx) => {
+  const trashed = new Map();
+  const gone = (fid) => { if (!fid) return false; if (!trashed.has(fid)) trashed.set(fid, isTrashedFolder(idx, fid)); return trashed.get(fid); };
+  return idx.files.filter((f) => f && ID.test(f.id || '') && f.text && !f.trashed && !gone(f.folder)).map((f) => f.id).sort();
+};
+const enc8 = new TextEncoder();
+async function textsBundle(env, ctx, url) {
+  const after = String(url.searchParams.get('after') || '');
+  if (after && !ID.test(after)) return err('bad_cursor', 400);
+  const limit = Math.max(1, Math.min(BUNDLE_FILES, Math.floor(Number(url.searchParams.get('limit'))) || BUNDLE_FILES));
+  const [{ idx }, { tags, calls }, { man }] = await Promise.all([loadIndex(env), textTags(env), readManifest(env)]);
+  let reads = 0;   // (texts read: a bin's span or one paper; the index, the list and the manifest besides)
+  const ids = liveTexted(idx).filter((id) => id > after);
+  // this answer's papers: by id, ≤ limit, ≤ 8 MB, and no more storage reads than the budget (bins first, then one each)
+  const pick = [], none = [], useBins = new Set();
+  let bytes = 0, stop = -1;
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i], t = tags.get(id);
+    if (!t) { none.push(id); continue; }
+    if (pick.length >= limit || (pick.length && bytes + t.size > BUNDLE_BYTES)) { stop = i; break; }
+    const m = man.items[id];
+    const inBin = !!(m && m.etag === t.etag && man.bins[m.bin] && (useBins.has(m.bin) || useBins.size < BUNDLE_BINS));
+    const cost = inBin && useBins.has(m.bin) ? 0 : 1;
+    if (pick.length && reads + cost > BUNDLE_READS) { stop = i; break; }
+    reads += cost;
+    if (inBin) useBins.add(m.bin);
+    pick.push({ id, t, m: inBin ? m : null });
+    bytes += t.size;
+  }
+  const next = stop > 0 ? ids[stop - 1] : null;   // (the next answer starts after the last paper looked at)
+  // read: each bin's span once (a ranged read), the rest one by one
+  const spans = new Map();
+  for (const x of pick) if (x.m) { const s = spans.get(x.m.bin) || { a: Infinity, b: 0 }; s.a = Math.min(s.a, x.m.off); s.b = Math.max(s.b, x.m.off + x.m.len); spans.set(x.m.bin, s); }
+  const binBytes = new Map();
+  await Promise.all([...spans].map(async ([bin, s]) => {
+    const o = await env.BUCKET.get(BUNDLE_DIR + bin, { range: { offset: s.a, length: s.b - s.a } }).catch(() => null);
+    if (o) binBytes.set(bin, { a: s.a, buf: new Uint8Array(await o.arrayBuffer()) });
+  }));
+  const fresh = [];
+  const parts = await Promise.all(pick.map(async (x) => {
+    if (x.m) {
+      const b = binBytes.get(x.m.bin);
+      if (b && b.buf.length >= x.m.off - b.a + x.m.len) return { id: x.id, body: b.buf.subarray(x.m.off - b.a, x.m.off - b.a + x.m.len) };
+    }
+    const o = await env.BUCKET.get('meta/' + x.id + '/text.json.gz').catch(() => null);
+    if (!o) return { id: x.id, body: null };
+    const body = new Uint8Array(await o.arrayBuffer());
+    fresh.push({ id: x.id, etag: o.etag, body });
+    return { id: x.id, body };
+  }));
+  const out = [];
+  let count = 0;
+  for (const p of parts) {
+    if (!p.body) { none.push(p.id); continue; }
+    out.push(enc8.encode(JSON.stringify({ id: p.id, n: p.body.length }) + '\n'), p.body); count++;
+  }
+  out.push(enc8.encode(JSON.stringify({ next, none, count }) + '\n'));
+  // the bins brought up to date for the next device: the texts read alone go into a new bin (and, when this answer's papers
+  // lay in many bins, all of them together, so they lie in one next time)
+  const spread = new Set(pick.filter((x) => x.m).map((x) => x.m.bin)).size;
+  const pack = spread > 3 ? parts.filter((p) => p.body).map((p) => ({ id: p.id, etag: (tags.get(p.id) || {}).etag, body: p.body })) : fresh;
+  if (pack.length && ctx && ctx.waitUntil) ctx.waitUntil(bundleKeep(env, pack, tags).catch(() => {}));
+  return new Response(new Blob(out), { status: 200, headers: { 'content-type': BUNDLE_TYPE, 'cache-control': 'no-store', 'x-next': next || '', 'x-count': String(count) } });
+}
+// a new bin with these texts, and the manifest pointing to it (written only over the version read: two devices at once
+// cannot lose each other's entries — the later one tries again, once); bins no entry points to any more are deleted
+async function bundleKeep(env, pack, tags) {
+  const bin = 'b-' + Date.now().toString(36) + '-' + token().slice(0, 8).toLowerCase().replace(/[^a-z0-9]/g, '0') + '.bin';
+  const items = []; let off = 0;
+  for (const x of pack) { if (!x.etag) continue; items.push({ id: x.id, etag: x.etag, off, len: x.body.length }); off += x.body.length; }
+  if (!items.length) return false;
+  await env.BUCKET.put(BUNDLE_DIR + bin, new Blob(pack.filter((x) => x.etag).map((x) => x.body)), { httpMetadata: { contentType: 'application/octet-stream' } });
+  for (let tries = 0; tries < 2; tries++) {
+    const { man, etag } = await readManifest(env);
+    for (const it of items) man.items[it.id] = { etag: it.etag, bin, off: it.off, len: it.len };
+    man.bins[bin] = { at: Date.now(), n: items.length, size: off };
+    for (const id of Object.keys(man.items)) if (!tags.has(id) || tags.get(id).etag !== man.items[id].etag) delete man.items[id];   // (a paper gone, or its text changed: read alone next time)
+    const used = new Set(Object.values(man.items).map((x) => x.bin));
+    const drop = Object.keys(man.bins).filter((b) => !used.has(b));
+    for (const b of drop) delete man.bins[b];
+    man.at = Date.now();
+    const put = await env.BUCKET.put(BUNDLE_MAN, JSON.stringify(man), { httpMetadata: { contentType: 'application/json' }, ...(etag ? { onlyIf: { etagMatches: etag } } : {}) });
+    if (put) {
+      // (and bins no manifest names — a device that lost the race above, a manifest written over — once ten minutes old)
+      const l = await env.BUCKET.list({ prefix: BUNDLE_DIR, limit: 1000 }).catch(() => ({ objects: [] }));
+      const stray = l.objects.filter((o) => o.key.endsWith('.bin') && !man.bins[o.key.slice(BUNDLE_DIR.length)] && Date.now() - new Date(o.uploaded).getTime() > 600e3).map((o) => o.key);
+      const all = [...drop.map((b) => BUNDLE_DIR + b), ...stray];
+      if (all.length) await deleteMany(env, all);
+      return true;
+    }
+  }
+  await env.BUCKET.delete(BUNDLE_DIR + bin).catch(() => {});   // (another device's manifest won: this bin is nobody's)
+  return false;
+}
+
+/* ---------------- the law mirror's history of a file, kept six hours (GitHub's own allowance is 60 an hour an address) ----
+   GET /api/lawgit/commits?path=kr/<law>/<file>.md[&until=<ISO date>] → GitHub's commits list for that file (all its pages,
+   ≤ 300 commits, one JSON array as GitHub gives them: sha, commit.message, commit.author.date … — laws.js reads those).
+   Kept at the edge six hours per (path, until); also kept in R2 (cache/lawgit/), so when GitHub refuses (its hourly
+   allowance is shared by every Worker on Cloudflare's addresses) the last list is given (x-cache: stale) — never an error
+   while one was ever had. env.GITHUB_TOKEN (optional, read-only public access) raises GitHub's allowance to 5,000 an hour. */
+const LAWGIT = 'https://api.github.com/repos/legalize-kr/legalize-kr/commits';
+const LAWGIT_TTL = 6 * 3600, LAWGIT_PAGES = 3;
+const LAWGIT_PATH = /^kr\/(?:[^/?#\\\u0000-\u001f]{1,120}\/){1,2}[^/?#\\\u0000-\u001f]{1,120}\.md$/;
+async function lawgitCommits(env, ctx, url) {
+  const path = String(url.searchParams.get('path') || '').trim(), until = String(url.searchParams.get('until') || '').trim();
+  if (!LAWGIT_PATH.test(path) || path.split('/').some((s) => s === '..' || s === '.')) return err('bad_path', 400);
+  if (until && !/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?Z)?$/.test(until)) return err('bad_until', 400);
+  const id = await sha256hex('lawgit|' + path + '|' + until);
+  const key = new Request(KEPT + 'lawgit/' + id), keep = 'cache/lawgit/' + id + '.json';
+  const hit = await caches.default.match(key).catch(() => null);
+  const send = (text, how) => new Response(text, { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, max-age=600', 'x-cache': how } });
+  if (hit) return send(await hit.text(), 'hit');
+  // (the copy in R2 is the six-hour keep too: the edge cache is one data centre's, and a *.workers.dev Worker may keep
+  // nothing there — a copy younger than six hours is given as it is, without asking GitHub)
+  const was = await env.BUCKET.head(keep).catch(() => null);
+  const kept = was && Date.now() - new Date(was.uploaded).getTime() < LAWGIT_TTL * 1000 ? await env.BUCKET.get(keep).catch(() => null) : null;
+  if (kept) {
+    const text = await kept.text(), old = was;
+    if (ctx && ctx.waitUntil) ctx.waitUntil(caches.default.put(key, new Response(text, { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${Math.max(60, LAWGIT_TTL - Math.floor((Date.now() - new Date(old.uploaded).getTime()) / 1000))}` } })).catch(() => {}));
+    return send(text, 'kept');
+  }
+  const pages = [];
+  let fail = 0;
+  for (let pg = 1; pg <= LAWGIT_PAGES; pg++) {
+    const q = new URLSearchParams({ path, per_page: '100', page: String(pg), ...(until ? { until } : {}) });
+    let r;
+    console.log('lawgit upstream', path, until || '-', pg);
+    try {
+      r = await fetch(`${LAWGIT}?${q}`, { headers: { 'user-agent': UA, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...(env.GITHUB_TOKEN ? { authorization: 'Bearer ' + env.GITHUB_TOKEN } : {}) }, signal: AbortSignal.timeout(15000) });
+    } catch (e) { fail = 504; break; }
+    if (!r.ok) { fail = r.status; try { await r.body?.cancel(); } catch (e) { /* gone */ } break; }
+    const t = (await r.text()).trim();
+    if (!t.startsWith('[') || !t.endsWith(']')) { fail = 502; break; }
+    pages.push(t);
+    if (!/rel="next"/.test(r.headers.get('link') || '')) break;   // (GitHub says when there is a page after this one)
+  }
+  if (fail || !pages.length) {
+    const old = was ? await env.BUCKET.get(keep).catch(() => null) : null;
+    if (old) return send(await old.text(), 'stale');
+    return err(fail === 403 || fail === 429 ? 'busy' : 'upstream_unreachable', 502, { upstream: fail || 0 });
+  }
+  // one array of all the pages, joined as text (nothing parsed: a long history is a megabyte of JSON)
+  const inner = pages.map((t) => t.slice(1, -1).trim()).filter(Boolean);
+  const text = '[' + inner.join(',') + ']';
+  if (text.length <= 8 * 1024 * 1024 && ctx && ctx.waitUntil) {
+    ctx.waitUntil(caches.default.put(key, new Response(text, { headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${LAWGIT_TTL}` } })).catch(() => {}));
+    ctx.waitUntil(env.BUCKET.put(keep, text, { httpMetadata: { contentType: 'application/json' } }).catch(() => {}));
+  }
+  return send(text, 'miss');
+}
+
+/* ---------------- 다듬은 기록 kept with the server: the same last answers on every device ----------------
+   write/history.json: { v: 1, list: [the 20 newest by at], gone: [ids deleted on a device (≤ 200), so they never come back] }
+   GET /api/write/history → { list, gone }; PUT { list } merges by id (an entry { id, del: true } deletes it) → { list, gone }.
+   A body over 200 KB is refused (413); each entry is cut to what the app shows (input ≤ 4,000 letters, kept so marked). */
+const HIST_KEY = 'write/history.json', HIST_KEEP = 20, HIST_GONE = 200, HIST_BODY = 200 * 1024, HIST_INPUT = 4000, HIST_OUT = 60000;
+const HIST_ID = /^[A-Za-z0-9_-]{1,40}$/;
+const short = (s, n) => (typeof s === 'string' ? writeClean(s, n) : '');
+function histEntry(x) {
+  if (!x || typeof x !== 'object' || !HIST_ID.test(String(x.id || ''))) return null;
+  if (x.del) return { id: String(x.id), del: true };
+  const at = Number(x.at);
+  if (!Number.isFinite(at) || at <= 0) return null;
+  const input = typeof x.input === 'string' ? x.input.replace(/\r\n?/g, '\n') : '';
+  const cut = [...input].length > HIST_INPUT;
+  const e = { id: String(x.id), at, act: short(x.act, 24), input: cut ? [...input].slice(0, HIST_INPUT).join('') : input, out: typeof x.out === 'string' ? [...x.out].slice(0, HIST_OUT).join('') : '' };
+  if (cut || x.inputCut) e.inputCut = true;
+  if (typeof x.model === 'string') e.model = short(x.model, 80);
+  else if (x.model && typeof x.model === 'object') { const m = {}; for (const k of ['id', 'name', 'label']) if (typeof x.model[k] === 'string') m[k] = short(x.model[k], 80); e.model = m; }
+  for (const k of ['stop', 'note']) if (typeof x[k] === 'string') e[k] = short(x[k], k === 'note' ? 400 : 24);
+  if (x.usage && typeof x.usage === 'object') { const u = {}; for (const [k, v] of Object.entries(x.usage).slice(0, 10)) if (/^[a-z_]{1,40}$/.test(k) && Number.isFinite(Number(v))) u[k] = Number(v); e.usage = u; }
+  return e;
+}
+async function getHistory(env) {
+  const o = await env.BUCKET.get(HIST_KEY);
+  const d = o ? await o.json().catch(() => null) : null;
+  return { d: d && Array.isArray(d.list) ? { v: 1, list: d.list, gone: Array.isArray(d.gone) ? d.gone : [] } : { v: 1, list: [], gone: [] }, etag: o ? o.etag : null };
+}
+async function writeHistoryGet(env) {
+  const { d } = await getHistory(env);
+  return json({ list: d.list, gone: d.gone });
+}
+async function writeHistoryPut(req, env) {
+  const body = await readJSON(req, HIST_BODY);
+  if (!body || !Array.isArray(body.list)) return err('bad_list', 400);
+  const inc = body.list.slice(0, 100).map(histEntry).filter(Boolean);
+  for (let tries = 0; tries < 3; tries++) {
+    const { d, etag } = await getHistory(env);
+    const gone = new Set(d.gone);
+    for (const e of inc) if (e.del) gone.add(e.id);
+    const by = new Map();
+    for (const e of d.list) if (e && HIST_ID.test(String(e.id || '')) && !gone.has(e.id)) by.set(e.id, e);
+    for (const e of inc) if (!e.del && !gone.has(e.id)) { const was = by.get(e.id); if (!was || e.at >= was.at) by.set(e.id, e); }
+    const list = [...by.values()].sort((a, b) => b.at - a.at).slice(0, HIST_KEEP);
+    const next = { v: 1, list, gone: [...gone].slice(-HIST_GONE), at: Date.now() };
+    const put = await env.BUCKET.put(HIST_KEY, JSON.stringify(next), { httpMetadata: { contentType: 'application/json' }, ...(etag ? { onlyIf: { etagMatches: etag } } : {}) });
+    if (put) return json({ list: next.list, gone: next.gone });
+  }
+  return err('busy', 409);
+}
+
 /* ---------------- highlights and underlines ---------------- */
 
 function cleanMark(x) {
@@ -2069,7 +2318,7 @@ async function pull(env, url) {
   return json(out);
 }
 
-/* ---------------- 글쓰기 도우미: the owner's academic Korean, polished in the owner's own style by Claude ---------------- */
+/* ---------------- 다듬기 도우미: the owner's academic Korean, polished in the owner's own style by Claude ---------------- */
 // Asked of Anthropic's Messages API with the owner's own key (env.ANTHROPIC_API_KEY, a secret): it goes out only in the
 // request's x-api-key header and is never logged, kept or sent back (a word passed on from Anthropic has it taken out).
 // The answer is streamed (server-sent events: the API guide's raw-HTTP way, this worker being one plain module with no SDK)

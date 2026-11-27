@@ -9,8 +9,8 @@
 //   mount(sec, q, ui)                → 논문 찾기's section: sec an empty <section>; resolves to how many were found
 //   lawSection(sec, name, ui)        → the same rows for one law (법령's screen), quiet when there are none
 //   ui: { upload(files), toast(msg), mine?(title) → bool, live?() → bool }
-import * as api from './api.js?v=3dab24bfa8';
-import * as papers from './papers.js?v=3dab24bfa8';
+import * as api from './api.js?v=c7790c4af0';
+import * as papers from './papers.js?v=c7790c4af0';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SHOW = 5;   // rows shown at first; 더 보기 shows ten more at a time (and asks the next page when those run out)

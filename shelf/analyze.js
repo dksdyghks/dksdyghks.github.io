@@ -395,7 +395,169 @@ function headingKind(t) {
 // (Ⅰ. 서론 Ⅳ. 결론 — the box's two columns read across), and a heading listed in the box before the same heading in the text
 const MARK = /(?:^|\s)(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]{1,4}\s*[.．]|(?:I|II|III|IV|V|VI|VII|VIII|IX|X)\.\s|\d{1,2}\.\s*(?=[가-힣A-Za-z「『‘“(]))\s*\S/g;
 const headKey = (t) => String(t || '').replace(/^[\sⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩIVX\d.．()가-하]{1,6}?[.．)]\s*/, '').replace(/[\s「」｢｣『』‘’“”'"·:：\-–—]/g, '').slice(0, 24);
-export function tidyOutline(list) {
+// ---- a scan's headings mended (8차 E4) ----
+// A scan's reader (OCR) reads a chapter's roman numeral as anything: Ⅰ as Ｌ or l, Ⅲ as 피, m, IlI or Ⅱl, Ⅳ as #, 0 or 1 — and
+// a heading it read so is no roman (dropped, or taken for a lower one: '피. 쟁점별 검토' under '2. 프랑스'). The paper's own
+// printed 목차 box, when it has one, names the chapters in order: each is found again in the text (the same words on a line
+// of their own, whatever is read before the dot) and given its numeral (Ⅰ, Ⅱ, …) at the top level. Without a box, a known
+// misreading is read as its numeral by the chapters before and after it (Ⅱ … ? … Ⅳ → Ⅲ). And what a list after the
+// references heading reads as headings (a book's entry, '2. 사1386, 14070[1617, 2012.') is no heading; a footnote's number
+// glued to a heading ('개관2', '차이점33)') is not its words.
+const ROMANS = 'ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ';
+const ASCII_ROMAN = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9, X: 10 };
+const OCR_ROMAN = { 'Ｌ': 1, L: 1, l: 1, '|': 1, 'Ｉ': 1, 'ㅣ': 1, 'Il': 2, lI: 2, ll: 2, 'Ⅰl': 2, 'Ⅰ1': 2, 'Ⅱl': 3, 'ⅡI': 3, IlI: 3, lll: 3, Ill: 3, IIl: 3, lIl: 3, '피': 3, '미': 3, m: 3, 'Ⅲl': 4, lV: 4, 'Ⅰv': 4, 'Ⅰ∨': 4, IV: 4, '#': 0, '0': 0, 'O': 0, 'Ｏ': 0, '': 0 };
+const HEAD_RE = /^\s*(\S{0,4}?)\s*[.．]\s*(\S.*)$/;
+function romanOf(t) {   // { v (0: a misreading of no known numeral), ocr, rest } for a heading led by a roman numeral or its misreading
+  const m = HEAD_RE.exec(String(t || ''));
+  if (!m) return null;
+  const pre = m[1], rest = m[2];
+  if (pre.length === 1 && ROMANS.includes(pre)) return { v: ROMANS.indexOf(pre) + 1, ocr: false, rest };
+  if (ASCII_ROMAN[pre]) return { v: ASCII_ROMAN[pre], ocr: false, rest };
+  if (pre in OCR_ROMAN && pre !== '' && !/^\d+$/.test(pre) && /^[가-힣「『"“(]/.test(rest)) return { v: OCR_ROMAN[pre], ocr: true, rest };
+  return null;
+}
+const REFS = /^(?:참\s*고\s*문\s*헌|References|REFERENCES|Bibliography|BIBLIOGRAPHY)$/;
+const APPENDIX = /^[\s<〈《【\[(]*(?:부\s*록|별\s*첨|별\s*표|Appendix|APPENDIX)(?:\s*\d{1,2})?(?:$|[\s>〉》】\])][^,]{0,40}$|[.:：][^,]{0,40}$)/;
+const isRefs = (t) => REFS.test(String(t || '').replace(/[<>【】\[\]〈〉《》]/g, '').trim());
+const squash = (t) => String(t || '').replace(/[\s·ㆍ「」『』"“”'‘’]/g, '');
+// the printed 목차 box on the first pages: its chapters' words, in order (null without one)
+function contentsBox(pages) {
+  for (let pi = 0; pi < Math.min(3, pages.length); pi++) {
+    const lines = String(pages[pi] || '').split('\n');
+    const at = lines.findIndex((l) => /^\s*[<〈《【\[(]?\s*목\s*차\s*[>〉》】\])]?\s*$/.test(l));
+    if (at < 0) continue;
+    const ent = [];
+    for (let i = at + 1; i < lines.length && ent.length < 16; i++) {
+      const l = lines[i].trim().replace(/[\s.·…]{3,}\d{1,4}$/, '').replace(/\s+\d{1,4}$/, '');
+      if (!l) { if (ent.length) break; continue; }
+      if (headingKind(l) === 'special') break;
+      const m = /^([^가-힣\s]{0,4}?)\s*[.．]?\s*([가-힣「『(][^\n]{0,38})$/.exec(l);
+      if (!m || l.length > 44) break;
+      const pre = m[1], title = m[2].trim();
+      if (/^[가-하]\s*[.．)]/.test(title) || /^\(?\d{1,2}\)$/.test(pre)) { ent.push({ sub: true }); continue; }   // (가. or (1): an entry under a chapter)
+      ent.push({ pre, title, line: i });
+    }
+    const top = ent.filter((e) => !e.sub);
+    if (top.length >= 2) return { page: pi, line: top[top.length - 1].line, titles: top.map((e) => e.title), pres: top.map((e) => e.pre) };
+  }
+  return null;
+}
+// each of the box's chapters found again in the text: { k, page, yf } (yf: how far down its page, by its line)
+// a line's words without what leads it: a numeral as read (Ⅲ, 피., Ｌ, #.) and its dot
+const lineWords = (l) => String(l || '').trim().replace(/^(?:피|미|ㅣ)\s*[.．]\s*/, '').replace(/^[^가-힣「『]{0,6}/, '');
+function lineOf(pages, page, title) {
+  const want = squash(lineWords(String(title).replace(HEAD_RE, '$2')));
+  if (!want) return -1;
+  const lines = String(pages[page] || '').split('\n');
+  return lines.findIndex((l) => squash(lineWords(l)) === want || squash(l) === squash(title));
+}
+function findChapters(pages, box) {
+  const out = [];
+  let pi = box.page, li = box.line + 1;
+  for (let k = 0; k < box.titles.length; k++) {
+    const want = squash(box.titles[k]);
+    let hit = null;
+    for (let p = pi; p < pages.length && !hit; p++) {
+      const lines = String(pages[p] || '').split('\n');
+      for (let i = p === pi ? li : 0; i < lines.length; i++) {
+        const rest = lineWords(lines[i]);
+        if (rest && squash(rest) === want) { hit = { k, page: p, yf: lines.length > 1 ? i / lines.length : 0, line: i, lead: lines[i].trim().slice(0, lines[i].trim().length - rest.length).replace(/[\s.．]+$/, '') }; break; }
+      }
+    }
+    if (!hit) continue;
+    out.push(hit); pi = hit.page; li = hit.line + 1;
+  }
+  return out;
+}
+function mendRomans(list, pages, scan) {
+  let out = list.map((x) => ({ ...x }));
+  // (a scan only: a paper set in type has its numerals as printed, and its box lists sections too)
+  const box = scan && pages && pages.length ? contentsBox(pages) : null;
+  // a chapter: an entry led, in the box or in the text, by a numeral or what a numeral is misread as — never by a plain
+  // digit in both (1. 의의 is a section)
+  const lead = (t) => t === '' || ROMANS.includes(t) || !!ASCII_ROMAN[t] || (t in OCR_ROMAN && !/^\d+$/.test(t));
+  const found = box ? findChapters(pages, box).filter((f) => lead(box.pres[f.k]) || lead(f.lead)) : [];
+  if (box && found.length >= 2) {
+    found.forEach((f, n) => {
+      const words = box.titles[f.k], key = squash(words), numeral = ROMANS[n] || String(n + 1);
+      const e = out.find((x) => x.page === f.page && squash(String(x.title).replace(HEAD_RE, '$2')) === key);
+      const r = e && romanOf(e.title);
+      if (e) { if (!(r && !r.ocr)) e.title = `${numeral}. ${words}`; e.level = 1; }   // (a numeral read right stays as printed)
+      else out.push({ title: `${numeral}. ${words}`, level: 1, page: f.page, yf: Math.round(f.yf * 1000) / 1000, mended: true });
+    });
+    // the chapters put back in their place on their page: every entry of that page by its line in the page's text (an
+    // entry not found there keeps its place after the one before it); a chapter put back is scrolled to just above the
+    // heading after it (or below the one before)
+    const mendedPages = new Set(out.filter((x) => x.mended).map((x) => x.page));
+    let ln = -1, lastPage = -1;
+    for (const x of out) {
+      if (!mendedPages.has(x.page)) continue;
+      if (x.page !== lastPage) { ln = -1; lastPage = x.page; }
+      const at = x.mended ? Math.round(x.yf * String(pages[x.page] || '').split('\n').length) : lineOf(pages, x.page, x.title);
+      x._ln = at >= 0 ? at : ln + 0.01; ln = x._ln;
+    }
+    out = out.map((x, i) => [x, i]).sort((a, b) => a[0].page - b[0].page || (mendedPages.has(a[0].page) ? a[0]._ln - b[0]._ln : 0) || a[1] - b[1]).map(([x]) => x);
+    out.forEach((x, i) => {
+      if (!x.mended) return;
+      const next = out.slice(i + 1).find((q) => q.page === x.page && q.y != null), prev = out.slice(0, i).reverse().find((q) => q.page === x.page && q.y != null);
+      if (next) { x.y = Math.max(0, next.y - 30); delete x.yf; } else if (prev) { x.y = prev.y + 30; delete x.yf; }
+    });
+    for (const x of out) { delete x._ln; delete x.mended; }
+    return out;
+  }
+  // no box: a misreading between true numerals takes the numeral between them; alone, its likeliest reading (that, a scan
+  // only: a paper set in type — or read by its publisher — has a misreading mended only right between two numerals,
+  // Ⅱ … m. … Ⅳ; '미. 국의 제도', 'L. 영국' there are its own words)
+  const rs = out.map((x) => ({ x, r: romanOf(x.title) })).filter((o) => o.r);
+  if (!rs.some((o) => o.r.ocr)) return out;
+  for (let i = 0; i < rs.length; i++) {
+    const o = rs[i]; if (!o.r.ocr) continue;
+    const prev = rs.slice(0, i).reverse().find((q) => !q.r.ocr || q.fixed), next = rs.slice(i + 1).find((q) => !q.r.ocr);
+    let v = 0;
+    if (prev) v = (prev.fixed || prev.r.v) + 1;
+    else if (next && next.r.v > 1) v = next.r.v - (rs.slice(0, rs.indexOf(next)).filter((q) => q.r.ocr).length);
+    if (!v || (next && v >= next.r.v)) v = o.r.v;
+    if (!v) continue;
+    if (!scan && !(prev && next && v === (prev.fixed || prev.r.v) + 1 && v === next.r.v - 1)) continue;
+    o.fixed = v; o.x.title = `${ROMANS[v - 1]}. ${o.r.rest}`; o.x.level = 1;
+  }
+  return out;
+}
+// a heading's last word and the number glued to it ('개관2', '사례1'): { key (the words before the number, without the
+// heading's own numbering), n } or null
+const GLUED = /([가-힣])(\d{1,3})$/;
+const gluedOf = (t) => { const m = GLUED.exec(t); return m ? { key: t.slice(0, m.index + 1).replace(/^\S{1,4}\s*[.．)]\s*/, '').trim(), n: Number(m[2]), word: (/[가-힣]+$/.exec(t.slice(0, m.index + 1)) || [''])[0] } : null; };
+function mendTitles(list) {
+  let refs = false;
+  const out = [];
+  // (the same words numbered in turn — 사례1, 사례2 — are headings so numbered, not a note's number: kept)
+  const numbered = new Map();
+  for (const x of list) { const g = gluedOf(String(x.title || '').trim()); if (g) { if (!numbered.has(g.key)) numbered.set(g.key, new Set()); numbered.get(g.key).add(g.n); } }
+  for (const x of list) {
+    let t = String(x.title || '');
+    // (a note's number glued to the last word — not 제9 of an article cut short, nor a case number's 헌마554; a bare number
+    // is kept when the same words come numbered next to it (사례1 · 사례2) or the heading numbers that word already
+    // (모형1과 모형2); with its ')' — 차이점33) — it is a note's always)
+    if (!/제\d{1,3}\)?$|조의\d{1,3}\)?$|\d{2,4}\s*[가-힣]{1,3}\d{1,6}\)?$/.test(t)) {
+      const g = /\)$/.test(t) ? null : gluedOf(t.trim());
+      const own = g && ((numbered.get(g.key) || new Set()).has(g.n - 1) || (numbered.get(g.key) || new Set()).has(g.n + 1) || (g.word && new RegExp(g.word + '\\s*\\d').test(t.trim().slice(0, -String(g.n).length - g.word.length))));
+      if (!own) t = t.replace(/([가-힣])\d{1,3}\)?$/, '$1');
+    }
+    t = t.replace(/([가-힣)])\s*[*†‡]+$/, '$1').trim();
+    if (isRefs(t)) refs = true;
+    else if (refs && APPENDIX.test(t)) refs = false;   // (an appendix after the references: headings again — 부록's 1. 설문지 2020 stays; an abstract's lines are no headings)
+    else if (refs && (x.level || 1) >= 1) {
+      const k = headingKind(t), body = t.replace(/^\S{1,4}\s*[.．)]\s*/, '');
+      if (k && k !== 'special' && k !== 'roman' && k !== 'chapter' && (/\d/.test(body) || (/,/.test(body) && [...body].length > 12) || [...body].length > 24)) continue;   // (a book's entry, not a heading: 국내문헌, (2) 논문, 기타 stay)
+      if (k === 'roman' || k === 'chapter') refs = false;   // (a chapter after the references: headings again)
+    }
+    out.push(t === x.title ? x : { ...x, title: t });
+  }
+  return out;
+}
+// opts.pages: the paper's page texts (index.pages), for the 목차 box and the chapters' lines; opts.ocr: it is a scan read by OCR
+export function tidyOutline(list, opts = {}) {
+  try { list = mendRomans(mendTitles((list || []).filter((x) => x && x.title)), opts.pages, !!opts.ocr); } catch (e) { /* as it was */ }
   const xs = (list || []).filter((x) => x && x.title);
   // (a decision named by its date is one heading: the 10. of 1993. 12. 10. 선고 is no second number)
   const undated = (t) => String(t).replace(/(?:19|20)\d{2}\s*\.\s*\d{1,2}\s*\.(?:\s*\d{1,2}\s*\.)?/g, (m) => m.replace(/\S/g, '#'));

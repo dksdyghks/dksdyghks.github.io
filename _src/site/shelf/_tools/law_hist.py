@@ -16,6 +16,20 @@ over a minute (621 of the versions fetched on the way):
                                       each {d 공포일자, no 공포번호, kind 제개정구분, eff 시행일자, title, text, how?, gone?}
                                       (text: as it read until the next change — pictures' markup and 란/난 aside, see IMG)
 A file changes only when one of its articles does (nothing in it says when it was made), so the weekly commit stays small.
+Beside the record, two small indexes (8차):
+
+  lawhist/whole/<k>.json              every file of the mirror written anew (전부개정, 폐지제정, 1,512 files): the day of each,
+                                      and the version just before it (its commit and day) — so "구 식품위생법(2009. 2. 6. …
+                                      전부개정되기 전의 것) 제58조" is read as it stood, with no list of versions asked of
+                                      GitHub. 16 parts by folder (shard); from the commits alone (25 s)
+  lawhist/defs/<k>.json               where these laws define a word ('"선거운동"이라 함은', '"처분"이란', the 호 of an article
+                                      on definitions): 603 words, 16 parts by the word, from the record's newest texts
+
+  python3 law_hist.py /tmp/law-hist-src shelf shelf/lawhist --extras   (only those two, the record left as it is)
+
+The mirror keeps a law under today's name only (공직선거법's versions begin at its 2005 rename; no commit holds
+공직선거및선거부정방지법), so a renamed law's earlier versions cannot be joined on: the app says where its record begins
+(laws.js gapOf) instead.
 
   git clone --filter=blob:none --no-checkout https://github.com/legalize-kr/legalize-kr /tmp/law-hist-src
   python3 law_hist.py /tmp/law-hist-src shelf shelf/lawhist
@@ -274,6 +288,127 @@ def history(vs, texts):
     return lists, prev
 
 
+# ---- 전부개정: when each file was written anew, and its last version before (lawhist/whole/<k>.json) ----------------------
+WHOLE_KINDS = ('전부개정', '폐지제정')
+
+
+def shard(name):
+    """which of the 16 files holds a law (laws.js wholeShard: the sum of its folder name's letters, mod 16)"""
+    return sum(ord(c) for c in name) % 16
+
+
+def whole_index(repo, out_dir):
+    """every file of the mirror that was written anew (전부개정, 폐지제정) — the day of each, newest first, and the version
+    just before it (its commit and day), so the app can show "구 식품위생법(2009. 2. 6. 전부개정되기 전의 것) 제58조" as it
+    read then, with no list of versions asked of GitHub. From the commits alone (no text read: 25 s for the whole mirror).
+    {v, head, files: {"식품위생법/법률": [["2009-02-06", pre commit, pre day], …]}} in 16 files by folder (shard)"""
+    out = git(repo, 'log', '--format=C%x09%H%x09%ad%x09%s', '--date=short', '--name-only', REF, '--', 'kr/').decode('utf-8', 'replace')
+    per, cur, order = {}, None, 0
+    for line in out.split('\n'):
+        if line.startswith('C\t'):
+            _, sha, d, msg = line.split('\t', 3)
+            k = re.search(r'\(([^()]*)\)\s*$', msg)
+            order += 1
+            cur = (d, -order, sha, k.group(1) if k else '')
+        elif cur and line.startswith('kr/') and line.endswith('.md'):
+            per.setdefault(line[3:-3], []).append(cur)
+    shards = {}
+    for path, vs in per.items():
+        vs = sorted((v for v in vs if v[3]), key=lambda v: (v[0], v[1]))   # (by day, then commit order: oldest first)
+        rows = []
+        for i, v in enumerate(vs):
+            if v[3] not in WHOLE_KINDS or v[0] <= '1970-01-01':
+                continue
+            pre = vs[i - 1] if i > 0 else None
+            rows.append([v[0], pre[2] if pre else '', pre[0] if pre and pre[0] > '1970-01-01' else ''])
+        if rows:
+            shards.setdefault(shard(path.split('/')[0]), {})[path] = rows[::-1]
+    os.makedirs(out_dir, exist_ok=True)
+    head = git(repo, 'rev-parse', REF).decode().strip()
+    n = 0
+    for k in range(16):
+        with open(os.path.join(out_dir, f'{k}.json'), 'w', encoding='utf-8') as fh:
+            json.dump({'v': 1, 'head': head, 'files': shards.get(k, {})}, fh, ensure_ascii=False, separators=(',', ':'))
+        n += len(shards.get(k, {}))
+    print(f'whole: {n} files written anew at least once, in 16 parts')
+    return n
+
+
+# ---- 정의 조항: where each of these laws defines a word (lawhist/defs/<k>.json) --------------------------------------------
+# '"선거운동"이라 함은', '"정치자금"이란', 'X이란 …을 말한다' — and in an article on definitions (제목 정의, 용어의 정의 …) the
+# word each 호 opens with ('1. 정치자금의 종류는 다음 각 목과 같다'). From the articles as they read now (each article's version
+# in force on the day the record was made — not a coming amendment's), so no text is read again
+# (not the names a text gives for later — '(이하 "공무원"이라 한다)': a short name, not a definition)
+DEF_QUOTED = re.compile(r'["“”\'‘’]([^"“”\'‘’\n]{1,40})["“”\'‘’]\s*(?:\(이\)\s*)?(?:이?라\s*함은|이?란(?![가-힣]))')
+DEF_HEAD = re.compile(r'^\s*(?:\d{1,2}(?:의\d{1,2})?\.|[가-하]\.)\s*["“”\'‘’]?([가-힣A-Za-z0-9ㆍ·\s]{2,30}?)["“”\'‘’]?\s*(?:\(이\)\s*)?(?:이?라\s*함은|이?란|의\s*종류는|:)')
+
+
+def sentence_at(text, at):
+    """the sentence of a text around a place in it: from its line's start to its first '말한다.' (or the line's end)"""
+    a = text.rfind('\n', 0, at) + 1
+    b = text.find('\n', at)
+    line = text[a:b if b >= 0 else len(text)]
+    m = re.search(r'(?:말한다|뜻한다|본다|같다)\.', line[at - a:])
+    s = line[:at - a + m.end()] if m else line
+    return re.sub(r'\s*<[^<>]*>\s*$', '', s).strip()[:200]
+
+
+def definitions(dst, shelf):
+    """{v, built, terms: {word (spaces out): [[law, art, sub, para, sentence, 1 when the article is one on definitions], …]}},
+    in 16 files by the word (shard), from the record in dst"""
+    idx = json.load(open(os.path.join(dst, 'index.json'), encoding='utf-8'))
+    terms = {}
+    for d, e in idx['laws'].items():
+        base = os.path.join(dst, d, e[0])
+        if not os.path.isdir(base):
+            continue
+        for f in sorted(os.listdir(base), key=lambda x: int(x.split('.')[0]) if x.split('.')[0].isdigit() else 0):
+            data = json.load(open(os.path.join(base, f), encoding='utf-8'))
+            law = data.get('law') or d
+            for k, entries in data.get('arts', {}).items():
+                # (the version in force on the day the record was made: a coming amendment's new word is not yet a definition)
+                x = next((v for v in entries if (v.get('eff') or v.get('d') or '') <= idx.get('built', '9999')), None)
+                if not x or x.get('gone'):
+                    continue
+                art, sub = (k.split('-') + ['0'])[:2]
+                text, title = x.get('text') or '', x.get('title') or ''
+                paras = re.split(r'\n(?=[①-⑳])', text)
+                for pi, para in enumerate(paras):
+                    pno = ord(para.strip()[0]) - 0x245F if para.strip() and '①' <= para.strip()[0] <= '⑳' else (0 if len(paras) == 1 else pi + 1)
+                    hits = [(m.group(1), m.start()) for m in DEF_QUOTED.finditer(para)]
+                    if re.search(r'정의|용어의\s*뜻', title):
+                        off = 0
+                        for l in para.split('\n'):
+                            m = DEF_HEAD.match(l)
+                            if m:
+                                hits.append((m.group(1), off + m.start(1)))
+                            off += len(l) + 1
+                    head = 1 if re.search(r'정의|용어의\s*뜻', title) else 0
+                    for w, at in hits:
+                        key = re.sub(r'[\s·ㆍ]', '', w)
+                        if len(key) < 2 or len(key) > 30 or re.search(r'[0-9]{3}', key):
+                            continue
+                        row = [law, int(art), int(sub), pno, sentence_at(para, at), head]
+                        lst = terms.setdefault(key, [])
+                        if not any(r[0] == row[0] and r[1] == row[1] and r[2] == row[2] for r in lst):
+                            lst.append(row)
+    # the definitions article of a law first, then the law's own order
+    for key, lst in terms.items():
+        lst.sort(key=lambda r: (-r[5], r[1], r[2]))
+        del lst[10:]
+    # (in 16 files by the word, as the whole index is by the law: one asked for a word, some 10 KB as sent)
+    parts = {}
+    for key, lst in terms.items():
+        parts.setdefault(shard(key), {})[key] = lst
+    out_dir = os.path.join(dst, 'defs')
+    os.makedirs(out_dir, exist_ok=True)
+    for k in range(16):
+        with open(os.path.join(out_dir, f'{k}.json'), 'w', encoding='utf-8') as fh:
+            json.dump({'v': 1, 'built': idx.get('built', ''), 'terms': parts.get(k, {})}, fh, ensure_ascii=False, separators=(',', ':'))
+    print(f'defs: {len(terms)} words defined in {len(idx["laws"])} laws')
+    return len(terms)
+
+
 def main(repo, shelf, dst, only=None):
     idx = json.load(open(os.path.join(shelf, 'lawidx.json'), encoding='utf-8'))
     head = git(repo, 'rev-parse', REF).decode().strip()
@@ -351,9 +486,28 @@ def main(repo, shelf, dst, only=None):
         sys.exit('lawhist: much less than before (' + ', '.join(lost[:10]) + '): not replaced')
     with open(os.path.join(tmp, 'index.json'), 'w', encoding='utf-8') as fh:
         json.dump({'v': 1, 'built': built, 'head': head, 'laws': laws}, fh, ensure_ascii=False, separators=(',', ':'))
+    # (written into the new record before it takes the old one's place: the two below go with it)
+    try:
+        whole_index(repo, os.path.join(tmp, 'whole'))
+    except Exception as e:   # (none this week: last week's stay)
+        print('whole: not made:', e)
+        if os.path.isdir(os.path.join(dst, 'whole')):
+            shutil.copytree(os.path.join(dst, 'whole'), os.path.join(tmp, 'whole'))
+    try:
+        definitions(tmp, shelf)
+    except Exception as e:
+        print('defs: not made:', e)
+        if os.path.isdir(os.path.join(dst, 'defs')):
+            shutil.copytree(os.path.join(dst, 'defs'), os.path.join(tmp, 'defs'))
     shutil.rmtree(dst, ignore_errors=True)
     os.rename(tmp, dst)
 
 
-if __name__ == '__main__':   # (a fourth argument, folders with commas between them: only those, to try it out)
-    main(sys.argv[1], sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 else None)
+if __name__ == '__main__':
+    # (a fourth argument, folders with commas between them: only those, to try it out; or --extras: only the two indexes
+    # beside the record — lawhist/whole/ and lawhist/defs/ — from the record there now, nothing else rewritten)
+    if len(sys.argv) > 4 and sys.argv[4] == '--extras':
+        whole_index(sys.argv[1], os.path.join(sys.argv[3], 'whole'))
+        definitions(sys.argv[3], sys.argv[2])
+    else:
+        main(sys.argv[1], sys.argv[2], sys.argv[3], set(sys.argv[4].split(',')) if len(sys.argv) > 4 else None)

@@ -10,7 +10,9 @@
 // as they are needed and kept on this device (until the index is made again), so a search asked again, or offline, is
 // answered at once. (An index made before fmt 2 took its pieces within each word and left the commonest out: it is still
 // read, the old way, until it is made again.)
-import * as store from './store.js?v=3dab24bfa8';
+import * as store from './store.js?v=c7790c4af0';
+import { oldArticlesOf, oldLaw, successor } from './laws.js?v=c7790c4af0';
+import * as terms from './terms.js?v=c7790c4af0';
 
 const BASE = new URL('./precq/', import.meta.url);
 const LETTERS = /[^0-9A-Za-zㄱ-ㆎ가-힣㐀-䶿一-鿿\uF900-\uFAFF]+/g;
@@ -147,6 +149,24 @@ function ordered(...groups) {
 // than NEAR_BELOW hold every word (of two different words or more that some judgment holds: of one word alone, the judgments
 // holding some of its pieces are not like it — '사후적고찰' is not '적고'), those that hold the most of them follow (near)
 const PIECES = 48, ACROSS = 4, NEAR_BELOW = 20;
+// a word of the question said another way (terms.js: '처분성' is '항고소송의 대상', '행정소송의 대상' …): a judgment holding
+// that other way holds the word. Those found only so (alike) follow the ones holding every word as typed — never before
+// them — best first (ranked), and carry which way they said it (syn). Ideas of several words ('정당 보조금',
+// '재량권 일탈 남용') are read as one (terms.concepts). At most VAR_MAX other ways an idea.
+const VAR_MAX = 6;
+const union = (a, b) => {   // ascending ids of either; of one in both, the nearer place
+  const ids = new Uint32Array(a.ids.length + b.ids.length), lvl = new Uint8Array(ids.length);
+  let i = 0, j = 0, n = 0;
+  while (i < a.ids.length || j < b.ids.length) {
+    const x = i < a.ids.length ? a.ids[i] : Infinity, y = j < b.ids.length ? b.ids[j] : Infinity;
+    if (x === y) { ids[n] = x; lvl[n++] = Math.min(a.lvl[i++], b.lvl[j++]); }
+    else if (x < y) { ids[n] = x; lvl[n++] = a.lvl[i++]; }
+    else { ids[n] = y; lvl[n++] = b.lvl[j++]; }
+  }
+  return { ids: ids.subarray(0, n), lvl: lvl.subarray(0, n) };
+};
+const asc = (x) => { const o = Array.from(x.ids, (id, k) => [id, x.lvl[k]]).sort((a, b) => a[0] - b[0]); return { ids: Uint32Array.from(o, (e) => e[0]), lvl: Uint8Array.from(o, (e) => e[1]) }; };
+const has = (x, id) => { let lo = 0, hi = x.ids.length; while (lo < hi) { const m = (lo + hi) >> 1; if (x.ids[m] < id) lo = m + 1; else hi = m; } return lo < x.ids.length && x.ids[lo] === id ? lo : -1; };
 async function byPhrase(v, ws) {
   const own = ws.map(piecesOf), left = ws.filter((w, i) => !own[i].length);
   const phrase = piecesOf(ws.join(''));
@@ -154,6 +174,12 @@ async function byPhrase(v, ws) {
   const held = new Map();
   const ask = (ps) => Promise.all(ps.filter((p) => !held.has(p)).map(async (p) => { held.set(p, await heldOf(v, p)); }));
   const want = [...new Set(own.flat())];
+  // the ideas of the question and, of each, its other ways of saying it with their pieces (asked with the words' own)
+  const ideas = terms.concepts(ws).map((c) => ({ ...c, own: [...new Set(c.words.flatMap(piecesOf))],
+    vars: c.variants.slice(0, VAR_MAX).map((t) => ({ text: t, ps: piecesOf(words(t).join('')) })).filter((x) => x.ps.length) }));
+  const varPs = [...new Set(ideas.flatMap((c) => c.vars.flatMap((x) => x.ps)))].filter((p) => !want.includes(p));
+  const said = varPs.length ? ask(varPs) : null;
+  if (said) said.catch(() => {});
   // (a short question's few pieces across the words are asked with its own ones, so it waits for one round, not two)
   const across = phrase.filter((p) => !want.includes(p)), early = across.length <= ACROSS ? ask(across) : null;
   if (early) early.catch(() => {});
@@ -166,28 +192,86 @@ async function byPhrase(v, ws) {
   if (!all || all.ids.length) { await early; await ask(phrase); one = intersect(phrase.map((p) => held.get(p))); }   // (each word's pieces are among the phrase's)
   if (all && ws.length > 1) rest = minus(all, one);
   const exact = ordered(one, rest), n = exact.ids.length;
+  // found by another way of saying an idea: every idea held as typed or another way, less those found as typed
+  let alike = NONE;
+  const synOf = new Map();   // id → the other ways it says the ideas ('항고소송의 대상')
+  if (said) {
+    await said.catch(() => {});
+    await ask(ideas.flatMap((c) => c.own));
+    const each = ideas.map((c) => {
+      const typed = c.own.length ? intersect(c.own.map((p) => held.get(p))) : null;
+      const others = c.vars.map((x) => ({ text: x.text, h: x.ps.every((p) => held.has(p)) ? intersect(x.ps.map((p) => held.get(p))) : NONE }));
+      const via = others.reduce((u, x) => (x.h.ids.length ? union(u, x.h) : u), NONE);
+      return { c, typed, others, any: typed ? union(typed, via) : null };
+    }).filter((e) => e.any);
+    if (each.some((e) => e.others.some((x) => x.h.ids.length))) {
+      const both = intersect(each.map((e) => e.any));
+      alike = minus(both, asc(exact));
+      for (const id of alike.ids) {
+        const ways = [];
+        for (const e of each) if (!(e.typed && has(e.typed, id) >= 0)) { const w = e.others.find((x) => has(x.h, id) >= 0); if (w) ways.push(w.text); }
+        synOf.set(id, ways);
+      }
+    }
+  }
+  // after those holding every word as typed: the alike ones, then the like ones (near) — each by how much of the question
+  // it holds and where (an idea said another way counting as held), then weighed by the court (ranked). The like ones only
+  // when fewer than NEAR_BELOW hold every word as typed
   const known = new Set(ws.filter((w, i) => own[i].some((p) => held.has(p) && held.get(p).ids.length)));
-  const near = n < NEAR_BELOW && known.size > 1 ? nearest(v, want.filter((p) => held.has(p)), held, exact) : NONE;
-  if (!near.ids.length) return { ...exact, common: false, left, phrase: one.ids.length, exact: n };
-  const ids = new Uint32Array(n + near.ids.length), lvl = new Uint8Array(ids.length);
-  ids.set(exact.ids); ids.set(near.ids, n); lvl.set(exact.lvl); lvl.set(near.lvl, n);
-  return { ids, lvl, common: false, left, phrase: one.ids.length, exact: n };
+  const nearToo = n < NEAR_BELOW && known.size > 1;
+  const sc = alike.ids.length || nearToo ? scores(v, want.filter((p) => held.has(p)), held, ideas) : null;
+  const m = n + alike.ids.length;
+  const base = { common: false, left, phrase: one.ids.length, exact: m, alike: alike.ids.length, synOf };
+  if (!sc) return { ...exact, ...base };
+  const near = nearToo ? nearest(v, sc, union(asc(exact), alike)) : NONE;
+  const areas = [...new Set(ideas.flatMap((c) => terms.areasOf(c.text)))];
+  const [a, b] = await Promise.all([ranked(v, byScore(alike, sc), areas), ranked(v, near, areas)]);
+  const after = { ids: new Uint32Array(a.ids.length + b.ids.length), lvl: new Uint8Array(a.ids.length + b.ids.length) };
+  after.ids.set(a.ids); after.ids.set(b.ids, a.ids.length); after.lvl.set(a.lvl); after.lvl.set(b.lvl, a.ids.length);
+  const ids = new Uint32Array(n + after.ids.length), lvl = new Uint8Array(ids.length);
+  ids.set(exact.ids); ids.set(after.ids, n); lvl.set(exact.lvl); lvl.set(after.lvl, n);
+  return { ids, lvl, ...base, nearOf: new Set(near.ids) };
 }
 // the judgments like the question (near): those holding the most of the words' pieces, each piece counting by how rare it
 // is (idf) and where it is held (the name above the 판시사항 above the 판결요지, WEIGHT) — so the judgments holding most of
-// the words asked, and the rarer ones, come first; of equal ones the index's order. Only those holding at least NEAR_SHARE
-// of what the words weigh (the rarity of all their pieces) are taken, at most NEAR_MAX; not those already found (not)
-const WEIGHT = [1.6, 1.25, 1.0], NEAR_SHARE = 0.25, NEAR_MAX = 200;
-function nearest(v, ps, held, not) {
+// the words asked, and the rarer ones, come first; of equal ones the index's order. A judgment that says an idea another
+// way (ideas: terms.concepts) counts as holding all of it, where it says it. Only those holding at least NEAR_SHARE of what
+// the words weigh (the rarity of all their pieces) are taken, at most NEAR_MAX; not those already found (not)
+const WEIGHT = [2.0, 1.25, 1.0], NEAR_SHARE = 0.25, NEAR_MAX = 200;
+function scores(v, ps, held, ideas = []) {
   const N = v.n, score = new Float32Array(N), mass = new Float32Array(N), at = new Uint8Array(N).fill(3);
   let whole = 0;
+  const idfOf = (df) => Math.log(1 + (N - df + 0.5) / (df + 0.5));
   for (const p of ps) {
     const h = held.get(p), df = h.ids.length;
     if (!df) continue;   // (a piece no judgment has weighs nothing: a mistyped word does not keep the rest out)
-    const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
+    const idf = idfOf(df);
     whole += idf;
     for (let k = 0; k < df; k++) { const x = h.ids[k], l = h.lvl[k]; score[x] += idf * WEIGHT[l]; mass[x] += idf; if (l < at[x]) at[x] = l; }
   }
+  // (an idea said another way: what its own pieces weigh, all of it, less what the judgment already has of them)
+  for (const c of whole ? ideas : []) {
+    const mine = c.own.filter((p) => ps.includes(p) && held.get(p).ids.length);
+    if (!mine.length || !c.vars || !c.vars.length) continue;
+    const W = mine.reduce((s, p) => s + idfOf(held.get(p).ids.length), 0);
+    const got = new Float32Array(N), gotM = new Float32Array(N), best = new Uint8Array(N).fill(3), seen = [];
+    for (const x of c.vars) {
+      if (!x.ps.every((p) => held.has(p))) continue;
+      const h = intersect(x.ps.map((p) => held.get(p)));
+      for (let k = 0; k < h.ids.length; k++) { const id = h.ids[k]; if (best[id] === 3) seen.push(id); if (h.lvl[k] < best[id]) best[id] = h.lvl[k]; }
+    }
+    if (!seen.length) continue;
+    for (const p of mine) { const h = held.get(p), idf = idfOf(h.ids.length); for (let k = 0; k < h.ids.length; k++) { const id = h.ids[k]; if (best[id] < 3) { got[id] += idf * WEIGHT[h.lvl[k]]; gotM[id] += idf; } } }
+    for (const id of seen) {
+      const l = best[id];
+      score[id] += Math.max(0, W * WEIGHT[l] - got[id]); mass[id] += Math.max(0, W - gotM[id]);
+      if (l < at[id]) at[id] = l;
+    }
+  }
+  return { score, mass, at, whole };
+}
+function nearest(v, sc, not) {
+  const { score, mass, at, whole } = sc, N = v.n;
   if (!whole) return NONE;
   const found = new Uint8Array(N);
   for (const x of not.ids) found[x] = 1;
@@ -195,7 +279,27 @@ function nearest(v, ps, held, not) {
   for (let x = 0; x < N; x++) if (mass[x] >= min && !found[x]) take.push(x);
   take.sort((a, b) => score[b] - score[a] || a - b);
   const top = take.slice(0, NEAR_MAX);
-  return { ids: Uint32Array.from(top), lvl: Uint8Array.from(top, (x) => at[x]) };
+  return { ids: Uint32Array.from(top), lvl: Uint8Array.from(top, (x) => at[x]), score: Float32Array.from(top, (x) => score[x]) };
+}
+// some found judgments (x: ids, lvl) by their score, best first (the alike ones: those saying a word another way)
+function byScore(x, sc) {
+  const o = Array.from(x.ids, (id, k) => ({ id, l: x.lvl[k], s: sc.score[id] })).sort((a, b) => b.s - a.s || a.id - b.id);
+  return { ids: Uint32Array.from(o, (e) => e.id), lvl: Uint8Array.from(o, (e) => e.l), score: Float32Array.from(o, (e) => e.s) };
+}
+// the like ones weighed by the court too: the first RANK_TOP of them read (their lines: court, 전원합의체, how often cited),
+// each score times 1.3 for 대법원, 1.4 for 전원합의체 and 1 + log10(1 + cited) — the leading judgment of a question above a
+// lower court's that merely shares its words. The rest stay in their order after them.
+const RANK_TOP = 24, AREA_BOOST = 1.3;
+async function ranked(v, near, areas = []) {
+  if (!near.ids.length || !near.score) return near;
+  const k = Math.min(RANK_TOP, near.ids.length);
+  const rows = await Promise.all(Array.from({ length: k }, (_, i) => rowOf(v, near.ids[i]).catch(() => null)));
+  // (and, when the question holds a term of one field of law — '협의의 소익' is the 항고소송's — a judgment of that field 1.3)
+  const boost = (r) => (r ? (r.court === '대법원' ? 1.3 : 1) * (r.enbanc ? 1.4 : 1) * (1 + Math.log10(1 + (r.cited || 0))) * (areas.includes(r.cat) ? AREA_BOOST : 1) : 1);
+  const order = Array.from({ length: k }, (_, i) => ({ i, s: near.score[i] * boost(rows[i]) })).sort((a, b) => b.s - a.s || near.ids[a.i] - near.ids[b.i]);
+  const ids = near.ids.slice(), lvl = near.lvl.slice();
+  order.forEach((o, j) => { ids[j] = near.ids[o.i]; lvl[j] = near.lvl[o.i]; });
+  return { ids, lvl };
 }
 // an index made before fmt 2: each word's pieces within it, the commonest (v.stop) not in the index and so left aside
 async function byWords(v, ws) {
@@ -238,27 +342,63 @@ async function rowOf(v, id) {
 // judgments in the mirror name it in their 참조판례; phrase: how many of the first hold the words as one phrase — the rest
 // have every word somewhere; exact: how many of all (total) hold every word — the rest (near: true on each) are the judgments
 // like it (비슷한 판결), those holding the most of the words first, there only when fewer than NEAR_BELOW hold them all;
+// alike: how many of the exact are found only by another way of saying a word (they follow those holding every word as
+// typed; each carries syn: the ways it says them, ['항고소송의 대상']);
 // left: the words too short to be asked on their own, so only the phrase holds them; common:
 // (an index made before fmt 2) every piece asked was too common to be in it)
 export async function search(q, page = 1, size = 20) {
   const m = await matches(q);
   const from = (page - 1) * size, ids = m.ids.slice(from, from + size);
   const exact = m.exact ?? m.ids.length;
-  const rows = (await Promise.all([...ids].map(async (id, k) => { const r = await rowOf(m.v, id); return r && { ...r, at: ['name', 'points', 'summary'][m.lvl[from + k]], ...(from + k >= exact ? { near: true } : {}) }; }))).filter(Boolean);
-  return { total: m.ids.length, exact, rows, common: m.common, left: m.left || [], phrase: m.phrase || 0 };
+  const rows = (await Promise.all([...ids].map(async (id, k) => {
+    const r = await rowOf(m.v, id), syn = m.synOf && m.synOf.get(id);
+    const near = m.nearOf ? m.nearOf.has(id) : from + k >= exact;
+    return r && { ...r, at: ['name', 'points', 'summary'][m.lvl[from + k]], ...(near ? { near: true } : {}), ...(syn && syn.length ? { syn } : {}) };
+  }))).filter(Boolean);
+  return { total: m.ids.length, exact, rows, common: m.common, left: m.left || [], phrase: m.phrase || 0, alike: m.alike || 0 };
 }
 // the judgments that name an article in their 참조조문 (공직선거법 제250조: '공직선거법', 250, 0), in the index's order (대법원
 // first, the leading judgments, then newest first): { total, rows }
 export const citeKey = (law, art, sub) => `${String(law || '').replace(/[\s「」『』]/g, '')}|${Number(art)}${sub ? '의' + Number(sub) : ''}`;
 const citedP = new Map();
+const citedIds = (v, law, art, sub) => {
+  const key = citeKey(law, art, sub);
+  if (!citedP.has(key)) { const p = part(v, `a/${shardOf(key, v.arts)}.json`, (r) => r.json()).then((d) => (d && d[key]) || []); citedP.set(key, p); p.catch(() => citedP.delete(key)); }
+  return citedP.get(key);
+};
 export async function citing(law, art, sub, page = 1, size = 20) {
   const v = await version();
   if (!v || !v.arts) throw Object.assign(new Error('precq'), { code: 'unavailable' });
-  const key = citeKey(law, art, sub);
-  if (!citedP.has(key)) citedP.set(key, part(v, `a/${shardOf(key, v.arts)}.json`, (r) => r.json()).then((d) => (d && d[key]) || []));
-  const ids = await citedP.get(key);
+  const ids = await citedIds(v, law, art, sub);
   const from = (page - 1) * size;
   const rows = (await Promise.all(ids.slice(from, from + size).map((id) => rowOf(v, id)))).filter(Boolean).map((r) => ({ ...r, at: 'points' }));
   return { total: ids.length, rows };
+}
+// the judgments naming an article under any name the law had — today's, each old name it had only by a rename (the same
+// numbers), and the old articles laws.successor's map says became it (정치자금에관한법률 제30조 for 정치자금법 제45조):
+// laws.oldArticlesOf. Asked by an old name, today's article is found first (a rename: the same number; a 전부개정 or a
+// repeal: the curated map), so '정치자금에관한법률 제30조' brings 정치자금법 제45조's judgments too. (The index already files
+// most renamed names under today's.) One row a judgment, in the index's order (대법원 first, then the leading ones, then
+// newest: an id's own order). A row only an old name gave carries oldName.   → { total, rows, names }
+async function todayOf(law, art, sub) {
+  const o = oldLaw(law);
+  if (!o || !o.now) return { name: law, art, sub };
+  if (!o.whole && !o.gone) return { name: o.now, art, sub };
+  const s = await successor(law, art).catch(() => null), c = s && (s.candidates || []).find((x) => x.score >= 1);
+  return c ? { name: c.law, art: c.art, sub: c.sub || 0 } : { name: law, art, sub };
+}
+export async function citingAll(law, art, sub, page = 1, size = 20) {
+  const v = await version();
+  if (!v || !v.arts) throw Object.assign(new Error('precq'), { code: 'unavailable' });
+  const now = await todayOf(law, art, sub || 0);
+  const asks = [now, ...oldArticlesOf(now.name, now.art, now.sub || 0).map((o) => ({ name: o.name, art: o.art, sub: o.sub || 0 })), { name: law, art, sub: sub || 0 }];
+  const seen = new Set(), list = asks.filter((x) => { const k = citeKey(x.name, x.art, x.sub); if (seen.has(k)) return false; seen.add(k); return true; });
+  const names = [...new Set(list.map((x) => x.name))];
+  const lists = await Promise.all(list.map((x, i) => (i ? citedIds(v, x.name, x.art, x.sub).catch(() => []) : citedIds(v, x.name, x.art, x.sub))));
+  const from = new Map();   // id → the old name it came by (none for today's)
+  lists.forEach((ids, i) => { for (const id of ids) if (!from.has(id)) from.set(id, i ? list[i].name : ''); else if (!i) from.set(id, ''); });
+  const all = [...from.keys()].sort((a, b) => a - b), start = (page - 1) * size;
+  const rows = (await Promise.all(all.slice(start, start + size).map(async (id) => { const r = await rowOf(v, id); return r && { ...r, at: 'points', ...(from.get(id) && from.get(id) !== now.name ? { oldName: from.get(id) } : {}) }; }))).filter(Boolean);
+  return { total: all.length, rows, names };
 }
 export async function ready() { return !!(await version()); }

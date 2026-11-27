@@ -25,8 +25,13 @@ const withYear = (iso) => (yearOf(iso) === Number(today().slice(0, 4)) ? short(i
 
 // the court's names as its lists write them: '구 공직선거법제93조 제1항 본문 등위헌제청' → '… 공직선거법 제93조 … 등 위헌제청';
 // a 변론's '경찰청장(조지호) 탄핵 (경찰청장에 대한 탄핵심판 사건)' → the name, and what is in brackets after it
+// A '·' lost on the way to the court's lists comes as '?' or '？' ('배부 ? 살포', '배부？살포'): between two Hangul words of a
+// name a question mark never asks anything, so it is the dot again. In running text (a 개요) only where it cannot end a
+// question: right between the letters, or with a space before it ('배부 ?살포') — '…인가? 그렇다' is left alone
+const dotName = (s) => String(s || '').replace(/([가-힣])[ \t]*[？?][ \t]*(?=[가-힣])/g, '$1·');
+const dotText = (s) => String(s || '').replace(/([가-힣])(?:[？?]|[ \t]+[？?][ \t]*)(?=[가-힣])/g, '$1·');
 function mend(s) {
-  return String(s || '').replace(/\s+/g, ' ').trim()
+  return dotName(String(s || '')).replace(/\s+/g, ' ').trim()
     .replace(/([^\s(「‘'"])(제\d+조)/g, '$1 $2')
     .replace(/(조|항|호|목|본문|단서|부분|등|조의\d+)(위헌|헌법소원|권한쟁의)/g, '$1 $2')
     .replace(/\s+$/, '');
@@ -139,7 +144,8 @@ async function paint(sec, st) {
   } catch (e) {
     if (!live()) return;
     // nothing to show: one quiet line (and, offline, it tries again by itself once the device is back online)
-    card.innerHTML = `<p class="cn-quiet">${esc(whyNot(e))}</p>`;
+    // (not offline: a quiet 다시 불러오기 beside it — the court's service is often only slow for a moment)
+    card.innerHTML = `<p class="cn-quiet">${esc(whyNot(e))}${e && e.code === 'offline' ? '' : ' · <button type="button" class="law-eg" data-cn-retry>다시 불러오기</button>'}</p>`;
     sec.classList.add('cn-off');
     if (e && e.code === 'offline') addEventListener('online', () => { if (live()) paint(sec, st); }, { once: true });
   }
@@ -258,7 +264,7 @@ async function mainView(st) {
 }
 // a 개요 as the court wrote it: its first lines (what was decided), the rest (□ 사건개요, □ 심판대상 …) one more tap away
 function outlineHtml(o) {
-  const ls = String(o.text || '').split('\n').map((l) => l.trim()).filter(Boolean)
+  const ls = dotText(o.text).split('\n').map((l) => l.trim()).filter(Boolean)
     .filter((l) => !/^\[\s*\d{2,4}헌[가-힣]{1,2}\d+/.test(l));   // (the '[2022헌가28 사건명]' line: its line says so already)
   if (!ls.length) return '<p class="cn-none">개요가 비어 있습니다</p>';
   const cut = ls.findIndex((l) => /^□/.test(l)), lead = cut < 0 ? ls : ls.slice(0, cut), rest = cut < 0 ? [] : ls.slice(cut);
@@ -326,7 +332,7 @@ async function fillHearing(btn) {
     const items = r.d.items || [];
     const files = [], seen = new Set();
     for (const x of items) for (const f of x.files || []) if (f.url && !seen.has(f.url)) { seen.add(f.url); files.push(f); }
-    const texts = items.filter((x) => x.text).map((x) => `${x.date ? `<h4>${esc(withYear(x.date))} 변론</h4>` : ''}${x.text.split('\n').filter((l) => l.trim()).map((l) => `<p>${esc(l)}</p>`).join('')}`).join('');
+    const texts = items.filter((x) => x.text).map((x) => `${x.date ? `<h4>${esc(withYear(x.date))} 변론</h4>` : ''}${dotText(x.text).split('\n').filter((l) => l.trim()).map((l) => `<p>${esc(l)}</p>`).join('')}`).join('');
     const links = files.map((f) => `<a class="cn-file" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(/개요/.test(f.name) ? '변론 개요' : f.name.replace(/\.pdf$/i, '') || '변론 자료')} <small>PDF</small></a>`).join('');
     box.innerHTML = (links ? `<div class="cn-files">${links}</div>` : '') + (texts ? `<div class="cn-ot">${texts}</div>` : '')
       + (!links && !texts ? '<p class="cn-none">변론 개요가 아직 올라오지 않았습니다</p>' : '') + goCase;
@@ -339,6 +345,7 @@ async function fillHearing(btn) {
 function onClick(sec, st, e) {
   const t = e.target;
   const tb = t.closest('[data-cn-tab]'); if (tb) { pick(sec, st, tb.dataset.cnTab); return; }
+  if (t.closest('[data-cn-retry]')) { const c = sec.querySelector('.cn-card'); if (c) c.innerHTML = '<p class="cn-quiet cn-wait">불러오는 중…</p>'; paint(sec, st); return; }
   const dy = t.closest('[data-cn-date]'); if (dy) { if (st.date !== dy.dataset.cnDate) { st.date = dy.dataset.cnDate; fillDay(sec, st, () => sec.isConnected && st.tab === 'sun'); } return; }
   const all = t.closest('[data-cn-all]');
   if (all) { st.open.add(all.dataset.cnAll); sec.querySelectorAll('.cn-dayp [hidden]').forEach((x) => { x.hidden = false; }); all.remove(); return; }

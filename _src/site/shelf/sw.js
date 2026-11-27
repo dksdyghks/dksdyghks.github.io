@@ -13,8 +13,8 @@ const VENDOR = 'shelf-vendor';
 const FONTS = 'shelf-fonts';
 const WAIT = 4000;
 const ROOT = new URL('./', self.location.href).href;
-const MODULES = ['api.js', 'store.js', 'pdfkit.js', 'analyze.js', 'reader.js', 'annot.js', 'naming.js', 'cite.js', 'hanja.js', 'ocr.js', 'cases.js', 'laws.js', 'papers.js', 'research.js', 'biblio.js', 'bills.js', 'kci.js', 'moleg.js', 'precq.js', 'verify.js', 'kciq.js', 'pfind.js', 'write.js', 'ccnews.js', 'nars.js', 'adjud.js'];
-const EXTRA = ['research.json', 'lawidx.json', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-32.png'];
+const MODULES = ['api.js', 'store.js', 'pdfkit.js', 'analyze.js', 'reader.js', 'annot.js', 'naming.js', 'cite.js', 'hanja.js', 'ocr.js', 'cases.js', 'laws.js', 'papers.js', 'research.js', 'biblio.js', 'bills.js', 'kci.js', 'moleg.js', 'precq.js', 'verify.js', 'kciq.js', 'pfind.js', 'write.js', 'ccnews.js', 'nars.js', 'adjud.js', 'terms.js'];
+const EXTRA = ['research.json', 'lawidx.json', 'kci-journals.json', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-32.png'];
 const VENDOR_CORE = ['vendor/pdfjs-4.10.38/pdf.min.js', 'vendor/pdfjs-4.10.38/pdf.worker.min.js', 'vendor/pdf-lib-1.17.1/pdf-lib.esm.min.js'];
 
 self.addEventListener('install', (event) => {
