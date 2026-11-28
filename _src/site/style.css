@@ -418,6 +418,10 @@ button { font: inherit; }
 }
 @media (hover: hover) { .ttl-link:hover .ext { color: var(--ink); background: var(--rule); } }
 .ttl-link .ext { background-image: none; }
+/* the link icon hangs: it stays with the last word but takes no room when lines are broken, and the title keeps that room
+   free on its right, so a last word that fits never drops to a new line just because of the icon */
+.nw > .ext { margin-right: -32px; }
+.ttl:has(.ext), .edu-ttl:has(.ext) { padding-right: 32px; }
 .badge {
   display: inline-block; margin-left: 6px; vertical-align: 1px; white-space: nowrap;
   font-size: 0.75rem; font-weight: 600; line-height: 1; letter-spacing: 0; padding: 4px 8px; border-radius: 6px;
@@ -471,7 +475,10 @@ button { font: inherit; }
 .laurel { width: 1.35em; height: 1.35em; vertical-align: -0.32em; margin-right: 6px; color: var(--gilt); }
 .ttl .sp { word-spacing: 4px; }  /* the gap before a subtitle; it disappears when the subtitle starts a new line */
 .by { margin-top: 6px; font-size: 0.9375rem; color: var(--ink-2); }
-.meta { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* one line of text, not a row of boxes: '국고 연구비 지원' and the rest wrap word by word, so nothing drops whole to the next line
+   while room is left at the end of this one (the kept-together pieces are only 권호+badge and the pages) */
+.meta { margin-top: 4px; font-size: 0.875rem; line-height: 1.7; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meta > span + span::before { content: " "; word-spacing: 4px; }
 .meta .jr { color: var(--ink-2); font-weight: 600; }
 .meta .dot { color: var(--faint); margin-left: 8px; }
 .meta .pg { margin-left: 4px; }  /* with the space before it, the same 8px as between the other items */

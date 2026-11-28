@@ -66,7 +66,7 @@ LJ = ('법조', 'Korean Lawyers Association Journal')
 BJ = ('법제', 'Legislation')
 MS = ('군사과학논집', 'Journal of Military Science Research')
 SE = ('선거연구', 'The Study of Election')
-CFE = ('자유기업원 연구비 지원', 'Funded by the Center for Free Enterprise')
+CFE = ('자유기업원 연구비\u00a0지원', 'Funded by the Center for Free Enterprise')
 PAPERS = [
     ((2021, 4, 30), '우리나라 중대재해처벌 관련 법제의 개선방안 연구:', '「중대재해처벌법」을 중심으로',
      'A Study on the Improvements of Korea’s Criminal Punishment Law for Severe Accidents',
@@ -91,7 +91,7 @@ PAPERS = [
      LJ[0], '통권 제764호', LJ[1], 'No. 764', '122-147', None, None, None),
     ((2024, 12, 15), '선거 관련 법제에 관한 헌법학적 연구', '- 선거범죄로 인한 당선무효를 중심으로 -',
      'A Constitutional Study on Korea’s Election Law for Overturning of Election due to Election Crime',
-     BJ[0], '통권 제707호', BJ[1], 'No. 707', '115-142', None, None, ('서강대학교 연구비 지원', 'Funded by Sogang University')),
+     BJ[0], '통권 제707호', BJ[1], 'No. 707', '115-142', None, None, ('서강대학교 연구비\u00a0지원', 'Funded by Sogang University')),
     ((2024, 12, 28), '우리나라의 적극행정 법제에 관한 연구', '- 제도의 모호성과 모순성 및 무가치성 문제를 중심으로 -',
      'A Study on Korea’s Legislation for Active Administration',
      LJ[0], '통권 제768호', LJ[1], 'No. 768', '139-159', '이유진·안요환', 'Yu Jin Lee & Yohan Ahn', None),
@@ -110,7 +110,7 @@ PAPERS = [
     ((2025, 12, 30), '사이버안보 업무에 관한 헌법학적 연구', '- 국가정보기관 직무로서의 문제를 중심으로 -',
      'A Constitutional Study on Cybersecurity Services: Issues Regarding the Duties of Korea’s National Intelligence Service',
      '법과정책', '제31집 제3호', 'Law & Policy Review', 'Vol. 31, No. 3', '181-208', '안요환·최은석', 'Yohan Ahn & Eun-Suk Choi',
-     ('국고 연구비 지원', 'Government-funded')),
+     ('국고 연구비\u00a0지원', 'Government-funded')),
     ((2025, 12, 31), '공범과 신분에 관한 규정의 개선방안 연구', None,
      'A Study on the Improvements of Korea’s Criminal Act Article Regarding ‘Complicity and Status’',
      MS[0], '제76집 통권', MS[1], 'Vol. 76', '37-54', None, None, None),
