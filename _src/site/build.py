@@ -651,6 +651,10 @@ def shelf_research():
                                               works=[k.rstrip(':').strip() for k in x[6]]) for x in items])
                     for g, _, items in PROVISIONS],
         cases=cases,
+        # the owner's own papers, so a copy put on the shelf is named and described from here when its first page cannot
+        # be read (title and authors drawn as outlines) and the libraries do not have it yet
+        own=[dict(title=kt.rstrip(':').strip(), sub=(ks or '').strip(), authors=(ka or '안요환').split('·'), journal=kj, issue=kv,
+                  date=f'{d[0]}-{d[1]:02d}') for (d, kt, ks, et, kj, kv, ej, ev, pages, ka, ea, fund) in PAPERS],
     )
     out = json.dumps(data, ensure_ascii=False, indent=1) + '\n'
     p = Path('/home/user/yohan-ahn/shelf/research.json')
