@@ -10,9 +10,9 @@
 // as they are needed and kept on this device (until the index is made again), so a search asked again, or offline, is
 // answered at once. (An index made before fmt 2 took its pieces within each word and left the commonest out: it is still
 // read, the old way, until it is made again.)
-import * as store from './store.js?v=aedca5545d';
-import { oldArticlesOf, oldLaw, successor } from './laws.js?v=aedca5545d';
-import * as terms from './terms.js?v=aedca5545d';
+import * as store from './store.js?v=7cd63e4780';
+import { oldArticlesOf, oldLaw, successor } from './laws.js?v=7cd63e4780';
+import * as terms from './terms.js?v=7cd63e4780';
 
 const BASE = new URL('./precq/', import.meta.url);
 const LETTERS = /[^0-9A-Za-zㄱ-ㆎ가-힣㐀-䶿一-鿿\uF900-\uFAFF]+/g;

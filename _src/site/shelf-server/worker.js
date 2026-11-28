@@ -2326,7 +2326,7 @@ async function pull(env, url) {
 // so nothing is parsed per piece here: little CPU however long the answer), and this server's own word on how it goes
 // (event: shelf — start, wait, fallback, done, error). The models' thinking (always on for these models) is not passed on.
 // Before anything goes out: no key → no_key (nothing is asked of anyone); a text over WRITE_MAX letters → too_long; the
-// day's requests at WRITE_DAY_CAP → daily_cap (counted in R2, write/use.json, by the owner's day in Korea; a request that
+// day's requests at the cap, when one is set (writeCap) → daily_cap (counted in R2, write/use.json, by the owner's day in Korea; a request that
 // never got an answer started is given back).
 // The models, in one place. The first is asked; the second takes over when the first declines (stop_reason "refusal":
 // a safety classifier's or the model's own — the app throws away any part already shown) or cannot be had (not offered
@@ -2345,11 +2345,12 @@ const ANTHROPIC = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2026-10-21';
 const WRITE_MAX = 12000;          // letters (Unicode characters: one Hangul syllable is one) a text may have
 const WRITE_SAMPLE_MAX = 40000;   // letters of the paragraphs sent to learn the style (내 문체 익히기)
-const WRITE_DAY_CAP = 150;        // requests a day
-// what a day may cost, in US dollars (estimated from each answer's usage). The request cap alone would allow far more:
-// one request may use up to WRITE_OUT tokens (about $3.20 on Fable), so 150 of them about $500 — a client stuck in a loop,
-// or a device token in the wrong hands, could spend that. Checked before each request; the request under way finishes.
-const WRITE_DAY_USD = 40;
+// The day's limits: none by default — the owner keeps the spending limit on the Anthropic account itself (its console), and
+// Anthropic refuses past it (that answer reaches the app as Anthropic's own words). The day's requests and their estimated
+// cost are still counted and shown. A cap can be set again without new code: the worker's settings WRITE_DAY_CAP (requests
+// a day) and WRITE_DAY_USD (US dollars a day); 0 or unset = no cap.
+const writeCap = (env) => Math.max(0, Math.floor(Number(env && env.WRITE_DAY_CAP) || 0));
+const writeBudget = (env) => Math.max(0, Number(env && env.WRITE_DAY_USD) || 0);
 const WRITE_OUT = 64000;          // max_tokens: thinking and answer together; a ceiling only (what is used is what is billed)
 // how much a used answer cost: usage as Anthropic reports it, at the model's price
 const writeCost = (m, u = {}) => {
@@ -2444,8 +2445,8 @@ async function writeCount(env, d, usd = 0) {
     const today = cur.day === day;
     const n = today ? Number(cur.n) || 0 : 0, spent = today ? Number(cur.usd) || 0 : 0;
     if (!d && !usd) return { n, usd: spent };
-    if (d > 0 && n >= WRITE_DAY_CAP) return { n, usd: spent, full: 'daily_cap' };
-    if (d > 0 && spent >= WRITE_DAY_USD) return { n, usd: spent, full: 'daily_budget' };
+    if (d > 0 && writeCap(env) && n >= writeCap(env)) return { n, usd: spent, full: 'daily_cap' };
+    if (d > 0 && writeBudget(env) && spent >= writeBudget(env)) return { n, usd: spent, full: 'daily_budget' };
     const next = { day, n: Math.max(0, n + d), usd: Math.round((spent + usd) * 1e4) / 1e4 };
     const put = await env.BUCKET.put('write/use.json', JSON.stringify(next), { httpMetadata: { contentType: 'application/json' }, onlyIf: o ? { etagMatches: o.etag } : undefined });
     if (put === null) { await new Promise((r) => setTimeout(r, 30 + Math.random() * 90)); continue; }
@@ -2460,8 +2461,8 @@ async function writeInfo(env) {
   const [use, st] = await Promise.all([writeCount(env, 0), env.BUCKET.head('write/style.json')]);
   const m = (st && st.customMetadata) || {};
   return json({
-    key: !!env.ANTHROPIC_API_KEY, models: WRITE_MODELS, max: WRITE_MAX, sampleMax: WRITE_SAMPLE_MAX, cap: WRITE_DAY_CAP, used: use.n, reset: kstMidnight(),
-    budget: WRITE_DAY_USD, spent: use.usd,
+    key: !!env.ANTHROPIC_API_KEY, models: WRITE_MODELS, max: WRITE_MAX, sampleMax: WRITE_SAMPLE_MAX, cap: writeCap(env) || null, used: use.n, reset: kstMidnight(),
+    budget: writeBudget(env) || null, spent: use.usd,
     style: st ? { at: Number(m.at) || 0, model: m.model || '', papers: Number(m.papers) || 0, paragraphs: Number(m.paragraphs) || 0, chars: Number(m.chars) || 0 } : null,
   });
 }
@@ -2533,8 +2534,8 @@ async function writeAsk(req, env, ctx) {
   const id = typeof b.id === 'string' && WRITE_ID.test(b.id) ? b.id : '';
   const use = await writeCount(env, 1);
   if (use.busy) return err('busy', 409);
-  if (use.full === 'daily_cap') return err('daily_cap', 429, { cap: WRITE_DAY_CAP, used: use.n, reset: kstMidnight() });
-  if (use.full) return err('daily_budget', 429, { budget: WRITE_DAY_USD, spent: use.usd, reset: kstMidnight() });
+  if (use.full === 'daily_cap') return err('daily_cap', 429, { cap: writeCap(env), used: use.n, reset: kstMidnight() });
+  if (use.full) return err('daily_budget', 429, { budget: writeBudget(env), spent: use.usd, reset: kstMidnight() });
   return writeStream(env, ctx, body, use.n, keep, { id, act: b.action, spent: use.usd });
 }
 
@@ -2579,7 +2580,7 @@ function writeStream(env, ctx, body, used, keep, job = {}) {
     const u = await writeCount(env, 0, cost).catch(() => null);
     if (u && !u.busy) spent = u.usd;
   };
-  const day = () => ({ used, cap: WRITE_DAY_CAP, spent: Math.round(spent * 100) / 100, budget: WRITE_DAY_USD });
+  const day = () => ({ used, cap: writeCap(env) || null, spent: Math.round(spent * 100) / 100, budget: writeBudget(env) || null });
   const run = async () => {
     const stub = save('running');
     try {
@@ -2653,7 +2654,7 @@ async function claudeOpen(env, body, onWait) {
     if (status >= 500) return { ok: false, code: 'overloaded', unavailable: true };
     if (!res) return { ok: false, code: 'upstream' };
     if (status === 401) return { ok: false, code: 'bad_key' };
-    if (status === 402 || /credit balance|billing/i.test(message)) return { ok: false, code: 'billing' };
+    if (status === 402 || /credit balance|billing|usage limit|spend(ing)? limit|workspace limit/i.test(message)) return { ok: false, code: 'billing' };
     // a model this key may not use (or not under the account's data-retention setting, which Fable requires)
     if (status === 404 || status === 403 || (status === 400 && /retention/i.test(message))) return { ok: false, code: 'no_model', unavailable: true, message };
     if (status === 413) return { ok: false, code: 'too_large' };

@@ -8,7 +8,7 @@ const PEPPER = 'test-pepper', PIN = '123456';
 const dir = '/tmp/claude-0/-home-user/32c96ca5-ace8-5bfb-8ce5-1b09a2bc0eb1/scratchpad/seojae-mock-test';
 fs.rmSync(dir, { recursive: true, force: true });
 const bucket = new MockR2(dir);
-const env = { BUCKET: bucket, ALLOWED_ORIGINS: ORIGIN, PEPPER, PIN_HASH: crypto.createHash('sha256').update(PEPPER + ':' + PIN).digest('hex') };
+const env = { BUCKET: bucket, ALLOWED_ORIGINS: ORIGIN, WRITE_DAY_CAP: '150', WRITE_DAY_USD: '40', PEPPER, PIN_HASH: crypto.createHash('sha256').update(PEPPER + ':' + PIN).digest('hex') };
 const server = await serve(PORT, env);
 let failures = 0;
 const ok = (c, m) => { if (!c) { failures++; console.log('FAIL', m); } else console.log('ok  ', m); };
@@ -541,6 +541,12 @@ ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'f
   w = await write({ action: 'polish', text: SAMPLE });
   sh = shelf(events(w.text));
   ok(sh[sh.length - 1].code === 'bad_key' && asked.length === 1 && !w.text.includes(KEY) && await used() === n0, '401: bad_key at once; the key never in the answer; not counted');
+  // the owner's own limit on the Anthropic account (the server sets none): said as such, not as some other failure
+  asked.length = 0;
+  plan.push(fail(400, 'invalid_request_error', 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.'));
+  w = await write({ action: 'polish', text: SAMPLE });
+  sh = shelf(events(w.text));
+  ok(sh[sh.length - 1].code === 'billing' && asked.length === 1, "the account's usage limit reached: billing (the app says the limit set on the Anthropic account was reached)");
   plan.push(fail(400, 'invalid_request_error', 'something about ' + KEY + ' was wrong'));
   w = await write({ action: 'polish', text: SAMPLE });
   sh = shelf(events(w.text));
@@ -611,6 +617,16 @@ ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'f
   w = await write({ action: 'polish', text: SAMPLE });
   e = JSON.parse(w.text);
   ok(w.status === 429 && e.error === 'daily_budget' && e.budget === 40 && e.spent === 40.01 && e.reset > Date.now() && asked.length === 0, 'the day\'s budget spent: 429 daily_budget (with when it opens again); Anthropic not asked');
+  await bucket.put('write/use.json', JSON.stringify({ day, n: 10, usd: 0 }));
+  // the deployed worker has no day's limits (the owner keeps the spending limit on the Anthropic account): none set, none applied
+  const capsWere = [env.WRITE_DAY_CAP, env.WRITE_DAY_USD]; delete env.WRITE_DAY_CAP; delete env.WRITE_DAY_USD;
+  await bucket.put('write/use.json', JSON.stringify({ day, n: 500, usd: 999 }));
+  x = await j(await call('/write', {}, T));
+  ok(x.body.cap === null && x.body.budget === null && x.body.used === 500, 'no caps set: info says none (cap and budget null), the day is still counted');
+  asked.length = 0; plan.push(ok200('claude-fable-5-2', GOOD));
+  w = await write({ action: 'polish', text: SAMPLE });
+  ok(w.status === 200 && asked.length === 1 && shelf(events(w.text))[0].cap === null, 'no caps set: past 500 requests and $999 the request still goes to Anthropic');
+  [env.WRITE_DAY_CAP, env.WRITE_DAY_USD] = capsWere;
   await bucket.put('write/use.json', JSON.stringify({ day, n: 10, usd: 0 }));
 
   // the latest answer kept for an app that lost the connection: the events as streamed, fetched by the app's id

@@ -3,9 +3,9 @@
 // when the journal put out one issue that year, or when the paper is among the journal's earliest articles the service lists
 // (it gives a journal's first two hundred or so). Nothing is guessed: two journals of one name with no society to tell them
 // apart, or an issue that is not in the table, leave the line as it was.
-import * as api from './api.js?v=aedca5545d';
-import * as store from './store.js?v=aedca5545d';
-import { knownNames } from './cite.js?v=aedca5545d';
+import * as api from './api.js?v=7cd63e4780';
+import * as store from './store.js?v=7cd63e4780';
+import { knownNames } from './cite.js?v=7cd63e4780';
 
 const SVC = 'B552540/KCIOpenApi/doiInfo/';
 const DAY = 864e5;

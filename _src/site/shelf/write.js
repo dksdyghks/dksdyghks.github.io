@@ -263,12 +263,14 @@ function paintActs() {
   st.classList.remove('warn');
   if (W.info && !W.info.key) { st.classList.add('warn'); st.textContent = '다듬기를 쓰려면 서버에 본인의 Claude(Anthropic) API 키를 넣어 두어야 합니다.'; return; }
   if (!W.info) { st.textContent = W.infoErr === 'offline' ? '인터넷에 연결되면 쓸 수 있습니다. 인용 점검은 이 기기에 받아 둔 자료로 합니다.' : W.infoErr ? '책장 서버에 연결하지 못했습니다. 잠시 뒤에 다시 열어 주세요.' : ''; return; }
-  if (full) { st.classList.add('warn'); st.textContent = W.info.used >= W.info.cap ? capText(W.info) : budgetText(W.info); return; }
-  const spend = W.info.budget ? ` · 약 ${usd(W.info.spent)} / ${usd(W.info.budget)}` : '';
-  st.textContent = `오늘 ${nf(W.info.used)} / ${nf(W.info.cap)}회${spend} · ${(W.info.models && W.info.models[0] && W.info.models[0].name) || 'Claude'}`;
+  if (full) { st.classList.add('warn'); st.textContent = W.info.cap && W.info.used >= W.info.cap ? capText(W.info) : budgetText(W.info); return; }
+  // no day's limit on the server (the owner's limit is the Anthropic account's own): just what today has used
+  const spend = W.info.budget ? ` · 약 ${usd(W.info.spent)} / ${usd(W.info.budget)}` : Number(W.info.spent) > 0 ? ` · 약 ${usd(W.info.spent)}` : '';
+  const count = W.info.cap ? `${nf(W.info.used)} / ${nf(W.info.cap)}회` : `${nf(W.info.used)}회`;
+  st.textContent = `오늘 ${count}${spend} · ${(W.info.models && W.info.models[0] && W.info.models[0].name) || 'Claude'}`;
 }
 // the day used up: its requests (info.cap) or its budget in dollars (info.budget, what the answers cost as estimated)
-const dayFull = (i) => !!(i && (i.used >= i.cap || (i.budget && i.spent >= i.budget)));
+const dayFull = (i) => !!(i && ((i.cap && i.used >= i.cap) || (i.budget && i.spent >= i.budget)));
 const usd = (n) => '$' + (Number(n) || 0).toFixed(Number(n) >= 100 ? 0 : 2).replace(/\.00$/, '');
 const capText = (e) => `오늘 쓸 수 있는 ${nf(e.cap || 150)}회를 다 썼습니다. 내일 0시(한국 시간)에 다시 열립니다.`;
 const budgetText = (e) => `오늘 쓸 수 있는 비용(약 ${usd(e.budget || 40)})을 다 썼습니다. 내일 0시(한국 시간)에 다시 열립니다.`;
@@ -459,7 +461,7 @@ const ERR = {
   overloaded: () => 'Claude가 지금 붐벼 답하지 못했습니다. 잠시 뒤에 다시 해 주세요.',
   refused: () => '두 모델 모두 이 글을 처리하지 않았습니다(안전 정책에 따른 거절).',
   bad_key: () => '서버의 Claude API 키가 맞지 않습니다. 키를 확인해 주세요.',
-  billing: () => 'Anthropic 계정의 결제나 한도 문제로 처리하지 못했습니다.',
+  billing: () => 'Anthropic 계정에 걸어 둔 사용 한도에 닿았거나 결제에 문제가 있어 처리하지 못했습니다. Anthropic 콘솔에서 한도와 결제를 확인해 주세요.',
   no_model: () => '이 키로는 Claude 모델을 쓸 수 없습니다. 키의 권한을 확인해 주세요.',
   upstream: () => 'Claude에 연결하지 못했습니다. 잠시 뒤에 다시 해 주세요.',
   cut: () => '답이 중간에 끊겼습니다. 다시 해 주세요.',

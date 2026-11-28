@@ -1,8 +1,8 @@
 // 조문과 판결: 헌법 and 헌법재판소법 in full (from 헌법재판소 법령정보, 공공데이터포털); every other law, decree and rule, and
 // the judgments of 대법원 and the other courts (법제처's texts, from the public mirrors legalize-kr and precedent-kr), each kept
 // on this device; how a search or a paper names an article or a court's case; and the 국가법령정보센터 pages beside them.
-import * as api from './api.js?v=aedca5545d';
-import * as store from './store.js?v=aedca5545d';
+import * as api from './api.js?v=7cd63e4780';
+import * as store from './store.js?v=7cd63e4780';
 
 const SVC = '9750000/LawInfoService/';
 // the two laws whose text the court publishes; 헌법 does not change, 헌법재판소법 is asked again after a month

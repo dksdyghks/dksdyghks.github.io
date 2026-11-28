@@ -1,26 +1,26 @@
 // 연구실 책장 — a private PDF library and reader for one owner, on every device.
 // The library lives on the owner's server (Cloudflare R2 behind a small Worker); this device keeps copies of what was
 // opened, so files open at once and without a connection. Marks and reading positions are saved here first and sent on.
-import * as api from './api.js?v=aedca5545d';
-import * as store from './store.js?v=aedca5545d';
-import * as pdfkit from './pdfkit.js?v=aedca5545d';
-import * as A from './analyze.js?v=aedca5545d';
-import { Reader, gradeSVG } from './reader.js?v=aedca5545d';
-import * as naming from './naming.js?v=aedca5545d';
-import * as cases from './cases.js?v=aedca5545d';
-import * as laws from './laws.js?v=aedca5545d';
-import * as papers from './papers.js?v=aedca5545d';
-import * as research from './research.js?v=aedca5545d';
-import * as biblio from './biblio.js?v=aedca5545d';
-import * as bills from './bills.js?v=aedca5545d';
-import * as kci from './kci.js?v=aedca5545d';
-import * as moleg from './moleg.js?v=aedca5545d';
-import * as precq from './precq.js?v=aedca5545d';
-import * as kciq from './kciq.js?v=aedca5545d';
-import * as pfind from './pfind.js?v=aedca5545d';
-import * as ccnews from './ccnews.js?v=aedca5545d';
-import * as verify from './verify.js?v=aedca5545d';
-import * as write from './write.js?v=aedca5545d';
+import * as api from './api.js?v=7cd63e4780';
+import * as store from './store.js?v=7cd63e4780';
+import * as pdfkit from './pdfkit.js?v=7cd63e4780';
+import * as A from './analyze.js?v=7cd63e4780';
+import { Reader, gradeSVG } from './reader.js?v=7cd63e4780';
+import * as naming from './naming.js?v=7cd63e4780';
+import * as cases from './cases.js?v=7cd63e4780';
+import * as laws from './laws.js?v=7cd63e4780';
+import * as papers from './papers.js?v=7cd63e4780';
+import * as research from './research.js?v=7cd63e4780';
+import * as biblio from './biblio.js?v=7cd63e4780';
+import * as bills from './bills.js?v=7cd63e4780';
+import * as kci from './kci.js?v=7cd63e4780';
+import * as moleg from './moleg.js?v=7cd63e4780';
+import * as precq from './precq.js?v=7cd63e4780';
+import * as kciq from './kciq.js?v=7cd63e4780';
+import * as pfind from './pfind.js?v=7cd63e4780';
+import * as ccnews from './ccnews.js?v=7cd63e4780';
+import * as verify from './verify.js?v=7cd63e4780';
+import * as write from './write.js?v=7cd63e4780';
 
 const $ = (s, r = document) => r.querySelector(s);
 // the characters that turn the direction of the text around (a file named '\u202Efdp.exe' shows as 'exe.pdf'): never shown
@@ -2594,7 +2594,7 @@ async function casesView(box, q, live, commit = () => {}) {
     courtSec.insertAdjacentHTML('afterend', lawSec('acrc', '행정심판 재결례 <small>국민권익위 온라인행정심판</small>').replace('<div class="list law-list"></div>', '<div class="aj-wrap" hidden><section data-sec="acrc-in"></section></div>'));
     st.left++;
     const slot = $('[data-sec="acrc"]', box), wrap = $('.aj-wrap', slot), inner = $('[data-sec="acrc-in"]', slot);
-    import('./adjud.js?v=aedca5545d').then((m) => m.render(inner, q, () => live() && slot.isConnected, { sheet, closeSheet, lawGo, caseSheet, courtSheet, toast }), () => 0).then((n) => {
+    import('./adjud.js?v=7cd63e4780').then((m) => m.render(inner, q, () => live() && slot.isConnected, { sheet, closeSheet, lawGo, caseSheet, courtSheet, toast }), () => 0).then((n) => {
       n = Number(n) || 0;
       if (!live() || !slot.isConnected) { done(0); return; }
       const said = !inner.hidden && !!inner.textContent.trim();   // (rows, or the line on what it could not reach)
@@ -2676,7 +2676,7 @@ async function lawsView(box, q, live, commit = () => {}) {
       casesLink($('.x-cases', box), key ? q : law.full, null, live, law);
       shown();
       // 국회입법조사처's reports that name this law in their titles (the law itself, not its 시행령 or 규칙)
-      if (!/(?:시행령|시행규칙)$/.test(law.full)) import('./nars.js?v=aedca5545d').then((m) => m.lawSection($('.nr-sec', box), law.full, { upload, toast, live, aliases: laws.lawAliases(law.full), mine: (t) => shelfTitles().has(papers.norm(papers.mainTitle(t))) }), () => 0);
+      if (!/(?:시행령|시행규칙)$/.test(law.full)) import('./nars.js?v=7cd63e4780').then((m) => m.lawSection($('.nr-sec', box), law.full, { upload, toast, live, aliases: laws.lawAliases(law.full), mine: (t) => shelfTitles().has(papers.norm(papers.mainTitle(t))) }), () => 0);
       if (key !== '헌법') ruleSecs(box, law.full.replace(/\s*(?:시행령|시행규칙)$/, ''), live);
     });
     return;
@@ -4389,7 +4389,7 @@ async function makePdf(f, withMarks) {
   if (withMarks) {
     const list = (await loadMarks(f.id)).filter((m) => !m.del);
     if (list.length) {
-      try { const { buildAnnotatedPdf } = await import('./annot.js?v=aedca5545d'); out = await buildAnnotatedPdf(out, list); }
+      try { const { buildAnnotatedPdf } = await import('./annot.js?v=7cd63e4780'); out = await buildAnnotatedPdf(out, list); }
       catch (e) {
         // a locked file cannot take annotations: draw its pages with the marks into a new PDF instead
         try { out = await pdfkit.flattenWithMarks(out, list); note = '잠긴 PDF라 쪽을 그림으로 바꿔 표시와 함께 만들었습니다'; }
@@ -4530,7 +4530,7 @@ async function nameFromBand(doc, p1, p2, first, fileName) {
   const band = naming.authorBand(p1); if (!band) return first;
   let mod = null, pg = null;
   try {
-    mod = await import('./ocr.js?v=aedca5545d');
+    mod = await import('./ocr.js?v=7cd63e4780');
     pg = await doc.getPage(1);
     const vp = pg.getViewport({ scale: 1 });
     const r = await mod.readPage(pg, 'kor');
@@ -4558,7 +4558,7 @@ function ocrQueue(only) {
       for (;;) {
         const f = only ? fileById(only) : liveFiles().find((x) => needsOcr(x) && x.scan <= OCR_AUTO_MAX && !ocrSkip.has(x.id));
         if (!needsOcr(f) || !syncOn || !navigator.onLine) break;
-        mod = mod || await import('./ocr.js?v=aedca5545d');
+        mod = mod || await import('./ocr.js?v=7cd63e4780');
         let r;
         try { r = await ocrFile(f, mod, !only); }
         catch (e) { if (only) toast(offline(e) ? unreached('할 수 있습니다') : '글자를 읽지 못했습니다'); break; }
