@@ -2,8 +2,8 @@
 // with its gist and the articles it would change, read from its 제안이유 및 주요내용 — so an article shows the bills that touch it.
 // The server keeps what it read: the first look at a law with many bills (공직선거법, about 300) fills in over half a minute,
 // every later look (on any device) is at once; this device keeps the last answer too, for six hours.
-import * as api from './api.js?v=7cd63e4780';
-import * as store from './store.js?v=7cd63e4780';
+import * as api from './api.js?v=6f9f98f247';
+import * as store from './store.js?v=6f9f98f247';
 
 const V = 1, FRESH = 6 * 3600e3;
 const mem = new Map();     // law → { seen, d }: the last answer, this session

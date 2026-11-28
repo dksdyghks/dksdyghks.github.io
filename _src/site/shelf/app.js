@@ -2332,7 +2332,39 @@ function provisionRows(mine, chip) {   // each article of the owner's research b
     ? it.arts.filter((a) => /^제\s*\d/.test(a)).map((a) => chip(`${shortLaw(it.law)} ${a}`, `${shortLaw(it.law)} ${a}`, it.topic))
     : [chip(shortLaw(it.law), shortLaw(it.law), it.topic)])).join(''))).join('');
 }
-const recentRow = (list, attr) => (list && list.length ? `<h2 class="sec-h">최근 찾은 것</h2><div class="law-ex">${list.map((x) => `<button type="button" ${attr}="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : '');
+// the recent asks, each with its own ✕, and 모두 지우기 (kind: 'cases' | 'law'; app's click handler: data-rc-del / data-rc-clear)
+const recentRow = (list, attr) => {
+  if (!list || !list.length) return '';
+  const kind = attr === 'data-cq' ? 'cases' : 'law';
+  return `<section class="rc-sec" data-rc="${kind}"><h2 class="sec-h rc-h"><span>최근 찾은 것</span><button type="button" class="rc-clear" data-rc-clear="${kind}">모두 지우기</button></h2><div class="law-ex rc-list">${list.map((x) => `<span class="rc-item"><button type="button" ${attr}="${esc(x)}">${esc(x)}</button><button type="button" class="rc-x" data-rc-del="${kind}" data-rc-q="${esc(x)}" aria-label="‘${esc(x)}’ 기록 지우기" title="이 기록 지우기"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span>`).join('')}</div></section>`;
+};
+// forget one recent ask, or all of a screen's (kept on this device); the row changes in place, 되돌리기 brings them back
+async function forgetRecent(kind, q, btn) {
+  await loadRecent();
+  const was = kind === 'cases' ? caseRecent.slice() : lawRecent.slice();
+  const now = q == null ? [] : was.filter((x) => x !== q);
+  const put = (list) => {
+    if (kind === 'cases') caseRecent = list; else lawRecent = list;
+    store.put('kv', kind === 'cases' ? 'caseRecent' : 'lawRecent', list).catch(() => {});
+  };
+  put(now);
+  const sec = btn && btn.closest('.rc-sec');
+  const paintSec = (list) => {
+    const cur = document.querySelector(`.rc-sec[data-rc="${kind}"]`) || sec;
+    if (!cur || !cur.isConnected) return;
+    if (!list.length) { cur.hidden = true; return; }   // (kept, hidden: 되돌리기 fills it again in the same place)
+    const t = document.createElement('div'); t.innerHTML = recentRow(list, kind === 'cases' ? 'data-cq' : 'data-lq');
+    cur.replaceWith(t.firstElementChild);
+  };
+  if (q != null && sec && now.length) { const it = btn.closest('.rc-item'); if (it) it.remove(); }
+  else paintSec(now);
+  toast(q == null ? '최근 찾은 기록을 모두 지웠습니다' : '기록을 지웠습니다', 5000, { label: '되돌리기', fn: () => {
+    const cur = kind === 'cases' ? caseRecent : lawRecent;
+    const merged = [...cur.filter((x) => !was.includes(x)), ...was].slice(0, 8);   // (asks made since stay first)
+    put(merged);
+    paintSec(merged);
+  } });
+}
 const egs = (list, attr) => list.map((x) => `<button type="button" class="law-eg" ${attr}="${esc(x)}">${esc(x)}</button>`).join(' · ');
 function lawHome(mine) {
   const chip = lawChip('data-lq');
@@ -3752,6 +3784,8 @@ function onContentClick(e) {
   const pq = t.closest('[data-pq]'); if (pq) { paperGo(pq.dataset.pq); return; }
   const pw = t.closest('[data-who]'); if (pw) { researcherSheet(pw.dataset.who, pw.dataset.aid); return; }
   const pp = t.closest('[data-paper]'); if (pp) { const row = ppRows.get(pp.dataset.paper); if (row) paperSheet(row); return; }
+  const rcd = t.closest('[data-rc-del], [data-rc-clear]');
+  if (rcd) { if (rcd.dataset.rcClear) forgetRecent(rcd.dataset.rcClear, null, rcd); else forgetRecent(rcd.dataset.rcDel, rcd.dataset.rcQ, rcd); return; }
   const lq = t.closest('[data-lq], [data-cq]'); if (lq) { if (lq.dataset.cq !== undefined) lawGo(lq.dataset.cq, 'cases'); else lawGo(lq.dataset.lq); return; }   // a law (법령) or its cases (판례)
   const ho = t.closest('[data-holding]'); if (ho) { holdingSheet(ho.dataset.holding, ho.dataset.title, ho.dataset.q); return; }
   const bl = t.closest('[data-bill]'); if (bl) { const b = billRows.get(bl.dataset.bill); if (b) billSheet(b.x, b.law); return; }

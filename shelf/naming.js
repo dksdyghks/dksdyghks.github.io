@@ -7,8 +7,8 @@
 // Input: page objects as made by pdfkit.pageItems(): { W, H, items: [{ s, x, y, w, h }] } (y grows downward).
 // Where it was published is read by cite.js from every line of the first pages (running heads too), the reading here by
 // position standing in when cite.js finds nothing.
-import { PAIRS } from './hanja.js?v=7cd63e4780';
-import { printedCitation, issueText as citeIssue, dateText, glyphs, cleanName, plausibleName, notPubDates, stripLinks, nameKey } from './cite.js?v=7cd63e4780';
+import { PAIRS } from './hanja.js?v=6f9f98f247';
+import { printedCitation, issueText as citeIssue, dateText, glyphs, cleanName, plausibleName, notPubDates, stripLinks, nameKey } from './cite.js?v=6f9f98f247';
 
 // ---------------------------------------------------------------- hanja → hangul
 let HANJA = null;

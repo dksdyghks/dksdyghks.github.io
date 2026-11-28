@@ -386,7 +386,7 @@ mark { background: #FFD84D99; color: inherit; border-radius: 3px; padding: 0 1px
 
 /* tools and page indicator */
 .rd-tools { position: absolute; left: 50%; bottom: calc(var(--safe-b) + 14px); transform: translateX(-50%); width: max-content; display: flex; gap: 2px; padding: 4px; border-radius: 14px; z-index: 8;
-  background: color-mix(in srgb, var(--navy) 80%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
+  background: var(--navy);   /* solid (no blurred page showing through it) */
   box-shadow: 0 10px 28px -14px #000B, inset 0 0 0 1px #FFFFFF14; transition: opacity .3s ease; }
 .rd-tools > button { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 34px; padding: 0 11px; border-radius: 10px; color: #D3DAE4; font-weight: 600; font-size: 12.5px; }
 .rd-tools > button svg { width: 17px; height: 17px; }
@@ -563,6 +563,15 @@ a.btn { text-decoration: none; }   /* (a link dressed as a button is a button) *
 .lh-v button { display: inline-flex; align-items: baseline; flex-wrap: wrap; column-gap: 7px; min-height: 34px; padding: 7px 13px; border-radius: 17px; background: var(--chip); font-size: 14px; font-weight: 600; color: var(--ink); line-height: 1.4; text-align: left; max-width: 100%; }
 .lh-v button small, .law-ex button small { font-size: 12px; font-weight: 500; color: var(--muted); }
 .law-ex button { display: inline-flex; align-items: center; gap: 7px; }
+/* 최근 찾은 것: each ask with its own ✕ (one pill, two buttons), 모두 지우기 in the head */
+.rc-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rc-clear { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 4px; min-height: 32px; letter-spacing: 0; }
+.rc-clear:hover { color: var(--ink); }
+.rc-item { display: inline-flex; align-items: center; border-radius: 18px; background: var(--card); box-shadow: var(--shadow); }
+.rc-item > button[data-cq], .rc-item > button[data-lq] { box-shadow: none; background: none; padding-right: 4px; }
+.law-ex .rc-item > .rc-x { width: 32px; height: 36px; padding: 0; justify-content: center; box-shadow: none; background: none; color: var(--faint); border-radius: 0 18px 18px 0; }
+.law-ex .rc-item > .rc-x:hover { color: var(--ink); }
+@media (pointer: coarse) { .law-ex .rc-item > .rc-x { width: 40px; min-height: 40px; } .rc-clear { min-height: 44px; } }
 @media (hover: hover) { .lh-v button:hover { background: color-mix(in srgb, var(--accent) 9%, var(--chip)); } }
 @media (max-width: 560px) {
   .lh { padding: 2px 14px; }
@@ -1512,7 +1521,7 @@ svg.pen { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: r
   :root:has(body.reading), :root:has(.reader-host) { --tab-h: 0px; }
   .tabbar { position: fixed; z-index: 18; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); box-sizing: border-box;
     height: calc(56px + var(--safe-b)); padding: 0 max(4px, env(safe-area-inset-right, 0px)) var(--safe-b) max(4px, env(safe-area-inset-left, 0px));
-    background: color-mix(in srgb, var(--card) 92%, transparent); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+    background: var(--card);   /* solid: text scrolling under a see-through, blurred bar looked like a mosaic */
     box-shadow: 0 -1px 0 var(--rule); }
   .tabbar[hidden], body.reading .tabbar, body:has(.reader-host) .tabbar { display: none; }
   .tabbar button { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; height: 56px; padding-top: 7px; min-width: 0;

@@ -1,9 +1,9 @@
 // 헌재 결정 바로 보기: case numbers as papers cite them (헌재 2004. 10. 21. 2004헌마554등), and the decision itself from
 // 헌법재판소 판례정보 (공공데이터포털), asked through the 책장 server once and kept on this device (a decision does not change).
-import * as api from './api.js?v=7cd63e4780';
-import * as store from './store.js?v=7cd63e4780';
-import { scanArticles, articleScope, scanCourtCases, artLabel, lawGoKr, corners, oldLaw, oldArticlesOf, successor } from './laws.js?v=7cd63e4780';
-import * as terms from './terms.js?v=7cd63e4780';
+import * as api from './api.js?v=6f9f98f247';
+import * as store from './store.js?v=6f9f98f247';
+import { scanArticles, articleScope, scanCourtCases, artLabel, lawGoKr, corners, oldLaw, oldArticlesOf, successor } from './laws.js?v=6f9f98f247';
+import * as terms from './terms.js?v=6f9f98f247';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
