@@ -6,7 +6,7 @@
 // is narrowed (by journal, by year) and ordered (최신·피인용) without reading a row. Rows for the page shown come from m/.
 // The parts are fetched as needed and kept on this device until the index is made again, so a search asked again, or
 // offline, is answered at once.
-import * as store from './store.js?v=624e00e99c';
+import * as store from './store.js?v=8af7a0a5d7';
 
 const BASE = new URL('./kciq/', import.meta.url);
 const LETTERS = /[^0-9A-Za-zㄱ-ㆎ가-힣㐀-䶿一-鿿豈-﫿]+/g;

@@ -1,26 +1,26 @@
 // 연구실 책장 — a private PDF library and reader for one owner, on every device.
 // The library lives on the owner's server (Cloudflare R2 behind a small Worker); this device keeps copies of what was
 // opened, so files open at once and without a connection. Marks and reading positions are saved here first and sent on.
-import * as api from './api.js?v=624e00e99c';
-import * as store from './store.js?v=624e00e99c';
-import * as pdfkit from './pdfkit.js?v=624e00e99c';
-import * as A from './analyze.js?v=624e00e99c';
-import { Reader, gradeSVG } from './reader.js?v=624e00e99c';
-import * as naming from './naming.js?v=624e00e99c';
-import * as cases from './cases.js?v=624e00e99c';
-import * as laws from './laws.js?v=624e00e99c';
-import * as papers from './papers.js?v=624e00e99c';
-import * as research from './research.js?v=624e00e99c';
-import * as biblio from './biblio.js?v=624e00e99c';
-import * as bills from './bills.js?v=624e00e99c';
-import * as kci from './kci.js?v=624e00e99c';
-import * as moleg from './moleg.js?v=624e00e99c';
-import * as precq from './precq.js?v=624e00e99c';
-import * as kciq from './kciq.js?v=624e00e99c';
-import * as pfind from './pfind.js?v=624e00e99c';
-import * as ccnews from './ccnews.js?v=624e00e99c';
-import * as verify from './verify.js?v=624e00e99c';
-import * as write from './write.js?v=624e00e99c';
+import * as api from './api.js?v=8af7a0a5d7';
+import * as store from './store.js?v=8af7a0a5d7';
+import * as pdfkit from './pdfkit.js?v=8af7a0a5d7';
+import * as A from './analyze.js?v=8af7a0a5d7';
+import { Reader, gradeSVG } from './reader.js?v=8af7a0a5d7';
+import * as naming from './naming.js?v=8af7a0a5d7';
+import * as cases from './cases.js?v=8af7a0a5d7';
+import * as laws from './laws.js?v=8af7a0a5d7';
+import * as papers from './papers.js?v=8af7a0a5d7';
+import * as research from './research.js?v=8af7a0a5d7';
+import * as biblio from './biblio.js?v=8af7a0a5d7';
+import * as bills from './bills.js?v=8af7a0a5d7';
+import * as kci from './kci.js?v=8af7a0a5d7';
+import * as moleg from './moleg.js?v=8af7a0a5d7';
+import * as precq from './precq.js?v=8af7a0a5d7';
+import * as kciq from './kciq.js?v=8af7a0a5d7';
+import * as pfind from './pfind.js?v=8af7a0a5d7';
+import * as ccnews from './ccnews.js?v=8af7a0a5d7';
+import * as verify from './verify.js?v=8af7a0a5d7';
+import * as write from './write.js?v=8af7a0a5d7';
 
 const $ = (s, r = document) => r.querySelector(s);
 // the characters that turn the direction of the text around (a file named '\u202Efdp.exe' shows as 'exe.pdf'): never shown
@@ -2626,7 +2626,7 @@ async function casesView(box, q, live, commit = () => {}) {
     courtSec.insertAdjacentHTML('afterend', lawSec('acrc', '행정심판 재결례 <small>국민권익위 온라인행정심판</small>').replace('<div class="list law-list"></div>', '<div class="aj-wrap" hidden><section data-sec="acrc-in"></section></div>'));
     st.left++;
     const slot = $('[data-sec="acrc"]', box), wrap = $('.aj-wrap', slot), inner = $('[data-sec="acrc-in"]', slot);
-    import('./adjud.js?v=624e00e99c').then((m) => m.render(inner, q, () => live() && slot.isConnected, { sheet, closeSheet, lawGo, caseSheet, courtSheet, toast }), () => 0).then((n) => {
+    import('./adjud.js?v=8af7a0a5d7').then((m) => m.render(inner, q, () => live() && slot.isConnected, { sheet, closeSheet, lawGo, caseSheet, courtSheet, toast }), () => 0).then((n) => {
       n = Number(n) || 0;
       if (!live() || !slot.isConnected) { done(0); return; }
       const said = !inner.hidden && !!inner.textContent.trim();   // (rows, or the line on what it could not reach)
@@ -2708,7 +2708,7 @@ async function lawsView(box, q, live, commit = () => {}) {
       casesLink($('.x-cases', box), key ? q : law.full, null, live, law);
       shown();
       // 국회입법조사처's reports that name this law in their titles (the law itself, not its 시행령 or 규칙)
-      if (!/(?:시행령|시행규칙)$/.test(law.full)) import('./nars.js?v=624e00e99c').then((m) => m.lawSection($('.nr-sec', box), law.full, { upload, toast, live, aliases: laws.lawAliases(law.full), mine: (t) => shelfTitles().has(papers.norm(papers.mainTitle(t))) }), () => 0);
+      if (!/(?:시행령|시행규칙)$/.test(law.full)) import('./nars.js?v=8af7a0a5d7').then((m) => m.lawSection($('.nr-sec', box), law.full, { upload, toast, live, aliases: laws.lawAliases(law.full), mine: (t) => shelfTitles().has(papers.norm(papers.mainTitle(t))) }), () => 0);
       if (key !== '헌법') ruleSecs(box, law.full.replace(/\s*(?:시행령|시행규칙)$/, ''), live);
     });
     return;
@@ -4423,7 +4423,7 @@ async function makePdf(f, withMarks) {
   if (withMarks) {
     const list = (await loadMarks(f.id)).filter((m) => !m.del);
     if (list.length) {
-      try { const { buildAnnotatedPdf } = await import('./annot.js?v=624e00e99c'); out = await buildAnnotatedPdf(out, list); }
+      try { const { buildAnnotatedPdf } = await import('./annot.js?v=8af7a0a5d7'); out = await buildAnnotatedPdf(out, list); }
       catch (e) {
         // a locked file cannot take annotations: draw its pages with the marks into a new PDF instead
         try { out = await pdfkit.flattenWithMarks(out, list); note = '잠긴 PDF라 쪽을 그림으로 바꿔 표시와 함께 만들었습니다'; }
@@ -4564,7 +4564,7 @@ async function nameFromBand(doc, p1, p2, first, fileName) {
   const band = naming.authorBand(p1); if (!band) return first;
   let mod = null, pg = null;
   try {
-    mod = await import('./ocr.js?v=624e00e99c');
+    mod = await import('./ocr.js?v=8af7a0a5d7');
     pg = await doc.getPage(1);
     const vp = pg.getViewport({ scale: 1 });
     const r = await mod.readPage(pg, 'kor');
@@ -4592,7 +4592,7 @@ function ocrQueue(only) {
       for (;;) {
         const f = only ? fileById(only) : liveFiles().find((x) => needsOcr(x) && x.scan <= OCR_AUTO_MAX && !ocrSkip.has(x.id));
         if (!needsOcr(f) || !syncOn || !navigator.onLine) break;
-        mod = mod || await import('./ocr.js?v=624e00e99c');
+        mod = mod || await import('./ocr.js?v=8af7a0a5d7');
         let r;
         try { r = await ocrFile(f, mod, !only); }
         catch (e) { if (only) toast(offline(e) ? unreached('할 수 있습니다') : '글자를 읽지 못했습니다'); break; }
@@ -4709,8 +4709,10 @@ function notePaper(id, t, quiet) {
     infoDraw = false;
   }, Math.max(0, Math.min(1500, infoFirst + 4000 - now)));
 }
-const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal || '', society: r.society || '', issue: r.issue || '', date: r.date || '' } : null);
-const infoOf = (f) => (f && (f.paper || S.info[f.id])) || null;   // the index's (shared, newest) first, else what this device read
+// (a journal's name as misread or misprinted — 민주범학, 항공우주정책･법학회지 — set right wherever a line is made or shown)
+const fixedLine = (r) => (r && r.journal && naming.fixJournal(r.journal) !== r.journal ? { ...r, journal: naming.fixJournal(r.journal), society: r.society || naming.journalSociety(naming.fixJournal(r.journal)) || '' } : r);
+const paperOf = (r0) => { const r = fixedLine(r0); return r && (r.journal || r.date) ? { journal: r.journal || '', society: r.society || '', issue: r.issue || '', date: r.date || '' } : null; };
+const infoOf = (f) => fixedLine((f && (f.paper || S.info[f.id])) || null);   // the index's (shared, newest) first, else what this device read
 // a paper's line written into the library's index as well (a few at a time, once each), never clearing what is there
 const paperQ = new Map();
 function queuePaper(id, v) {

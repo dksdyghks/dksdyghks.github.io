@@ -1,8 +1,8 @@
 // 연구실 책장 — 논문 찾기: 국회도서관 국가학술정보 클라우드 (학술논문·학위논문·단행본), asked through the shelf's server, which
 // holds the key. A search gives each paper's title, authors, journal, publisher and year; a paper's details add its abstract,
 // contents, identifiers and the 국회전자도서관 page where its full text is read.
-import * as api from './api.js?v=624e00e99c';
-import * as naming from './naming.js?v=624e00e99c';
+import * as api from './api.js?v=8af7a0a5d7';
+import * as naming from './naming.js?v=8af7a0a5d7';
 
 export const KINDS = [['ARTICLE', '학술논문'], ['THESIS', '학위논문'], ['BOOK', '단행본'], ['', '전체']];
 // the libraries' text: tags off, entities read (&#x2802; is how one of them writes the middle dot of 554·566)

@@ -8,11 +8,11 @@
 // score of our own, in groups that never mix: a journal's papers (a person's own first, when a person is asked), then
 // magazine pieces (잡지·기사), then an issue's front matter (발간사·권두언 …). A source that cannot be asked (its key not set
 // yet, or refused) is simply left out (api.js remembers it).
-import * as api from './api.js?v=624e00e99c';
-import * as papers from './papers.js?v=624e00e99c';
-import * as kciq from './kciq.js?v=624e00e99c';
-import * as naming from './naming.js?v=624e00e99c';
-import * as terms from './terms.js?v=624e00e99c';
+import * as api from './api.js?v=8af7a0a5d7';
+import * as papers from './papers.js?v=8af7a0a5d7';
+import * as kciq from './kciq.js?v=8af7a0a5d7';
+import * as naming from './naming.js?v=8af7a0a5d7';
+import * as terms from './terms.js?v=8af7a0a5d7';
 
 export const PAGE = 20;                                   // papers shown at a time
 const SIZE = { idx: 20, nanet: 20, kci: 50, so: 20 };     // asked of each source at a time (KCI has no order by relevance of its
@@ -865,8 +865,8 @@ export function journalCounts(f, hidden) {
    asked, so the papers never wait for it (and a device whose offline copy lacks the file still finds papers) ----------
    narsSection(sec, q, ui): sec an empty <section> (it stays hidden when nothing is found); ui { upload(files), toast(msg),
    mine?(title), live?() }. narsForLaw(name, { aliases }): the reports whose title names that law, for 법령. */
-export const narsSection = (sec, q, ui) => import('./nars.js?v=624e00e99c').then((m) => m.mount(sec, q, ui), () => 0);
-export const narsForLaw = (name, opts) => import('./nars.js?v=624e00e99c').then((m) => m.forLaw(name, opts));
+export const narsSection = (sec, q, ui) => import('./nars.js?v=8af7a0a5d7').then((m) => m.mount(sec, q, ui), () => 0);
+export const narsForLaw = (name, opts) => import('./nars.js?v=8af7a0a5d7').then((m) => m.forLaw(name, opts));
 
 /* ---------- 8차: papers about a case (평석) ----------
    aboutCase(no, { shelf }) → Promise<rows[]>: the papers that name the case number (2003두1684, 2007헌마1001) — 국회도서관

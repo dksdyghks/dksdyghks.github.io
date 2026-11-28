@@ -4709,8 +4709,10 @@ function notePaper(id, t, quiet) {
     infoDraw = false;
   }, Math.max(0, Math.min(1500, infoFirst + 4000 - now)));
 }
-const paperOf = (r) => (r && (r.journal || r.date) ? { journal: r.journal || '', society: r.society || '', issue: r.issue || '', date: r.date || '' } : null);
-const infoOf = (f) => (f && (f.paper || S.info[f.id])) || null;   // the index's (shared, newest) first, else what this device read
+// (a journal's name as misread or misprinted — 민주범학, 항공우주정책･법학회지 — set right wherever a line is made or shown)
+const fixedLine = (r) => (r && r.journal && naming.fixJournal(r.journal) !== r.journal ? { ...r, journal: naming.fixJournal(r.journal), society: r.society || naming.journalSociety(naming.fixJournal(r.journal)) || '' } : r);
+const paperOf = (r0) => { const r = fixedLine(r0); return r && (r.journal || r.date) ? { journal: r.journal || '', society: r.society || '', issue: r.issue || '', date: r.date || '' } : null; };
+const infoOf = (f) => fixedLine((f && (f.paper || S.info[f.id])) || null);   // the index's (shared, newest) first, else what this device read
 // a paper's line written into the library's index as well (a few at a time, once each), never clearing what is there
 const paperQ = new Map();
 function queuePaper(id, v) {
