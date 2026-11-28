@@ -12,25 +12,26 @@
 // once; the server keeps the description, shows it here to be read, and sets it before every request.
 // Kept on this device: the draft, as typed, and where it came from; the last 20 answers (다듬은 기록), also kept with the
 // server and so on every device while '기기 사이에 맞추기' is on.
-import * as api from './api.js?v=6f9f98f247';
-import * as store from './store.js?v=6f9f98f247';
-import { ME } from './research.js?v=6f9f98f247';
-import { cleanCopy } from './analyze.js?v=6f9f98f247';
-import * as cases from './cases.js?v=6f9f98f247';
-import * as laws from './laws.js?v=6f9f98f247';
-import * as kciq from './kciq.js?v=6f9f98f247';
-import * as papers from './papers.js?v=6f9f98f247';
+import * as api from './api.js?v=624e00e99c';
+import * as store from './store.js?v=624e00e99c';
+import { ME } from './research.js?v=624e00e99c';
+import { cleanCopy } from './analyze.js?v=624e00e99c';
+import * as cases from './cases.js?v=624e00e99c';
+import * as laws from './laws.js?v=624e00e99c';
+import * as kciq from './kciq.js?v=624e00e99c';
+import * as papers from './papers.js?v=624e00e99c';
 
 const ACTS = {
   polish: { label: '내 문체로 다듬기', rewrite: true },
   concise: { label: '간결하게', rewrite: true },
   proof: { label: '맞춤법·문법', rewrite: true },
-  logic: { label: '논리 점검', sub: '의견만', rewrite: false },
+  logic: { label: '논리·일관성 점검', sub: '의견만', rewrite: false },
   cite: { label: '인용 점검', local: true, rewrite: false },        // (the app's own data: nothing goes to Claude)
   english: { label: '영어 초록으로', rewrite: false, move: true },  // (옮기기: a translation, last and apart)
 };
 const KEEP = 20;          // answers kept (다듬은 기록)
-const MAX = 12000;        // letters a text may have (the server says so too: info.max)
+const MAX = 600000;       // letters a text may have: a whole paper at once (the server says so too: info.max)
+const GO_ON = 8;          // an answer longer than one reply is carried on this many times at most
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nf = (n) => Number(n || 0).toLocaleString('ko-KR');
@@ -93,6 +94,7 @@ export function show(c, ctx) {
     <p class="wr-status" aria-live="polite"></p>
     <section class="wr-res" hidden></section>
     <section class="wr-sty"></section>
+    <section class="wr-rules"></section>
     <section class="wr-hist" hidden></section>
   </div>`;
   W.root = c.querySelector('.wr');
@@ -101,8 +103,8 @@ export function show(c, ctx) {
   const ta = $('.wr-in');
   if (W.draft != null) ta.value = W.draft;
   paintFrom();   // (read at once, before the first paint: the line never comes in later and pushes the box down)
-  paintCount(); paintActs(); paintNotes(); paintRes(); paintSty(); paintHist();
-  load();
+  paintCount(); paintActs(); paintNotes(); paintRes(); paintSty(); paintHist(); paintRules();
+  load(); loadRules();
 }
 const $ = (s) => (W.root ? W.root.querySelector(s) : null);
 const live = () => !!(W.root && W.root.isConnected);
@@ -249,7 +251,7 @@ function stopRun() {
 function paintCount() {
   const ta = $('.wr-in'), n = $('.wr-n'); if (!ta || !n) return;
   const k = letters(ta.value.trim()), max = maxLetters();
-  n.textContent = k > max ? `${nf(k)} / ${nf(max)}자 · ${nf(max)}자까지 보낼 수 있습니다. 나눠서 보내 주세요.` : `${nf(k)} / ${nf(max)}자`;
+  n.textContent = k > max ? `${nf(k)}자 · ${nf(max)}자까지 한 번에 보낼 수 있습니다. 나눠서 보내 주세요.` : `${nf(k)}자`;
   n.classList.toggle('over', k > max);
 }
 // the buttons, and the line under them: today's count, or why nothing can be asked now. 인용 점검 asks no one but the
@@ -293,7 +295,17 @@ function ask(k) {
   // once, never again while it is written
   let shown = false;
   const paint = (t) => { paintRes(t); if (!shown && cur.state === 'writing' && W.cur === cur) { shown = true; reveal(); } };
-  go({ action: k, text, id: cur.id }, cur, paint).then(() => settled(cur));
+  go({ action: k, text, id: cur.id }, cur, paint).then(async () => {
+    // longer than one reply (a whole paper): the same request again with what was written so far, carried on to the end
+    for (let n = 1; n <= GO_ON && W.cur === cur && cur.state === 'done' && cur.stop === 'max_tokens'; n++) {
+      cur.base = cur.out; cur.state = 'writing'; cur.cut = false; cur.stop = '';
+      cur.note = `글이 길어 이어서 씁니다 (${n + 1}번째)`;
+      paint();
+      await go({ action: k, text, id: newId(), sofar: cur.base }, cur, paint);
+    }
+    if (cur.state === 'done' && cur.stop === 'max_tokens') cur.note = '글이 너무 길어 끝까지 쓰지 못했습니다. 아래는 받은 데까지입니다. 글을 나눠서 보내 주세요.';
+    settled(cur);
+  });
 }
 // the result card's head in view: scrolled to its top (smoothly unless motion is reduced) when it is not there already
 function reveal() {
@@ -320,7 +332,7 @@ function onEvent(cur, ev, d) {
   if (d.type === 'start') { cur.model = d.model; used(d); }
   else if (d.type === 'wait') cur.note = `${d.why === 'rate' ? '요청이 몰려' : 'Claude가 붐벼'} ${d.sec}초 뒤에 다시 시도합니다.`;
   else if (d.type === 'fallback') {   // what was shown is thrown away: the other model writes it all again
-    cur.out = ''; cur.state = 'wait'; cur.model = d.to; cur.fell = d.why;
+    cur.out = cur.base || ''; cur.state = 'wait'; cur.model = d.to; cur.fell = d.why;
     cur.note = d.why === 'refusal' ? '첫 모델이 이 글을 거절해, 다른 모델이 처음부터 다시 씁니다.' : '첫 모델을 지금 쓸 수 없어, 다른 모델이 씁니다.';
   } else if (d.type === 'done') {
     // cut short (the room for thinking and answer used up): what came is shown and can be copied, but it is not offered
@@ -331,7 +343,7 @@ function onEvent(cur, ev, d) {
     used(d);
   } else if (d.type === 'error') {
     Object.assign(cur, { state: 'error', err: d.code, sec: d.sec, partial: d.partial, msg: d.message || '' });
-    if (d.code === 'refused') cur.out = '';   // a refused answer is not to be used, not even the part of it already shown
+    if (d.code === 'refused') cur.out = cur.base || '';   // a refused answer is not to be used, not even the part of it already shown
   }
   return true;
 }
@@ -1515,3 +1527,44 @@ export function wordDiff(a, b) {
 function renderDiff(ops) {
   return ops.map(([op, t]) => (op === 0 ? esc(t) : op < 0 ? (t.trim() ? `<del>${esc(t)}</del>` : '') : (t.trim() ? `<ins>${esc(t)}</ins>` : esc(t)))).join('');
 }
+
+// 내 글쓰기 원칙: the owner's own rules (reader, structure, argument, citation, sentences), kept on the server for every device
+// and put into every request (다듬기, 간결하게, 논리·일관성 점검 …). Shown folded; 고치기 opens a box, 저장 keeps it.
+async function loadRules() {
+  try { const r = await api.writePrinciples(); W.rules = (r && r.text) || ''; } catch (e) { if (W.rules == null) W.rules = null; }
+  paintRules();
+}
+function paintRules() {
+  const box = $('.wr-rules'); if (!box) return;
+  const t = W.rules;
+  if (W.rulesEdit) {
+    if (box.querySelector('.wr-rules-in')) return;   // (typing: never redrawn under the cursor)
+    box.innerHTML = `<h2 class="sec-h">내 글쓰기 원칙</h2><div class="wr-rc"><textarea class="wr-rules-in" aria-label="내 글쓰기 원칙" spellcheck="false" placeholder="독자, 목차, 서론, 논증, 인용, 문장 … 다듬을 때마다 지킬 원칙을 적어 두세요"></textarea>
+      <div class="wr-rules-acts"><button type="button" class="btn small ghost" data-rules="cancel">그만두기</button><button type="button" class="btn small primary" data-rules="save">저장</button></div></div>`;
+    const ta = box.querySelector('.wr-rules-in'); ta.value = t || ''; ta.focus();
+    return;
+  }
+  const n = t ? [...t].length : 0;
+  box.innerHTML = `<h2 class="sec-h">내 글쓰기 원칙</h2><div class="wr-rc">
+    <p class="wr-rules-st">${t == null ? '불러오는 중…' : t ? `다듬기·간결하게·논리·일관성 점검·영어 초록에 늘 반영합니다 · ${nf(n)}자` : '아직 없습니다. 적어 두면 모든 다듬기에 반영합니다.'}</p>
+    ${t ? `<details class="wr-rules-view"><summary>펼쳐 보기</summary><div class="wr-rules-text">${esc(t)}</div></details>` : ''}
+    <div class="wr-rules-acts"><button type="button" class="btn small" data-rules="edit"${t == null ? ' disabled' : ''}>${t ? '고치기' : '적기'}</button></div></div>`;
+}
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest && e.target.closest('[data-rules]'); if (!b || !W.root || !W.root.contains(b)) return;
+  const k = b.dataset.rules;
+  if (k === 'edit') { W.rulesEdit = true; paintRules(); return; }
+  if (k === 'cancel') { W.rulesEdit = false; $('.wr-rules').innerHTML = ''; paintRules(); return; }
+  if (k === 'save') {
+    const v = $('.wr-rules-in').value.trim();
+    b.disabled = true;
+    try {
+      const r = await api.putWritePrinciples(v);
+      W.rules = (r && r.text) || ''; W.rulesEdit = false; $('.wr-rules').innerHTML = ''; paintRules();
+      W.ctx && W.ctx.toast && W.ctx.toast(v ? '글쓰기 원칙을 저장했습니다' : '글쓰기 원칙을 지웠습니다');
+    } catch (err) {
+      b.disabled = false;
+      W.ctx && W.ctx.toast && W.ctx.toast(err && err.code === 'too_long' ? '원칙이 너무 깁니다(2만 자까지)' : '저장하지 못했습니다. 잠시 뒤에 다시 해 주세요.');
+    }
+  }
+});

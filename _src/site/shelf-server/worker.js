@@ -220,6 +220,8 @@ async function route(req, env, ctx) {
         if (m === 'GET' && p.length === 2) return await writeInfo(env);
         if (m === 'POST' && p.length === 2) return await writeAsk(req, env, ctx);
         if (m === 'GET' && p[2] === 'style' && p.length === 3) return await writeStyle(env);
+        if (m === 'GET' && p[2] === 'principles' && p.length === 3) return await writePrinciplesGet(env);
+        if (m === 'PUT' && p[2] === 'principles' && p.length === 3) return await writePrinciplesPut(req, env);
         if (m === 'GET' && p[2] === 'last' && p.length === 3) return await writeLast(env, url);
         if (m === 'POST' && p[2] === 'stop' && p.length === 3) return await writeStop(req, env);
         if (m === 'GET' && p[2] === 'history' && p.length === 3) return await writeHistoryGet(env);
@@ -2343,7 +2345,7 @@ const WRITE_MODELS = [
 ];
 const ANTHROPIC = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2026-10-21';
-const WRITE_MAX = 12000;          // letters (Unicode characters: one Hangul syllable is one) a text may have
+const WRITE_MAX = 600000;         // letters a text may have: a whole paper or thesis at once (the models read up to 1M tokens)
 const WRITE_SAMPLE_MAX = 40000;   // letters of the paragraphs sent to learn the style (내 문체 익히기)
 // The day's limits: none by default — the owner keeps the spending limit on the Anthropic account itself (its console), and
 // Anthropic refuses past it (that answer reaches the app as Anthropic's own words). The day's requests and their estimated
@@ -2351,7 +2353,8 @@ const WRITE_SAMPLE_MAX = 40000;   // letters of the paragraphs sent to learn the
 // a day) and WRITE_DAY_USD (US dollars a day); 0 or unset = no cap.
 const writeCap = (env) => Math.max(0, Math.floor(Number(env && env.WRITE_DAY_CAP) || 0));
 const writeBudget = (env) => Math.max(0, Number(env && env.WRITE_DAY_USD) || 0);
-const WRITE_OUT = 64000;          // max_tokens: thinking and answer together; a ceiling only (what is used is what is billed)
+const WRITE_OUT = 128000;         // max_tokens: thinking and answer together (the models' most); an answer longer than this is
+                                  // carried on by the app: the same request again with what was written so far (b.sofar)
 // how much a used answer cost: usage as Anthropic reports it, at the model's price
 const writeCost = (m, u = {}) => {
   const p = (m && m.usd) || WRITE_MODELS[0].usd, n = (k) => Number(u[k]) || 0;
@@ -2369,7 +2372,11 @@ const WRITE_RULES = `당신은 한국의 헌법·공법 연구자가 쓰는 학�
 4. 한국어로 쓸 때는 학술 문어체로 씁니다. 구어체, 번역투, 과장, 꾸밈을 위한 비유를 쓰지 않습니다.
 5. 요청한 결과만 내놓습니다. 인사, 작업 설명, 덧붙이는 말, 마크다운 기호(#, **, 글머리표)를 쓰지 않습니다.
 
-<글쓴이의 문체>가 주어지면, 그것은 글쓴이가 이미 발표한 논문들의 문단을 분석해 정리한 글쓴이의 문체입니다. 어느 작업에서든 글쓴이의 용어와 표기 방식(판례·조문을 부르는 방식 등)은 그에 맞춥니다.`;
+6. 글 전체의 논리적 흐름과 일관성을 지킵니다. 앞에서 정의하거나 쓴 개념과 용어는 끝까지 같은 뜻, 같은 말로 쓰고, 주장과 결론이 글의 앞뒤에서 어긋나지 않게 하며, 문장과 문단이 생각의 흐름을 따라 이어지게 합니다.
+
+<글쓴이의 문체>가 주어지면, 그것은 글쓴이가 이미 발표한 논문들의 문단을 분석해 정리한 글쓴이의 문체입니다. 어느 작업에서든 글쓴이의 용어와 표기 방식(판례·조문을 부르는 방식 등)은 그에 맞춥니다.
+
+<글쓴이의 글쓰기 원칙>이 주어지면, 그것은 글쓴이가 스스로 정한 원칙입니다. 모든 작업에서 이 원칙을 따릅니다. 원칙이 위 1, 2와 부딪치는 일은 없지만, 부딪친다면 인용을 바꾸지 않고 없는 것을 만들지 않는다는 1, 2가 앞섭니다. 원고를 고칠 때는 원고에 원래 있던 글쓴이의 어휘와 표현을 따르고, 글쓴이가 쓰지 않는 표현을 새로 넣지 않습니다.`;
 
 // Each request: how hard the model thinks (output_config.effort — the API's control for depth and spend; these models think
 // at every level) and what it is asked. The text comes first and the request after it (a long text above the question is
@@ -2380,31 +2387,39 @@ const WRITE_ACTIONS = {
 - <글쓴이의 문체>에 적힌 문장 길이, 종결어미, 접속어, 주장을 펴는 수위, 판례·조문을 인용하는 방식, 즐겨 쓰는 용어를 따릅니다.
 - 어색한 문장, 겹치는 말, 주어와 서술어가 맞지 않는 곳, 지나치게 길어 읽기 어려운 문장을 고칩니다. 이미 좋은 문장은 그대로 둡니다.
 - 비유나 꾸밈말로 멋을 내지 않고 뜻을 곧바로 씁니다.
+- 글 전체를 한 흐름으로 읽고 다듬습니다. 문장과 문단 사이의 연결이 끊기거나 비약하는 곳은 잇는 말과 순서를 고쳐 흐름을 살리고, 같은 개념이 여러 말로 흔들리면 원문에서 주로 쓴 말로 맞춥니다.
+- <글쓴이의 글쓰기 원칙>이 있으면 그 가운데 문장과 표현의 원칙을 지킵니다.
 - 내용을 더하거나 빼지 않습니다. 원문의 문단 나눔을 지킵니다.
 - ${NEEDS}
 - 다듬은 글만 내놓습니다.` },
   concise: { effort: 'high', ask: `위 <글>을 간결하게 줄여 주세요.
 - 뜻, 주장, 논증의 단계는 그대로 두고 겹치는 말, 군더더기 수식어, 같은 내용의 되풀이, 꼭 필요하지 않은 접속 표현을 덜어냅니다.
 - 인용, 사건번호, 조문, 각주 번호는 하나도 빠뜨리지 않습니다. 글쓴이의 문체를 지킵니다. 원문의 문단 나눔을 지킵니다.
+- 줄인 뒤에도 논리의 흐름과 용어의 일관성이 그대로 이어지게 합니다. <글쓴이의 글쓰기 원칙>이 있으면 그것을 따릅니다.
 - ${NEEDS}
 - 줄인 글만 내놓습니다.` },
   proof: { effort: 'medium', ask: `위 <글>의 맞춤법, 띄어쓰기, 문법, 문장 부호만 바로잡아 주세요.
 - 한글 맞춤법과 표준어 규정을 따릅니다. 법령 이름과 법령에서 쓰는 용어는 법령의 표기를 따릅니다.
 - 문체, 어휘, 문장 구조는 바꾸지 않습니다. 틀린 곳만 고치고, 표시나 설명은 붙이지 않습니다. 원문의 문단 나눔을 지킵니다.
 - 고친 글만 내놓습니다.` },
-  logic: { effort: 'high', ask: `위 <글>의 논리를 점검해 주세요. 글은 고치지 말고 의견만 씁니다.
-- 살필 것: 주장과 근거의 연결이 약한 곳, 논리의 비약, 같은 개념을 다른 뜻으로 쓴 곳, 앞뒤가 어긋나는 곳, 다루지 않은 유력한 반론, 근거가 더 필요한 주장(어떤 근거가 필요한지), 인용한 판례·조문이 글 안에서 그 주장과 실제로 이어져 있는지(판례의 내용을 기억에 기대어 단정하지 않습니다).
+  logic: { effort: 'high', ask: `위 <글>의 논리적 흐름과 일관성을 점검해 주세요. 글은 고치지 말고 의견만 씁니다.
+- 글 전체의 흐름: 서론에서 세운 문제와 순서를 본론이 그대로 따라가는지, 장과 절이 생각의 흐름대로 이어지는지, 결론이 본론에서 실제로 논증한 것만 담는지, 끼워 넣은 듯 문제 해결에 쓰이지 않는 부분이 있는지.
+- 일관성: 같은 개념을 다른 말이나 다른 뜻으로 쓴 곳, 앞에서 한 주장과 뒤의 주장이 어긋나는 곳, 표기(법령·판례·용어)가 흔들리는 곳.
+- 논증: 주장과 근거의 연결이 약한 곳, 논리의 비약, 다루지 않은 유력한 반론과 재반론, 근거가 더 필요한 주장(어떤 근거가 필요한지), 인용한 판례·조문이 글 안에서 그 주장과 실제로 이어져 있는지(판례의 내용을 기억에 기대어 단정하지 않습니다).
+- <글쓴이의 글쓰기 원칙>이 있으면 항목마다 이 글이 지켰는지 대조하고, 지키지 못한 항목은 어느 부분인지 밝힙니다.
 - 문제마다 해당 대목을 짧게 따옴표로 옮겨 위치를 밝히고, 왜 문제인지와 어떻게 보완할 수 있는지를 한두 문장으로 씁니다.
 - 중요한 것부터 번호(1. 2. 3.)를 붙여 씁니다. 문제가 없는 부분을 따로 칭찬하지 않습니다. 지적할 것이 없으면 '특별히 지적할 곳이 없습니다.'라고만 씁니다.
 - 새 출처나 판례를 제시하지 않습니다. 필요한 근거의 종류만 말합니다.` },
   english: { effort: 'high', ask: `위 <글>을 바탕으로 학술 영어 초록(abstract)을 써 주세요.
 - 글이 이미 초록이면 충실하게 옮기고, 본문이면 그 내용을 초록으로 요약합니다. 글에 없는 내용을 더하지 않습니다.
 - 한 문단, 150~250단어로, 법학 학술지의 영어 초록 문체('This article…', 'This study…', 현재 시제 중심)로 씁니다.
+- 국문을 그대로 옮긴 번역투가 아니라, 미국 로스쿨 교수가 썼다고 해도 믿을 만한 자연스러운 학술 영어로 씁니다.
 - 기관과 법령은 공식 영문 명칭으로 씁니다(예: the Constitutional Court of Korea, the Public Official Election Act, Article 37(2) of the Constitution). 공식 명칭이 확실하지 않으면 뜻을 옮기고 처음 나올 때 괄호 안에 로마자 표기를 붙입니다.
 - 사건번호는 숫자를 바꾸지 말고 헌법재판소·대법원의 영문 표기 방식(예: 2004Hun-Ma554, 2006Du330)으로 씁니다.
 - 글에 주제어가 있으면 마지막 줄에 'Keywords:'를 붙여 옮깁니다.
 - 초록만 내놓습니다.` },
 };
+const WRITE_GO_ON = '답이 길어 중간에 끊겼습니다. 이미 쓴 부분은 되풀이하지 말고, 끊긴 바로 다음부터 끝까지 이어서 써 주세요. 앞에 쓴 부분과 용어, 문체, 논리의 흐름이 그대로 이어지게 합니다. 이어지는 글만 내놓습니다.';
 const NO_STYLE = '- 아직 <글쓴이의 문체>가 없습니다. 원문에 드러난 글쓴이의 어투와 표기 방식을 그대로 살리면서 다듬습니다.';
 
 // 내 문체 익히기: paragraphs the app picked from the owner's own papers (introductions, arguments, conclusions; no notes,
@@ -2458,13 +2473,29 @@ async function writeCount(env, d, usd = 0) {
 // what the app needs to draw the screen: whether a key is set (never the key), the models, the limits, today's count, and
 // when the style was learned (its text: /api/write/style)
 async function writeInfo(env) {
-  const [use, st] = await Promise.all([writeCount(env, 0), env.BUCKET.head('write/style.json')]);
+  const [use, st, pr] = await Promise.all([writeCount(env, 0), env.BUCKET.head('write/style.json'), env.BUCKET.head('write/principles.json')]);
   const m = (st && st.customMetadata) || {};
   return json({
     key: !!env.ANTHROPIC_API_KEY, models: WRITE_MODELS, max: WRITE_MAX, sampleMax: WRITE_SAMPLE_MAX, cap: writeCap(env) || null, used: use.n, reset: kstMidnight(),
-    budget: writeBudget(env) || null, spent: use.usd,
+    budget: writeBudget(env) || null, spent: use.usd, principles: pr ? { at: pr.uploaded ? new Date(pr.uploaded).getTime() : 0, size: pr.size || 0 } : null,
     style: st ? { at: Number(m.at) || 0, model: m.model || '', papers: Number(m.papers) || 0, paragraphs: Number(m.paragraphs) || 0, chars: Number(m.chars) || 0 } : null,
   });
+}
+// 글쓰기 원칙: the owner's own rules for writing (reader, structure, argument, citation, sentences), kept for every device and put
+// into every request after the style. { text, at }; an empty text takes them away
+const WRITE_PRINCIPLES_MAX = 20000;
+async function writePrinciplesGet(env) {
+  const o = await env.BUCKET.get('write/principles.json');
+  return json(o ? await o.json().catch(() => ({ text: '', at: 0 })) : { text: '', at: 0 });
+}
+async function writePrinciplesPut(req, env) {
+  const b = await readJSON(req, 256 * 1024);
+  const text = writeClean(b && b.text);
+  if (letterCount(text) > WRITE_PRINCIPLES_MAX) return err('too_long', 413, { max: WRITE_PRINCIPLES_MAX, got: letterCount(text) });
+  if (!text) { await env.BUCKET.delete('write/principles.json'); return json({ text: '', at: 0 }); }
+  const v = { text, at: Date.now() };
+  await env.BUCKET.put('write/principles.json', JSON.stringify(v), { httpMetadata: { contentType: 'application/json' } });
+  return json(v);
 }
 async function writeStyle(env) {
   const o = await env.BUCKET.get('write/style.json');
@@ -2493,7 +2524,7 @@ async function writeStop(req, env) {
 
 async function writeAsk(req, env, ctx) {
   if (!env.ANTHROPIC_API_KEY) return err('no_key', 503);
-  const b0 = await readJSON(req, 512 * 1024), b = b0 && typeof b0 === 'object' ? b0 : {};
+  const b0 = await readJSON(req, 8 * 1024 * 1024), b = b0 && typeof b0 === 'object' ? b0 : {};
   let body, keep = null;
   if (b.action === 'profile') {
     const parts = new Set(['서론', '본론', '결론']);
@@ -2525,9 +2556,15 @@ async function writeAsk(req, env, ctx) {
     const style = await env.BUCKET.get('write/style.json').then((o) => (o ? o.json() : null)).catch(() => null);
     const system = [{ type: 'text', text: WRITE_RULES }];
     if (style && style.text) system.push({ type: 'text', text: `<글쓴이의 문체>\n${style.text}\n</글쓴이의 문체>` });
+    const rules = await env.BUCKET.get('write/principles.json').then((o) => (o ? o.json() : null)).catch(() => null);
+    if (rules && rules.text) system.push({ type: 'text', text: `<글쓴이의 글쓰기 원칙>\n${rules.text}\n</글쓴이의 글쓰기 원칙>` });
     system[system.length - 1].cache_control = { type: 'ephemeral' };   // the rules and the style: the same prefix every time
     const ask = act.ask + (b.action === 'polish' && !(style && style.text) ? '\n' + NO_STYLE : '');
-    body = { max_tokens: WRITE_OUT, stream: true, output_config: { effort: act.effort }, system, messages: [{ role: 'user', content: `<글>\n${text}\n</글>\n\n${ask}` }] };
+    const messages = [{ role: 'user', content: `<글>\n${text}\n</글>\n\n${ask}` }];
+    // an answer too long for one reply goes on: what was written so far, and the request to carry on from where it stopped
+    const sofar = typeof b.sofar === 'string' ? writeClean(b.sofar) : '';
+    if (sofar) messages.push({ role: 'assistant', content: sofar }, { role: 'user', content: WRITE_GO_ON });
+    body = { max_tokens: WRITE_OUT, stream: true, output_config: { effort: act.effort }, system, messages };
   }
   // the app's own name for this request: with it the answer is read to the end even if the app goes away (the style is
   // then kept all the same; a rewrite or an opinion is kept in write/last.json for the app to fetch), unless it is stopped

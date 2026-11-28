@@ -4878,6 +4878,38 @@ let libAgain = false;
 // a paper's line, set in its texts (the server's copy and this device's) when it says more than before; true when written.
 // It is written onto the server's texts as they are now (a scan read on another device has its words there, which this
 // device's copy may not have yet), and not while this device is reading the scan's words (its texts are about to change).
+// the owner's own paper by its title → named '저자_제목' (the list's authors, 2 joined by ·, more as '첫 저자 외') and, where the
+// shelf's line lacks them, its journal, issue and month. True when something was written. A file whose name already has the
+// right authors and whose line is complete is left alone; a name the owner changed by hand is not touched.
+async function ownWorkFix(f, title, unnamed) {
+  const m = await research.mine().catch(() => null);
+  const own = (m && Array.isArray(m.own)) ? m.own : [];
+  if (!own.length) return false;
+  const k = libNorm(mainTitle(title));
+  if (k.length < 6) return false;
+  const w = own.find((x) => libNorm(mainTitle(x.title)) === k);
+  if (!w) return false;
+  const want = `${naming.authorText(w.authors)}_${w.title}.pdf`.replace(/[\\/:*?"<>|]+/g, ' ');
+  const set = {};
+  const handNamed = f.orig && f.name !== f.orig && hasAuthor(f.name);
+  if (f.name !== want && (unnamed || !hasAuthor(f.name) || (!handNamed && stem(f.name).split('_')[0] !== naming.authorText(w.authors)))) set.name = want;
+  const cur = infoOf(f) || {};
+  const info = { ...cur };
+  if (!cur.journal) info.journal = w.journal;
+  if (!cur.issue && w.issue) info.issue = w.issue.replace(/^통권\s*/, '');
+  if (!cur.date && w.date) info.date = w.date;
+  if (!cur.society) { const soc = naming.journalSociety(info.journal); if (soc) info.society = soc; }
+  const infoChanged = ['journal', 'issue', 'date', 'society'].some((x) => (info[x] || '') !== (cur[x] || ''));
+  if (!set.name && !infoChanged) return false;
+  try {
+    if (set.name) {
+      const r = await api.ops([{ op: 'updateFile', id: f.id, set }]);
+      S.index = r.index; applyPending(await store.get('kv', 'pendingOps')); await store.put('kv', 'index', S.index); syncTags.lib = '';
+    }
+    if (infoChanged) await writePaper(fileById(f.id) || f, cur, info);
+    return true;
+  } catch (e) { return false; }
+}
 async function writePaper(f, cur, merged) {
   if (!paperOf(merged) || JSON.stringify(paperOf(merged)) === JSON.stringify(paperOf(cur))) return false;
   if (OCR.id === f.id) return false;
@@ -4905,7 +4937,11 @@ async function libraryInfo() {
     const unnamed = !hasAuthor(f.name) && (!f.orig || f.name === f.orig) && S.prefs.autoName !== false && !f.pending;   // still its uploaded name
     const known = f.id in S.info || !!f.paper;   // its first page was read (a scan still to be read is not, yet it can be named from its title)
     const name = stem(f.name), cut = hasAuthor(f.name) ? name.indexOf('_') : -1;
-    const author = cut > 0 ? name.slice(0, cut).replace(/\s*외$/, '') : '', title = (cut > 0 ? name.slice(cut + 1) : name).trim();
+    // (a file's own numbering in front of its title — '12. 사이버안보 …', '03_…', '(2) …' — is no part of the title)
+    const author = cut > 0 ? name.slice(0, cut).replace(/\s*외$/, '') : '', title = (cut > 0 ? name.slice(cut + 1) : name).trim().replace(/^(?:\d{1,3}\s*[.)_\-]\s*|[(\[]\d{1,3}[)\]]\s*)(?=\S)/, '');
+    // the owner's own paper (research.json: the homepage's list) is named and described from that list, at once and without
+    // asking anyone: its first page may draw the title and the authors as outlines, and the libraries may not have it yet
+    if (await ownWorkFix(f, title, unnamed)) { changed = true; continue; }
     if (!(unnamed || (known && biblio.wants(infoOf(f), title))) || Date.now() - (libAsked[f.id] || 0) < 30 * 864e5) continue;
     if (libNorm(title).length < 6) continue;
     libAsked[f.id] = Date.now(); store.put('kv', 'libAsked3', libAsked).catch(() => {});

@@ -136,6 +136,8 @@ export async function paperPdf(body) {
 // models, limits, today's count, when the style was learned), the style itself, and one request — its answer streamed
 export const writeInfo = () => call('/write');
 export const writeStyle = () => call('/write/style');
+export const writePrinciples = () => call('/write/principles');
+export const putWritePrinciples = (text) => call('/write/principles', { method: 'PUT', body: { text } });
 export const writeAsk = (body, signal) => call('/write', { method: 'POST', body, raw: 'stream', signal });
 // the latest answer as the server kept it (for an app that lost the connection), and 멈추기 told to the server
 export const writeLast = (id) => call('/write/last?id=' + encodeURIComponent(id));

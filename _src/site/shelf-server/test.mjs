@@ -450,7 +450,7 @@ ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'f
 
   // no key on the server: no_key, and Anthropic is not asked
   let x = await j(await call('/write', {}, T));
-  ok(x.status === 200 && x.body.key === false && x.body.cap === 150 && x.body.max === 12000 && x.body.used === 0 && x.body.style === null && x.body.models[0].id === 'claude-fable-5-2' && x.body.models[1].id === 'claude-opus-5-5', '글쓰기 info: no key, the models (Fable 5.2, then Opus 5.5), cap 150, 12,000 letters, nothing used');
+  ok(x.status === 200 && x.body.key === false && x.body.cap === 150 && x.body.max === 600000 && x.body.used === 0 && x.body.style === null && x.body.models[0].id === 'claude-fable-5-2' && x.body.models[1].id === 'claude-opus-5-5', '글쓰기 info: no key, the models (Fable 5.2, then Opus 5.5), cap 150, 12,000 letters, nothing used');
   let w = await write({ action: 'polish', text: SAMPLE });
   ok(w.status === 503 && JSON.parse(w.text).error === 'no_key' && asked.length === 0, 'no key: 503 no_key, and Anthropic is never asked');
   ok((await call('/write', { method: 'POST', body: JSON.stringify({ action: 'polish', text: SAMPLE }) })).status === 401, '글쓰기 needs a signed-in device');
@@ -554,11 +554,31 @@ ok((await j(await call('/lib', {}, T))).body.files.every((f) => f.id !== id), 'f
 
   // the limits, before anything goes out
   asked.length = 0;
-  w = await write({ action: 'polish', text: '가'.repeat(12001) });
-  ok(w.status === 413 && JSON.parse(w.text).error === 'too_long' && JSON.parse(w.text).max === 12000 && JSON.parse(w.text).got === 12001 && asked.length === 0, 'over 12,000 letters: 413 too_long (max, got); Anthropic not asked');
+  w = await write({ action: 'polish', text: '가'.repeat(600001) });
+  ok(w.status === 413 && JSON.parse(w.text).error === 'too_long' && JSON.parse(w.text).max === 600000 && JSON.parse(w.text).got === 600001 && asked.length === 0, 'over 600,000 letters: 413 too_long (max, got); Anthropic not asked');
   plan.push(ok200('claude-fable-5-2', '가'));
-  w = await write({ action: 'proof', text: '가'.repeat(12000) });
-  ok(w.status === 200 && asked.length === 1, 'exactly 12,000 Hangul letters (36,000 bytes) go: letters are counted, not bytes');
+  w = await write({ action: 'proof', text: '가'.repeat(150000) });
+  ok(w.status === 200 && asked.length === 1, 'a whole paper (150,000 Hangul letters, 450,000 bytes) goes in one request');
+  ok(asked[0].body.max_tokens === 128000, 'room for a whole paper\'s answer: max_tokens 128000');
+  // an answer longer than one reply: the app sends what was written so far, and the request carries on from there
+  asked.length = 0; plan.push(ok200('claude-fable-5-2', '나머지'));
+  w = await write({ action: 'polish', text: SAMPLE, sofar: '앞부분' });
+  const ms = asked[0] && asked[0].body.messages;
+  ok(w.status === 200 && ms && ms.length === 3 && ms[1].role === 'assistant' && ms[1].content === '앞부분' && ms[2].role === 'user' && /끊긴 바로 다음부터/.test(ms[2].content), 'carried on: the text, what was written so far, then 이어서 써 주세요');
+  // 내 글쓰기 원칙: kept for every device and put into every request
+  x = await j(await call('/write/principles', {}, T));
+  ok(x.status === 200 && x.body.text === '', 'no principles yet');
+  x = await j(await call('/write/principles', { method: 'PUT', body: JSON.stringify({ text: '# 독자\n독자는 법학교수와 변호사다.' }) }, T));
+  ok(x.status === 200 && /법학교수/.test(x.body.text) && x.body.at > 0, 'principles kept');
+  asked.length = 0; plan.push(ok200('claude-fable-5-2', GOOD));
+  await write({ action: 'logic', text: SAMPLE });
+  const sys = asked[0] && asked[0].body.system;
+  ok(sys && sys.some((b) => /<글쓴이의 글쓰기 원칙>[\s\S]*법학교수/.test(b.text)) && sys[sys.length - 1].cache_control, 'the principles go into the system prompt (cached with the rules)');
+  ok(/논리적 흐름과 일관성/.test(asked[0].body.messages[0].content) && /글쓰기 원칙>이 있으면 항목마다/.test(asked[0].body.messages[0].content), '논리·일관성 점검 asks for flow, consistency and the principles item by item');
+  x = await j(await call('/write', {}, T));
+  ok(x.body.principles && x.body.principles.size > 0, 'info says principles are set');
+  x = await j(await call('/write/principles', { method: 'PUT', body: JSON.stringify({ text: '' }) }, T));
+  ok(x.status === 200 && x.body.text === '' && !(await bucket.head('write/principles.json')), 'an empty text takes them away');
   ok((await write({ action: 'translate', text: SAMPLE })).status === 400 && (await write({ action: 'polish', text: '   ' })).status === 400, 'an unknown request or an empty text: 400');
   const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
   await bucket.put('write/use.json', JSON.stringify({ day, n: 150 }));

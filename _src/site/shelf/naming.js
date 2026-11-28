@@ -368,7 +368,7 @@ function findAuthors(ls, from, body, H, korean) {
   }
   return null;
 }
-const authorText = (names) => (names.length === 1 && !names.etal ? names[0] : names.length === 2 && !names.etal ? names.join('·') : names[0] + ' 외');   // (etal: 홍길동 외 3인)
+export const authorText = (names) => (names.length === 1 && !names.etal ? names[0] : names.length === 2 && !names.etal ? names.join('·') : names[0] + ' 외');   // (etal: 홍길동 외 3인)
 
 // ---------------------------------------------------------------- where it was published
 // journals whose society is known for certain (the page may not print it)
@@ -381,9 +381,13 @@ const JOURNALS = [
   ['법과 정책연구', '한국법정책학회'], ['동북아법연구', '전북대학교 동북아법연구소'], ['경제규제와 법', '서울대학교 공익산업법센터'],
   ['신앙과 학문', '기독교학문연구회'], ['과학기술법연구', '한남대학교 과학기술법연구원'], ['법제', '법제처'], ['사법', '사법발전재단'], ['노동법학', '한국노동법학회'], ['조세법연구', '한국세법학회'],
   ['국제법학회논총', '대한국제법학회'], ['서울대학교 법학', '서울대학교 법학연구소'], ['가천법학', '가천대학교 법학연구소'], ['중앙법학', '중앙법학회'],
+  ['민주법학', '민주주의법학연구회'], ['법과정책', '제주대학교 법과정책연구원'], ['선거연구', '중앙선거관리위원회 선거연수원'],
   ['법학논집', null], ['법학연구', null], ['법학논총', null],
 ];
 const squash = (s) => s.replace(/\s+/g, '');
+// a journal's name as a page misprints or a reading misreads it: '…범학' (범 for 법: 민주범학) is no word in Korean; the
+// halfwidth/katakana middle dots become '·'
+export const fixJournal = (j) => String(j || '').replace(/범학(?=$|\s|연구|논집|논총)/g, '법학').replace(/[･・ㆍ‧]/g, '·');
 function knownJournal(name) { const k = squash(name); return JOURNALS.find(([j]) => squash(j) === k) || null; }
 // 8차: the society of a journal known here for certain ('가천법학' → '가천대학교 법학연구소'), or '' — for a shelf line read
 // before the journal was known (the app may fill the society it lacks from it)
@@ -626,7 +630,7 @@ export function readFirstPages(p1, p2, more = [], known = null) {
   if (!r && !c) return null;
   r = r || {};
   const info = withPrinted({ journal: '', society: '', issue: '', date: '', ...(r.info || {}) }, c);
-  const out = { journal: info.journal || '', society: info.society || '', issue: info.issue || '', date: info.date || '', title: r.title || '', misread: r.misread || '', authors: r.authors || null, name: null, page };
+  const out = { journal: fixJournal(info.journal || ''), society: info.society || '', issue: info.issue || '', date: info.date || '', title: r.title || '', misread: r.misread || '', authors: r.authors || null, name: null, page };
   if (!out.society && out.journal) out.society = journalSociety(out.journal);   // (a journal known for certain: its society, though the page did not print it)
   if (issuePartial(out)) out.partial = true;   // (the journal read but not its 권호: '권호 확인 필요' on the shelf's row)
   if (!r.thesis && out.title && out.authors && out.authors.length) {
